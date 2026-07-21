@@ -1,5 +1,7 @@
 import { Send } from "lucide-react";
 import { useState } from "react";
+import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
+import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { walletService } from "@/services";
 import type { WalletState } from "@/types/models";
 import { formatCCX, generatePaymentId } from "@/utils/format";
@@ -9,6 +11,15 @@ type Props = {
   onSent: () => Promise<void>;
   onClose: () => void;
   prefillAddress?: string;
+};
+
+const scanBtnStyle: React.CSSProperties = {
+  position: "absolute",
+  right: 6,
+  top: "50%",
+  transform: "translateY(-50%)",
+  width: 34,
+  height: 34,
 };
 
 export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
@@ -46,14 +57,28 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
     <div className="stack stack--gap-4">
       <div className="field">
         <span className="field__label">Recipient CCX address</span>
-        <input
-          className="input input--mono"
-          value={toAddress}
-          onChange={(e) => setToAddress(e.target.value)}
-          placeholder="ccx7…"
-          autoComplete="off"
-          spellCheck={false}
-        />
+        <div style={{ position: "relative" }}>
+          <input
+            className="input input--mono"
+            style={{ paddingRight: 44 }}
+            value={toAddress}
+            onChange={(e) => setToAddress(e.target.value)}
+            placeholder="ccx7…"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <AddressQrScanButton
+            style={scanBtnStyle}
+            disabled={busy}
+            onScan={(draft) => {
+              setToAddress(draft.address);
+              if (draft.amount !== undefined && Number.isFinite(draft.amount)) {
+                setAmount(String(draft.amount));
+              }
+              if (draft.paymentId) setPaymentId(draft.paymentId);
+            }}
+          />
+        </div>
       </div>
       <div className="field">
         <span className="field__label">
@@ -84,12 +109,20 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
           Payment ID <span className="faint">optional</span>
         </span>
         <div className="row-flex" style={{ gap: 8 }}>
-          <input
-            className="input input--mono grow"
-            value={paymentId}
-            onChange={(e) => setPaymentId(e.target.value)}
-            placeholder="auto-generate or paste"
-          />
+          <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+            <input
+              className="input input--mono"
+              style={{ paddingRight: 44, width: "100%" }}
+              value={paymentId}
+              onChange={(e) => setPaymentId(e.target.value)}
+              placeholder="auto-generate or paste"
+            />
+            <PaymentIdQrScanButton
+              style={scanBtnStyle}
+              disabled={busy}
+              onScan={setPaymentId}
+            />
+          </div>
           <button
             className="btn btn--sm btn--secondary no-shrink"
             onClick={() => setPaymentId(generatePaymentId())}

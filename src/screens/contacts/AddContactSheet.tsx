@@ -1,5 +1,7 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
+import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { SecureInput } from "@/components/SecureInput";
 import { Sheet } from "@/components/Sheet";
 import { walletService } from "@/services";
@@ -9,6 +11,11 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onCreated: (id: string) => void;
+};
+
+const scanBtnInline: React.CSSProperties = {
+  width: 34,
+  height: 34,
 };
 
 export function AddContactSheet({ open, onClose, onCreated }: Props) {
@@ -21,6 +28,13 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [addressWarning, setAddressWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Fresh local payment ID each time the sheet opens — show the real value,
+  // never an "auto-generated" placeholder.
+  useEffect(() => {
+    if (!open) return;
+    setPaymentIdFrom(walletService.generatePaymentId());
+  }, [open]);
 
   function reset() {
     setAlias("");
@@ -47,6 +61,9 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
     setError(null);
     if (!alias.trim()) return setError("Give this contact an alias.");
     if (!ccxAddress.trim()) return setError("A CCX address is required.");
+    if (!paymentIdFrom.trim()) {
+      return setError("Generate or paste your paymentIdFrom.");
+    }
     const ok = await walletService.validateAddress(ccxAddress);
     if (!ok) return setError("CCX address format is invalid.");
     setBusy(true);
@@ -92,14 +109,32 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
 
         <div className="field">
           <span className="field__label">Conceal address</span>
-          <input
-            className="input input--mono"
-            value={ccxAddress}
-            onChange={(e) => validateAddress(e.target.value)}
-            placeholder="ccx7…"
-            autoComplete="off"
-            spellCheck={false}
-          />
+          <div style={{ position: "relative" }}>
+            <input
+              className="input input--mono"
+              style={{ paddingRight: 44 }}
+              value={ccxAddress}
+              onChange={(e) => validateAddress(e.target.value)}
+              placeholder="ccx7…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <AddressQrScanButton
+              style={{
+                position: "absolute",
+                right: 6,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 34,
+                height: 34,
+              }}
+              disabled={busy}
+              onScan={(draft) => {
+                void validateAddress(draft.address);
+                if (draft.paymentId) setPaymentIdTo(draft.paymentId);
+              }}
+            />
+          </div>
           {addressWarning && (
             <div className="field__error row-flex" style={{ gap: 6 }}>
               <AlertCircle size={12} /> {addressWarning}
@@ -111,16 +146,30 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
           <span className="field__label">
             paymentIdFrom <span className="faint">your local identifier</span>
           </span>
-          <div className="row-flex" style={{ gap: 8 }}>
-            <SecureInput
-              value={paymentIdFrom}
-              onChange={setPaymentIdFrom}
-              mono
-              placeholder="Auto-generated"
-              revealable
-            />
+          <div
+            className="row-flex"
+            style={{ gap: 8, alignItems: "flex-start" }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <SecureInput
+                value={paymentIdFrom}
+                onChange={setPaymentIdFrom}
+                mono
+                placeholder="64-char hex"
+                revealable
+                endAdornment={
+                  <PaymentIdQrScanButton
+                    style={scanBtnInline}
+                    disabled={busy}
+                    onScan={setPaymentIdFrom}
+                  />
+                }
+              />
+            </div>
             <button
+              type="button"
               className="btn btn--sm btn--secondary no-shrink"
+              style={{ marginTop: 0 }}
               onClick={() =>
                 setPaymentIdFrom(walletService.generatePaymentId())
               }
@@ -129,8 +178,8 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
             </button>
           </div>
           <span className="field__hint">
-            You give this to the counterpart so they can recognize you. Leave
-            blank to auto-generate.
+            Share this with your counterpart so they can recognize you. Use Gen
+            for a new ID, or paste/scan one you already use.
           </span>
         </div>
 
@@ -144,6 +193,13 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
             mono
             placeholder="Paste when received"
             revealable
+            endAdornment={
+              <PaymentIdQrScanButton
+                style={scanBtnInline}
+                disabled={busy}
+                onScan={setPaymentIdTo}
+              />
+            }
           />
           <span className="field__hint">
             The identifier your counterpart gives back. The relationship stays
@@ -181,6 +237,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
         {error && <div className="field__error">{error}</div>}
 
         <button
+          type="button"
           className="btn btn--block btn--primary"
           disabled={busy}
           onClick={handleAdd}

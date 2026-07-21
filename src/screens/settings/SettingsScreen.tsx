@@ -3,31 +3,94 @@ import {
   ChevronRight,
   Database,
   Fingerprint,
+  Gauge,
   Info,
   KeyRound,
   Network,
   Shield,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
+import { NodeSelector } from "@/components/NodeSelector";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
-import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
+import { refreshAutoNode } from "@/lib/network/auto-node";
+import { setPreferredNode } from "@/lib/network/node-preference";
+import {
+  DEFAULT_SYNC_SPEED,
+  readSpeedFromSyncSpeed,
+  SYNC_SPEED_LABELS,
+  SYNC_SPEED_OPTIONS,
+  type SyncSpeed,
+  syncSpeedFromReadSpeed,
+} from "@/lib/sync-speed";
+import { getNodeUrlFormatHints } from "@/lib/validation/node-url";
+import {
+  getInternalWalletNodeUrl,
+  updateWalletSyncSettings,
+} from "@/services/conceal/ConcealWalletService";
+import { getRuntime } from "@/services/conceal/sync";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
-  const network = useWalletStore((w) => w.network);
   const setNode = useWalletStore((w) => w.setNode);
-  const getNode = useWalletStore((w) => w.getNode);
+  const resync = useWalletStore((w) => w.resync);
   const [showNodeSheet, setShowNodeSheet] = useState(false);
   const [customUrl, setCustomUrl] = useState("");
   const [showCustom, setShowCustom] = useState(false);
-  const currentNode = getNode();
+  const [currentNode, setCurrentNode] = useState(getInternalWalletNodeUrl());
+  const [syncSpeed, setSyncSpeed] = useState<SyncSpeed>(DEFAULT_SYNC_SPEED);
+  const [readMinerTx, setReadMinerTx] = useState(false);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+
+  useEffect(() => {
+    void refreshAutoNode();
+    const rt = getRuntime();
+    if (rt?.raw.options) {
+      setSyncSpeed(
+        syncSpeedFromReadSpeed(Number(rt.raw.options.readSpeed ?? 0)),
+      );
+      setReadMinerTx(Boolean(rt.raw.options.checkMinerTx));
+      setCurrentNode(getInternalWalletNodeUrl());
+    }
+  }, []);
+
+  async function applyNode(url: string) {
+    setPreferredNode(url);
+    setNode(url);
+    setCurrentNode(url);
+    setShowNodeSheet(false);
+    await resync();
+  }
+
+  async function applySyncSpeed(speed: SyncSpeed) {
+    setSyncSpeed(speed);
+    setSettingsBusy(true);
+    try {
+      await updateWalletSyncSettings({
+        readSpeed: readSpeedFromSyncSpeed(speed),
+      });
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function applyMinerTx(on: boolean) {
+    setReadMinerTx(on);
+    setSettingsBusy(true);
+    try {
+      await updateWalletSyncSettings({ checkMinerTx: on });
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  const customHints = getNodeUrlFormatHints(customUrl);
 
   return (
     <div className="screen">
@@ -94,10 +157,66 @@ export function SettingsScreen() {
               sub="Change unlock PIN, biometric placeholder"
             />
             <LinkRow
+              to="/settings/wallet-password"
+              icon={KeyRound}
+              title="Wallet password"
+              sub="Change local wallet encryption password"
+            />
+            <LinkRow
               to="/settings/backup"
               icon={KeyRound}
               title="Backup seed phrase"
-              sub="Reveal and confirm your 24-word backup"
+              sub="Reveal and confirm your seed backup"
+            />
+          </div>
+        </div>
+
+        <div className="section">
+          <div className="section__head">
+            <span className="section__title">Sync</span>
+          </div>
+          <div className="card card--flush">
+            <div
+              className="row"
+              style={{
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 10,
+              }}
+            >
+              <div className="row-flex" style={{ gap: 10 }}>
+                <RowLead icon={Gauge} />
+                <div className="row__main">
+                  <div className="row__title">Sync speed</div>
+                  <div className="row__sub" style={{ fontSize: 12.5 }}>
+                    Same profiles as Conceal Next Wallet (workers, batch,
+                    sources).
+                  </div>
+                </div>
+              </div>
+              <div
+                className="row-flex"
+                style={{ flexWrap: "wrap", gap: 6, paddingLeft: 46 }}
+              >
+                {SYNC_SPEED_OPTIONS.map((speed) => (
+                  <button
+                    key={speed}
+                    type="button"
+                    disabled={settingsBusy}
+                    className={`btn btn--sm ${syncSpeed === speed ? "btn--primary" : "btn--secondary"}`}
+                    onClick={() => void applySyncSpeed(speed)}
+                  >
+                    {SYNC_SPEED_LABELS[speed]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              title="Read miner transactions"
+              description="Include coinbase outputs when syncing — needed for solo mining."
+              on={readMinerTx}
+              onToggle={(v) => void applyMinerTx(v)}
             />
           </div>
         </div>
@@ -248,49 +367,17 @@ export function SettingsScreen() {
             </div>
             <p className="faint" style={{ fontSize: 12.5, marginBottom: 16 }}>
               Select a remote node for wallet sync. Changes apply on the next
-              sync.
+              sync. Precedence: custom → preferred → auto → default.
             </p>
-            {DEFAULT_DAEMON_NODES.map((url) => (
-              <button
-                key={url}
-                onClick={() => {
-                  setNode(url);
-                  setShowNodeSheet(false);
-                }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "14px 16px",
-                  borderRadius: 12,
-                  marginBottom: 8,
-                  border: `1px solid ${url === currentNode ? "var(--primary)" : "var(--border)"}`,
-                  background:
-                    url === currentNode
-                      ? "var(--primary-ghost)"
-                      : "var(--bg-elev-2)",
-                  color: "var(--text)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                }}
-              >
-                <span style={{ fontSize: 13.5, fontFamily: "inherit" }}>
-                  {url}
-                </span>
-                {url === currentNode && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      color: "var(--primary)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Active
-                  </span>
-                )}
-              </button>
-            ))}
+
+            <NodeSelector
+              activeNodeUrl={currentNode}
+              onUseNode={(url) => void applyNode(url)}
+              onUseFastest={(url) => {
+                if (url) void applyNode(url);
+              }}
+            />
+
             <hr className="divider" style={{ margin: "16px 0" }} />
             {!showCustom ? (
               <button
@@ -308,14 +395,25 @@ export function SettingsScreen() {
                   onChange={(e) => setCustomUrl(e.target.value)}
                   style={{ width: "100%", marginBottom: 8 }}
                 />
+                {customHints.map((hint) => (
+                  <p
+                    key={hint}
+                    style={{
+                      fontSize: 12,
+                      color: "var(--warning, #d4a017)",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {hint}
+                  </p>
+                ))}
                 <button
                   className="btn btn--block btn--primary"
                   disabled={!customUrl.trim()}
                   onClick={() => {
-                    setNode(customUrl.trim());
+                    void applyNode(customUrl.trim());
                     setShowCustom(false);
                     setCustomUrl("");
-                    setShowNodeSheet(false);
                   }}
                 >
                   Save custom node

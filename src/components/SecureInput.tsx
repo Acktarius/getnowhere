@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
   autoFocus?: boolean;
   inputMode?: "text" | "numeric";
   maxLength?: number;
+  /** Extra controls inside the input (e.g. QR camera). Drawn left of the reveal button. */
+  endAdornment?: ReactNode;
 };
 
 export function SecureInput({
@@ -25,9 +28,13 @@ export function SecureInput({
   autoFocus,
   inputMode = "text",
   maxLength,
+  endAdornment,
 }: Props) {
   const [visible, setVisible] = useState(false);
   const hidden = revealable && !visible;
+  const trailCount = (revealable ? 1 : 0) + (endAdornment ? 1 : 0);
+  const padRight = trailCount > 0 ? 6 + trailCount * 36 : undefined;
+
   return (
     <div className="field">
       {label && <span className="field__label">{label}</span>}
@@ -46,24 +53,31 @@ export function SecureInput({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
+          style={padRight ? { paddingRight: padRight } : undefined}
         />
-        {revealable && (
-          <button
-            type="button"
-            className="icon-btn"
-            style={{
-              position: "absolute",
-              right: 6,
-              top: 6,
-              width: 34,
-              height: 34,
-            }}
-            onClick={() => setVisible((v) => !v)}
-            aria-label={visible ? "Hide" : "Show"}
-          >
-            {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        )}
+        <div
+          style={{
+            position: "absolute",
+            right: 6,
+            top: 6,
+            display: "flex",
+            gap: 2,
+            alignItems: "center",
+          }}
+        >
+          {endAdornment}
+          {revealable && (
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 34, height: 34 } satisfies CSSProperties}
+              onClick={() => setVisible((v) => !v)}
+              aria-label={visible ? "Hide" : "Show"}
+            >
+              {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

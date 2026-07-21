@@ -64,6 +64,11 @@ export function isOnboarded(): boolean {
   return getStorage().getItem(ONBOARDED_KEY) === "1";
 }
 
+/** Mark onboarding complete without setting an app passcode (e.g. after wallet import). */
+export function markOnboarded() {
+  getStorage().setItem(ONBOARDED_KEY, "1");
+}
+
 export function clearOnboarded() {
   getStorage().removeItem(ONBOARDED_KEY);
 }

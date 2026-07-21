@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
-import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
 import {
   getInternalWalletNodeUrl,
   setInternalWalletNetwork,
@@ -16,6 +15,9 @@ type WalletStore = WalletState & {
   createWallet: () => Promise<{ seedPhrase: string }>;
   restoreWallet: (seed: string) => Promise<void>;
   importWallet: (input: ImportWalletInput) => Promise<void>;
+  /** Open a wallet already stored on this device (encryption password). */
+  openStoredWallet: (password: string) => Promise<void>;
+  hasStoredWallet: () => Promise<boolean>;
   lock: () => Promise<void>;
   unlock: (passcode: string) => Promise<void>;
   refreshBalance: () => Promise<void>;
@@ -106,6 +108,31 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         address: addr,
         seedRef: res.seedRef,
         seedPhrase: res.seedPhrase,
+        syncStatus: "idle",
+        initializing: false,
+      });
+      await get().resync();
+    } catch (e) {
+      set({ initializing: false, error: (e as Error).message });
+      throw e;
+    }
+  },
+
+  async hasStoredWallet() {
+    return walletService.hasStoredWallet();
+  },
+
+  async openStoredWallet(password) {
+    set({ initializing: true, error: null });
+    try {
+      await walletService.unlockWallet(password);
+      const addr = await walletService.getAddress();
+      set({
+        initialized: true,
+        locked: false,
+        address: addr,
+        seedRef: "",
+        seedPhrase: null,
         syncStatus: "idle",
         initializing: false,
       });

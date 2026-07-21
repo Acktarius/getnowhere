@@ -1,9 +1,52 @@
-import { KeyRound, Radio, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, Radio, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BrandMark, Wordmark } from "@/components/Brand";
+import { SecureInput } from "@/components/SecureInput";
+import { Sheet } from "@/components/Sheet";
+import { markOnboarded } from "@/state/authStore";
+import { useWalletStore } from "@/state/walletStore";
 
 export function WelcomeScreen() {
   const navigate = useNavigate();
+  const openStoredWallet = useWalletStore((s) => s.openStoredWallet);
+  const hasStoredWallet = useWalletStore((s) => s.hasStoredWallet);
+  const initializing = useWalletStore((s) => s.initializing);
+
+  const [stored, setStored] = useState<boolean | null>(null);
+  const [openSheet, setOpenSheet] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void hasStoredWallet().then((v) => {
+      if (!cancelled) setStored(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasStoredWallet]);
+
+  async function handleOpen() {
+    setError(null);
+    if (!password.trim()) {
+      setError("Enter your wallet password.");
+      return;
+    }
+    try {
+      await openStoredWallet(password);
+      markOnboarded();
+      setOpenSheet(false);
+      setPassword("");
+      navigate("/wallet");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const showOpen = stored === true;
+
   return (
     <div className="screen" style={{ padding: 0 }}>
       <div
@@ -60,31 +103,105 @@ export function WelcomeScreen() {
           </div>
 
           <div className="stack stack--gap-2">
-            <button
-              className="btn btn--block btn--primary"
-              onClick={() => navigate("/onboarding/create")}
-            >
-              Create wallet
-            </button>
-            <Link
-              to="/onboarding/import"
-              className="btn btn--block btn--secondary"
-            >
-              Restore from QR code
-            </Link>
-            <Link
-              to="/onboarding/import"
-              className="btn btn--block btn--ghost"
-              style={{ fontSize: 13 }}
-            >
-              Import from seed, keys, or backup file
-            </Link>
+            {stored === null ? (
+              <button
+                type="button"
+                className="btn btn--block btn--primary"
+                disabled
+              >
+                <Loader2 size={16} className="spin" /> Checking…
+              </button>
+            ) : showOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--block btn--primary"
+                  onClick={() => {
+                    setError(null);
+                    setPassword("");
+                    setOpenSheet(true);
+                  }}
+                >
+                  Open wallet
+                </button>
+                <Link
+                  to="/onboarding/create"
+                  className="btn btn--block btn--ghost"
+                  style={{ fontSize: 13 }}
+                >
+                  Create a new one →
+                </Link>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="btn btn--block btn--primary"
+                  onClick={() => navigate("/onboarding/create")}
+                >
+                  Create wallet
+                </button>
+                <Link
+                  to="/onboarding/import"
+                  className="btn btn--block btn--secondary"
+                >
+                  Restore from QR code
+                </Link>
+                <Link
+                  to="/onboarding/import"
+                  className="btn btn--block btn--ghost"
+                  style={{ fontSize: 13 }}
+                >
+                  Import from seed, keys, or backup file
+                </Link>
+              </>
+            )}
           </div>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 4 }}>
             No phone numbers. No emails. No usernames.
           </p>
         </div>
       </div>
+
+      <Sheet
+        open={openSheet}
+        title="Open wallet"
+        onClose={() => {
+          if (initializing) return;
+          setOpenSheet(false);
+          setPassword("");
+          setError(null);
+        }}
+      >
+        <div className="stack stack--gap-3">
+          <p className="muted" style={{ fontSize: 13.5 }}>
+            Enter the encryption password for the wallet stored on this device.
+          </p>
+          <SecureInput
+            label="Wallet password"
+            value={password}
+            onChange={setPassword}
+            placeholder="Password"
+            revealable
+            autoFocus
+          />
+          {error && <div className="field__error">{error}</div>}
+          <button
+            type="button"
+            className="btn btn--block btn--primary"
+            disabled={initializing || password.length < 1}
+            onClick={() => void handleOpen()}
+          >
+            {initializing ? (
+              <>
+                <Loader2 size={16} className="spin" /> Opening…
+              </>
+            ) : (
+              "Open"
+            )}
+          </button>
+        </div>
+      </Sheet>
     </div>
   );
 }

@@ -11,17 +11,17 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { walletService } from "@/services";
 import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter";
-import { useAuthStore } from "@/state/authStore";
+import { markOnboarded } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { ImportWalletInput } from "@/types/services";
 import {
   describePasswordFailure,
   WALLET_PASSWORD_HINTS,
-  walletPasswordIsAcceptable,
   walletPasswordStrength,
 } from "@/utils/walletPassword";
 
@@ -31,16 +31,11 @@ export function ImportWalletScreen() {
   const navigate = useNavigate();
   const importWallet = useWalletStore((s) => s.importWallet);
   const initializing = useWalletStore((s) => s.initializing);
-  const setAppPasscode = useAuthStore((s) => s.setPasscode);
-  const passcodeSet = useAuthStore((s) => s.passcodeSet);
 
   const [method, setMethod] = useState<Method>("qr");
-  const [phase, setPhase] = useState<"details" | "passcode">("details");
   const [error, setError] = useState<string | null>(null);
 
   // shared
-  const [passcode, setPasscode] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [walletPassword, setWalletPassword] = useState("");
   const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
 
@@ -159,17 +154,23 @@ export function ImportWalletScreen() {
         img.onerror = res;
       });
       const detector = getBarcodeDetector();
-      if (!detector) {
-        URL.revokeObjectURL(url);
-        setScanError(
-          "QR scanning isn't supported in this browser. Paste the wallet data below.",
-        );
-        return;
+      if (detector) {
+        try {
+          const codes = await detector.detect(img);
+          URL.revokeObjectURL(url);
+          if (codes.length > 0 && codes[0].rawValue) {
+            setQrText(codes[0].rawValue);
+            return;
+          }
+        } catch {
+          /* fall through to jsqr */
+        }
       }
-      const codes = await detector.detect(img);
+      // jsqr fallback (next-wallet parity) when BarcodeDetector is missing/empty
+      const decoded = await decodeQrWithJsQr(img);
       URL.revokeObjectURL(url);
-      if (codes.length > 0 && codes[0].rawValue) {
-        setQrText(codes[0].rawValue);
+      if (decoded) {
+        setQrText(decoded);
       } else {
         setScanError("No QR code found in that image. Try another screenshot.");
       }
@@ -324,31 +325,19 @@ export function ImportWalletScreen() {
     if (!input) return;
     try {
       await importWallet(input);
-      if (passcodeSet) navigate("/contacts");
-      else setPhase("passcode");
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function handlePasscode() {
-    setError(null);
-    if (passcode.length < 6) return setError("Use at least 6 digits.");
-    if (passcode !== confirm) return setError("Passcodes do not match.");
-    try {
-      await setAppPasscode(passcode);
-      navigate("/contacts");
+      // Match next-wallet: land on the wallet page after import — never block on
+      // an app-passcode / password-change step (passcode can be set later in Settings).
+      markOnboarded();
+      navigate("/wallet");
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
   const subtitle =
-    phase === "details"
-      ? method === "qr"
-        ? "Scan or paste wallet backup QR"
-        : "Seed, keys, or backup file"
-      : "Set a new unlock passcode";
+    method === "qr"
+      ? "Scan or paste wallet backup QR"
+      : "Seed, keys, or backup file";
 
   return (
     <div className="screen">
@@ -361,287 +350,260 @@ export function ImportWalletScreen() {
         className="screen-scroll stack stack--gap-5"
         style={{ padding: "20px 16px 40px" }}
       >
-        {phase === "details" && (
-          <div className="stack stack--gap-4 fade-in-up">
-            <div
-              className="card card--pad-md"
-              style={{
-                borderColor: "var(--danger)",
-                background: "var(--danger-soft)",
-              }}
-            >
-              <div className="row-flex" style={{ gap: 8 }}>
-                <AlertCircle size={16} style={{ color: "var(--danger)" }} />
-                <span style={{ fontSize: 13, color: "var(--danger)" }}>
-                  Only enter wallet secrets on a device you control. Get Now
-                  Here never sends them anywhere.
-                </span>
-              </div>
+        <div className="stack stack--gap-4 fade-in-up">
+          <div
+            className="card card--pad-md"
+            style={{
+              borderColor: "var(--danger)",
+              background: "var(--danger-soft)",
+            }}
+          >
+            <div className="row-flex" style={{ gap: 8 }}>
+              <AlertCircle size={16} style={{ color: "var(--danger)" }} />
+              <span style={{ fontSize: 13, color: "var(--danger)" }}>
+                Only enter wallet secrets on a device you control. Get Now Here
+                never sends them anywhere.
+              </span>
             </div>
+          </div>
 
-            {method === "qr" ? (
-              <QrPrimaryView
-                qrText={qrText}
-                setQrText={setQrText}
-                scanning={scanning}
-                scanError={scanError}
-                videoRef={videoRef}
-                onStartCamera={startCamera}
-                onStopCamera={stopCamera}
-                imageInputRef={imageInputRef}
-                onImagePicked={handleImagePicked}
-                onSwitchMethod={resetCrossFields}
-              />
-            ) : (
-              <>
-                <MethodTabs method={method} onChange={resetCrossFields} />
+          {method === "qr" ? (
+            <QrPrimaryView
+              qrText={qrText}
+              setQrText={setQrText}
+              scanning={scanning}
+              scanError={scanError}
+              videoRef={videoRef}
+              onStartCamera={startCamera}
+              onStopCamera={stopCamera}
+              imageInputRef={imageInputRef}
+              onImagePicked={handleImagePicked}
+              onSwitchMethod={resetCrossFields}
+            />
+          ) : (
+            <>
+              <MethodTabs method={method} onChange={resetCrossFields} />
 
-                {method === "mnemonic" && (
-                  <div className="stack stack--gap-4">
-                    <div className="field">
-                      <span className="field__label">
-                        Seed phrase{" "}
-                        <span className="faint">{wordCount} words</span>
-                      </span>
-                      <textarea
-                        className="textarea input--mono"
-                        value={seed}
-                        onChange={(e) => setSeed(e.target.value)}
-                        placeholder="orbit lantern cipher violet harbor…"
-                        style={{ minHeight: 120 }}
-                        autoFocus
-                      />
-                    </div>
-                    <ScanHeightField
-                      value={seedScanHeight}
-                      onChange={setSeedScanHeight}
-                      hint="Start syncing from this block instead of scanning from genesis. Use the block height where this wallet was created."
+              {method === "mnemonic" && (
+                <div className="stack stack--gap-4">
+                  <div className="field">
+                    <span className="field__label">
+                      Seed phrase{" "}
+                      <span className="faint">{wordCount} words</span>
+                    </span>
+                    <textarea
+                      className="textarea input--mono"
+                      value={seed}
+                      onChange={(e) => setSeed(e.target.value)}
+                      placeholder="orbit lantern cipher violet harbor…"
+                      style={{ minHeight: 120 }}
+                      autoFocus
                     />
                   </div>
-                )}
-
-                {method === "keys" && (
-                  <div className="stack stack--gap-4">
-                    <div
-                      className="row-flex"
-                      style={{
-                        gap: 8,
-                        padding: "4px",
-                        background: "var(--bg-elev)",
-                        border: 1,
-                        borderStyle: "solid",
-                        borderColor: "var(--border)",
-                        borderRadius: "var(--radius-sm)",
-                      }}
-                    >
-                      <KeyModeToggle
-                        active={!viewOnly}
-                        onClick={() => setViewOnly(false)}
-                        label="Full keys"
-                      />
-                      <KeyModeToggle
-                        active={viewOnly}
-                        onClick={() => setViewOnly(true)}
-                        label="View-only"
-                      />
-                    </div>
-
-                    {viewOnly ? (
-                      <>
-                        <SecureInput
-                          label="CCX address"
-                          value={address}
-                          onChange={setAddress}
-                          placeholder="ccx7…"
-                          mono
-                        />
-                        <SecureInput
-                          label="Private view key"
-                          value={viewKey}
-                          onChange={setViewKey}
-                          placeholder="64-char hex"
-                          mono
-                          revealable
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <SecureInput
-                          label="Private spend key"
-                          value={spendKey}
-                          onChange={setSpendKey}
-                          placeholder="64-char hex"
-                          mono
-                          revealable
-                        />
-                        <SecureInput
-                          label="Private view key (optional — derived if blank)"
-                          value={viewKey}
-                          onChange={setViewKey}
-                          placeholder="64-char hex"
-                          mono
-                          revealable
-                        />
-                        <button
-                          type="button"
-                          className="btn btn--secondary btn--sm btn--block"
-                          disabled={previewing || spendKey.trim().length < 64}
-                          onClick={handlePreviewKeys}
-                        >
-                          {previewing ? (
-                            <>
-                              <Loader2 size={14} className="spin" /> Deriving…
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles size={14} /> Preview address
-                            </>
-                          )}
-                        </button>
-                        {previewedAddress && (
-                          <div className="card card--pad-md">
-                            <div className="field__label">Derived address</div>
-                            <div
-                              className="mono"
-                              style={{
-                                fontSize: 13,
-                                wordBreak: "break-all",
-                                color: "var(--primary)",
-                              }}
-                            >
-                              {previewedAddress}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    <ScanHeightField
-                      value={keysScanHeight}
-                      onChange={setKeysScanHeight}
-                      hint="Start syncing from this block instead of scanning from genesis."
-                    />
-                  </div>
-                )}
-
-                {method === "file" && (
-                  <div className="stack stack--gap-4">
-                    <button
-                      type="button"
-                      className="btn btn--secondary btn--block"
-                      style={{ height: 88, flexDirection: "column", gap: 6 }}
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp size={22} />
-                      <span style={{ fontSize: 14, fontWeight: 600 }}>
-                        {fileName ?? "Choose backup file"}
-                      </span>
-                      {fileName && (
-                        <span className="faint" style={{ fontSize: 12 }}>
-                          Tap to choose a different file
-                        </span>
-                      )}
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="application/json,.json"
-                      style={{ display: "none" }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFilePicked(f);
-                      }}
-                    />
-                    <p
-                      className="muted"
-                      style={{ fontSize: 12.5, lineHeight: 1.5 }}
-                    >
-                      The file's embedded creation height is used as the scan
-                      start, so import resumes from where the backup left off.
-                    </p>
-                  </div>
-                )}
-
-                {method === "file" && (
-                  <SecureInput
-                    label="Backup password"
-                    value={walletPassword}
-                    onChange={setWalletPassword}
-                    placeholder="Password used to encrypt this file"
-                    revealable
+                  <ScanHeightField
+                    value={seedScanHeight}
+                    onChange={setSeedScanHeight}
+                    hint="Start syncing from this block instead of scanning from genesis. Use the block height where this wallet was created."
                   />
-                )}
-
-                {(method === "mnemonic" || method === "keys") && (
-                  <PasswordSection
-                    password={walletPassword}
-                    setPassword={setWalletPassword}
-                    confirmPassword={walletPasswordConfirm}
-                    setConfirmPassword={setWalletPasswordConfirm}
-                    strength={passwordStrength}
-                  />
-                )}
-              </>
-            )}
-
-            {method === "qr" && (
-              <SecureInput
-                label="Backup password"
-                value={walletPassword}
-                onChange={setWalletPassword}
-                placeholder="Password used when exporting"
-                revealable
-              />
-            )}
-
-            {error && <div className="field__error">{error}</div>}
-
-            <button
-              className="btn btn--block btn--primary"
-              disabled={initializing}
-              onClick={handleImport}
-            >
-              {initializing ? (
-                <>
-                  <Loader2 size={16} className="spin" /> Importing…
-                </>
-              ) : (
-                "Import wallet"
+                </div>
               )}
-            </button>
-          </div>
-        )}
 
-        {phase === "passcode" && (
-          <div className="stack stack--gap-4 fade-in-up">
-            <p className="muted" style={{ fontSize: 14 }}>
-              Set a new local unlock passcode for this device.
-            </p>
+              {method === "keys" && (
+                <div className="stack stack--gap-4">
+                  <div
+                    className="row-flex"
+                    style={{
+                      gap: 8,
+                      padding: "4px",
+                      background: "var(--bg-elev)",
+                      border: 1,
+                      borderStyle: "solid",
+                      borderColor: "var(--border)",
+                      borderRadius: "var(--radius-sm)",
+                    }}
+                  >
+                    <KeyModeToggle
+                      active={!viewOnly}
+                      onClick={() => setViewOnly(false)}
+                      label="Full keys"
+                    />
+                    <KeyModeToggle
+                      active={viewOnly}
+                      onClick={() => setViewOnly(true)}
+                      label="View-only"
+                    />
+                  </div>
+
+                  {viewOnly ? (
+                    <>
+                      <SecureInput
+                        label="CCX address"
+                        value={address}
+                        onChange={setAddress}
+                        placeholder="ccx7…"
+                        mono
+                        endAdornment={
+                          <AddressQrScanButton
+                            style={{ width: 34, height: 34 }}
+                            onScan={(draft) => setAddress(draft.address)}
+                          />
+                        }
+                      />
+                      <SecureInput
+                        label="Private view key"
+                        value={viewKey}
+                        onChange={setViewKey}
+                        placeholder="64-char hex"
+                        mono
+                        revealable
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <SecureInput
+                        label="Private spend key"
+                        value={spendKey}
+                        onChange={setSpendKey}
+                        placeholder="64-char hex"
+                        mono
+                        revealable
+                      />
+                      <SecureInput
+                        label="Private view key (optional — derived if blank)"
+                        value={viewKey}
+                        onChange={setViewKey}
+                        placeholder="64-char hex"
+                        mono
+                        revealable
+                      />
+                      <button
+                        type="button"
+                        className="btn btn--secondary btn--sm btn--block"
+                        disabled={previewing || spendKey.trim().length < 64}
+                        onClick={handlePreviewKeys}
+                      >
+                        {previewing ? (
+                          <>
+                            <Loader2 size={14} className="spin" /> Deriving…
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={14} /> Preview address
+                          </>
+                        )}
+                      </button>
+                      {previewedAddress && (
+                        <div className="card card--pad-md">
+                          <div className="field__label">Derived address</div>
+                          <div
+                            className="mono"
+                            style={{
+                              fontSize: 13,
+                              wordBreak: "break-all",
+                              color: "var(--primary)",
+                            }}
+                          >
+                            {previewedAddress}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  <ScanHeightField
+                    value={keysScanHeight}
+                    onChange={setKeysScanHeight}
+                    hint="Start syncing from this block instead of scanning from genesis."
+                  />
+                </div>
+              )}
+
+              {method === "file" && (
+                <div className="stack stack--gap-4">
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--block"
+                    style={{ height: 88, flexDirection: "column", gap: 6 }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <FileUp size={22} />
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>
+                      {fileName ?? "Choose backup file"}
+                    </span>
+                    {fileName && (
+                      <span className="faint" style={{ fontSize: 12 }}>
+                        Tap to choose a different file
+                      </span>
+                    )}
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleFilePicked(f);
+                    }}
+                  />
+                  <p
+                    className="muted"
+                    style={{ fontSize: 12.5, lineHeight: 1.5 }}
+                  >
+                    The file's embedded creation height is used as the scan
+                    start, so import resumes from where the backup left off.
+                  </p>
+                </div>
+              )}
+
+              {method === "file" && (
+                <SecureInput
+                  label="Backup password"
+                  value={walletPassword}
+                  onChange={setWalletPassword}
+                  placeholder="Password used to encrypt this file"
+                  revealable
+                />
+              )}
+
+              {(method === "mnemonic" || method === "keys") && (
+                <PasswordSection
+                  password={walletPassword}
+                  setPassword={setWalletPassword}
+                  confirmPassword={walletPasswordConfirm}
+                  setConfirmPassword={setWalletPasswordConfirm}
+                  strength={passwordStrength}
+                />
+              )}
+            </>
+          )}
+
+          {method === "qr" && (
             <SecureInput
-              label="New passcode"
-              value={passcode}
-              onChange={setPasscode}
-              inputMode="numeric"
+              label="Backup password"
+              value={walletPassword}
+              onChange={setWalletPassword}
+              placeholder="Password used when exporting"
               revealable
-              placeholder="At least 6 digits"
             />
-            <SecureInput
-              label="Confirm passcode"
-              value={confirm}
-              onChange={setConfirm}
-              inputMode="numeric"
-              revealable
-              placeholder="Repeat"
-            />
-            {error && <div className="field__error">{error}</div>}
-            <button
-              className="btn btn--block btn--primary"
-              onClick={handlePasscode}
-            >
-              Continue
-            </button>
-          </div>
-        )}
+          )}
+
+          {error && <div className="field__error">{error}</div>}
+
+          <button
+            className="btn btn--block btn--primary"
+            disabled={initializing}
+            onClick={handleImport}
+          >
+            {initializing ? (
+              <>
+                <Loader2 size={16} className="spin" /> Importing…
+              </>
+            ) : (
+              "Import wallet"
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1110,4 +1072,23 @@ function getBarcodeDetector(): BarcodeDetectorLike | null {
     }
   }
   return null;
+}
+
+/** Decode a QR from an already-loaded image via jsqr (canvas sample). */
+async function decodeQrWithJsQr(img: HTMLImageElement): Promise<string | null> {
+  try {
+    const { default: jsQR } = await import("jsqr");
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    if (canvas.width < 1 || canvas.height < 1) return null;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const result = jsQR(imageData.data, imageData.width, imageData.height);
+    return result?.data ?? null;
+  } catch {
+    return null;
+  }
 }

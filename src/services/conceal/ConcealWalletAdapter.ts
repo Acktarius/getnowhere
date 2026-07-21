@@ -193,13 +193,10 @@ export function saveEncryptedWalletFile(
 
 // ===== Daemon + sync (real chain scanning) =====
 
-/** Default public Conceal daemon nodes (from the official conceal-next-wallet). */
-export const DEFAULT_DAEMON_NODES = [
-  "https://explorer.conceal.network/daemon/",
-  "https://ccxapi.conceal.network/daemon/",
-  "https://daemon.conceal.network/",
-  "https://concealx.net/daemon/",
-] as const;
+import { DEFAULT_DAEMON_NODES as CONFIG_NODES } from "@/lib/config";
+
+/** Default public Conceal daemon nodes (shared with next-wallet sync). */
+export const DEFAULT_DAEMON_NODES = CONFIG_NODES;
 
 /** Build a daemon client bound to the first reachable default node. */
 export function buildDaemon(

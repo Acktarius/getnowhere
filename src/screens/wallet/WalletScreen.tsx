@@ -234,7 +234,17 @@ export function WalletScreen() {
                   </div>
                   <div className="row__main">
                     <div className="row__title">
-                      {tx.type === "incoming" ? "Received" : "Sent"}
+                      {tx.kind === "miner"
+                        ? "Miner reward"
+                        : tx.kind === "deposit"
+                          ? "Deposit"
+                          : tx.kind === "withdrawal"
+                            ? "Withdrawal"
+                            : tx.kind === "fusion"
+                              ? "Optimization"
+                              : tx.type === "incoming"
+                                ? "Received"
+                                : "Sent"}
                       {tx.state === "pending" && (
                         <span
                           className="pill pill--pending"

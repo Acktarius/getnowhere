@@ -169,6 +169,8 @@ button {
   margin: 0 auto;
   background: var(--bg);
   position: relative;
+  container-type: inline-size;
+  container-name: app;
 }
 
 .screen {
@@ -252,6 +254,27 @@ button {
 .topbar__icon-btn:active,
 .icon-btn:active {
   transform: scale(0.92);
+}
+
+/* Branded display QR — wide = ≥85% of app screen for scanning */
+.wallet-qr {
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  display: inline-flex;
+  line-height: 0;
+  box-sizing: border-box;
+}
+.wallet-qr--wide {
+  display: flex;
+  width: 85cqi;
+  margin-inline: auto;
+}
+@supports not (width: 1cqi) {
+  .wallet-qr--wide {
+    width: 85vw;
+  }
 }
 
 /* ===== Bottom nav ===== */

@@ -69,8 +69,11 @@ export type WalletService = {
   restoreWallet(input: RestoreWalletInput): Promise<CreateWalletResult>;
   /** Import a wallet from a mnemonic, spend/view keys, or encrypted backup file. */
   importWallet(input: ImportWalletInput): Promise<CreateWalletResult>;
+  /** True when an encrypted wallet blob exists on this device (no decrypt). */
+  hasStoredWallet(): Promise<boolean>;
   lockWallet(): Promise<void>;
-  unlockWallet(passcode: string): Promise<boolean>;
+  /** Unlock the stored wallet with its encryption password. */
+  unlockWallet(password: string): Promise<boolean>;
   getAddress(): Promise<string>;
   getBalance(): Promise<{
     total: number;

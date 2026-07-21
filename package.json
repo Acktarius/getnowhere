@@ -14,12 +14,15 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "types": "tsc --noEmit",
-    "preflight": "tsc -b && biome check ."
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "preflight": "tsc -b && vitest run && biome check ."
   },
   "dependencies": {
     "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.10/conceal-wallet-sdk-0.2.10.tgz",
+    "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
-    "qrcode.react": "^4.1.0",
+    "qrcode-generator": "^2.0.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
@@ -27,11 +30,18 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.0",
+    "@playwright/test": "^1.61.1",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^26.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
   }
 }

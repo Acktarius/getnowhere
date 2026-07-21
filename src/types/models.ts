@@ -57,10 +57,19 @@ export type ChatMessage = {
 
 export type TransactionType = "incoming" | "outgoing";
 export type TransactionState = "confirmed" | "pending" | "locked";
+/** Display kind — deposit/withdraw/miner appear in history but cannot be created in-app. */
+export type TransactionKind =
+  | "transfer"
+  | "miner"
+  | "deposit"
+  | "withdrawal"
+  | "fusion"
+  | "unknown";
 
 export type Transaction = {
   id: string;
   type: TransactionType;
+  kind?: TransactionKind;
   amount: number;
   paymentId?: string;
   hash: string;

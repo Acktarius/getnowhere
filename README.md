@@ -10,6 +10,9 @@ npm install
 npm run dev      # start the Vite dev server (http://localhost:5173)
 npm run build    # produce a static build in dist/
 npm run preview  # serve the static build locally for verification
+npm run test     # unit tests (Vitest)
+npm run test:e2e # Playwright smoke (starts dev server)
+npm run preflight # types + tests + biome
 ```
 
 No native toolchain is required for development or for the production web build.

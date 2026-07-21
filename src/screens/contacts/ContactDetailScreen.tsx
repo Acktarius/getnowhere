@@ -3,6 +3,8 @@ import {
   ArrowRight,
   Ban,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Loader2,
   Lock,
@@ -14,6 +16,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
+import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
 import { ConfirmModal, Sheet } from "@/components/Sheet";
 import {
@@ -177,6 +180,8 @@ export function ContactDetailScreen() {
             value={contact.paymentIdFrom}
             hint="Share this with your counterpart. They will use it to recognize you."
             editable
+            showQr
+            qrKind="paymentId"
             onEdit={(v) => updateContact(contact.id, { paymentIdFrom: v })}
           />
           <PaymentIdField
@@ -186,6 +191,8 @@ export function ContactDetailScreen() {
             missing={!contact.paymentIdTo}
             hint="Paste the identifier your counterpart gave you. The relationship becomes established once this is saved."
             editable
+            showQr
+            qrKind="paymentId"
             onEdit={(v) => savePaymentIdTo(contact.id, v)}
           />
         </div>
@@ -289,8 +296,16 @@ export function ContactDetailScreen() {
             counterpart can add you. The relationship only completes when they
             send back their paymentIdTo.
           </p>
-          <ShareRow label="Your CCX address" value={contact.ccxAddress} />
-          <ShareRow label="Your paymentIdFrom" value={contact.paymentIdFrom} />
+          <ShareRow
+            label="Your CCX address"
+            value={contact.ccxAddress}
+            qrKind="address"
+          />
+          <ShareRow
+            label="Your paymentIdFrom"
+            value={contact.paymentIdFrom}
+            qrKind="paymentId"
+          />
         </div>
       </Sheet>
 
@@ -319,17 +334,42 @@ export function ContactDetailScreen() {
   );
 }
 
-function ShareRow({ label, value }: { label: string; value: string }) {
+function ShareRow({
+  label,
+  value,
+  qrKind,
+}: {
+  label: string;
+  value: string;
+  qrKind: "address" | "paymentId";
+}) {
   const [copied, copy] = useCopy();
+  const [qrOpen, setQrOpen] = useState(false);
   return (
     <div className="card card--pad-md">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>
-        {label}
+      <div className="row-flex row-flex--between" style={{ marginBottom: 6 }}>
+        <div className="eyebrow">{label}</div>
+        <button
+          type="button"
+          className="icon-btn"
+          style={{ width: 28, height: 28 }}
+          aria-expanded={qrOpen}
+          aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
+          onClick={() => setQrOpen((o) => !o)}
+        >
+          {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
       </div>
+      {qrOpen && (
+        <div className="center" style={{ marginBottom: 12 }}>
+          <WalletQrCode value={value} kind={qrKind} />
+        </div>
+      )}
       <div className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
         {value}
       </div>
       <button
+        type="button"
         className="btn btn--sm btn--ghost"
         style={{ marginTop: 10 }}
         onClick={() => copy(value)}

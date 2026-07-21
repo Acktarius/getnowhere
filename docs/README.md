@@ -9,6 +9,8 @@ This `/docs` directory is the source of truth for project structure, workflow, p
 3. `setup/local-development.md`
 4. `builds/expo-eas-ios-build.md`
 5. `security/p2pchatprotocol.md`
+6. `features/lite-wallet.md`
+7. `features/invitations.md`
 
 ## Rules
 

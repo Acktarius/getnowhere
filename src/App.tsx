@@ -21,6 +21,7 @@ import { AboutScreen } from "@/screens/settings/AboutScreen";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 import { SecuritySettingsScreen } from "@/screens/settings/SecuritySettingsScreen";
 import { SettingsScreen } from "@/screens/settings/SettingsScreen";
+import { WalletPasswordScreen } from "@/screens/settings/WalletPasswordScreen";
 import { UnlockScreen } from "@/screens/UnlockScreen";
 import { WalletScreen } from "@/screens/wallet/WalletScreen";
 import { isOnboarded, useAuthStore } from "@/state/authStore";
@@ -71,6 +72,10 @@ function AppInner() {
         <Route path="/chats/:roomId" element={<ChatRoomScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/settings/security" element={<SecuritySettingsScreen />} />
+        <Route
+          path="/settings/wallet-password"
+          element={<WalletPasswordScreen />}
+        />
         <Route path="/settings/backup" element={<BackupSettingsScreen />} />
         <Route path="/settings/about" element={<AboutScreen />} />
       </Route>
