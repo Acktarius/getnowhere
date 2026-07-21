@@ -10,6 +10,7 @@ import {
   buildDaemon,
   createConcealAccount,
   createSync,
+  DEFAULT_DAEMON_NODES,
   encodeCcxAddress,
   ensureWasmReady,
   makeIntegratedCcxAddress,
@@ -59,6 +60,10 @@ type InternalWallet = {
   daemon?: sdk.DaemonClient;
   sync?: sdk.WalletSync;
   serializedState?: string;
+  /** Last scanned height from the backup file (file/QR import). Sync resumes from here. */
+  startHeight?: number;
+  /** Custom daemon node URL chosen by the user in Settings. */
+  nodeUrl?: string;
 };
 
 let store: InternalWallet | null = null;
@@ -95,6 +100,38 @@ function mapSdkTransactions(
       : new Date().toISOString(),
     state: "confirmed",
   }));
+}
+
+/**
+ * Map legacy backup-file transactions (RawWalletV1.transactions) to the app
+ * model. The backup format stores raw daemon transaction objects with unknown
+ * shape, so we only extract what's safe: hash, height, amount, direction.
+ */
+function mapBackupTransactions(
+  rawTxs: unknown[],
+): Transaction[] {
+  const result: Transaction[] = [];
+  for (const entry of rawTxs) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const obj = entry as Record<string, unknown>;
+    const hash = typeof obj.hash === "string" ? obj.hash : "";
+    const height = typeof obj.height === "number" ? obj.height : undefined;
+    const amount = typeof obj.amount === "number" ? atomicToCCX(Math.abs(obj.amount)) : 0;
+    const direction = obj.direction === "out" ? "outgoing" : "incoming";
+    const timestamp = typeof obj.timestamp === "number"
+      ? new Date(obj.timestamp * 1000).toISOString()
+      : undefined;
+    result.push({
+      id: hash || `tx_${height}_${amount}`,
+      type: direction,
+      amount,
+      hash,
+      height,
+      timestamp: timestamp ?? new Date().toISOString(),
+      state: "confirmed",
+    });
+  }
+  return result;
 }
 
 function seedDemoTransactions(w: InternalWallet) {
@@ -155,6 +192,12 @@ function recomputeBalances(w: InternalWallet) {
 /** Adopt a BuiltWallet into the in-memory store (shared by every import path). */
 function adoptBuiltWallet(built: BuiltWallet, password?: string): CreateWalletResult {
   const account = accountFromBuilt(built);
+  // Extract prior scan height + transactions from the backup's raw blob so
+  // sync resumes from the right height and the UI shows existing history.
+  const startHeight = built.raw?.lastHeight ?? built.raw?.creationHeight ?? 0;
+  const priorTransactions = built.raw?.transactions
+    ? mapBackupTransactions(built.raw.transactions as unknown[])
+    : [];
   const w: InternalWallet = {
     address: built.address,
     seedPhrase: built.mnemonic ?? "",
@@ -162,13 +205,17 @@ function adoptBuiltWallet(built: BuiltWallet, password?: string): CreateWalletRe
     balanceTotal: 0,
     balanceAvailable: 0,
     balancePending: 0,
-    transactions: [],
+    transactions: priorTransactions,
     syncStatus: "idle",
     syncProgress: 0,
     network: "mainnet",
     locked: false,
     account,
+    startHeight: startHeight > 0 ? startHeight : undefined,
   };
+  // Pre-seed balances from the backup's transactions so the wallet doesn't
+  // show 0 CCX while the first sync runs.
+  recomputeBalances(w);
   store = w;
   // Encrypt + persist the wallet locally with the user's wallet password so
   // future sessions can decrypt it. The password is the one supplied at
@@ -421,7 +468,9 @@ export const ConcealWalletService: WalletService = {
       // Sync runs crypto (key derivation, output scanning) inside WASM — the
       // module must be loaded first or sync throws "wasm is undefined".
       await ensureWasmReady();
-      if (!store.daemon) store.daemon = buildDaemon();
+      // Rebuild the daemon if the user changed the node in Settings.
+      const nodeUrl = store.nodeUrl ?? DEFAULT_DAEMON_NODES[0];
+      if (!store.daemon) store.daemon = buildDaemon(nodeUrl);
       // Probe the daemon first so we get a clear, actionable error before
       // entering the scan loop (CORS / unreachable / wrong node).
       const height = await store.daemon.getHeight();
@@ -430,6 +479,7 @@ export const ConcealWalletService: WalletService = {
           store.account,
           store.daemon,
           store.serializedState,
+          store.startHeight,
         );
       }
       const snapshot = await runSyncOnce(store.sync, store.daemon);
@@ -464,4 +514,17 @@ export function setInternalWalletNetwork(network: WalletState["network"]) {
   if (store) store.network = network;
 }
 
-export { ensureWasmReady, makeIntegratedCcxAddress };
+/** Set the daemon node URL and force a daemon re-build on next sync. */
+export function setInternalWalletNodeUrl(nodeUrl: string) {
+  if (!store) return;
+  store.nodeUrl = nodeUrl;
+  store.daemon = undefined;
+  store.sync = undefined;
+}
+
+/** Get the currently configured daemon node URL (or default). */
+export function getInternalWalletNodeUrl(): string {
+  return store?.nodeUrl ?? DEFAULT_DAEMON_NODES[0];
+}
+
+export { ensureWasmReady, makeIntegratedCcxAddress, DEFAULT_DAEMON_NODES };

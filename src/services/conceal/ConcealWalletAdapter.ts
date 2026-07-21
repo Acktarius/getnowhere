@@ -192,6 +192,8 @@ export function saveEncryptedWalletFile(
 export const DEFAULT_DAEMON_NODES = [
   "https://explorer.conceal.network/daemon/",
   "https://ccxapi.conceal.network/daemon/",
+  "https://daemon.conceal.network/",
+  "https://concealx.net/daemon/",
 ] as const;
 
 /** Build a daemon client bound to the first reachable default node. */
@@ -202,14 +204,17 @@ export function buildDaemon(
 }
 
 /**
- * Create a WalletSync controller for the given account. State resumes from
- * `serializedState` when present (a prior scan checkpoint); otherwise a fresh
- * empty state is seeded. Caller drives `syncOnce()` and reads state.
+ * Create a WalletSync controller for the given account. When `startHeight`
+ * is > 0, the fresh WalletState's `scannedHeight` is set to it so sync
+ * resumes from the backup's last known height instead of block 0.
+ * When `serializedState` is present (a prior SDK scan checkpoint), it takes
+ * precedence and is deserialized + applied.
  */
 export function createSync(
   account: Account,
   daemon: DaemonClient,
   serializedState?: string,
+  startHeight?: number,
 ): WalletSync {
   const sync = sdk.createWalletSync({
     daemon,
@@ -220,14 +225,14 @@ export function createSync(
     try {
       const restored = sdk.deserializeWalletState(serializedState);
       if (restored.address === account.address) {
-        // Re-hydrate via load isn't available without storage; seed manually by
-        // reading getState after construction then overwrite. createWalletSync
-        // exposes getState() returning a live reference.
         Object.assign(sync.getState(), restored);
       }
     } catch {
       // Ignore corrupt checkpoints — start fresh.
     }
+  } else if (startHeight && startHeight > 0) {
+    // Resume from the backup's last known height — don't re-scan from genesis.
+    sync.getState().scannedHeight = startHeight;
   }
   return sync;
 }

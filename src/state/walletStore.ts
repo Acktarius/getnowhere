@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
-import { setInternalWalletNetwork } from "@/services/conceal/ConcealWalletService";
+import { setInternalWalletNetwork, setInternalWalletNodeUrl, getInternalWalletNodeUrl } from "@/services/conceal/ConcealWalletService";
+import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
 import type { WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 
@@ -22,6 +23,8 @@ type WalletStore = WalletState & {
   }) => Promise<void>;
   resync: () => Promise<void>;
   setNetwork: (n: WalletState["network"]) => void;
+  setNode: (url: string) => void;
+  getNode: () => string;
   clearSeed: () => void;
 };
 
@@ -161,6 +164,15 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   setNetwork(n) {
     setInternalWalletNetwork(n);
     set({ network: n });
+  },
+
+  setNode(url) {
+    setInternalWalletNodeUrl(url);
+    set({});
+  },
+
+  getNode() {
+    return getInternalWalletNodeUrl();
   },
 
   clearSeed() {

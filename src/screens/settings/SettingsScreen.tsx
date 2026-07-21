@@ -9,6 +9,7 @@ import {
   Shield,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
@@ -16,10 +17,17 @@ import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
+import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
   const network = useWalletStore((w) => w.network);
+  const setNode = useWalletStore((w) => w.setNode);
+  const getNode = useWalletStore((w) => w.getNode);
+  const [showNodeSheet, setShowNodeSheet] = useState(false);
+  const [customUrl, setCustomUrl] = useState("");
+  const [showCustom, setShowCustom] = useState(false);
+  const currentNode = getNode();
 
   return (
     <div className="screen">
@@ -101,9 +109,10 @@ export function SettingsScreen() {
           <div className="card card--flush">
             <Row
               icon={Network}
-              title="Network"
-              sub="Conceal network selection (placeholder)"
-              trailing={<span className="pill pill--none">{network}</span>}
+              title="Daemon Node"
+              sub={currentNode}
+              trailing={<ChevronRight size={18} className="mute" />}
+              onClick={() => setShowNodeSheet(true)}
             />
             <hr className="divider divider--flush" />
             <Row
@@ -195,6 +204,105 @@ export function SettingsScreen() {
         </div>
       </div>
       <BottomNav />
+
+      {showNodeSheet && (
+        <div
+          className="sheet-overlay"
+          onClick={() => setShowNodeSheet(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxHeight: "80vh",
+              overflowY: "auto",
+              background: "var(--bg-elev-1)",
+              borderRadius: "20px 20px 0 0",
+              padding: "24px 20px calc(env(safe-area-inset-bottom, 16px) + 16px)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700 }}>Daemon Node</h2>
+              <button
+                className="btn btn--sm btn--secondary"
+                onClick={() => setShowNodeSheet(false)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="faint" style={{ fontSize: 12.5, marginBottom: 16 }}>
+              Select a remote node for wallet sync. Changes apply on the next sync.
+            </p>
+            {DEFAULT_DAEMON_NODES.map((url) => (
+              <button
+                key={url}
+                onClick={() => {
+                  setNode(url);
+                  setShowNodeSheet(false);
+                }}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 16px",
+                  borderRadius: 12,
+                  marginBottom: 8,
+                  border: `1px solid ${url === currentNode ? "var(--primary)" : "var(--border)"}`,
+                  background: url === currentNode ? "var(--primary-ghost)" : "var(--bg-elev-2)",
+                  color: "var(--text)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ fontSize: 13.5, fontFamily: "inherit" }}>{url}</span>
+                {url === currentNode && (
+                  <span style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600 }}>Active</span>
+                )}
+              </button>
+            ))}
+            <hr className="divider" style={{ margin: "16px 0" }} />
+            {!showCustom ? (
+              <button
+                className="btn btn--block btn--secondary"
+                onClick={() => setShowCustom(true)}
+              >
+                Use custom node URL
+              </button>
+            ) : (
+              <div>
+                <input
+                  className="input"
+                  placeholder="https://your-node/daemon/"
+                  value={customUrl}
+                  onChange={(e) => setCustomUrl(e.target.value)}
+                  style={{ width: "100%", marginBottom: 8 }}
+                />
+                <button
+                  className="btn btn--block btn--primary"
+                  disabled={!customUrl.trim()}
+                  onClick={() => {
+                    setNode(customUrl.trim());
+                    setShowCustom(false);
+                    setCustomUrl("");
+                    setShowNodeSheet(false);
+                  }}
+                >
+                  Save custom node
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -236,14 +344,21 @@ function Row({
   title,
   sub,
   trailing,
+  onClick,
 }: {
   icon: typeof Shield;
   title: string;
   sub: string;
   trailing?: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <div className="row">
+    <div
+      className={onClick ? "row row--clickable" : "row"}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
       <RowLead icon={Icon} />
       <div className="row__main">
         <div className="row__title">{title}</div>
