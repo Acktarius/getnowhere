@@ -418,6 +418,9 @@ export const ConcealWalletService: WalletService = {
     store.syncProgress = 0.05;
     store.lastSyncError = undefined;
     try {
+      // Sync runs crypto (key derivation, output scanning) inside WASM — the
+      // module must be loaded first or sync throws "wasm is undefined".
+      await ensureWasmReady();
       if (!store.daemon) store.daemon = buildDaemon();
       // Probe the daemon first so we get a clear, actionable error before
       // entering the scan loop (CORS / unreachable / wrong node).
