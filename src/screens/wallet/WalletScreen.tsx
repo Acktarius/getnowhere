@@ -78,6 +78,54 @@ export function WalletScreen() {
         className="screen-scroll stack stack--gap-4"
         style={{ padding: "16px 16px 32px" }}
       >
+        {wallet.syncStatus === "error" && wallet.lastSyncError && (
+          <div
+            className="card"
+            style={{
+              borderColor: "var(--danger)",
+              background: "var(--danger-soft)",
+              padding: "12px 14px",
+            }}
+          >
+            <div
+              className="row"
+              style={{ padding: 0, alignItems: "flex-start", gap: 10 }}
+            >
+              <RefreshCw
+                size={16}
+                style={{ color: "var(--danger)", marginTop: 1, flexShrink: 0 }}
+              />
+              <div className="grow stack" style={{ gap: 4 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 13.5,
+                    color: "var(--danger)",
+                  }}
+                >
+                  Sync failed
+                </div>
+                <div
+                  className="mono"
+                  style={{
+                    fontSize: 11.5,
+                    color: "var(--text-muted)",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {wallet.lastSyncError}
+                </div>
+              </div>
+              <button
+                className="btn btn--sm btn--ghost"
+                style={{ flexShrink: 0 }}
+                onClick={() => wallet.resync()}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
         <div className="fade-in-up">
           <WalletBalanceCard
             wallet={wallet}

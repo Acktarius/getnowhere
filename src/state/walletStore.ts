@@ -137,19 +137,24 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   },
 
   async resync() {
-    set({ syncStatus: "syncing", syncProgress: 0.05 });
+    set({ syncStatus: "syncing", syncProgress: 0.05, lastSyncError: undefined });
     try {
       await walletService.resync();
       set({
         syncStatus: "synced",
         syncProgress: 1,
         lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
       });
       await get().refreshBalance();
-    } catch {
+    } catch (error) {
       // Daemon unreachable or sync error — don't block the wallet flow.
-      // The UI shows the error state and the user can retry sync manually.
-      set({ syncStatus: "error", syncProgress: 0 });
+      // Surface the message so the user can diagnose (CORS, node down, etc).
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
     }
   },
 

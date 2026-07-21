@@ -81,6 +81,7 @@ export type WalletState = {
   syncStatus: "idle" | "syncing" | "synced" | "error";
   syncProgress: number; // 0..1
   lastSyncedAt?: string;
+  lastSyncError?: string;
   network: "mainnet" | "testnet" | "devnet";
 };
 

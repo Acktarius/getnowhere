@@ -54,6 +54,7 @@ type InternalWallet = {
   transactions: Transaction[];
   syncStatus: WalletState["syncStatus"];
   syncProgress: number;
+  lastSyncError?: string;
   lastSyncedAt?: string;
   network: WalletState["network"];
   locked: boolean;
@@ -413,15 +414,19 @@ export const MockWalletAdapter: WalletService = {
 
   // REAL SDK sync: creates a daemon client + WalletSync controller and
   // scans the chain for the wallet's outputs, recovering real balance and
-  // transaction history. Daemon failures are swallowed (not re-thrown) so
-  // that import/restore succeeds even when the network is unreachable — the
-  // wallet is already built and the user can retry sync from the UI.
+  // transaction history. Daemon failures are captured into lastSyncError so
+  // the UI can surface them — the wallet is already built and the user can
+  // retry sync from the UI.
   async resync(): Promise<void> {
     if (!store || !store.account) return;
     store.syncStatus = "syncing";
     store.syncProgress = 0.05;
+    store.lastSyncError = undefined;
     try {
       if (!store.daemon) store.daemon = buildDaemon();
+      // Probe the daemon first so we get a clear, actionable error before
+      // entering the scan loop (CORS / unreachable / wrong node).
+      const height = await store.daemon.getHeight();
       if (!store.sync) {
         store.sync = createSync(
           store.account,
@@ -439,9 +444,12 @@ export const MockWalletAdapter: WalletService = {
       store.syncProgress = Math.min(1, snapshot.scannedHeight / total);
       store.syncStatus = "synced";
       store.lastSyncedAt = new Date().toISOString();
-    } catch {
+    } catch (error) {
+      const msg = (error as Error)?.message ?? String(error);
       store.syncStatus = "error";
       store.syncProgress = 0;
+      store.lastSyncError = msg;
+      throw error;
     }
   },
 };
