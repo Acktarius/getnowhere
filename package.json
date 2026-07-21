@@ -13,6 +13,7 @@
     "lint:fix": "biome lint --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
+    "types": "tsc --noEmit",
     "preflight": "tsc -b && biome check ."
   },
   "dependencies": {
