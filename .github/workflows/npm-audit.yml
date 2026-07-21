@@ -24,18 +24,15 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Install npq
-        run: npm install --global npq
-
       - name: Install dependencies
-        run: npq npm ci
-
-      - name: Run npm audit
+        run: npm ci
+      
+      - name: Audit dependencies
         run: npm audit --audit-level=high
 
-      - name: Run typecheck
+      - name: Typecheck
         run: npm run typecheck
 
-      - name: Run project checks
+      - name: Project checks
         run: npm run check
         continue-on-error: true
