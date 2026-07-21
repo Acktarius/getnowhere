@@ -1,7 +1,5 @@
 # getnowhere
 
-[![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-uhq5wkmg)
-
 A web-app-first Conceal (CCX) wallet and private-relationship client. Built with
 React + TypeScript + Vite and developed entirely in the browser.
 
