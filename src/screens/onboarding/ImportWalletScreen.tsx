@@ -18,6 +18,12 @@ import { walletService } from "@/services";
 import { useAuthStore } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { ImportWalletInput } from "@/types/services";
+import {
+  WALLET_PASSWORD_HINTS,
+  describePasswordFailure,
+  walletPasswordIsAcceptable,
+  walletPasswordStrength,
+} from "@/utils/walletPassword";
 
 type Method = "qr" | "mnemonic" | "keys" | "file";
 
@@ -36,6 +42,10 @@ export function ImportWalletScreen() {
   const [passcode, setPasscode] = useState("");
   const [confirm, setConfirm] = useState("");
   const [walletPassword, setWalletPassword] = useState("");
+  const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
+
+  const passwordStrength = walletPasswordStrength(walletPassword);
+  const isFileLike = method === "file" || method === "qr";
 
   // qr
   const [qrText, setQrText] = useState("");
@@ -187,6 +197,8 @@ export function ImportWalletScreen() {
       setQrText("");
       setScanError(null);
     }
+    setWalletPassword("");
+    setWalletPasswordConfirm("");
   }
 
   async function handlePreviewKeys() {
@@ -244,7 +256,7 @@ export function ImportWalletScreen() {
       return {
         method: "mnemonic",
         mnemonic: seed.trim(),
-        password: walletPassword || passcode,
+        password: walletPassword,
         scanHeight: seedScanHeight ? Number(seedScanHeight) : undefined,
       };
     }
@@ -264,7 +276,7 @@ export function ImportWalletScreen() {
           address: address.trim(),
           privateViewKey: viewKey.trim(),
           privateSpendKey: "",
-          password: walletPassword || passcode,
+          password: walletPassword,
           scanHeight: keysScanHeight ? Number(keysScanHeight) : undefined,
         };
       }
@@ -278,7 +290,7 @@ export function ImportWalletScreen() {
         address: previewedAddress ?? "",
         privateSpendKey: spendKey.trim(),
         privateViewKey: viewKey.trim(),
-        password: walletPassword || passcode,
+        password: walletPassword,
         scanHeight: keysScanHeight ? Number(keysScanHeight) : undefined,
       };
     }
@@ -296,8 +308,17 @@ export function ImportWalletScreen() {
 
   async function handleImport() {
     setError(null);
-    if ((method === "file" || method === "qr") && !walletPassword) {
-      return setError("Enter the password for this wallet backup.");
+    if (isFileLike) {
+      if (!walletPassword) {
+        return setError("Enter the password used to encrypt this backup.");
+      }
+    } else {
+      // seed / keys — new wallet password must meet strength rules
+      const pwError = describePasswordFailure(walletPassword);
+      if (pwError) return setError(pwError);
+      if (walletPassword !== walletPasswordConfirm) {
+        return setError("Passwords do not match.");
+      }
     }
     const input = buildInput();
     if (!input) return;
@@ -538,13 +559,23 @@ export function ImportWalletScreen() {
                   </div>
                 )}
 
-                {method !== "file" && (
+                {method === "file" && (
                   <SecureInput
-                    label="Wallet password (optional)"
+                    label="Backup password"
                     value={walletPassword}
                     onChange={setWalletPassword}
-                    placeholder="Defaults to your app passcode"
+                    placeholder="Password used to encrypt this file"
                     revealable
+                  />
+                )}
+
+                {(method === "mnemonic" || method === "keys") && (
+                  <PasswordSection
+                    password={walletPassword}
+                    setPassword={setWalletPassword}
+                    confirmPassword={walletPasswordConfirm}
+                    setConfirmPassword={setWalletPasswordConfirm}
+                    strength={passwordStrength}
                   />
                 )}
               </>
@@ -960,6 +991,97 @@ function ScanHeightField({
         min={0}
       />
       <span className="field__hint">{hint}</span>
+    </div>
+  );
+}
+
+// ===== Password section (seed/keys) =====
+
+function PasswordSection({
+  password,
+  setPassword,
+  confirmPassword,
+  setConfirmPassword,
+  strength,
+}: {
+  password: string;
+  setPassword: (v: string) => void;
+  confirmPassword: string;
+  setConfirmPassword: (v: string) => void;
+  strength: number;
+}) {
+  return (
+    <div className="stack stack--gap-3">
+      <SecureInput
+        label="Wallet password"
+        value={password}
+        onChange={setPassword}
+        placeholder="Encrypts your local wallet file"
+        revealable
+      />
+      {password.length > 0 && (
+        <div className="stack stack--gap-2">
+          <div className="row-flex" style={{ gap: 4 }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <div
+                key={n}
+                style={{
+                  flex: 1,
+                  height: 4,
+                  borderRadius: 2,
+                  background:
+                    n <= strength
+                      ? strength >= 4
+                        ? "var(--success)"
+                        : strength >= 3
+                          ? "var(--primary)"
+                          : "var(--danger)"
+                      : "var(--border)",
+                  transition: "background var(--dur) var(--ease)",
+                }}
+              />
+            ))}
+          </div>
+          <div className="stack" style={{ gap: 3 }}>
+            {WALLET_PASSWORD_HINTS.map((hint) => {
+              const met = hint.test(password);
+              return (
+                <div
+                  key={hint.id}
+                  className="row-flex"
+                  style={{ gap: 6, fontSize: 12.5 }}
+                >
+                  <span
+                    style={{
+                      color: met ? "var(--success)" : "var(--text-muted)",
+                      width: 14,
+                    }}
+                  >
+                    {met ? "✓" : "○"}
+                  </span>
+                  <span
+                    style={{
+                      color: met ? "var(--text)" : "var(--text-muted)",
+                    }}
+                  >
+                    {hint.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <SecureInput
+        label="Confirm password"
+        value={confirmPassword}
+        onChange={setConfirmPassword}
+        placeholder="Repeat password"
+        revealable
+      />
+      {confirmPassword.length > 0 && password !== confirmPassword && (
+        <div className="field__error">Passwords do not match.</div>
+      )}
     </div>
   );
 }

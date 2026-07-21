@@ -18,6 +18,7 @@ import {
   makeIntegratedCcxAddress,
   openEncryptedWalletFile,
   previewKeysFromSpend,
+  saveEncryptedWalletFile,
   restoreConcealFromMnemonic,
   runSyncOnce,
   validateCcxAddress,
@@ -39,6 +40,9 @@ import type {
   WalletService,
 } from "@/types/services";
 import { generatePaymentId, sleep, uid } from "@/utils/format";
+import { getStorage } from "@/services/storage/StorageAdapter";
+
+const WALLET_STORAGE_KEY = "wallet";
 
 type InternalWallet = {
   address: string;
@@ -152,7 +156,7 @@ function recomputeBalances(w: InternalWallet) {
 }
 
 /** Adopt a BuiltWallet into the in-memory store (shared by every import path). */
-function adoptBuiltWallet(built: BuiltWallet): CreateWalletResult {
+function adoptBuiltWallet(built: BuiltWallet, password?: string): CreateWalletResult {
   const account = accountFromBuilt(built);
   const w: InternalWallet = {
     address: built.address,
@@ -169,6 +173,18 @@ function adoptBuiltWallet(built: BuiltWallet): CreateWalletResult {
     account,
   };
   store = w;
+  // Encrypt + persist the wallet locally with the user's wallet password so
+  // future sessions can decrypt it. The password is the one supplied at
+  // import (or create) time; it never leaves the device.
+  if (password && built.raw) {
+    try {
+      const envelope = saveEncryptedWalletFile(built.raw, password);
+      getStorage().setItem(WALLET_STORAGE_KEY, JSON.stringify(envelope));
+    } catch {
+      // Persistence is best-effort in the mock adapter; in-memory wallet
+      // still works for the current session.
+    }
+  }
   return {
     address: w.address,
     seedPhrase: w.seedPhrase,
@@ -275,7 +291,7 @@ export const MockWalletAdapter: WalletService = {
           address: encodeCcxAddress(opened.keys.pub.spend, opened.keys.pub.view),
           mnemonic: mnemonic || undefined,
           viewOnly: opened.keys.priv.spend === "",
-        });
+        }, input.password);
       } catch (error) {
         throw toFriendlyImportError(error);
       }
@@ -309,7 +325,7 @@ export const MockWalletAdapter: WalletService = {
         default:
           throw new Error("This import method is not supported.");
       }
-      return adoptBuiltWallet(built);
+      return adoptBuiltWallet(built, input.password);
     } catch (error) {
       throw toFriendlyImportError(error);
     }
