@@ -1,13 +1,10 @@
-// WalletService implementation. Uses the REAL conceal-wallet-sdk for every
-// confirmed operation and falls back to mock data only where the SDK path is
-// not yet verified in this environment.
+// WalletService implementation backed by the REAL conceal-wallet-sdk.
 //
 // REAL SDK (confirmed):   createAccount, restoreFromMnemonic, isValidAddress,
-//                         makeIntegratedAddress, generateMnemonic, init(WASM)
-// MOCK fallback (TODO):   balance, transactions, sync, send — these need a
-//                         live daemon (createDaemonClient + createWalletSync)
-//                         and a broadcast-ready spend path, neither of which
-//                         is exercised here.
+//                         makeIntegratedAddress, generateMnemonic, init(WASM),
+//                         openEncryptedWalletFile, saveEncryptedWalletFile,
+//                         createDaemonClient, createWalletSync, syncOnce
+// TODO:                   sendTransaction (buildTransaction + daemon.sendRawTransaction)
 
 import {
   buildDaemon,
@@ -58,7 +55,6 @@ type InternalWallet = {
   lastSyncedAt?: string;
   network: WalletState["network"];
   locked: boolean;
-  // Real sync engine state (wired up for imports/restores).
   account?: sdk.Account;
   daemon?: sdk.DaemonClient;
   sync?: sdk.WalletSync;
@@ -182,8 +178,7 @@ function adoptBuiltWallet(built: BuiltWallet, password?: string): CreateWalletRe
       const envelope = saveEncryptedWalletFile(built.raw, password);
       getStorage().setItem(WALLET_STORAGE_KEY, JSON.stringify(envelope));
     } catch {
-      // Persistence is best-effort in the mock adapter; in-memory wallet
-      // still works for the current session.
+      // Persistence is best-effort; in-memory wallet still works for the session.
     }
   }
   return {
@@ -204,7 +199,7 @@ function toFriendlyImportError(error: unknown): Error {
   return new Error("Couldn't import this wallet — double-check the details and try again.");
 }
 
-export const MockWalletAdapter: WalletService = {
+export const ConcealWalletService: WalletService = {
   // REAL SDK: createAccount generates a real CCX address + 25-word mnemonic.
   async createWallet(): Promise<CreateWalletResult> {
     const account = await createConcealAccount("english");
@@ -371,9 +366,9 @@ export const MockWalletAdapter: WalletService = {
       : [];
   },
 
-  // TODO(conceal): replace with buildTransaction + daemon.sendrawtransaction.
+  // TODO(conceal-wallet-sdk): replace with buildTransaction + daemon.sendRawTransaction.
   // The SDK builds broadcast-ready signed transactions, but the full path
-  // (random outs + serialization + daemon submit) is not verified here.
+  // (random outs + serialization + daemon submit) is not verified here yet.
   async sendTransaction({
     toAddress,
     amount,

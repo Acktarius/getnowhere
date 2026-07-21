@@ -88,7 +88,7 @@ export type WalletService = {
   generatePaymentId(): string;
   resync(): Promise<void>;
   // TODO(conceal-wallet-sdk): wire the real engine methods through here.
-  // Until then, MockWalletAdapter simulates timing + balances.
+  // Until then, ConcealWalletService simulates timing + balances.
 };
 
 // ---------- Conceal relationship ----------

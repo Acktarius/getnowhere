@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
-import { setInternalWalletNetwork } from "@/services/mock/MockWalletAdapter";
+import { setInternalWalletNetwork } from "@/services/conceal/ConcealWalletService";
 import type { WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 

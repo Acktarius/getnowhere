@@ -1,5 +1,5 @@
 import type { SeedBackupService } from "@/types/services";
-import { getInternalWalletState } from "./MockWalletAdapter";
+import { getInternalWalletState } from "@/services/conceal/ConcealWalletService";
 
 let backedUp = false;
 
