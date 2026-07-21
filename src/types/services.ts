@@ -189,6 +189,109 @@ export type RoomBootstrapService = {
   bootstrapManual(contactId: string): Promise<RoomBootstrap>;
 };
 
+// ---------- P2P chat protocol (see /docs/p2pchatprotocol.md) ----------
+//
+// These boundaries sit above the raw smart-message channel. Adapters are
+// initially mocked; no real P2P transport or AEAD crypto is wired yet.
+
+import type {
+  ChatInviteAcceptancePayload,
+  ChatInviteHandshake,
+  ChatInvitePayload,
+  CipherSuiteId,
+  InviteEnvelope,
+  P2PSessionConfig,
+} from "@/types/protocol";
+
+/**
+ * Owns the protocol-message layer on top of the raw smart-message channel:
+ * compose/encode chat.invite / chat.accept / chat.reject, validate incoming,
+ * enforce relationship-gating and replay/expiry rules (§13 of the protocol
+ * spec).
+ */
+export type SmartMessageProtocolService = {
+  /** Compose a chat.invite for an established relationship. Throws if the relationship is not established. */
+  composeInvite(input: {
+    contactId: string;
+    handshake: ChatInviteHandshake;
+    senderAlias: string;
+    capabilities?: string[];
+  }): Promise<InviteEnvelope>;
+
+  /** Validate and parse an incoming chat.invite envelope. Enforces expiry + replay. */
+  parseIncomingInvite(envelope: InviteEnvelope): Promise<ChatInvitePayload | null>;
+
+  /** Compose a chat.accept for a received invite. */
+  composeAccept(input: {
+    inviteId: string;
+    receiverEphemeralPublicKey: string;
+    replayId: string;
+  }): Promise<ChatInviteAcceptancePayload>;
+
+  /** Compose a chat.reject for a received invite (optional). */
+  composeReject(input: { inviteId: string; reason?: string }): Promise<{
+    type: "chat.reject";
+    inviteId: string;
+    reason?: string;
+  }>;
+};
+
+/**
+ * Derives a P2PSessionConfig from a completed invite/accept handshake.
+ * Runs the KDF (or delegates to P2PEncryptionService) and emits the session
+ * config + room bootstrap (§13, §9).
+ */
+export type SessionBootstrapService = {
+  /** Derive the session config from both halves of the handshake. */
+  deriveSession(input: {
+    invite: ChatInviteHandshake;
+    acceptance: ChatInviteAcceptancePayload;
+  }): Promise<P2PSessionConfig>;
+
+  /** Produce a RoomBootstrap from a derived session config. */
+  bootstrapFromSession(session: P2PSessionConfig): Promise<RoomBootstrap>;
+};
+
+/**
+ * The AEAD seam: keypair generation, ECDH, HKDF, and seal/open of P2P message
+ * frames under the session key with the nonce strategy from §8.
+ *
+ * ADAPTER-BACKED AND INITIALLY MOCKED. Do not assume this is a secure,
+ * audited crypto implementation until a real adapter is wired.
+ */
+export type P2PEncryptionService = {
+  /** Generate an ephemeral X25519 keypair. Returns public key hex + private key handle. */
+  generateEphemeralKeypair(): Promise<{
+    publicKeyHex: string;
+    privateKeyRef: string;
+  }>;
+
+  /** Derive a P2PSessionConfig via X25519 ECDH + HKDF-SHA256. */
+  deriveSessionConfig(input: {
+    senderEphemeralPublicKey: string;
+    receiverEphemeralPublicKey: string;
+    receiverPrivateKeyRef: string;
+    salt: string;
+    info: { protocolVersion: number; cipherSuite: CipherSuiteId; relationshipId: string; roomId: string };
+    nonceSeed: string;
+  }): Promise<P2PSessionConfig>;
+
+  /** Seal a P2P message frame under the session key. */
+  seal(input: {
+    session: P2PSessionConfig;
+    plaintext: Uint8Array;
+    aad?: Uint8Array;
+  }): Promise<{ ciphertext: Uint8Array; nonce: Uint8Array }>;
+
+  /** Open a P2P message frame under the session key. */
+  open(input: {
+    session: P2PSessionConfig;
+    ciphertext: Uint8Array;
+    nonce: Uint8Array;
+    aad?: Uint8Array;
+  }): Promise<Uint8Array | null>;
+};
+
 // ---------- Local security ----------
 
 export type LocalSecurityService = {
