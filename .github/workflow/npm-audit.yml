@@ -1,0 +1,41 @@
+name: npm audit and checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  audit-and-check:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install npq
+        run: npm install --global npq
+
+      - name: Install dependencies
+        run: npq npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+      - name: Run project checks
+        run: npm run check
+        continue-on-error: true

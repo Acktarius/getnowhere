@@ -1,0 +1,80 @@
+---
+alwaysApply: true
+---
+# Get Now Here project rules
+
+## Product and repo model
+
+- This repository is **web-first**.
+- Daily development happens in the web app with `npm run dev`.
+- Expo is not the primary development environment.
+- Expo.dev / EAS is used for native wrapping, iOS builds, signing, TestFlight, and App Store delivery.[web:14][web:35]
+- EAS Build is Expo's hosted service for building Android and iOS binaries, and it supports building one platform at a time with `--platform ios` or `--platform android`.[web:14]
+- EAS Submit is the recommended Expo path for uploading signed builds to the Apple App Store and Google Play, and it can submit iOS builds from any OS, including Windows and Linux.[web:35]
+- Keep the main product logic in the web app unless a feature truly requires native APIs.
+
+## Folder intent
+
+- `web/` contains the main product code.
+- `native-wrapper/` contains the minimal Expo wrapper.
+- `docs/` is the source of truth for architecture, setup, security, protocol, and release rules.
+- Do not move or rename top-level folders without updating `/docs/architecture/folder-structure.md`.
+
+## Development workflow
+
+- Use `npm run dev` for local development in the web app.
+- Keep the web app compatible with future WebView wrapping.
+- Avoid browser-only assumptions that are fragile inside a mobile WebView unless explicitly documented.
+- Prefer TypeScript, React, and Vite for the web codebase.
+- Keep code modular and feature-oriented.
+- Preserve simple local iteration; do not require Expo runtime for normal UI work.
+
+## Documentation workflow
+
+- Read `docs/README.md` before major edits.
+- Read the relevant doc in `/docs` before changing architecture, protocol, storage, build, or security behavior.
+- Any pull request that changes structure, routing, state, crypto, env vars, bundle identifiers, or EAS behavior must also update the matching `/docs` file.
+- Do not leave durable project decisions only in prompts, chat logs, or commit messages.
+- If a rule applies only to the wrapper, mark it clearly as `native-wrapper only`.
+- If a rule applies only to the web app, mark it clearly as `web app only`.
+
+## Build boundary
+
+- Web app commands belong in `web/package.json`.
+- Expo and EAS commands belong in `native-wrapper/package.json`.
+- EAS build profiles belong in `native-wrapper/eas.json`.[web:14]
+- Keep bundle identifiers, icons, splash assets, signing notes, and store-submission rules in `native-wrapper/` and `/docs/builds/`.[web:34][web:35]
+- Do not couple normal UI iteration to Expo runtime unless the task is specifically native-wrapper work.
+
+## Security and protocol rules
+
+- Spec first, code second for crypto and protocol changes.
+- Document message flow before implementing transport changes.
+- Document key lifecycle before implementing encryption changes.
+- Use ChaCha20-Poly1305 as the baseline documented direction for authenticated P2P payload encryption in current design docs.
+- Keep protocol notes in `docs/security/p2pchatprotocol.md`.
+- Do not invent crypto primitives or change payload formats without updating docs first.
+
+## Coding style
+
+- Write explicit TypeScript types for service boundaries, payloads, and state objects.
+- Prefer small composable modules over large files.
+- Keep UI concerns separate from wallet, transport, storage, and protocol logic.
+- Use descriptive names; avoid ambiguous helpers.
+- Add short comments only where intent is not obvious from code.
+- Keep security-sensitive code easy to audit.
+
+## What Cursor should do
+
+When asked to generate or refactor code:
+1. Check whether a relevant rule exists in `/docs`.
+2. Preserve the web-first architecture.
+3. Keep Expo usage isolated to the wrapper and release flow.[web:14][web:35]
+4. Update docs when implementation changes documented behavior.
+5. Avoid introducing hidden architectural drift.
+
+## Preferred wording
+
+When describing this project in generated docs, prompts, or README text, use this model:
+
+> Get Now Here is developed as a web-first application. Local work happens with `npm run dev` in the web app. Expo.dev / EAS is used only for the native wrapper, iOS builds, signing, TestFlight, and App Store delivery.
