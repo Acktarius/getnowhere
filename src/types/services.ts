@@ -49,6 +49,13 @@ export type ImportWalletInput =
       file: string;
       password: string;
       label?: string;
+    }
+  | {
+      method: "qr";
+      /** Wallet envelope JSON decoded from a QR code. */
+      qr: string;
+      password: string;
+      label?: string;
     };
 
 export type SendTransactionInput = {

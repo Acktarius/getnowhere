@@ -67,17 +67,17 @@ export function WelcomeScreen() {
               Create wallet
             </button>
             <Link
-              to="/onboarding/restore"
+              to="/onboarding/import"
               className="btn btn--block btn--secondary"
             >
-              Restore from seed
+              Restore from QR code
             </Link>
             <Link
               to="/onboarding/import"
               className="btn btn--block btn--ghost"
               style={{ fontSize: 13 }}
             >
-              Import from keys or backup file
+              Import from seed, keys, or backup file
             </Link>
           </div>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 4 }}>

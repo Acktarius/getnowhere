@@ -241,22 +241,27 @@ export const MockWalletAdapter: WalletService = {
   },
 
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {
-    await ensureWasmReady();
-
-    // Restore from an encrypted backup file: decode the envelope with the file
-    // password, then adopt the recovered wallet.
-    if (input.method === "file") {
+    // The file and QR import paths are entirely pure JS (secretbox + address
+    // encoding + mnemonic encoding) — no WASM needed. Handle them before
+    // awaiting WASM init so they work even if the WASM modules fail to load.
+    if (input.method === "file" || input.method === "qr") {
       try {
-        const text = input.file.replace(/^\uFEFF/, "").trim();
+        const text = (input.method === "file" ? input.file : input.qr)
+          .replace(/^\uFEFF/, "")
+          .trim();
         let envelope: unknown;
         try {
           envelope = JSON.parse(text);
         } catch {
-          throw new Error("The selected file is not valid JSON.");
+          throw new Error(
+            input.method === "file"
+              ? "The selected file is not valid JSON."
+              : "The QR code does not contain valid wallet data.",
+          );
         }
         const opened = openEncryptedWalletFile(envelope, input.password);
         if (opened === null) {
-          throw new Error("Invalid wallet file or password.");
+          throw new Error("Invalid wallet data or password.");
         }
         // Reconstruct the mnemonic (best-effort) from the spend secret so the
         // backup-flow's seed-confirmation step still works for mnemonic wallets.
@@ -275,6 +280,8 @@ export const MockWalletAdapter: WalletService = {
         throw toFriendlyImportError(error);
       }
     }
+
+    await ensureWasmReady();
 
     try {
       let built: BuiltWallet;

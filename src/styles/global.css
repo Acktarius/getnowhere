@@ -1038,6 +1038,16 @@ button {
   }
 }
 
+@keyframes scan-line {
+  0%,
+  100% {
+    transform: translateY(-80px);
+  }
+  50% {
+    transform: translateY(80px);
+  }
+}
+
 /* Utilities */
 .hidden {
   display: none !important;
