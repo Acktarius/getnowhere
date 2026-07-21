@@ -6,6 +6,7 @@
 //                         createDaemonClient, createWalletSync, syncOnce
 // TODO:                   sendTransaction (buildTransaction + daemon.sendRawTransaction)
 
+import type * as sdk from "conceal-wallet-sdk";
 import {
   buildDaemon,
   createConcealAccount,
@@ -16,9 +17,9 @@ import {
   makeIntegratedCcxAddress,
   openEncryptedWalletFile,
   previewKeysFromSpend,
-  saveEncryptedWalletFile,
   restoreConcealFromMnemonic,
   runSyncOnce,
+  saveEncryptedWalletFile,
   validateCcxAddress,
 } from "@/services/conceal/ConcealWalletAdapter";
 import {
@@ -28,7 +29,7 @@ import {
   buildViewOnly,
   mnemonicFromSpendKey,
 } from "@/services/conceal/walletBuild";
-import type * as sdk from "conceal-wallet-sdk";
+import { getStorage } from "@/services/storage/StorageAdapter";
 import type { Transaction, WalletState } from "@/types/models";
 import type {
   CreateWalletResult,
@@ -38,7 +39,6 @@ import type {
   WalletService,
 } from "@/types/services";
 import { generatePaymentId, sleep, uid } from "@/utils/format";
-import { getStorage } from "@/services/storage/StorageAdapter";
 
 const WALLET_STORAGE_KEY = "wallet";
 
@@ -86,9 +86,7 @@ function accountFromBuilt(built: BuiltWallet): sdk.Account {
 }
 
 /** Map SDK WalletTransaction[] to the app's Transaction[] model. */
-function mapSdkTransactions(
-  txs: sdk.WalletTransaction[],
-): Transaction[] {
+function mapSdkTransactions(txs: sdk.WalletTransaction[]): Transaction[] {
   return txs.map((tx) => ({
     id: tx.hash || `tx_${tx.height}_${tx.amount}`,
     type: tx.direction === "in" ? "incoming" : "outgoing",
@@ -107,20 +105,20 @@ function mapSdkTransactions(
  * model. The backup format stores raw daemon transaction objects with unknown
  * shape, so we only extract what's safe: hash, height, amount, direction.
  */
-function mapBackupTransactions(
-  rawTxs: unknown[],
-): Transaction[] {
+function mapBackupTransactions(rawTxs: unknown[]): Transaction[] {
   const result: Transaction[] = [];
   for (const entry of rawTxs) {
     if (typeof entry !== "object" || entry === null) continue;
     const obj = entry as Record<string, unknown>;
     const hash = typeof obj.hash === "string" ? obj.hash : "";
     const height = typeof obj.height === "number" ? obj.height : undefined;
-    const amount = typeof obj.amount === "number" ? atomicToCCX(Math.abs(obj.amount)) : 0;
+    const amount =
+      typeof obj.amount === "number" ? atomicToCCX(Math.abs(obj.amount)) : 0;
     const direction = obj.direction === "out" ? "outgoing" : "incoming";
-    const timestamp = typeof obj.timestamp === "number"
-      ? new Date(obj.timestamp * 1000).toISOString()
-      : undefined;
+    const timestamp =
+      typeof obj.timestamp === "number"
+        ? new Date(obj.timestamp * 1000).toISOString()
+        : undefined;
     result.push({
       id: hash || `tx_${height}_${amount}`,
       type: direction,
@@ -190,7 +188,10 @@ function recomputeBalances(w: InternalWallet) {
 }
 
 /** Adopt a BuiltWallet into the in-memory store (shared by every import path). */
-function adoptBuiltWallet(built: BuiltWallet, password?: string): CreateWalletResult {
+function adoptBuiltWallet(
+  built: BuiltWallet,
+  password?: string,
+): CreateWalletResult {
   const account = accountFromBuilt(built);
   // Extract prior scan height + transactions from the backup's raw blob so
   // sync resumes from the right height and the UI shows existing history.
@@ -243,7 +244,9 @@ function toFriendlyImportError(error: unknown): Error {
   if (message && !SENSITIVE_ERROR_PATTERN.test(message)) {
     return new Error(message);
   }
-  return new Error("Couldn't import this wallet — double-check the details and try again.");
+  return new Error(
+    "Couldn't import this wallet — double-check the details and try again.",
+  );
 }
 
 export const ConcealWalletService: WalletService = {
@@ -328,13 +331,19 @@ export const ConcealWalletService: WalletService = {
           opened.keys.priv.spend !== ""
             ? mnemonicFromSpendKey(opened.keys.priv.spend)
             : "";
-        return adoptBuiltWallet({
-          keys: opened.keys,
-          raw: opened.raw,
-          address: encodeCcxAddress(opened.keys.pub.spend, opened.keys.pub.view),
-          mnemonic: mnemonic || undefined,
-          viewOnly: opened.keys.priv.spend === "",
-        }, input.password);
+        return adoptBuiltWallet(
+          {
+            keys: opened.keys,
+            raw: opened.raw,
+            address: encodeCcxAddress(
+              opened.keys.pub.spend,
+              opened.keys.pub.view,
+            ),
+            mnemonic: mnemonic || undefined,
+            viewOnly: opened.keys.priv.spend === "",
+          },
+          input.password,
+        );
       } catch (error) {
         throw toFriendlyImportError(error);
       }
@@ -527,4 +536,4 @@ export function getInternalWalletNodeUrl(): string {
   return store?.nodeUrl ?? DEFAULT_DAEMON_NODES[0];
 }
 
-export { ensureWasmReady, makeIntegratedCcxAddress, DEFAULT_DAEMON_NODES };
+export { DEFAULT_DAEMON_NODES, ensureWasmReady, makeIntegratedCcxAddress };

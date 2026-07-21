@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { AccentName, AppSettings, AppTheme } from "@/types/models";
 import { getStorage } from "@/services/storage/StorageAdapter";
+import type { AccentName, AppSettings, AppTheme } from "@/types/models";
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",

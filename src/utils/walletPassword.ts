@@ -20,7 +20,8 @@ export const WALLET_PASSWORD_HINTS = [
   {
     id: "mixed",
     label: "Upper and lower case letters",
-    test: (password: string) => /[A-Z]/.test(password) && /[a-z]/.test(password),
+    test: (password: string) =>
+      /[A-Z]/.test(password) && /[a-z]/.test(password),
   },
   {
     id: "letter",

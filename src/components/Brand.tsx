@@ -28,7 +28,14 @@ export function BrandMark({ size = 40, className }: Props) {
         strokeWidth="22"
         fill="none"
       />
-      <rect x="238" y="176" width="36" height="78" rx="18" fill="var(--primary)" />
+      <rect
+        x="238"
+        y="176"
+        width="36"
+        height="78"
+        rx="18"
+        fill="var(--primary)"
+      />
       <circle cx="256" cy="292" r="19" fill="var(--primary)" />
     </svg>
   );

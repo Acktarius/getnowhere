@@ -1,5 +1,5 @@
-import type { SeedBackupService } from "@/types/services";
 import { getInternalWalletState } from "@/services/conceal/ConcealWalletService";
+import type { SeedBackupService } from "@/types/services";
 
 let backedUp = false;
 

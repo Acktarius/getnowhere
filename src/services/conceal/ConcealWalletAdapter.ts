@@ -18,7 +18,6 @@
 //   - encryptMessage/decryptMessage need an ECDH key derived from a
 //     real transaction secret, which requires the broadcast path.
 
-import * as sdk from "conceal-wallet-sdk";
 import type {
   Account,
   DaemonClient,
@@ -26,6 +25,7 @@ import type {
   UserKeys,
   WalletSync,
 } from "conceal-wallet-sdk";
+import * as sdk from "conceal-wallet-sdk";
 
 // ===== WASM init guard =====
 //
@@ -51,7 +51,9 @@ export function ensureWasmReady(): Promise<void> {
   if (readyPromise === null) {
     const init = resolveInit();
     readyPromise =
-      init === null ? Promise.resolve() : Promise.resolve(init()).then(() => undefined);
+      init === null
+        ? Promise.resolve()
+        : Promise.resolve(init()).then(() => undefined);
     // If init() rejects, clear the memo so a later call can retry rather than
     // permanently wedging the engine on a transient WASM-load failure.
     readyPromise.catch(() => {
@@ -129,7 +131,10 @@ export function parseCcxPaymentUri(uri: string): PaymentRequest | null {
 }
 
 /** Encode a CCX address from spend + view public keys (64-char hex each). */
-export function encodeCcxAddress(spendPublicKey: string, viewPublicKey: string): string {
+export function encodeCcxAddress(
+  spendPublicKey: string,
+  viewPublicKey: string,
+): string {
   return sdk.encodeAddress(spendPublicKey, viewPublicKey);
 }
 

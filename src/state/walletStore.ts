@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
-import { setInternalWalletNetwork, setInternalWalletNodeUrl, getInternalWalletNodeUrl } from "@/services/conceal/ConcealWalletService";
 import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
+import {
+  getInternalWalletNodeUrl,
+  setInternalWalletNetwork,
+  setInternalWalletNodeUrl,
+} from "@/services/conceal/ConcealWalletService";
 import type { WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 
@@ -140,7 +144,11 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   },
 
   async resync() {
-    set({ syncStatus: "syncing", syncProgress: 0.05, lastSyncError: undefined });
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
     try {
       await walletService.resync();
       set({

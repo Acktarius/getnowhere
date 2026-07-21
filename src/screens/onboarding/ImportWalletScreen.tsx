@@ -13,14 +13,14 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter";
 import { walletService } from "@/services";
+import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter";
 import { useAuthStore } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { ImportWalletInput } from "@/types/services";
 import {
-  WALLET_PASSWORD_HINTS,
   describePasswordFailure,
+  WALLET_PASSWORD_HINTS,
   walletPasswordIsAcceptable,
   walletPasswordStrength,
 } from "@/utils/walletPassword";
@@ -552,7 +552,10 @@ export function ImportWalletScreen() {
                         if (f) handleFilePicked(f);
                       }}
                     />
-                    <p className="muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                    <p
+                      className="muted"
+                      style={{ fontSize: 12.5, lineHeight: 1.5 }}
+                    >
                       The file's embedded creation height is used as the scan
                       start, so import resumes from where the backup left off.
                     </p>
@@ -740,7 +743,9 @@ function QrPrimaryView({
             style={{ alignItems: "center", gap: 12, padding: 24 }}
           >
             <QrCode size={48} style={{ color: "var(--success)" }} />
-            <div style={{ fontSize: 14, fontWeight: 600 }}>QR code captured</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>
+              QR code captured
+            </div>
             <div
               className="mono faint"
               style={{ fontSize: 11, wordBreak: "break-all", maxWidth: 280 }}
@@ -978,8 +983,7 @@ function ScanHeightField({
   return (
     <div className="field">
       <span className="field__label">
-        Scan from block{" "}
-        <span className="faint">optional</span>
+        Scan from block <span className="faint">optional</span>
       </span>
       <input
         className="input"
@@ -1096,9 +1100,7 @@ type BarcodeDetectorLike = {
 
 function getBarcodeDetector(): BarcodeDetectorLike | null {
   const w = window as unknown as {
-    BarcodeDetector?: new (opts: {
-      formats: string[];
-    }) => BarcodeDetectorLike;
+    BarcodeDetector?: new (opts: { formats: string[] }) => BarcodeDetectorLike;
   };
   if (typeof w.BarcodeDetector === "function") {
     try {

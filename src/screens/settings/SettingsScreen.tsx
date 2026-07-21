@@ -15,9 +15,9 @@ import { BottomNav } from "@/components/BottomNav";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
+import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
-import { DEFAULT_DAEMON_NODES } from "@/services/conceal/ConcealWalletAdapter";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
@@ -226,10 +226,18 @@ export function SettingsScreen() {
               overflowY: "auto",
               background: "var(--bg-elev-1)",
               borderRadius: "20px 20px 0 0",
-              padding: "24px 20px calc(env(safe-area-inset-bottom, 16px) + 16px)",
+              padding:
+                "24px 20px calc(env(safe-area-inset-bottom, 16px) + 16px)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 20,
+              }}
+            >
               <h2 style={{ fontSize: 18, fontWeight: 700 }}>Daemon Node</h2>
               <button
                 className="btn btn--sm btn--secondary"
@@ -239,7 +247,8 @@ export function SettingsScreen() {
               </button>
             </div>
             <p className="faint" style={{ fontSize: 12.5, marginBottom: 16 }}>
-              Select a remote node for wallet sync. Changes apply on the next sync.
+              Select a remote node for wallet sync. Changes apply on the next
+              sync.
             </p>
             {DEFAULT_DAEMON_NODES.map((url) => (
               <button
@@ -257,15 +266,28 @@ export function SettingsScreen() {
                   borderRadius: 12,
                   marginBottom: 8,
                   border: `1px solid ${url === currentNode ? "var(--primary)" : "var(--border)"}`,
-                  background: url === currentNode ? "var(--primary-ghost)" : "var(--bg-elev-2)",
+                  background:
+                    url === currentNode
+                      ? "var(--primary-ghost)"
+                      : "var(--bg-elev-2)",
                   color: "var(--text)",
                   textAlign: "left",
                   cursor: "pointer",
                 }}
               >
-                <span style={{ fontSize: 13.5, fontFamily: "inherit" }}>{url}</span>
+                <span style={{ fontSize: 13.5, fontFamily: "inherit" }}>
+                  {url}
+                </span>
                 {url === currentNode && (
-                  <span style={{ fontSize: 11, color: "var(--primary)", fontWeight: 600 }}>Active</span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--primary)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Active
+                  </span>
                 )}
               </button>
             ))}

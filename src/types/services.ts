@@ -219,7 +219,9 @@ export type SmartMessageProtocolService = {
   }): Promise<InviteEnvelope>;
 
   /** Validate and parse an incoming chat.invite envelope. Enforces expiry + replay. */
-  parseIncomingInvite(envelope: InviteEnvelope): Promise<ChatInvitePayload | null>;
+  parseIncomingInvite(
+    envelope: InviteEnvelope,
+  ): Promise<ChatInvitePayload | null>;
 
   /** Compose a chat.accept for a received invite. */
   composeAccept(input: {
@@ -272,7 +274,12 @@ export type P2PEncryptionService = {
     receiverEphemeralPublicKey: string;
     receiverPrivateKeyRef: string;
     salt: string;
-    info: { protocolVersion: number; cipherSuite: CipherSuiteId; relationshipId: string; roomId: string };
+    info: {
+      protocolVersion: number;
+      cipherSuite: CipherSuiteId;
+      relationshipId: string;
+      roomId: string;
+    };
     nonceSeed: string;
   }): Promise<P2PSessionConfig>;
 

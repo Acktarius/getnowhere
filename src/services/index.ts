@@ -15,12 +15,12 @@
 //   3. Replace MockChatTransport with a HolepunchChatTransport implementing
 //      the same ChatTransport interface.
 
+import { ConcealWalletService } from "./conceal/ConcealWalletService";
 import { MockChatTransport } from "./mock/MockChatTransport";
 import { MockLocalSecurityAdapter } from "./mock/MockLocalSecurityAdapter";
 import { MockRelationshipAdapter } from "./mock/MockRelationshipAdapter";
 import { MockSeedBackupAdapter } from "./mock/MockSeedBackupAdapter";
 import { MockSmartMessageAdapter } from "./mock/MockSmartMessageAdapter";
-import { ConcealWalletService } from "./conceal/ConcealWalletService";
 
 export const walletService = ConcealWalletService;
 export const relationshipService = MockRelationshipAdapter;

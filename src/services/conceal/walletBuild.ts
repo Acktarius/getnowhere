@@ -2,8 +2,8 @@
 // lib/services/real-sdk/wallet-build.ts. Pure (no storage, no network): build a
 // BuiltWallet (keys + plaintext blob + address) for each import path.
 
-import * as sdk from "conceal-wallet-sdk";
 import type { Account, RawWalletV1, UserKeys } from "conceal-wallet-sdk";
+import * as sdk from "conceal-wallet-sdk";
 
 /** A constructed wallet ready to adopt: keys + plaintext blob + mnemonic. */
 export interface BuiltWallet {
@@ -36,7 +36,12 @@ function freshRawWallet(keys: UserKeys, creationHeight: number): RawWalletV1 {
     nonce: "",
     keys,
     creationHeight: height,
-    options: { readSpeed: 4, checkMinerTx: false, customNode: false, nodeUrl: "" },
+    options: {
+      readSpeed: 4,
+      checkMinerTx: false,
+      customNode: false,
+      nodeUrl: "",
+    },
   };
 }
 
