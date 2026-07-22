@@ -1,18 +1,28 @@
 /**
- * Lite-wallet spend path — decoys → buildTransaction → sendRawTransaction → sync.
+ * Lite-wallet spend path — decoys → buildTransaction / buildMessageTransaction → broadcast → sync.
  */
 import {
   DEFAULT_MIXIN,
   decodeAddress,
   getUnspentOutputs,
   isValidAddress,
+  MAX_MESSAGE_BODY_BYTES,
+  MESSAGE_TX_AMOUNT_ATOMIC,
   MINIMUM_FEE_V2,
   type OwnedOutput,
   REMOTE_NODE_FEE_ATOMIC,
   transactions as txns,
 } from "conceal-wallet-sdk";
 import { WALLET_DONATION_ADDRESS } from "@/lib/config";
-import { pendingSpentKeyImages } from "@/services/conceal/sync/pending-store";
+import {
+  createSentMessageRecord,
+  readSentRecords,
+  withSentRecords,
+} from "@/services/conceal/sync/messages-store";
+import {
+  addPendingRecord,
+  pendingSpentKeyImages,
+} from "@/services/conceal/sync/pending-store";
 import {
   decoysFromDaemon,
   persistRuntime,
@@ -24,7 +34,14 @@ import {
 type BuiltTransaction = txns.BuiltTransaction;
 type DecoySet = txns.DecoySet;
 
+/**
+ * Same as conceal-next-wallet `spend.ts`:
+ * SDK `mixin` = decoy count = {@link DEFAULT_MIXIN} (5).
+ * Ring size = 5 decoys + 1 real output = 6.
+ * Daemon fetch asks for `MIXIN + 1` outs per amount.
+ */
 export const MIXIN = DEFAULT_MIXIN;
+export const RING_SIZE = MIXIN + 1;
 export const FEE_ATOMIC = MINIMUM_FEE_V2;
 
 export type DecodedRecipient = {
@@ -100,10 +117,41 @@ function ownKeys(runtime: SdkRuntime): {
 
 function unspentOutputs(runtime: SdkRuntime): OwnedOutput[] {
   const pendingSpent = pendingSpentKeyImages(runtime.raw);
+  const knownSpent = new Set(
+    (runtime.state.spentKeyImages ?? []).map((k) => k.toLowerCase()),
+  );
   const unspent = getUnspentOutputs(runtime.state);
-  return pendingSpent.size === 0
-    ? unspent
-    : unspent.filter((output) => !pendingSpent.has(output.keyImage));
+  return unspent.filter((output) => {
+    const ki = output.keyImage.toLowerCase();
+    if (knownSpent.has(ki)) return false;
+    if (pendingSpent.has(output.keyImage) || pendingSpent.has(ki)) return false;
+    return true;
+  });
+}
+
+/** Refresh chain state before selecting inputs (avoids already-spent key images). */
+async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
+  try {
+    await syncRuntime(runtime);
+  } catch (error) {
+    throw new Error(
+      `Wallet sync failed before send. ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function broadcastFailureMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  if (
+    /already spent|spent input|key.?image/i.test(raw) ||
+    /Failed/i.test(raw)
+  ) {
+    return (
+      `${raw} — selected outputs look already spent on-chain. ` +
+      `Sync the wallet fully, then retry. If it keeps failing, fuse/optimize or fund with a fresh output.`
+    );
+  }
+  return raw;
 }
 
 async function fetchDecoys(
@@ -112,8 +160,60 @@ async function fetchDecoys(
 ): Promise<DecoySet[]> {
   const amounts = [...new Set(outputs.map((out) => out.amount))];
   if (amounts.length === 0) return [];
-  const raw = await runtime.daemon.getRandomOuts(amounts, MIXIN + 1);
+  // Same as next-wallet: request MIXIN+1 outs (6) per amount.
+  const raw = await runtime.daemon.getRandomOuts(amounts, RING_SIZE);
   return decoysFromDaemon(raw);
+}
+
+/**
+ * Drop outs whose denomination has too few on-chain peers to build a ring of 6.
+ * Odd amounts (e.g. 7016906 from a past bug) are almost never mixable.
+ */
+function mixableOutputs(
+  outputs: readonly OwnedOutput[],
+  decoys: readonly DecoySet[],
+): { selectable: OwnedOutput[]; droppedAmounts: number[] } {
+  const decoyCount = new Map<number, number>();
+  for (const set of decoys) {
+    decoyCount.set(set.amount, set.outs.length);
+  }
+  const dropped = new Set<number>();
+  const selectable: OwnedOutput[] = [];
+  for (const out of outputs) {
+    const n = decoyCount.get(out.amount) ?? 0;
+    // Need ≥ MIXIN other outs of the same amount (assembleRing takes mixin decoys).
+    if (n >= MIXIN) {
+      selectable.push(out);
+    } else {
+      dropped.add(out.amount);
+    }
+  }
+  return { selectable, droppedAmounts: [...dropped].sort((a, b) => a - b) };
+}
+
+function mixableShortageError(droppedAmounts: number[]): string {
+  const sample = droppedAmounts
+    .slice(0, 5)
+    .map((a) => String(a))
+    .join(", ");
+  return (
+    `No mixable outputs (need ${RING_SIZE}-member rings). ` +
+    `Unmixable denomination(s): ${sample}${droppedAmounts.length > 5 ? "…" : ""}. ` +
+    `These are often leftover from a wallet bug. Receive a fresh payment (standard amounts) or fuse in next-wallet, then retry.`
+  );
+}
+
+/** Fail closed if any ring is short of 5 decoys + real (daemon would return Failed). */
+function assertFullRings(built: BuiltTransaction): void {
+  for (const vin of built.inputs) {
+    const n = vin.ringPublicKeys?.length ?? vin.keyOffsets?.length ?? 0;
+    if (n !== RING_SIZE) {
+      throw new Error(
+        `Ring size ${n} for amount ${vin.amount}; need ${RING_SIZE} (5 decoys + 1 real). ` +
+          `Denomination is not mixable on the node — receive fresh funds or fuse small/corrupt outputs.`,
+      );
+    }
+  }
 }
 
 function recordTxPrivateKey(
@@ -175,9 +275,24 @@ export async function sendCcx(input: {
   const amountAtomic = Math.round(input.amount * M_COIN);
   if (!(amountAtomic > 0)) throw new Error("Amount must be greater than zero.");
 
+  await syncBeforeSpend(runtime);
+
   const recipient = decodeRecipient(input.toAddress);
-  const outputs = unspentOutputs(runtime);
-  const decoys = await fetchDecoys(runtime, outputs);
+  const allOutputs = unspentOutputs(runtime);
+  if (allOutputs.length === 0) {
+    throw new Error("No spendable outputs. Sync fully or fund the wallet.");
+  }
+  const decoysAll = await fetchDecoys(runtime, allOutputs);
+  const { selectable: outputs, droppedAmounts } = mixableOutputs(
+    allOutputs,
+    decoysAll,
+  );
+  if (outputs.length === 0) {
+    throw new Error(mixableShortageError(droppedAmounts));
+  }
+  const decoys = decoysAll.filter((set) =>
+    outputs.some((out) => out.amount === set.amount),
+  );
   const feeAddress = await safeNodeFeeAddress(runtime.daemon);
   const feeRecipient = feeAddress ? decodeFeeRecipient(feeAddress) : null;
   const nodeFee =
@@ -211,15 +326,25 @@ export async function sendCcx(input: {
         }
       : {}),
   });
+  assertFullRings(built);
 
   try {
     await runtime.daemon.sendRawTransaction(built.serialized);
   } catch (error) {
     throw new Error(
-      `Failed to broadcast the transaction. ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to broadcast the transaction. ${broadcastFailureMessage(error)}`,
     );
   }
   recordTxPrivateKey(runtime, built);
+  runtime.raw = addPendingRecord(runtime.raw, {
+    hash: built.hash,
+    type: "send",
+    amountAtomic: built.sentAmount + built.fee,
+    timestampIso: new Date().toISOString(),
+    address: input.toAddress.trim(),
+    ...(paymentId ? { paymentId } : {}),
+    spentKeyImages: built.inputs.map((vin) => vin.keyImage),
+  });
   await persistRuntime(runtime);
   try {
     await syncRuntime(runtime);
@@ -227,4 +352,147 @@ export async function sendCcx(input: {
     /* next refresh reconciles */
   }
   return { hash: built.hash, amount: input.amount };
+}
+
+/**
+ * Broadcast a Conceal smart-message tx (tx_extra 0x04), mirroring next-wallet pulse/send.
+ * Persists a sent copy so sync does not reclassify our outbound as inbound.
+ */
+export async function sendSmartMessage(input: {
+  recipientAddress: string;
+  body: string;
+  paymentId?: string;
+  /** Absolute Unix expiry; omit/0 = mined (no mempool TTL). */
+  ttlUnixSeconds?: number;
+}): Promise<{ hash: string }> {
+  let runtime: SdkRuntime;
+  try {
+    runtime = requireRuntime();
+  } catch {
+    throw new Error(
+      "Wallet is not open. Unlock your wallet before sending a chat invite.",
+    );
+  }
+  if (runtime.viewOnly) {
+    throw new Error("This wallet is view-only and cannot send messages.");
+  }
+
+  await syncBeforeSpend(runtime);
+
+  const body = input.body.trim();
+  if (!body) throw new Error("Message body is required.");
+  const bodyBytes = new TextEncoder().encode(body).length;
+  if (bodyBytes > MAX_MESSAGE_BODY_BYTES) {
+    throw new Error(
+      `Smart message exceeds maximum length of ${MAX_MESSAGE_BODY_BYTES} bytes (got ${bodyBytes}).`,
+    );
+  }
+
+  const recipient = decodeRecipient(input.recipientAddress);
+  const paymentId = resolveOutboundPaymentId(input.paymentId, recipient);
+  const ttlUnixSeconds =
+    input.ttlUnixSeconds && input.ttlUnixSeconds > 0 ? input.ttlUnixSeconds : 0;
+  const hasTtl = ttlUnixSeconds > 0;
+
+  let nodeFee: {
+    spendPublicKey: string;
+    viewPublicKey: string;
+    amount: number;
+  } | null = null;
+  if (!hasTtl) {
+    const feeAddress = await safeNodeFeeAddress(runtime.daemon);
+    if (feeAddress && feeAddress !== runtime.account.address) {
+      const decoded = decodeFeeRecipient(feeAddress);
+      nodeFee = {
+        spendPublicKey: decoded.spendPublicKey,
+        viewPublicKey: decoded.viewPublicKey,
+        amount: REMOTE_NODE_FEE_ATOMIC,
+      };
+    }
+  }
+
+  const allOutputs = unspentOutputs(runtime);
+  if (allOutputs.length === 0) {
+    throw new Error(
+      "No spendable outputs after sync. Fund the wallet or wait for sync to drop spent outs.",
+    );
+  }
+  const decoysAll = await fetchDecoys(runtime, allOutputs);
+  const { selectable: outputs, droppedAmounts } = mixableOutputs(
+    allOutputs,
+    decoysAll,
+  );
+  if (outputs.length === 0) {
+    throw new Error(mixableShortageError(droppedAmounts));
+  }
+  const decoys = decoysAll.filter((set) =>
+    outputs.some((out) => out.amount === set.amount),
+  );
+  let built: BuiltTransaction;
+  try {
+    built = txns.buildMessageTransaction({
+      keys: runtime.account.keys,
+      recipient: {
+        spendPublicKey: recipient.spendPublicKey as txns.Hex,
+        viewPublicKey: recipient.viewPublicKey as txns.Hex,
+      },
+      body,
+      changeKeys: ownKeys(runtime),
+      unspentOutputs: outputs,
+      decoys,
+      fee: FEE_ATOMIC,
+      mixin: MIXIN,
+      ttlUnixSeconds,
+      nodeFee,
+      messageAmount: MESSAGE_TX_AMOUNT_ATOMIC,
+      ...(paymentId ? { paymentId: paymentId as txns.Hex } : {}),
+    });
+  } catch (error) {
+    throw new Error(
+      `Could not build message transaction. ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  assertFullRings(built);
+
+  try {
+    await runtime.daemon.sendRawTransaction(built.serialized);
+  } catch (error) {
+    throw new Error(
+      `Failed to broadcast the message transaction. ${broadcastFailureMessage(error)}`,
+    );
+  }
+
+  const timestampIso = new Date().toISOString();
+  const record = createSentMessageRecord({
+    hash: built.hash,
+    recipientAddress: input.recipientAddress.trim(),
+    body,
+    paymentId,
+    timestampIso,
+    ...(hasTtl ? { ttlExpiresAt: ttlUnixSeconds } : {}),
+  });
+  recordTxPrivateKey(runtime, built);
+  runtime.raw = addPendingRecord(runtime.raw, {
+    hash: built.hash,
+    type: "message",
+    amountAtomic:
+      input.recipientAddress.trim() === runtime.account.address
+        ? built.fee
+        : built.sentAmount + built.fee,
+    timestampIso,
+    address: input.recipientAddress.trim(),
+    ...(paymentId ? { paymentId } : {}),
+    spentKeyImages: built.inputs.map((vin) => vin.keyImage),
+  });
+  runtime.raw = withSentRecords(runtime.raw, [
+    ...readSentRecords(runtime.raw),
+    record,
+  ]);
+  await persistRuntime(runtime);
+  try {
+    await syncRuntime(runtime);
+  } catch {
+    /* next refresh reconciles */
+  }
+  return { hash: built.hash };
 }

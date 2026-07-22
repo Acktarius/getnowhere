@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
+import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ChatsScreen } from "@/screens/chats/ChatsScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
@@ -25,6 +26,7 @@ import { WalletPasswordScreen } from "@/screens/settings/WalletPasswordScreen";
 import { UnlockScreen } from "@/screens/UnlockScreen";
 import { WalletScreen } from "@/screens/wallet/WalletScreen";
 import { isOnboarded, useAuthStore } from "@/state/authStore";
+import { useContactsStore } from "@/state/contactsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 function AppInner() {
@@ -34,11 +36,16 @@ function AppInner() {
   const passcodeSet = useAuthStore((s) => s.passcodeSet);
   const unlocked = useAuthStore((s) => s.unlocked);
   const walletInitialized = useWalletStore((s) => s.initialized);
+  const hydrateContacts = useContactsStore((s) => s.hydrate);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    init().then(() => setReady(true));
-  }, [init]);
+    scrubLeftoverDaemonCaches();
+    init().then(async () => {
+      await hydrateContacts();
+      setReady(true);
+    });
+  }, [init, hydrateContacts]);
 
   const onboarded = isOnboarded();
   const onOnboardingPath =

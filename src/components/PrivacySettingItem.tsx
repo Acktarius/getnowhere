@@ -9,6 +9,10 @@ type Props = {
   trailing?: ReactNode;
 };
 
+/**
+ * Settings toggle row. Uses standard `.row` horizontal padding so it aligns
+ * inside `card--flush` with other settings rows (Sync, Advanced, Privacy).
+ */
 export function PrivacySettingItem({
   title,
   description,
@@ -18,41 +22,27 @@ export function PrivacySettingItem({
   trailing,
 }: Props) {
   return (
-    <div className="row" style={{ padding: "14px 0" }}>
-      <div className="grow stack" style={{ gap: 3 }}>
-        <span style={{ fontSize: 14.5, fontWeight: 500 }}>{title}</span>
-        {description && <span className="field__hint">{description}</span>}
-        {value && <div style={{ marginTop: 4 }}>{value}</div>}
+    <div className="row privacy-setting-item">
+      <div className="grow stack stack--gap-1" style={{ minWidth: 0 }}>
+        <span className="privacy-setting-item__title">{title}</span>
+        {description ? (
+          <span className="privacy-setting-item__desc field__hint">
+            {description}
+          </span>
+        ) : null}
+        {value ? <div style={{ marginTop: 4 }}>{value}</div> : null}
       </div>
       {onToggle ? (
         <button
+          type="button"
           role="switch"
           aria-checked={on}
+          aria-label={title}
           onClick={() => onToggle(!on)}
-          style={{
-            width: 44,
-            height: 26,
-            borderRadius: 13,
-            background: on ? "var(--primary)" : "var(--bg-press)",
-            border: "1px solid var(--border)",
-            position: "relative",
-            transition: "background var(--dur) var(--ease)",
-            flexShrink: 0,
-          }}
+          className="privacy-setting-item__switch"
+          data-on={on ? "true" : "false"}
         >
-          <span
-            style={{
-              position: "absolute",
-              top: 2,
-              left: on ? 20 : 2,
-              width: 20,
-              height: 20,
-              borderRadius: "50%",
-              background: "var(--text-inverse)",
-              transition: "left var(--dur) var(--ease)",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
-            }}
-          />
+          <span className="privacy-setting-item__knob" />
         </button>
       ) : (
         trailing

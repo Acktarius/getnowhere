@@ -193,7 +193,10 @@ export function saveEncryptedWalletFile(
 
 // ===== Daemon + sync (real chain scanning) =====
 
-import { DEFAULT_DAEMON_NODES as CONFIG_NODES } from "@/lib/config";
+import {
+  DEFAULT_DAEMON_NODES as CONFIG_NODES,
+  resolveDaemonNodeUrl,
+} from "@/lib/config";
 
 /** Default public Conceal daemon nodes (shared with next-wallet sync). */
 export const DEFAULT_DAEMON_NODES = CONFIG_NODES;
@@ -202,7 +205,10 @@ export const DEFAULT_DAEMON_NODES = CONFIG_NODES;
 export function buildDaemon(
   nodeUrl: string = DEFAULT_DAEMON_NODES[0],
 ): DaemonClient {
-  return sdk.createDaemonClient({ nodeUrl, allowInsecure: true });
+  return sdk.createDaemonClient({
+    nodeUrl: resolveDaemonNodeUrl(nodeUrl),
+    allowInsecure: true,
+  });
 }
 
 /**

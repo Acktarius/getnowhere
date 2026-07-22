@@ -32,4 +32,4 @@ export {
   unlock,
   updateRuntimeOptions,
 } from "./runtime";
-export { sendCcx } from "./spend";
+export { sendCcx, sendSmartMessage } from "./spend";

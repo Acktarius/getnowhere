@@ -29,6 +29,7 @@ export function WalletScreen() {
   const [loadingTx, setLoadingTx] = useState(true);
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [copied, copy] = useCopy();
 
   useEffect(() => {
@@ -208,76 +209,104 @@ export function WalletScreen() {
             />
           ) : (
             <div className="card card--flush stagger">
-              {txs.map((tx) => (
-                <div className="row" key={tx.id}>
-                  <div
-                    className="row__avatar"
-                    style={{
-                      width: 36,
-                      height: 36,
-                      fontSize: 14,
-                      background:
-                        tx.type === "incoming"
-                          ? "var(--primary-soft)"
-                          : "var(--bg-elev-2)",
-                      color:
-                        tx.type === "incoming"
-                          ? "var(--primary)"
-                          : "var(--text-muted)",
-                    }}
-                  >
-                    {tx.type === "incoming" ? (
-                      <Download size={15} />
-                    ) : (
-                      <Upload size={15} />
+              {txs.map((tx) => {
+                const open = expandedTxId === tx.id;
+                return (
+                  <div key={tx.id} className="tx-row">
+                    <button
+                      type="button"
+                      className="row row--clickable tx-row__main"
+                      onClick={() => setExpandedTxId(open ? null : tx.id)}
+                      aria-expanded={open}
+                    >
+                      <div
+                        className="row__avatar"
+                        style={{
+                          width: 36,
+                          height: 36,
+                          fontSize: 14,
+                          background:
+                            tx.type === "incoming"
+                              ? "var(--primary-soft)"
+                              : "var(--bg-elev-2)",
+                          color:
+                            tx.type === "incoming"
+                              ? "var(--primary)"
+                              : "var(--text-muted)",
+                        }}
+                      >
+                        {tx.type === "incoming" ? (
+                          <Download size={15} />
+                        ) : (
+                          <Upload size={15} />
+                        )}
+                      </div>
+                      <div className="row__main">
+                        <div className="row__title">
+                          {tx.kind === "miner"
+                            ? "Miner reward"
+                            : tx.kind === "deposit"
+                              ? "Deposit"
+                              : tx.kind === "withdrawal"
+                                ? "Withdrawal"
+                                : tx.kind === "fusion"
+                                  ? "Optimization"
+                                  : tx.type === "incoming"
+                                    ? "Received"
+                                    : "Sent"}
+                          {tx.state === "pending" && (
+                            <span
+                              className="pill pill--pending"
+                              style={{ marginLeft: 4 }}
+                            >
+                              pending
+                            </span>
+                          )}
+                        </div>
+                        <div className="row__sub">
+                          {tx.counterparty
+                            ? shortAddress(tx.counterparty)
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="row__meta">
+                        <span
+                          className="mono"
+                          style={{
+                            color:
+                              tx.type === "incoming"
+                                ? "var(--primary)"
+                                : "var(--text)",
+                            fontSize: 13,
+                          }}
+                        >
+                          {tx.type === "incoming" ? "+" : "−"}
+                          {formatCCX(tx.amount)}
+                        </span>
+                        <span className="faint" style={{ fontSize: 11 }}>
+                          {timeAgo(tx.timestamp)}
+                        </span>
+                      </div>
+                    </button>
+                    {open && tx.hash && (
+                      <div className="tx-row__detail">
+                        <span className="faint" style={{ fontSize: 11 }}>
+                          txHash
+                        </span>
+                        <button
+                          type="button"
+                          className="tx-row__hash mono"
+                          onClick={() => copy(tx.hash)}
+                          title="Copy transaction hash"
+                        >
+                          {tx.hash}
+                          {copied ? " · copied" : ""}
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <div className="row__main">
-                    <div className="row__title">
-                      {tx.kind === "miner"
-                        ? "Miner reward"
-                        : tx.kind === "deposit"
-                          ? "Deposit"
-                          : tx.kind === "withdrawal"
-                            ? "Withdrawal"
-                            : tx.kind === "fusion"
-                              ? "Optimization"
-                              : tx.type === "incoming"
-                                ? "Received"
-                                : "Sent"}
-                      {tx.state === "pending" && (
-                        <span
-                          className="pill pill--pending"
-                          style={{ marginLeft: 4 }}
-                        >
-                          pending
-                        </span>
-                      )}
-                    </div>
-                    <div className="row__sub">
-                      {tx.counterparty ? shortAddress(tx.counterparty) : "—"}
-                    </div>
-                  </div>
-                  <div className="row__meta">
-                    <span
-                      className="mono"
-                      style={{
-                        color:
-                          tx.type === "incoming"
-                            ? "var(--primary)"
-                            : "var(--text)",
-                        fontSize: 13,
-                      }}
-                    >
-                      {tx.type === "incoming" ? "+" : "−"}
-                      {formatCCX(tx.amount)}
-                    </span>
-                    <span className="faint" style={{ fontSize: 11 }}>
-                      {timeAgo(tx.timestamp)}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

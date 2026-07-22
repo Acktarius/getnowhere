@@ -1,15 +1,17 @@
 import {
   AlertCircle,
+  ArrowLeftRight,
   Check,
   ChevronDown,
   ChevronUp,
   Copy,
-  RefreshCw,
+  Pencil,
 } from "lucide-react";
 import { useState } from "react";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { useCopy } from "@/hooks/useCopy";
+import { walletService } from "@/services";
 import { shortAddress } from "@/utils/format";
 
 type Props = {
@@ -23,6 +25,11 @@ type Props = {
   /** Show a chevron to expand/collapse a branded QR for this value. */
   showQr?: boolean;
   qrKind?: "address" | "paymentId";
+  /**
+   * When editing, show a double-arrow control to generate a random payment ID.
+   * Only for paymentIdFrom (receiver assigns the ID that identifies the sender).
+   */
+  allowGenerate?: boolean;
 };
 
 export function PaymentIdField({
@@ -35,6 +42,7 @@ export function PaymentIdField({
   missing,
   showQr,
   qrKind = "paymentId",
+  allowGenerate = false,
 }: Props) {
   const [copied, copy] = useCopy();
   const [editing, setEditing] = useState(false);
@@ -42,6 +50,11 @@ export function PaymentIdField({
   const [qrOpen, setQrOpen] = useState(false);
 
   const accent = direction === "from" ? "var(--primary)" : "var(--secondary)";
+
+  function startEdit() {
+    setDraft(value);
+    setEditing(true);
+  }
 
   return (
     <div
@@ -77,29 +90,45 @@ export function PaymentIdField({
           <div style={{ position: "relative" }}>
             <input
               className="input input--mono"
-              style={{ paddingRight: 44 }}
+              style={{ paddingRight: allowGenerate ? 84 : 44 }}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               autoFocus
             />
-            <PaymentIdQrScanButton
+            <div
+              className="row-flex"
               style={{
                 position: "absolute",
                 right: 6,
                 top: "50%",
                 transform: "translateY(-50%)",
-                width: 34,
-                height: 34,
+                gap: 2,
               }}
-              onScan={setDraft}
-            />
+            >
+              {allowGenerate && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{ width: 34, height: 34 }}
+                  aria-label="Generate random payment ID"
+                  title="Generate random payment ID"
+                  onClick={() => setDraft(walletService.generatePaymentId())}
+                >
+                  <ArrowLeftRight size={16} />
+                </button>
+              )}
+              <PaymentIdQrScanButton
+                style={{ width: 34, height: 34 }}
+                onScan={setDraft}
+              />
+            </div>
           </div>
           <div className="row-flex" style={{ gap: 8 }}>
             <button
               type="button"
               className="btn btn--sm btn--primary"
               onClick={() => {
-                onEdit?.(draft);
+                onEdit?.(draft.trim());
                 setEditing(false);
               }}
             >
@@ -139,23 +168,25 @@ export function PaymentIdField({
           {hint}
         </div>
       )}
-      {!editing && value && (
+      {!editing && (
         <div className="row-flex" style={{ gap: 8, marginTop: 10 }}>
-          <button
-            type="button"
-            className="btn btn--sm btn--ghost"
-            onClick={() => copy(value)}
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
-            {copied ? "Copied" : "Copy"}
-          </button>
+          {value ? (
+            <button
+              type="button"
+              className="btn btn--sm btn--ghost"
+              onClick={() => copy(value)}
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          ) : null}
           {editable && (
             <button
               type="button"
               className="btn btn--sm btn--ghost"
-              onClick={() => setEditing(true)}
+              onClick={startEdit}
             >
-              <RefreshCw size={13} /> Edit
+              <Pencil size={13} /> Edit
             </button>
           )}
         </div>

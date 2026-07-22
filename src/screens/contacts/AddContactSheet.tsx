@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowLeftRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
@@ -143,9 +143,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
         </div>
 
         <div className="field">
-          <span className="field__label">
-            paymentIdFrom <span className="faint">your local identifier</span>
-          </span>
+          <span className="field__label">paymentIdFrom</span>
           <div
             className="row-flex"
             style={{ gap: 8, alignItems: "flex-start" }}
@@ -174,19 +172,18 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                 setPaymentIdFrom(walletService.generatePaymentId())
               }
             >
-              <RefreshCw size={13} /> Gen
+              <ArrowLeftRight size={13} /> Gen
             </button>
           </div>
           <span className="field__hint">
-            Share this with your counterpart so they can recognize you. Use Gen
-            for a new ID, or paste/scan one you already use.
+            You generate this as the receiver: share it with your counterpart.
+            You use it on receive to identify them (they fill paymentIdTo with
+            it). Use Gen / paste / scan.
           </span>
         </div>
 
         <div className="field">
-          <span className="field__label">
-            paymentIdTo <span className="faint">from counterpart</span>
-          </span>
+          <span className="field__label">paymentIdTo</span>
           <SecureInput
             value={paymentIdTo}
             onChange={setPaymentIdTo}
@@ -202,7 +199,8 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
             }
           />
           <span className="field__hint">
-            The identifier your counterpart gives back. The relationship stays
+            That has been provided to you by your contact, so he/she can
+            identify you. Use it when sending to them. Relationship stays
             pending until this is saved.
           </span>
         </div>
@@ -217,7 +215,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
           >
             <span style={{ fontSize: 12.5, color: "var(--warning)" }}>
               Incomplete relationship — both payment IDs must be present to mark
-              this established.
+              this eligible.
             </span>
           </div>
         )}

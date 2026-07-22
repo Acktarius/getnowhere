@@ -37,6 +37,22 @@ export default defineConfig(({ command }) => ({
   server: {
     host: true,
     port: 5173,
+    // Browser wallets cannot call most public daemons directly (CORS). In dev,
+    // same-origin proxies forward to Conceal's CORS-friendly public nodes.
+    proxy: {
+      "/ccx-daemon": {
+        target: "https://explorer.conceal.network",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/ccx-daemon/, "/daemon"),
+      },
+      "/ccx-daemon-alt": {
+        target: "https://ccxapi.conceal.network",
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/ccx-daemon-alt/, "/daemon"),
+      },
+    },
   },
   build: {
     assetsDir: "assets",

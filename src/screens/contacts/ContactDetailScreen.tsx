@@ -12,7 +12,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
@@ -34,21 +34,58 @@ export function ContactDetailScreen() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const contact = useContactsStore((s) => s.getById(id));
+  const getById = useContactsStore((s) => s.getById);
   const savePaymentIdTo = useContactsStore((s) => s.savePaymentIdTo);
   const updateContact = useContactsStore((s) => s.updateContact);
   const removeContact = useContactsStore((s) => s.removeContact);
   const archiveContact = useContactsStore((s) => s.archiveContact);
   const blockContact = useContactsStore((s) => s.blockContact);
   const sendInvite = useContactsStore((s) => s.sendInvite);
+  const acceptInvite = useContactsStore((s) => s.acceptInvite);
+  const declineInvite = useContactsStore((s) => s.declineInvite);
+  const refreshInvites = useContactsStore((s) => s.refreshInvites);
+  const abandonPendingInvite = useContactsStore((s) => s.abandonPendingInvite);
+  const invites = useContactsStore((s) => s.invites);
+  const contactRoomId = useContactsStore((s) => s.getById(id)?.roomId);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
+  const roomLive = useChatStore((s) => {
+    if (!contactRoomId) return false;
+    const room = s.rooms.find((r) => r.id === contactRoomId);
+    return (
+      room?.lifecycleStatus === "connected" && room.peerStatus === "online"
+    );
+  });
 
   const [copiedAddr, copyAddr] = useCopy();
   const [copiedFrom, copyFrom] = useCopy();
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [createSheet, setCreateSheet] = useState(false);
+  const [inviteExpiryHours, setInviteExpiryHours] = useState(24);
+  const [roomTtlDays, setRoomTtlDays] = useState(7);
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [acting, setActing] = useState(false);
+  const [refreshingInvite, setRefreshingInvite] = useState(false);
+
+  // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setRefreshingInvite(true);
+      try {
+        await refreshInvites();
+      } catch {
+        /* wallet may still be syncing */
+      } finally {
+        if (!cancelled) setRefreshingInvite(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, refreshInvites]);
 
   if (!contact) {
     return (
@@ -67,18 +104,43 @@ export function ContactDetailScreen() {
     );
   }
 
-  const established = contact.relationshipStatus === "established";
+  const eligible = contact.relationshipStatus === "eligible";
+  const incomingInvite = eligible
+    ? [...invites]
+        .filter((i) => i.contactId === contact.id && i.status === "received")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    : undefined;
+  /** Newer create must show Accept even if an older invite was already accepted. */
+  const showAccept = Boolean(
+    incomingInvite &&
+      (contact.inviteStatus === "received" ||
+        contact.roomId !== incomingInvite.roomId),
+  );
   const canInvite =
-    established &&
+    eligible &&
+    !showAccept &&
     contact.inviteStatus !== "sent" &&
-    contact.inviteStatus !== "accepted";
+    contact.inviteStatus !== "accepted" &&
+    contact.inviteStatus !== "received";
+  /** Allow resend whenever the Holepunch room is not actually live. */
+  const canResend =
+    eligible &&
+    !showAccept &&
+    (contact.inviteStatus === "sent" ||
+      contact.inviteStatus === "failed" ||
+      contact.inviteStatus === "accepted" ||
+      contact.chatStatus === "active" ||
+      contact.chatStatus === "connecting" ||
+      contact.chatStatus === "invited") &&
+    !roomLive;
 
-  async function handleInvite() {
+  async function handleResendInvite() {
     if (!contact) return;
     setError(null);
     setSendingInvite(true);
     try {
-      await sendInvite(contact.id, contact.alias);
+      await abandonPendingInvite(contact.id);
+      setCreateSheet(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -86,16 +148,95 @@ export function ContactDetailScreen() {
     }
   }
 
+  async function handleInvite() {
+    if (!contact) return;
+    setError(null);
+    setSendingInvite(true);
+    try {
+      const { roomId } = await sendInvite(contact.id, contact.alias, {
+        inviteExpirySec: inviteExpiryHours * 3600,
+        roomTtlSec: roomTtlDays * 86400,
+      });
+      setCreateSheet(false);
+      navigate(`/chats/${roomId}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSendingInvite(false);
+    }
+  }
+
+  async function handleAccept() {
+    if (!incomingInvite) {
+      await refreshInvites();
+      return;
+    }
+    setActing(true);
+    setError(null);
+    try {
+      const { roomId } = await acceptInvite(incomingInvite.id);
+      navigate(`/chats/${roomId}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function handleDecline() {
+    if (!incomingInvite) return;
+    setActing(true);
+    setError(null);
+    try {
+      await declineInvite(incomingInvite.id);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActing(false);
+    }
+  }
+
   async function handleOpenChat() {
     if (!contact) return;
-    // bootstrap a local-mock room keyed off the contact; real adapter would
-    // use the invite's bootstrap data.
-    const room = await bootstrapRoom(contact.id, {
-      roomId: `room_${contact.id.slice(2)}`,
-      roomKeyRef: `rk_${contact.id.slice(-12)}`,
-      bootstrapSource: "local-mock",
-    });
-    navigate(`/chats/${room.id}`);
+    setError(null);
+    setActing(true);
+    try {
+      // Alice: pick up Bob's on-chain register before opening.
+      try {
+        await refreshInvites();
+      } catch {
+        /* sync may still be running */
+      }
+      const latest = getById(contact.id) ?? contact;
+      if (latest.roomId) {
+        const inv = invites.find(
+          (i) => i.contactId === latest.id && i.roomId === latest.roomId,
+        );
+        await bootstrapRoom(latest.id, {
+          roomId: latest.roomId,
+          roomKeyRef: `key:${latest.roomId}`,
+          bootstrapSource: "conceal-smart-message",
+          // pending shell only — connect/restore sets accepted→connected
+          lifecycleStatus: "pending",
+          inviteId: inv?.inviteId,
+          inviteExpiry: inv?.inviteExpiry,
+          roomTtl: inv?.roomTtl,
+        });
+        navigate(`/chats/${latest.roomId}`);
+        return;
+      }
+      const room = await bootstrapRoom(contact.id, {
+        roomId: `room_${contact.id.slice(2)}`,
+        roomKeyRef: `rk_${contact.id.slice(-12)}`,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "pending",
+      });
+      navigate(`/chats/${room.id}`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setActing(false);
+    }
   }
 
   return (
@@ -175,21 +316,22 @@ export function ContactDetailScreen() {
             Payment identifiers
           </div>
           <PaymentIdField
-            label="paymentIdFrom (yours)"
+            label="paymentIdFrom"
             direction="from"
             value={contact.paymentIdFrom}
-            hint="Share this with your counterpart. They will use it to recognize you."
+            hint="You are the receiver for this ID: share it with your counterpart. You use it on receive to identify them (they store it as their paymentIdTo)."
             editable
+            allowGenerate
             showQr
             qrKind="paymentId"
             onEdit={(v) => updateContact(contact.id, { paymentIdFrom: v })}
           />
           <PaymentIdField
-            label="paymentIdTo (theirs)"
+            label="paymentIdTo"
             direction="to"
             value={contact.paymentIdTo ?? ""}
             missing={!contact.paymentIdTo}
-            hint="Paste the identifier your counterpart gave you. The relationship becomes established once this is saved."
+            hint="That has been provided to you by your contact, so he/she can identify you. Use it when sending to them."
             editable
             showQr
             qrKind="paymentId"
@@ -205,43 +347,96 @@ export function ContactDetailScreen() {
         )}
 
         <div className="stack stack--gap-2 fade-in-up">
-          {established ? (
+          {eligible ? (
             <>
-              {canInvite ? (
+              {showAccept && incomingInvite ? (
+                <div className="card card--pad-md stack stack--gap-2">
+                  <div className="muted" style={{ fontSize: 13.5 }}>
+                    {contact.inviteStatus === "accepted" &&
+                    contact.roomId !== incomingInvite.roomId
+                      ? "New chat invite supersedes the old room. Accept to connect the new invite."
+                      : "Incoming chat invite. Accepting starts Holepunch connect — the chat is live only after peers are connected."}
+                  </div>
+                  <div className="row-flex" style={{ gap: 8 }}>
+                    <button
+                      className="btn btn--primary grow"
+                      disabled={acting}
+                      onClick={handleAccept}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="btn btn--secondary grow"
+                      disabled={acting}
+                      onClick={handleDecline}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ) : refreshingInvite ? (
+                <div
+                  className="card card--pad-md center muted"
+                  style={{ fontSize: 13.5 }}
+                >
+                  <Loader2 size={16} className="spin" /> Checking for invites…
+                </div>
+              ) : canInvite ? (
                 <button
                   className="btn btn--block btn--primary"
-                  disabled={sendingInvite}
-                  onClick={handleInvite}
+                  onClick={() => setCreateSheet(true)}
                 >
-                  {sendingInvite ? (
-                    <>
-                      <Loader2 size={16} className="spin" /> Sending invite…
-                    </>
-                  ) : (
-                    <>
-                      <MessageSquarePlus size={16} /> Send P2P chat invite
-                    </>
-                  )}
+                  <MessageSquarePlus size={16} /> Create chat
                 </button>
-              ) : contact.inviteStatus === "sent" ? (
+              ) : contact.inviteStatus === "sent" || canResend ? (
                 <div className="card card--pad-md center stack stack--gap-2">
                   <div className="muted" style={{ fontSize: 13.5 }}>
-                    Invite sent via Conceal smart message. Waiting for
-                    counterpart to accept.
+                    {roomLive
+                      ? "Chat session is live."
+                      : contact.inviteStatus === "sent"
+                        ? "Invite sent. If the pending room stays offline after they accept, resend a new invite (new room id)."
+                        : "Invite was marked accepted but Holepunch is not connected. Resend a new invite to recover."}
                   </div>
+                  {contact.roomId && (
+                    <button
+                      className="btn btn--sm btn--secondary"
+                      onClick={handleOpenChat}
+                    >
+                      <ArrowRight size={14} />{" "}
+                      {contact.inviteStatus === "sent"
+                        ? "Open pending room"
+                        : "Open room"}
+                    </button>
+                  )}
+                  {canResend && (
+                    <button
+                      className="btn btn--sm btn--primary"
+                      disabled={sendingInvite}
+                      onClick={() => void handleResendInvite()}
+                    >
+                      <MessageSquarePlus size={14} /> Resend invite
+                    </button>
+                  )}
+                </div>
+              ) : contact.chatStatus === "active" ||
+                contact.chatStatus === "connecting" ? (
+                <div className="stack stack--gap-2">
                   <button
-                    className="btn btn--sm btn--secondary"
+                    className="btn btn--block btn--primary"
                     onClick={handleOpenChat}
                   >
-                    <ArrowRight size={14} /> Open room anyway
+                    <ArrowRight size={16} />{" "}
+                    {contact.chatStatus === "active"
+                      ? "Open connected chat"
+                      : "Open connecting room"}
                   </button>
                 </div>
               ) : (
                 <button
-                  className="btn btn--block btn--primary"
+                  className="btn btn--block btn--secondary"
                   onClick={handleOpenChat}
                 >
-                  <ArrowRight size={16} /> Open chat room
+                  <ArrowRight size={16} /> Open room
                 </button>
               )}
             </>
@@ -286,15 +481,67 @@ export function ContactDetailScreen() {
       </div>
 
       <Sheet
+        open={createSheet}
+        title="Create chat"
+        onClose={() => setCreateSheet(false)}
+      >
+        <div className="stack stack--gap-3">
+          <p className="muted" style={{ fontSize: 13.5 }}>
+            Sends a Conceal smart-message create invite. Accept is only the
+            handoff into Holepunch — messaging starts after peers connect.
+          </p>
+          <label className="stack stack--gap-1">
+            <span className="eyebrow">Invite expiry (hours)</span>
+            <input
+              type="number"
+              min={1}
+              max={168}
+              value={inviteExpiryHours}
+              onChange={(e) =>
+                setInviteExpiryHours(Number(e.target.value) || 24)
+              }
+            />
+          </label>
+          <label className="stack stack--gap-1">
+            <span className="eyebrow">Room TTL (days)</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={roomTtlDays}
+              onChange={(e) => setRoomTtlDays(Number(e.target.value) || 7)}
+            />
+          </label>
+          <button
+            className="btn btn--block btn--primary"
+            disabled={sendingInvite}
+            onClick={handleInvite}
+          >
+            {sendingInvite ? (
+              <>
+                <Loader2 size={16} className="spin" /> Creating…
+              </>
+            ) : (
+              <>
+                <MessageSquarePlus size={16} /> Send create invite
+              </>
+            )}
+          </button>
+          {error && <div className="field__error">{error}</div>}
+        </div>
+      </Sheet>
+
+      <Sheet
         open={shareSheet}
         title="Share your identity"
         onClose={() => setShareSheet(false)}
       >
         <div className="stack stack--gap-3">
           <p className="muted" style={{ fontSize: 13.5 }}>
-            Send these out of band (in person, via a secure channel) so your
-            counterpart can add you. The relationship only completes when they
-            send back their paymentIdTo.
+            Send these out of band (in person, via a secure channel). Share your
+            paymentIdFrom — you use it to identify them on receive; they store
+            it as their paymentIdTo. They give you a paymentIdTo so that when
+            you send to them, they can identify you.
           </p>
           <ShareRow
             label="Your CCX address"
@@ -302,7 +549,7 @@ export function ContactDetailScreen() {
             qrKind="address"
           />
           <ShareRow
-            label="Your paymentIdFrom"
+            label="paymentIdFrom"
             value={contact.paymentIdFrom}
             qrKind="paymentId"
           />

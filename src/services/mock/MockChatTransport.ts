@@ -26,6 +26,10 @@ export const MockChatTransport: ChatTransport = {
       bootstrapSource: bootstrap?.bootstrapSource ?? "local-mock",
       roomKeyRef: bootstrap?.roomKeyRef ?? roomKeyRef(id),
       peerStatus: "connecting",
+      lifecycleStatus: bootstrap?.lifecycleStatus ?? "pending",
+      inviteId: bootstrap?.inviteId,
+      inviteExpiry: bootstrap?.inviteExpiry,
+      roomTtl: bootstrap?.roomTtl,
       createdAt: new Date().toISOString(),
     };
     rooms.set(id, room);
@@ -54,9 +58,65 @@ export const MockChatTransport: ChatTransport = {
     return room;
   },
 
+  async connect(contract) {
+    const room = rooms.get(contract.roomId);
+    if (!room) {
+      const created: ChatRoom = {
+        id: contract.roomId,
+        contactId: "",
+        bootstrapSource: "conceal-smart-message",
+        roomKeyRef: contract.sessionId,
+        peerStatus: "online",
+        lifecycleStatus: "connected",
+        inviteId: contract.inviteId,
+        roomTtl: contract.roomTtl,
+        createdAt: new Date().toISOString(),
+      };
+      rooms.set(contract.roomId, created);
+      return created;
+    }
+    room.lifecycleStatus = "connected";
+    room.peerStatus = "online";
+    return room;
+  },
+
+  async disconnect(roomId) {
+    const room = rooms.get(roomId);
+    if (room) {
+      room.lifecycleStatus = "closed";
+      room.peerStatus = "offline";
+    }
+  },
+
+  async retryConnect(roomId) {
+    return this.connect({
+      contractVersion: 1,
+      roomId,
+      relationshipId: "",
+      inviteId: "",
+      sessionId: "",
+      cipherSuite: "CHACHA20_POLY1305_V1",
+      sendKeyRef: "",
+      recvKeyRef: "",
+      nonceSeed: "",
+      nonceStrategy: "counter_from_seed",
+      sendCounter: 0,
+      recvCounter: 0,
+      peerRole: "initiator",
+      transport: { kind: "holepunch", topicRef: roomId },
+      roomTtl: Math.floor(Date.now() / 1000) + 86400,
+      establishedAt: new Date().toISOString(),
+    });
+  },
+
   async sendMessage(roomId: string, text: string): Promise<ChatMessage> {
     const room = rooms.get(roomId);
     if (!room) throw new Error("Room not found");
+    if (room.lifecycleStatus !== "connected") {
+      throw new Error(
+        "Cannot send until Holepunch-connected (accepted is not enough).",
+      );
+    }
     const msg: ChatMessage = {
       id: uid("msg"),
       roomId,

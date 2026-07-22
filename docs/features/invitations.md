@@ -1,19 +1,31 @@
 # Invitations Feature
 
-This document defines the invitations feature for Get Now Here. It explains how one user initiates contact with another user, how invitation state is tracked, and how the app transitions from a relationship request into an available chat session.
+This document defines **relationship** invitations for Get Now Here — how one
+user initiates contact with another and establishes a bidirectional Conceal
+relationship (`paymentIdFrom` / `paymentIdTo`).
+
+**Chat invites are a separate protocol.** After a contact is
+`eligible` (both payment IDs), chat create / accept / decline uses Conceal smart messages on
+module `contact` with ACTION_MAP verbs `create` / `register` / `revoke`, then
+hands off to required Holepunch transport. See
+[`docs/security/p2pchatprotocol.md`](../security/p2pchatprotocol.md).
+
+Do not overload “invitation” in product copy without clarifying relationship vs chat.
 
 ## Purpose
 
-The invitations feature is the bridge between discovery and conversation.
+The invitations feature is the bridge between discovery and a verified contact
+relationship.
 
 It must allow a user to:
 
 - initiate a contact or relationship request
-- receive an incoming invitation
-- accept, reject, ignore, or expire an invitation
-- unlock the next communication step only after the invitation reaches a valid accepted state
+- receive an incoming relationship invitation
+- accept, reject, ignore, or expire a relationship invitation
+- become **eligible** for chat invites only after both payment IDs are present
 
-This feature should feel simple in the UI, but the internal state model must be explicit and reliable.
+Chat readiness after that point is owned by the P2P chat protocol (pending room,
+register handoff, Holepunch connected) — not by this document alone.
 
 ## Product goals
 
@@ -22,7 +34,8 @@ The invitations system should:
 - make first contact clear and low-friction
 - avoid ambiguous states
 - preserve user privacy
-- support a future second-layer P2P chat bootstrap
+- support second-layer P2P chat bootstrap after a contact is eligible
+  (see `p2pchatprotocol.md` — Holepunch is required for live chat)
 - stay compatible with the web-first architecture and future wrapper delivery
 
 ## Core concepts
@@ -86,7 +99,7 @@ As a recipient, a user should be able to:
 - understand what accepting means
 - accept or reject clearly
 - avoid accidental acceptance
-- move into chat only when the relationship is truly established
+- move into chat only when the contact is eligible (both payment IDs)
 
 ## Invitation lifecycle
 

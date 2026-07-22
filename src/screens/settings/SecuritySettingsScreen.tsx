@@ -97,8 +97,13 @@ export function SecuritySettingsScreen() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card__title">Biometric</div>
+        <div className="card card--flush">
+          <div
+            className="card__title"
+            style={{ padding: "var(--space-4) var(--space-4) 0" }}
+          >
+            Biometric
+          </div>
           <PrivacySettingItem
             title="Enable biometric unlock"
             description="Placeholder — on supported devices, Face ID or fingerprint can unlock the app."

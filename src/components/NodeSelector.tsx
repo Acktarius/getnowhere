@@ -3,7 +3,7 @@
  */
 import { Check, RefreshCw, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_DAEMON_NODES } from "@/lib/config";
+import { DEFAULT_DAEMON_NODES, isBlockedDaemonUrl } from "@/lib/config";
 import {
   fastestNodeUrl,
   type NodeProbe,
@@ -11,6 +11,10 @@ import {
 } from "@/lib/network/node-probe";
 import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
 import type { SmartNode } from "@/lib/types/smart-node";
+
+function withoutLeftovers(list: SmartNode[]): SmartNode[] {
+  return list.filter((n) => !isBlockedDaemonUrl(n.url));
+}
 
 export function NodeSelector({
   activeNodeUrl,
@@ -35,17 +39,19 @@ export function NodeSelector({
     setLoading(true);
     fetchSmartNodes(activeNodeUrl)
       .then((list) => {
-        if (!cancelled) setNodes(list);
+        if (!cancelled) setNodes(withoutLeftovers(list));
       })
       .catch(() => {
         if (!cancelled) {
           setNodes(
-            DEFAULT_DAEMON_NODES.map((url, i) => ({
-              id: `default-${i}`,
-              name: url,
-              url,
-              poolHost: nodeUrlToPoolHost(url),
-            })),
+            withoutLeftovers(
+              DEFAULT_DAEMON_NODES.map((url, i) => ({
+                id: `default-${i}`,
+                name: url,
+                url,
+                poolHost: nodeUrlToPoolHost(url),
+              })),
+            ),
           );
         }
       })

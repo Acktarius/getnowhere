@@ -5,11 +5,24 @@ import { SeedBackupPanel } from "@/components/SeedBackupPanel";
 import { ConfirmModal } from "@/components/Sheet";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { seedBackupService } from "@/services";
+import { contactsExportPayload } from "@/services/contacts/contactsPersistence";
 import { useAuthStore } from "@/state/authStore";
+import { useContactsStore } from "@/state/contactsStore";
 import { useWalletStore } from "@/state/walletStore";
+
+function downloadJson(filename: string, data: string): void {
+  const blob = new Blob([data], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function BackupSettingsScreen() {
   const wallet = useWalletStore();
+  const contacts = useContactsStore((s) => s.contacts);
   const verify = useAuthStore((s) => s.verify);
   const [step, setStep] = useState<"locked" | "revealed">("locked");
   const [passcode, setPasscode] = useState("");
@@ -37,9 +50,13 @@ export function BackupSettingsScreen() {
         seedRef: wallet.seedRef,
         network: wallet.network,
       },
-      note: "Seed phrase intentionally excluded from metadata export.",
+      contacts: contactsExportPayload(contacts),
+      note: "Seed phrase intentionally excluded from metadata export. Contacts are also stored in the encrypted wallet addressBook on device.",
     };
-    setExportData(JSON.stringify(data, null, 2));
+    const json = JSON.stringify(data, null, 2);
+    setExportData(json);
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadJson(`getnowhere-metadata-${stamp}.json`, json);
   }
 
   if (!wallet.initialized) {
@@ -116,8 +133,9 @@ export function BackupSettingsScreen() {
             className="muted"
             style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 12 }}
           >
-            Exports non-sensitive metadata only (address, network, seed
-            reference). The seed phrase itself is never included.
+            Downloads a .json with address, network, and saved contacts. The
+            seed phrase is never included. Contacts also live in the encrypted
+            wallet blob (addressBook) used by wallet backup import.
           </p>
           <button
             className="btn btn--block btn--secondary"
@@ -126,14 +144,14 @@ export function BackupSettingsScreen() {
               setShowExport(true);
             }}
           >
-            <Download size={15} /> Build metadata export
+            <Download size={15} /> Download metadata .json
           </button>
         </div>
       </div>
 
       <ConfirmModal
         open={showExport}
-        title="Wallet metadata export"
+        title="Metadata export downloaded"
         body={
           <pre
             className="mono"

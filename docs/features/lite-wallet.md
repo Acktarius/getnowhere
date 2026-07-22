@@ -40,6 +40,11 @@ screen). App unlock passcode can be set later under Settings → Passcode.
 - **Wallet password** — re-encrypts the local wallet blob (`/settings/wallet-password`).
   Distinct from the app unlock passcode.
 - **Daemon node** — probe list, Use fastest, custom HTTPS URL; triggers resync.
+  Defaults match conceal-next-wallet (`explorer.conceal.network/daemon`,
+  `ccxapi.conceal.network/daemon`). Fabricated leftovers
+  (`daemon.conceal.network`, `concealx.net`) are rejected and scrubbed from
+  cache. Local `npm run dev` dials them via Vite proxies `/ccx-daemon/` and
+  `/ccx-daemon-alt/` (no browser CORS).
 
 ## Send / receive / history
 

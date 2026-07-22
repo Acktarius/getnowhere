@@ -107,7 +107,7 @@ export function SettingsScreen() {
           <div className="section__head">
             <span className="section__title">Privacy</span>
           </div>
-          <div className="card">
+          <div className="card card--flush">
             <PrivacySettingItem
               title="Hide balances by default"
               description="Blur CCX amounts until you tap to reveal."

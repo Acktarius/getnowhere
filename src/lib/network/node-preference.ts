@@ -10,6 +10,8 @@
  * Read by BOTH the runtime (`readPreferredNode`, at daemon construction) and the open-screen picker
  * (the cached/subscribable getters, for reactivity).
  */
+import { isBlockedDaemonUrl } from "@/lib/config";
+
 const STORAGE_KEY = "ccx-preferred-node";
 
 type NodePreferenceListener = (url: string | null) => void;
@@ -23,7 +25,12 @@ export function readPreferredNode(): string | null {
   if (typeof localStorage === "undefined") return null;
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return value?.trim() ? value : null;
+    const trimmed = value?.trim() ? value.trim() : null;
+    if (trimmed && isBlockedDaemonUrl(trimmed)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return trimmed;
   } catch {
     return null;
   }
@@ -58,6 +65,11 @@ export function getPreferredNode(): string | null {
 
 /** Set (and persist) the preferred node. `null` clears it (revert to the default). */
 export function setPreferredNode(url: string | null): void {
+  if (url?.trim() && isBlockedDaemonUrl(url)) {
+    throw new Error(
+      "That daemon URL is not supported. Use a public node from Settings, or /ccx-daemon/ in local dev.",
+    );
+  }
   const next = url?.trim() ? url : null;
   cached = next;
   loaded = true;
@@ -93,7 +105,12 @@ export function readAutoNode(): string | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
     const value = sessionStorage.getItem(AUTO_KEY);
-    return value?.trim() ? value : null;
+    const trimmed = value?.trim() ? value.trim() : null;
+    if (trimmed && isBlockedDaemonUrl(trimmed)) {
+      sessionStorage.removeItem(AUTO_KEY);
+      return null;
+    }
+    return trimmed;
   } catch {
     return null;
   }

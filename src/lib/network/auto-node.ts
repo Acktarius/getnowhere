@@ -6,7 +6,7 @@
  * explicit pick / per-wallet custom node). Best-effort: any failure leaves the static default in
  * place. Triggered from the wallet-open screen so the cache is warm by the time a sync starts.
  */
-import { DEFAULT_DAEMON_NODES } from "@/lib/config";
+import { DEFAULT_DAEMON_NODES, isBlockedDaemonUrl } from "@/lib/config";
 import { setAutoNode } from "@/lib/network/node-preference";
 import { fastestNodeUrl, probeNodes } from "@/lib/network/node-probe";
 import { fetchSmartNodes } from "@/lib/network/smart-nodes";
@@ -33,11 +33,18 @@ export async function refreshAutoNode(): Promise<void> {
       let urls: string[] = [...DEFAULT_DAEMON_NODES];
       try {
         const pool = await fetchSmartNodes(home);
-        urls = [...urls, ...pool.map((node) => node.url)];
+        urls = [
+          ...urls,
+          ...pool
+            .map((node) => node.url)
+            .filter((url) => !isBlockedDaemonUrl(url)),
+        ];
       } catch {
         // Pool unreachable — still rank the official nodes by latency.
       }
-      const unique = [...new Set(urls)];
+      const unique = [...new Set(urls)].filter(
+        (url) => !isBlockedDaemonUrl(url),
+      );
       const fastest = fastestNodeUrl(await probeNodes(unique));
       if (fastest) setAutoNode(fastest);
       refreshed = true; // latch only on a completed probe — a thrown error below stays un-latched

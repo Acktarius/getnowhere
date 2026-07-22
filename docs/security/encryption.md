@@ -33,12 +33,22 @@ Do not design a custom encryption scheme when a standard AEAD construction alrea
 
 This document applies to:
 
-- encrypted payloads exchanged in second-layer peer chat
+- encrypted payloads exchanged in second-layer peer chat (Holepunch frames)
 - invitation bootstrap payloads when they carry encrypted data
 - locally persisted encrypted message material
 - stored session secrets and related metadata
 
 This document does not define blockchain-level encryption already provided elsewhere. It defines the app-level encryption expectations for this repository.
+
+### Key categories for chat
+
+| Category | When used | Wipe |
+|---|---|---|
+| Invite/bootstrap material | During create/register signaling | On tombstone (decline/expiry/destroy) |
+| Session keys (send/recv refs) | After session derive; seal/open only when Holepunch-connected | On room destroy / tombstone / logout |
+| Ephemeral X25519 private keys | Memory only during handshake | Immediately after derive |
+
+Session keys must not be used to encrypt live chat until the room lifecycle is `connected`. Invite acceptance alone is not sufficient.
 
 ## Core rules
 
@@ -52,52 +62,61 @@ This document does not define blockchain-level encryption already provided elsew
 
 ## Algorithm profile
 
-Current baseline:
+Current baseline (`CHACHA20_POLY1305_V1`):
 
-- algorithm: `ChaCha20-Poly1305`
+- algorithm: **ChaCha20-Poly1305 (RFC 8439)** — IETF AEAD with 96-bit nonce
 - key size: 256 bits
-- nonce size: 96 bits
+- nonce size: **96 bits (12 bytes)**
 - authentication tag: 128 bits
+- KDF: HKDF-SHA256
+- ECDH: X25519
 
-Do not change this profile silently. Any proposed change must update this file and the protocol document before implementation.
+**Not used for this suite:** XChaCha20-Poly1305 (extended 192-bit nonce). The
+`@noble/ciphers` package can construct both; this project must call the
+ChaCha20-Poly1305 helper only for `CHACHA20_POLY1305_V1`. A future XChaCha
+suite would need a new id (e.g. `XCHACHA20_POLY1305_V1`) and a protocol bump.
+
+Do not change this profile silently. Any proposed change must update this file
+and `p2pchatprotocol.md` before implementation.
+
+## Key schedule (P2P session)
+
+1. Generate ephemeral X25519 keypairs (Alice on create, Bob on register).
+2. `shared = X25519(local_private, remote_public)`.
+3. `okm = HKDF-SHA256(ikm=shared, salt=handshake.salt, info=version|suite|relationshipId|roomId, L=64)`.
+4. Split: `okm[0:32]` = initiator→responder key; `okm[32:64]` = responder→initiator key.
+5. Map to local `sendKey` / `recvKey` by role; store as refs; wipe ephemeral privates.
+
+Session keys may be derived at accept/handoff but **must not seal live chat**
+until room lifecycle is `connected`.
 
 ## Nonce rules
 
-Nonce management is critical.
+Nonce management is critical. RFC 8439 ChaCha20-Poly1305 is catastrophically
+broken by nonce reuse under the same key.
 
-Rules:
+### Strategy: `counter_from_seed`
 
-- A nonce must be unique for every encryption under the same key.
-- Do not generate nonces in an ad hoc way in UI code.
-- Do not reuse a nonce after retry, reconnect, or app restart unless the protocol guarantees uniqueness.
-- Prefer a structured nonce strategy that is deterministic within a session and safe across senders.
-
-Recommended direction:
-
-- use per-session send counters
-- derive or assign sender-scoped nonce space
-- keep nonce generation inside a dedicated crypto or session service
+- `nonceSeed`: 256-bit random from handshake (hex).
+- Per seal under the **send** key:
+  - `nonce_12 = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"|"recv"), info=UTF8("nonce|" + counter), L=12)`
+  - persist and increment `sendCounter` **after** successful seal preparation
+- Directions never share a key, so Alice’s send counter space is independent of Bob’s.
+- After reconnect or app restart: restore `sendCounter` / `recvCounter` before any seal.
+- Do not generate nonces in UI code.
+- Do not use random 96-bit nonces without a uniqueness proof — counters are required.
 
 If nonce uniqueness cannot be guaranteed, do not ship the implementation.
 
-## Associated data
+### Associated data (AAD)
 
-Use associated data for non-secret metadata that must be authenticated along with the ciphertext.
+When sealing Holepunch content frames, prefer AAD covering at least:
 
-Typical associated data may include:
+- protocol / content schema version
+- roomId / sessionId
+- message kind (`text` | `reaction` | `edit` | `delete`)
 
-- protocol version
-- message type
-- sender logical identifier
-- recipient logical identifier
-- session identifier
-- sequence number
-
-Rules:
-
-- associated data must be identical on encrypt and decrypt
-- associated data must not contain secrets unless the protocol explicitly requires it
-- do not leave critical routing or version metadata unauthenticated if it affects message interpretation
+AAD must match on decrypt or open fails closed.
 
 ## Key categories
 

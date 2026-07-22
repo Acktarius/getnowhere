@@ -5,6 +5,7 @@ import {
   setInternalWalletNetwork,
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
+import { useContactsStore } from "@/state/contactsStore";
 import type { WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 
@@ -69,6 +70,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().refreshBalance();
+      await useContactsStore.getState().hydrate();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
@@ -91,6 +93,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().resync();
+      await useContactsStore.getState().hydrate();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -112,6 +115,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().resync();
+      await useContactsStore.getState().hydrate();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -137,6 +141,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().resync();
+      await useContactsStore.getState().hydrate();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -150,6 +155,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   async unlock() {
     await walletService.unlockWallet("");
     set({ locked: false });
+    await useContactsStore.getState().hydrate();
   },
 
   async refreshBalance() {

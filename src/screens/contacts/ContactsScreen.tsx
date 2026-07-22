@@ -13,7 +13,7 @@ import type { RelationshipStatus } from "@/types/models";
 const FILTERS: { value: "all" | RelationshipStatus; label: string }[] = [
   { value: "all", label: "All" },
   { value: "pending", label: "Pending" },
-  { value: "established", label: "Established" },
+  { value: "eligible", label: "Eligible" },
   { value: "archived", label: "Archived" },
   { value: "blocked", label: "Blocked" },
 ];

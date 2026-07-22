@@ -11,7 +11,7 @@ export function RelationshipStateCard({ contact }: Props) {
   const identityLinked = Boolean(contact.ccxAddress);
   const returnReceived = hasTo;
   const verified = hasFrom && hasTo;
-  const p2pEligible = verified && contact.relationshipStatus === "established";
+  const p2pEligible = verified && contact.relationshipStatus === "eligible";
 
   const steps = [
     {
@@ -22,19 +22,19 @@ export function RelationshipStateCard({ contact }: Props) {
     },
     {
       label: "Return identifier received",
-      desc: "Counterpart's paymentIdTo saved",
+      desc: "paymentIdTo saved — use it when sending so they identify you",
       done: returnReceived,
       icon: ArrowLeftRight,
     },
     {
-      label: "Relationship verified",
-      desc: "Both mappings present",
+      label: "Both payment IDs present",
+      desc: "Enough to identify each other on-chain — not a live session",
       done: verified,
       icon: ShieldCheck,
     },
     {
-      label: "P2P eligible",
-      desc: "Chat invite can be sent",
+      label: "Eligible for chat invite",
+      desc: "You can send or accept a chat create",
       done: p2pEligible,
       icon: Radio,
     },

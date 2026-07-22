@@ -1,16 +1,44 @@
 import { create } from "zustand";
 import {
+  chatTransport,
+  p2pEncryption,
   relationshipService,
+  sessionBootstrap,
+  smartMessageProtocol,
   smartMessageService,
   walletService,
 } from "@/services";
+import {
+  bindSmartMessageContacts,
+  getHandshakeForInvite,
+  rememberHandshake,
+} from "@/services/conceal/ConcealSmartMessageAdapter";
+import {
+  hydrateContacts,
+  loadPendingInitiatorKeys,
+  persistContacts,
+  persistInvites,
+  removePendingInitiatorKey,
+  upsertPendingInitiatorKey,
+} from "@/services/contacts/contactsPersistence";
+import { deriveRelationshipId } from "@/services/protocol/ids";
+import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import type { Contact, SmartMessageInvite } from "@/types/models";
+import type { ChatInviteHandshake } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
+
+type CreateChatOptions = {
+  inviteExpirySec?: number;
+  roomTtlSec?: number;
+};
 
 type ContactsStore = {
   contacts: Contact[];
   invites: SmartMessageInvite[];
   loading: boolean;
+  hydrated: boolean;
+  /** Load contacts from local storage + wallet addressBook. */
+  hydrate: () => Promise<void>;
   addContact: (input: {
     alias: string;
     ccxAddress: string;
@@ -24,15 +52,48 @@ type ContactsStore = {
   archiveContact: (id: string) => void;
   blockContact: (id: string) => void;
   refreshInvites: () => Promise<void>;
-  sendInvite: (contactId: string, senderAlias: string) => Promise<void>;
+  sendInvite: (
+    contactId: string,
+    senderAlias: string,
+    options?: CreateChatOptions,
+  ) => Promise<{ roomId: string }>;
   acceptInvite: (inviteId: string) => Promise<{ roomId: string }>;
+  declineInvite: (inviteId: string) => Promise<void>;
+  /** Drop a dead sent invite so Alice can create a new one. */
+  abandonPendingInvite: (contactId: string) => Promise<void>;
   getById: (id: string) => Contact | undefined;
 };
+
+/** Eligible contact — both payment IDs; required before any pending chat invite. */
+export function isContactEligibleForInvite(
+  contact: Pick<
+    Contact,
+    "paymentIdFrom" | "paymentIdTo" | "relationshipStatus"
+  >,
+): boolean {
+  if (
+    contact.relationshipStatus === "blocked" ||
+    contact.relationshipStatus === "archived"
+  ) {
+    return false;
+  }
+  const hasFrom = Boolean(contact.paymentIdFrom);
+  const hasTo = Boolean(
+    contact.paymentIdTo && contact.paymentIdTo.length >= 16,
+  );
+  return hasFrom && hasTo;
+}
+
+function isPendingInviteStatus(
+  status: Contact["inviteStatus"],
+): status is "sent" | "received" {
+  return status === "sent" || status === "received";
+}
 
 function recomputeStatus(c: Contact): Contact {
   const hasFrom = Boolean(c.paymentIdFrom);
   const hasTo = Boolean(c.paymentIdTo && c.paymentIdTo.length >= 16);
-  const established =
+  const canBeEligible =
     hasFrom &&
     hasTo &&
     c.relationshipStatus !== "blocked" &&
@@ -42,38 +103,295 @@ function recomputeStatus(c: Contact): Contact {
       ? "blocked"
       : c.relationshipStatus === "archived"
         ? "archived"
-        : established
-          ? "established"
+        : canBeEligible
+          ? "eligible"
           : "pending";
 
+  // Pending invites (sent/received) are only valid on eligible contacts.
+  let inviteStatus = c.inviteStatus;
+  let roomId = c.roomId;
+  if (isPendingInviteStatus(inviteStatus) && nextRel !== "eligible") {
+    inviteStatus = "none";
+    roomId = undefined;
+  }
+
   let chatStatus: Contact["chatStatus"] = "unavailable";
-  if (nextRel === "established") chatStatus = "eligible";
-  if (c.inviteStatus === "sent" || c.inviteStatus === "received")
+  if (nextRel === "eligible") chatStatus = "ready";
+  if (inviteStatus === "sent" || inviteStatus === "received") {
     chatStatus = "invited";
-  if (c.inviteStatus === "accepted") chatStatus = "active";
+  }
+  if (inviteStatus === "accepted") {
+    // Accepted is handoff — UI/store may refine to connecting/active via room.
+    chatStatus = c.chatStatus === "active" ? "active" : "connecting";
+  }
 
   return {
     ...c,
     relationshipStatus: nextRel,
+    inviteStatus,
+    roomId,
     chatStatus,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function schedulePersistContacts(get: () => ContactsStore): void {
+  void persistContacts(get().contacts);
+}
+
+function schedulePersistInvites(get: () => ContactsStore): void {
+  persistInvites(get().invites);
+}
+
+type PendingKey = {
+  privateKeyRef: string;
+  peerRole: "initiator" | "responder";
+  handshake: ChatInviteHandshake;
+  contactId: string;
+  register?: import("@/types/protocol").ChatRegisterPayload;
+};
+
+const pendingPrivateKeys = new Map<string, PendingKey>();
+
+async function restorePendingInitiatorKeys(): Promise<void> {
+  for (const rec of loadPendingInitiatorKeys()) {
+    if (pendingPrivateKeys.has(rec.inviteId)) continue;
+    const { privateKeyRef } = await p2pEncryption.restoreEphemeralPrivateKey(
+      rec.privateKeyHex,
+    );
+    pendingPrivateKeys.set(rec.inviteId, {
+      privateKeyRef,
+      peerRole: rec.peerRole ?? "initiator",
+      handshake: rec.handshake,
+      contactId: rec.contactId,
+      register: rec.register,
+    });
+    rememberHandshake(rec.handshake);
+  }
+}
+
+function normalizeInviteId(inviteId: string): string {
+  return inviteId.trim().toLowerCase();
+}
+
+function findPendingInitiator(inviteId: string): PendingKey | undefined {
+  const direct = pendingPrivateKeys.get(inviteId);
+  if (direct?.peerRole === "initiator") return direct;
+  const needle = normalizeInviteId(inviteId);
+  for (const [id, pending] of pendingPrivateKeys) {
+    if (pending.peerRole !== "initiator") continue;
+    if (normalizeInviteId(id) === needle) return pending;
+    if (normalizeInviteId(pending.handshake.inviteId) === needle) {
+      return pending;
+    }
+  }
+  return undefined;
+}
+
+/** True when Alice still holds initiator material for this room. */
+export function hasPendingInitiatorForRoom(roomId: string): boolean {
+  for (const pending of pendingPrivateKeys.values()) {
+    if (
+      pending.peerRole === "initiator" &&
+      pending.handshake.roomId === roomId
+    ) {
+      return true;
+    }
+  }
+  return loadPendingInitiatorKeys().some((r) => r.roomId === roomId);
+}
+
+export type InitiatorHandoffProbe = {
+  roomId: string;
+  hasInitiatorKey: boolean;
+  registerCount: number;
+  matchingRegister: boolean;
+  handoffCompleted: boolean;
+  detail: string;
+};
+
+/**
+ * Diagnose + attempt Alice's register handoff for a room.
+ * Used by Sync accept now so the UI can explain offline/pending.
+ */
+export async function probeInitiatorHandoff(
+  roomId: string,
+): Promise<InitiatorHandoffProbe> {
+  await restorePendingInitiatorKeys();
+  // Bob: re-join mesh from stashed responder key if session disk miss.
+  try {
+    await completeResponderReconnect(roomId);
+  } catch {
+    /* fall through to Alice probe */
+  }
+  const hasInitiatorKey = hasPendingInitiatorForRoom(roomId);
+  let registerCount = 0;
+  let matchingRegister = false;
+  let handoffCompleted = false;
+  let detail = "";
+
+  try {
+    const registers = await smartMessageService.fetchIncomingRegisters();
+    registerCount = registers.length;
+
+    const localInvite = useContactsStore
+      .getState()
+      .invites.find((i) => i.roomId === roomId);
+    const pendingForRoom = [...pendingPrivateKeys.values()].filter(
+      (p) => p.peerRole === "initiator" && p.handshake.roomId === roomId,
+    );
+
+    // Prefer pending keys for this room; also accept register.inviteId lookup.
+    const attempts: Array<{
+      pending: PendingKey;
+      register: import("@/types/protocol").ChatRegisterPayload;
+    }> = [];
+
+    for (const pending of pendingForRoom) {
+      const hit = registers.find(
+        (r) =>
+          normalizeInviteId(r.register.inviteId) ===
+          normalizeInviteId(pending.handshake.inviteId),
+      );
+      if (hit) attempts.push({ pending, register: hit.register });
+    }
+    for (const { register } of registers) {
+      const pending = findPendingInitiator(register.inviteId);
+      if (!pending || pending.handshake.roomId !== roomId) continue;
+      if (
+        attempts.some(
+          (a) => a.pending.handshake.inviteId === pending.handshake.inviteId,
+        )
+      ) {
+        continue;
+      }
+      attempts.push({ pending, register });
+    }
+
+    // Register exists for this room's invite even without a local key.
+    if (
+      localInvite &&
+      registers.some(
+        (r) =>
+          normalizeInviteId(r.register.inviteId) ===
+          normalizeInviteId(localInvite.inviteId),
+      )
+    ) {
+      matchingRegister = true;
+    }
+    if (attempts.length > 0) matchingRegister = true;
+
+    for (const { pending, register } of attempts) {
+      try {
+        await completeInitiatorHandoff(
+          pending.handshake.inviteId,
+          { ...register, inviteId: pending.handshake.inviteId },
+          pending.handshake,
+        );
+        handoffCompleted = true;
+        detail = "Register applied — connecting.";
+        break;
+      } catch (e) {
+        detail = (e as Error).message || "Handoff failed.";
+      }
+    }
+
+    if (!detail) {
+      const expectedIds = [
+        ...new Set([
+          ...pendingForRoom.map((p) => p.handshake.inviteId),
+          ...(localInvite ? [localInvite.inviteId] : []),
+        ]),
+      ];
+      const seenIds = registers.map((r) => r.register.inviteId);
+      if (!hasInitiatorKey) {
+        detail = matchingRegister
+          ? "Their accept is on-chain, but this device has no session key for this invite. Abandon it and send a new invite."
+          : "No initiator session key for this invite. Abandon it and send a new invite (required after refresh on older builds).";
+      } else if (registerCount === 0) {
+        detail =
+          "No on-chain register in this wallet yet. Wait for their accept tx to sync, then Sync again.";
+      } else if (!matchingRegister) {
+        detail = `Waiting for accept of THIS invite. expected=[${expectedIds.join(",") || "?"}] registers=[${seenIds.join(",") || "none"}]. Peer must Accept the new invite (not an old room).`;
+      } else {
+        detail = "Register matched; retry Sync.";
+      }
+    }
+  } catch (e) {
+    detail = (e as Error).message || "Wallet sync failed.";
+  }
+
+  return {
+    roomId,
+    hasInitiatorKey,
+    registerCount,
+    matchingRegister,
+    handoffCompleted,
+    detail,
+  };
+}
+
+function mergeInviteLists(
+  local: SmartMessageInvite[],
+  incoming: SmartMessageInvite[],
+): SmartMessageInvite[] {
+  const byInviteId = new Map<string, SmartMessageInvite>();
+  for (const inv of local) {
+    byInviteId.set(normalizeInviteId(inv.inviteId), inv);
+  }
+  for (const inv of incoming) {
+    const key = normalizeInviteId(inv.inviteId);
+    const prev = byInviteId.get(key);
+    if (!prev) {
+      byInviteId.set(key, inv);
+      continue;
+    }
+    // Prefer terminal / remote status over stale local "sent".
+    const rank = (s: SmartMessageInvite["status"]) =>
+      s === "accepted" || s === "rejected" || s === "expired"
+        ? 2
+        : s === "received"
+          ? 1
+          : 0;
+    byInviteId.set(key, rank(inv.status) >= rank(prev.status) ? inv : prev);
+  }
+  return [...byInviteId.values()];
 }
 
 export const useContactsStore = create<ContactsStore>((set, get) => ({
   contacts: [],
   invites: [],
   loading: false,
+  hydrated: false,
+
+  async hydrate() {
+    const { contacts, invites } = await hydrateContacts();
+    const nextContacts = contacts.map(recomputeStatus);
+    const nextInvites = invites.filter((inv) => {
+      if (inv.status !== "received" && inv.status !== "sent") return true;
+      const contact = nextContacts.find((c) => c.id === inv.contactId);
+      return contact ? isContactEligibleForInvite(contact) : false;
+    });
+    set({
+      contacts: nextContacts,
+      invites: nextInvites,
+      hydrated: true,
+    });
+    await restorePendingInitiatorKeys();
+    schedulePersistContacts(get);
+    schedulePersistInvites(get);
+  },
 
   async addContact({ alias, ccxAddress, paymentIdFrom, paymentIdTo, notes }) {
     const from = paymentIdFrom?.trim() || walletService.generatePaymentId();
     const dup = get().contacts.find(
       (c) => c.ccxAddress === ccxAddress && c.paymentIdFrom === from,
     );
-    if (dup)
+    if (dup) {
       throw new Error(
         "A contact with this address and payment ID already exists.",
       );
+    }
     const base: Contact = {
       id: uid("c"),
       alias: alias.trim(),
@@ -94,6 +412,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       paymentIdFrom: contact.paymentIdFrom,
     });
     set((s) => ({ contacts: [contact, ...s.contacts] }));
+    schedulePersistContacts(get);
     return contact;
   },
 
@@ -103,6 +422,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         c.id === id ? recomputeStatus({ ...c, ...patch }) : c,
       ),
     }));
+    schedulePersistContacts(get);
   },
 
   async savePaymentIdTo(id, paymentIdTo) {
@@ -123,10 +443,12 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           : x,
       ),
     }));
+    schedulePersistContacts(get);
   },
 
   removeContact(id) {
     set((s) => ({ contacts: s.contacts.filter((c) => c.id !== id) }));
+    schedulePersistContacts(get);
   },
   archiveContact(id) {
     set((s) => ({
@@ -136,6 +458,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           : c,
       ),
     }));
+    schedulePersistContacts(get);
   },
   blockContact(id) {
     set((s) => ({
@@ -145,55 +468,599 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           : c,
       ),
     }));
+    schedulePersistContacts(get);
   },
 
   async refreshInvites() {
+    await restorePendingInitiatorKeys();
     const list = await smartMessageService.fetchIncomingMessages();
-    set({ invites: list });
+    const eligibleOnly = mergeInviteLists(get().invites, list).filter((inv) => {
+      if (inv.status !== "received" && inv.status !== "sent") return true;
+      const contact = get().contacts.find((c) => c.id === inv.contactId);
+      return contact ? isContactEligibleForInvite(contact) : false;
+    });
+
+    // Per contact: only the newest received create is actionable (resend supersedes).
+    const newestReceived = new Map<string, (typeof eligibleOnly)[number]>();
+    for (const inv of eligibleOnly) {
+      if (inv.status !== "received") continue;
+      const prev = newestReceived.get(inv.contactId);
+      if (!prev || inv.createdAt >= prev.createdAt) {
+        newestReceived.set(inv.contactId, inv);
+      }
+    }
+
+    const pruned = eligibleOnly.map((inv) => {
+      if (inv.status !== "received") return inv;
+      const newest = newestReceived.get(inv.contactId);
+      if (newest && newest.inviteId !== inv.inviteId) {
+        return { ...inv, status: "expired" as const };
+      }
+      return inv;
+    });
+
+    set({ invites: pruned });
+    schedulePersistInvites(get);
+
+    for (const inv of newestReceived.values()) {
+      const contact = get().contacts.find((c) => c.id === inv.contactId);
+      if (!contact || !isContactEligibleForInvite(contact)) continue;
+      // New create supersedes an old accepted room on Bob.
+      const existing = await chatTransport.getRoom(inv.roomId);
+      if (!existing) {
+        await chatTransport.createRoom({
+          contactId: inv.contactId,
+          bootstrap: {
+            roomId: inv.roomId,
+            roomKeyRef: `key:${inv.roomId}`,
+            bootstrapSource: "conceal-smart-message",
+            lifecycleStatus: "pending",
+            inviteId: inv.inviteId,
+            inviteExpiry: inv.inviteExpiry,
+            roomTtl: inv.roomTtl,
+          },
+        });
+      }
+      get().updateContact(inv.contactId, {
+        inviteStatus: "received",
+        roomId: inv.roomId,
+        chatStatus: "invited",
+      });
+    }
+
+    // Alice: scan Bob's on-chain register and finish Holepunch handoff.
+    const registers = await smartMessageService.fetchIncomingRegisters();
+    for (const { register } of registers) {
+      const pending = findPendingInitiator(register.inviteId);
+      if (!pending) continue;
+      try {
+        await completeInitiatorHandoff(
+          pending.handshake.inviteId,
+          {
+            ...register,
+            inviteId: pending.handshake.inviteId,
+          },
+          pending.handshake,
+        );
+      } catch {
+        // Keep trying on next refresh (sync / key restore may still settle).
+      }
+    }
   },
 
-  async sendInvite(contactId, senderAlias) {
+  async sendInvite(contactId, senderAlias, options) {
+    const contact = get().contacts.find((c) => c.id === contactId);
+    if (!contact) throw new Error("Contact not found.");
+    if (!isContactEligibleForInvite(contact)) {
+      throw new Error(
+        "Chat invite requires an eligible contact (both payment IDs).",
+      );
+    }
+    if (contact.relationshipStatus !== "eligible") {
+      throw new Error("Chat create requires an eligible contact.");
+    }
+    if (!contact.paymentIdTo) {
+      throw new Error("Missing paymentIdTo.");
+    }
+
+    // Supersede any dead/pending sent invite for this contact.
+    if (
+      contact.inviteStatus === "sent" ||
+      contact.inviteStatus === "accepted" ||
+      contact.roomId
+    ) {
+      await get().abandonPendingInvite(contactId);
+    }
+
+    const relationshipId = await deriveRelationshipId(
+      contact.paymentIdFrom,
+      contact.paymentIdTo,
+    );
+    const keypair = await p2pEncryption.generateEphemeralKeypair();
     const composed = await smartMessageService.composeInviteMessage({
       contactId,
       senderAlias,
+      relationshipId,
+      inviteExpirySec: options?.inviteExpirySec,
+      roomTtlSec: options?.roomTtlSec,
+      handshakeOverrides: {
+        senderEphemeralPublicKey: keypair.publicKeyHex,
+      },
     });
-    const encrypted = await smartMessageService.encryptInvitePayload(composed);
-    await smartMessageService.sendInviteMessage(contactId, encrypted);
+    // Stash Alice initiator key across reloads until Bob's register arrives.
+    pendingPrivateKeys.set(composed.inviteId, {
+      privateKeyRef: keypair.privateKeyRef,
+      peerRole: "initiator",
+      handshake: composed.handshake,
+      contactId,
+    });
+    upsertPendingInitiatorKey({
+      inviteId: composed.inviteId,
+      contactId,
+      roomId: composed.roomId,
+      privateKeyHex: keypair.privateKeyHex,
+      handshake: composed.handshake,
+      peerRole: "initiator",
+    });
+    rememberHandshake(composed.handshake);
+
+    // Local envelope for the adapter (tx encryption is on-chain). Pass smartBody
+    // directly so unicode aliases cannot break btoa.
+    const sent = await smartMessageService.sendInviteMessage(
+      contactId,
+      composed.smartBody,
+      {
+        recipientAddress: contact.ccxAddress,
+        paymentId: contact.paymentIdTo,
+      },
+    );
+
+    await chatTransport.createRoom({
+      contactId,
+      bootstrap: {
+        roomId: composed.roomId,
+        roomKeyRef: `key:${composed.roomId}`,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "pending",
+        inviteId: composed.inviteId,
+        inviteExpiry: composed.inviteExpiry,
+        roomTtl: composed.roomTtl,
+      },
+    });
+
     set((s) => ({
       contacts: s.contacts.map((c) =>
         c.id === contactId
           ? recomputeStatus({
               ...c,
               inviteStatus: "sent",
+              roomId: composed.roomId,
+              chatStatus: "invited",
               lastInteractionAt: new Date().toISOString(),
             })
           : c,
       ),
+      invites: [
+        {
+          id: sent.inviteId,
+          contactId,
+          roomId: composed.roomId,
+          inviteId: composed.inviteId,
+          replayId: composed.replayId,
+          nonce: composed.nonce,
+          expiry: composed.expiry,
+          inviteExpiry: composed.inviteExpiry,
+          roomTtl: composed.roomTtl,
+          senderAlias: composed.senderAlias,
+          capabilities: composed.capabilities,
+          bootstrapEncrypted: composed.bootstrapEncrypted,
+          status: "sent",
+          createdAt: new Date().toISOString(),
+          txHash: sent.txHash,
+        },
+        ...s.invites,
+      ],
     }));
+    schedulePersistContacts(get);
+    schedulePersistInvites(get);
+
+    return { roomId: composed.roomId };
   },
 
   async acceptInvite(inviteId) {
-    const res = await smartMessageService.acceptInvite(inviteId);
+    let inv = get().invites.find((i) => i.id === inviteId);
+    if (!inv) {
+      const incoming = await smartMessageService.fetchIncomingMessages();
+      inv = incoming.find((i) => i.id === inviteId);
+      if (inv) {
+        set((s) => ({ invites: [inv!, ...s.invites] }));
+      }
+    }
+    if (!inv) throw new Error("Invite not found.");
+
+    const handshake = getHandshakeForInvite(inv.inviteId);
+    if (!handshake) throw new Error("Missing create handshake for invite.");
+
+    const keypair = await p2pEncryption.generateEphemeralKeypair();
+    const register = await smartMessageProtocol.composeRegister({
+      inviteId: inv.inviteId,
+      receiverEphemeralPublicKey: keypair.publicKeyHex,
+      replayId: inv.replayId,
+    });
+    // Stash Bob responder key so refresh can reconnect before session persist.
+    pendingPrivateKeys.set(register.inviteId, {
+      privateKeyRef: keypair.privateKeyRef,
+      peerRole: "responder",
+      handshake: {
+        ...handshake,
+        receiverEphemeralPublicKey: keypair.publicKeyHex,
+      },
+      contactId: inv.contactId,
+      register,
+    });
+    upsertPendingInitiatorKey({
+      inviteId: register.inviteId,
+      contactId: inv.contactId,
+      roomId: inv.roomId,
+      privateKeyHex: keypair.privateKeyHex,
+      handshake: {
+        ...handshake,
+        receiverEphemeralPublicKey: keypair.publicKeyHex,
+      },
+      peerRole: "responder",
+      register,
+    });
+
+    await smartMessageService.acceptInvite(inviteId, {
+      inviteId: register.inviteId,
+      receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
+      replayId: register.replayId,
+    });
+
+    const session = await sessionBootstrap.deriveSession({
+      invite: handshake,
+      acceptance: register,
+      peerRole: "responder",
+      localPrivateKeyRef: keypair.privateKeyRef,
+    });
+    const contract = await sessionBootstrap.buildHolepunchContract({
+      session,
+      invite: {
+        ...handshake,
+        receiverEphemeralPublicKey: keypair.publicKeyHex,
+      },
+      peerRole: "responder",
+    });
+
+    await chatTransport.createRoom({
+      contactId: inv.contactId,
+      bootstrap: {
+        roomId: inv.roomId,
+        roomKeyRef: session.sessionId,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+        inviteId: inv.inviteId,
+        inviteExpiry: inv.inviteExpiry,
+        roomTtl: inv.roomTtl,
+      },
+    });
+
+    const connected = await chatTransport.connect(contract);
+
+    // Same-browser only: no-op unless this device still holds Alice's initiator key.
+    await completeInitiatorHandoff(inv.inviteId, register, handshake);
+
+    const { useChatStore } = await import("@/state/chatStore");
+    useChatStore.setState((s) => ({
+      rooms: [...s.rooms.filter((r) => r.id !== inv!.roomId), connected],
+    }));
+
+    set((s) => ({
+      contacts: s.contacts.map((c) =>
+        c.id === inv!.contactId
+          ? recomputeStatus({
+              ...c,
+              inviteStatus: "accepted",
+              roomId: inv!.roomId,
+              chatStatus:
+                connected.lifecycleStatus === "connected"
+                  ? "active"
+                  : "connecting",
+              lastInteractionAt: new Date().toISOString(),
+            })
+          : c,
+      ),
+      invites: s.invites.map((i) =>
+        i.id === inviteId || i.inviteId === inv!.inviteId
+          ? { ...i, status: "accepted" as const }
+          : i,
+      ),
+    }));
+    schedulePersistContacts(get);
+    schedulePersistInvites(get);
+
+    // Drop Bob's key stash once session is on disk.
+    const saved = (
+      await import("@/services/p2p/roomSessionStore")
+    ).loadRoomSession(inv.roomId);
+    if (saved) {
+      pendingPrivateKeys.delete(register.inviteId);
+      removePendingInitiatorKey(register.inviteId);
+    }
+
+    return { roomId: inv.roomId };
+  },
+
+  async declineInvite(inviteId) {
+    await smartMessageService.declineInvite(inviteId);
     const inv = get().invites.find((i) => i.id === inviteId);
     if (inv) {
+      const { invite: wiped } = tombstoneInvite(inv, "rejected");
       set((s) => ({
+        invites: s.invites.map((i) => (i.id === inviteId ? wiped : i)),
         contacts: s.contacts.map((c) =>
           c.id === inv.contactId
             ? recomputeStatus({
                 ...c,
-                inviteStatus: "accepted",
-                lastInteractionAt: new Date().toISOString(),
+                inviteStatus: "rejected",
+                chatStatus: "ready",
               })
             : c,
         ),
       }));
+      schedulePersistContacts(get);
+      schedulePersistInvites(get);
+      const room = await chatTransport.getRoom(inv.roomId);
+      if (room) {
+        await chatTransport.disconnect(inv.roomId);
+      }
     }
-    return res;
+  },
+
+  async abandonPendingInvite(contactId) {
+    const contact = get().contacts.find((c) => c.id === contactId);
+    const roomId = contact?.roomId;
+    const doomed = get().invites.filter(
+      (i) =>
+        i.contactId === contactId &&
+        (i.status === "sent" || i.roomId === roomId),
+    );
+    for (const inv of doomed) {
+      pendingPrivateKeys.delete(inv.inviteId);
+      removePendingInitiatorKey(inv.inviteId);
+    }
+    if (roomId) {
+      for (const rec of loadPendingInitiatorKeys()) {
+        if (rec.roomId === roomId || rec.contactId === contactId) {
+          pendingPrivateKeys.delete(rec.inviteId);
+          removePendingInitiatorKey(rec.inviteId);
+        }
+      }
+      try {
+        await chatTransport.disconnect(roomId);
+      } catch {
+        /* room may not exist */
+      }
+    }
+    set((s) => ({
+      invites: s.invites.filter(
+        (i) =>
+          !(
+            i.contactId === contactId &&
+            (i.status === "sent" || i.roomId === roomId)
+          ),
+      ),
+      contacts: s.contacts.map((c) =>
+        c.id === contactId
+          ? recomputeStatus({
+              ...c,
+              inviteStatus: "none",
+              chatStatus: "ready",
+              roomId: undefined,
+            })
+          : c,
+      ),
+    }));
+    schedulePersistContacts(get);
+    schedulePersistInvites(get);
   },
 
   getById(id) {
     return get().contacts.find((c) => c.id === id);
   },
 }));
+
+/**
+ * Bob: after refresh, re-derive + connect from stashed responder key + register.
+ */
+export async function completeResponderReconnect(
+  roomId: string,
+): Promise<boolean> {
+  await restorePendingInitiatorKeys();
+  let pending = [...pendingPrivateKeys.values()].find(
+    (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
+  );
+  if (!pending?.register) {
+    for (const rec of loadPendingInitiatorKeys()) {
+      if (
+        rec.peerRole !== "responder" ||
+        rec.roomId !== roomId ||
+        !rec.register
+      ) {
+        continue;
+      }
+      const { privateKeyRef } = await p2pEncryption.restoreEphemeralPrivateKey(
+        rec.privateKeyHex,
+      );
+      pending = {
+        privateKeyRef,
+        peerRole: "responder",
+        handshake: rec.handshake,
+        contactId: rec.contactId,
+        register: rec.register,
+      };
+      pendingPrivateKeys.set(rec.inviteId, pending);
+      break;
+    }
+  }
+  if (!pending?.register) return false;
+
+  const session = await sessionBootstrap.deriveSession({
+    invite: pending.handshake,
+    acceptance: pending.register,
+    peerRole: "responder",
+    localPrivateKeyRef: pending.privateKeyRef,
+  });
+  const contract = await sessionBootstrap.buildHolepunchContract({
+    session,
+    invite: pending.handshake,
+    peerRole: "responder",
+  });
+  await chatTransport.createRoom({
+    contactId: pending.contactId,
+    bootstrap: {
+      roomId,
+      roomKeyRef: session.sessionId,
+      bootstrapSource: "conceal-smart-message",
+      lifecycleStatus: "accepted",
+      inviteId: pending.handshake.inviteId,
+      inviteExpiry: pending.handshake.inviteExpiry,
+      roomTtl: pending.handshake.roomTtl,
+    },
+  });
+  const connected = await chatTransport.connect(contract);
+  const { useChatStore } = await import("@/state/chatStore");
+  useChatStore.setState((s) => ({
+    rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+  }));
+  if (pending.contactId) {
+    useContactsStore.getState().updateContact(pending.contactId, {
+      inviteStatus: "accepted",
+      chatStatus:
+        connected.lifecycleStatus === "connected" ? "active" : "connecting",
+      roomId,
+    });
+  }
+  const saved = (
+    await import("@/services/p2p/roomSessionStore")
+  ).loadRoomSession(roomId);
+  if (saved) {
+    pendingPrivateKeys.delete(pending.handshake.inviteId);
+    removePendingInitiatorKey(pending.handshake.inviteId);
+  }
+  return connected.lifecycleStatus === "connected";
+}
+
+/** Completes Alice's Holepunch handoff after Bob's register. */
+export async function completeInitiatorHandoff(
+  inviteId: string,
+  register: import("@/types/protocol").ChatRegisterPayload,
+  handshake: ChatInviteHandshake,
+): Promise<void> {
+  const pending = findPendingInitiator(inviteId);
+  if (!pending) return;
+
+  const session = await sessionBootstrap.deriveSession({
+    invite: handshake,
+    acceptance: {
+      ...register,
+      inviteId: handshake.inviteId,
+      replayId:
+        register.replayId.toLowerCase() === handshake.replayId.toLowerCase()
+          ? handshake.replayId
+          : register.replayId,
+    },
+    peerRole: "initiator",
+    localPrivateKeyRef: pending.privateKeyRef,
+  });
+  const contract = await sessionBootstrap.buildHolepunchContract({
+    session,
+    invite: {
+      ...handshake,
+      receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
+    },
+    peerRole: "initiator",
+  });
+
+  const contactId =
+    pending.contactId ||
+    useContactsStore
+      .getState()
+      .invites.find((i) => i.inviteId === handshake.inviteId)?.contactId ||
+    "";
+  const roomId = handshake.roomId;
+  await chatTransport.createRoom({
+    contactId,
+    bootstrap: {
+      roomId,
+      roomKeyRef: session.sessionId,
+      bootstrapSource: "conceal-smart-message",
+      lifecycleStatus: "accepted",
+      inviteId: handshake.inviteId,
+      inviteExpiry: handshake.inviteExpiry,
+      roomTtl: handshake.roomTtl,
+    },
+  });
+
+  const connected = await chatTransport.connect(contract);
+  // Push live room into chat store so UI leaves "pending" without remount.
+  const { useChatStore } = await import("@/state/chatStore");
+  useChatStore.setState((s) => ({
+    rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+  }));
+
+  if (contactId) {
+    useContactsStore.getState().updateContact(contactId, {
+      inviteStatus: "accepted",
+      chatStatus:
+        connected.lifecycleStatus === "connected" ? "active" : "connecting",
+      roomId,
+    });
+  }
+  useContactsStore.setState((s) => ({
+    invites: s.invites.map((i) =>
+      normalizeInviteId(i.inviteId) === normalizeInviteId(handshake.inviteId)
+        ? { ...i, status: "accepted" as const }
+        : i,
+    ),
+  }));
+  persistInvites(useContactsStore.getState().invites);
+  // Keep initiator stash until room session is persisted (reload reconnect).
+  // Keys are wiped from the live map by deriveSessionConfig; disk stash stays
+  // only as a last-resort re-handoff if session save failed.
+  const saved = (await import("@/services/p2p/roomSessionStore")).loadRoomSession(
+    roomId,
+  );
+  if (saved) {
+    pendingPrivateKeys.delete(pending.handshake.inviteId);
+    pendingPrivateKeys.delete(inviteId);
+    removePendingInitiatorKey(pending.handshake.inviteId);
+    removePendingInitiatorKey(inviteId);
+  }
+}
+
+bindSmartMessageContacts({
+  resolve: (contactId) => {
+    const c = useContactsStore
+      .getState()
+      .contacts.find((x) => x.id === contactId);
+    if (!c) return undefined;
+    return {
+      contactId: c.id,
+      address: c.ccxAddress,
+      paymentIdFrom: c.paymentIdFrom,
+      paymentIdTo: c.paymentIdTo,
+      alias: c.alias,
+    };
+  },
+  list: () =>
+    useContactsStore.getState().contacts.map((c) => ({
+      contactId: c.id,
+      address: c.ccxAddress,
+      paymentIdFrom: c.paymentIdFrom,
+      paymentIdTo: c.paymentIdTo,
+      alias: c.alias,
+    })),
+});
 
 export { generatePaymentId };

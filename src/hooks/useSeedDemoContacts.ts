@@ -1,23 +1,25 @@
 import { useEffect, useState } from "react";
 import { createConcealAccount } from "@/services/conceal/ConcealWalletAdapter";
+import { contactsPersistenceReady } from "@/services/contacts/contactsPersistence";
 import { useContactsStore } from "@/state/contactsStore";
 
-// Seeds a couple of demo contacts with REAL CCX addresses (generated via
-// the SDK's createAccount) so the home screen isn't empty on first run.
-// Real app starts with no contacts.
+/**
+ * Seeds demo contacts only on a brand-new install (no persisted contacts yet).
+ * Once contacts have been saved or hydrated, this never re-fills an empty list.
+ */
 export function useSeedDemoContacts() {
   const contacts = useContactsStore((s) => s.contacts);
+  const hydrated = useContactsStore((s) => s.hydrated);
   const addContact = useContactsStore((s) => s.addContact);
   const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
-    if (contacts.length > 0 || seeded) return;
+    if (!hydrated || contacts.length > 0 || seeded) return;
+    if (contactsPersistenceReady()) return;
     let cancelled = false;
     setSeeded(true);
     (async () => {
       try {
-        // Generate real CCX addresses via the SDK (WASM). We only use the
-        // address, discarding the keys — these are demo counterparties.
         const [acctA, acctB] = await Promise.all([
           createConcealAccount("english"),
           createConcealAccount("english"),
@@ -38,7 +40,6 @@ export function useSeedDemoContacts() {
           ccxAddress: acctB.address,
           paymentIdFrom:
             "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",
-          // paymentIdTo intentionally missing — shows the pending edge state.
         });
       } catch {
         // WASM init or duplicate-seed race — silently skip.
@@ -47,5 +48,5 @@ export function useSeedDemoContacts() {
     return () => {
       cancelled = true;
     };
-  }, [contacts.length, addContact, seeded]);
+  }, [contacts.length, addContact, seeded, hydrated]);
 }

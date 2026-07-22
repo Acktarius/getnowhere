@@ -4,31 +4,64 @@
 
 export type RelationshipStatus =
   | "pending"
-  | "established"
+  | "eligible"
   | "blocked"
   | "archived";
 
+/** Invite signaling status. `accepted` is terminal for signaling only — not Holepunch-connected. */
 export type InviteStatus =
   | "none"
   | "sent"
   | "received"
   | "accepted"
-  | "expired";
+  | "rejected"
+  | "expired"
+  | "failed";
 
-export type ChatStatus = "unavailable" | "eligible" | "invited" | "active";
+/**
+ * Derived chat readiness for a contact.
+ * `active` only when the room is Holepunch-connected.
+ * `ready` = eligible contact, no pending invite yet (can Create chat).
+ */
+export type ChatStatus =
+  | "unavailable"
+  | "ready"
+  | "invited"
+  | "connecting"
+  | "active";
+
+/**
+ * Local room lifecycle.
+ * `accepted` is the invite handoff; live messaging requires `connected`.
+ */
+export type RoomLifecycleStatus =
+  | "pending"
+  | "accepted"
+  | "connecting"
+  | "connected"
+  | "connect_failed"
+  | "declined"
+  | "expired"
+  | "failed"
+  | "closed"
+  | "destroyed";
 
 export type Contact = {
   id: string;
   alias: string;
   ccxAddress: string;
-  // Local identifier this app uses to recognize the counterpart.
+  // Payment ID you assign to this contact. On receive, you use it to identify
+  // them (who the tx comes FROM). Share it; they store it as their paymentIdTo.
   paymentIdFrom: string;
-  // Identifier provided by the counterpart. Required to complete the relationship.
+  // Payment ID your contact assigned to you. You use it when sending TO them
+  // so they can identify you on receive.
   paymentIdTo?: string;
   notes?: string;
   relationshipStatus: RelationshipStatus;
   inviteStatus: InviteStatus;
   chatStatus: ChatStatus;
+  /** Active or pending room id for this contact, if any. */
+  roomId?: string;
   createdAt: string;
   updatedAt: string;
   lastInteractionAt?: string;
@@ -42,9 +75,19 @@ export type ChatRoom = {
   bootstrapSource: "conceal-smart-message" | "manual" | "local-mock";
   roomKeyRef: string;
   peerStatus: PeerStatus;
+  lifecycleStatus: RoomLifecycleStatus;
+  inviteId?: string;
+  /** Unix seconds — accept/register window. */
+  inviteExpiry?: number;
+  /** Unix seconds — hard room end (pending or connected). */
+  roomTtl?: number;
+  connectAttempts?: number;
+  lastConnectError?: string;
   createdAt: string;
   lastMessageAt?: string;
 };
+
+export type ChatMessageKind = "text" | "reaction" | "edit" | "delete";
 
 export type ChatMessage = {
   id: string;
@@ -53,6 +96,15 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   status: "sending" | "delivered" | "failed";
+  /** Client-generated id for idempotent send / edit / delete. */
+  clientId?: string;
+  kind?: ChatMessageKind;
+  /** Target message id for reaction / edit / delete. */
+  targetMessageId?: string;
+  /** Reaction emoji when kind is reaction. */
+  reaction?: string;
+  editedAt?: string;
+  deletedAt?: string;
 };
 
 export type TransactionType = "incoming" | "outgoing";
@@ -94,17 +146,37 @@ export type WalletState = {
   network: "mainnet" | "testnet" | "devnet";
 };
 
+/**
+ * Local invite record. Sensitive bootstrap material must be wiped on tombstone.
+ * Domain `rejected` ≡ UX decline ≡ wire `revoke`.
+ */
 export type SmartMessageInvite = {
   id: string;
   contactId: string;
   roomId: string;
+  inviteId: string;
+  replayId: string;
   nonce: string;
+  /** ISO — legacy display; prefer inviteExpiry unix. */
   expiry: string;
+  inviteExpiry: number;
+  roomTtl: number;
   senderAlias: string;
   capabilities: string[];
-  bootstrapEncrypted: string; // opaque blob — adapter handles encryption
-  status: "draft" | "sent" | "received" | "accepted" | "expired";
+  /** Wiped on tombstone. */
+  bootstrapEncrypted?: string;
+  status:
+    | "draft"
+    | "sent"
+    | "received"
+    | "accepted"
+    | "rejected"
+    | "expired"
+    | "failed";
+  tombstonedAt?: string;
   createdAt: string;
+  /** On-chain delivery tx hash when broadcast via buildMessageTransaction. */
+  txHash?: string;
 };
 
 export type AppTheme = "dark" | "light" | "system";

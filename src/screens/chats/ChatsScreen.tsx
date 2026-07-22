@@ -21,7 +21,7 @@ export function ChatsScreen() {
 
   const eligibleContacts = contacts.filter(
     (c) =>
-      c.relationshipStatus === "established" &&
+      c.relationshipStatus === "eligible" &&
       !rooms.some((r) => r.contactId === c.id),
   );
 
@@ -69,9 +69,11 @@ export function ChatsScreen() {
                             {c?.alias ?? "Unknown contact"}
                           </div>
                           <div className="row__sub">
-                            {last
-                              ? last.text.slice(0, 36)
-                              : "Room ready — say hello"}
+                            {room.lifecycleStatus !== "connected"
+                              ? `Status: ${room.lifecycleStatus}`
+                              : last
+                                ? last.text.slice(0, 36)
+                                : "Connected — say hello"}
                           </div>
                         </div>
                         <div className="row__meta">

@@ -70,7 +70,11 @@ import {
   type WalletKeys,
   type WalletState,
 } from "conceal-wallet-sdk";
-import { DEFAULT_DAEMON_NODES } from "@/lib/config";
+import {
+  DEFAULT_DAEMON_NODES,
+  isBlockedDaemonUrl,
+  resolveDaemonNodeUrl,
+} from "@/lib/config";
 import { readAutoNode, readPreferredNode } from "@/lib/network/node-preference";
 import { probeNodes, rankNodes } from "@/lib/network/node-probe";
 import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
@@ -370,31 +374,35 @@ export function nodeUrlFromRaw(raw: RawWalletV1): string {
   if (
     options?.customNode &&
     typeof options.nodeUrl === "string" &&
-    options.nodeUrl.trim()
+    options.nodeUrl.trim() &&
+    !isBlockedDaemonUrl(options.nodeUrl)
   ) {
-    return options.nodeUrl;
+    return resolveDaemonNodeUrl(options.nodeUrl);
   }
   // Else honor the device-local node the user picked on the open screen (persisted, shared across
   // wallets on this device).
   const preferred = readPreferredNode();
-  if (preferred) {
-    return preferred;
+  if (preferred && !isBlockedDaemonUrl(preferred)) {
+    return resolveDaemonNodeUrl(preferred);
   }
   // Else the auto-probed fastest healthy node (spreads load off the static default); falls back to
   // the static default when no probe has cached one yet.
   const auto = readAutoNode();
-  if (auto) {
-    return auto;
+  if (auto && !isBlockedDaemonUrl(auto)) {
+    return resolveDaemonNodeUrl(auto);
   }
-  return defaultNodeUrl();
+  return resolveDaemonNodeUrl(defaultNodeUrl());
 }
 
 /**
  * Build a daemon client for `nodeUrl`. `allowInsecure: true` permits a plain
- * `http://` self-hosted node (the legacy explorer allowed any node URL).
+ * `http://` self-hosted node (and localhost Vite daemon proxies in dev).
  */
 export function buildDaemon(nodeUrl: string): DaemonClient {
-  return createDaemonClient({ nodeUrl, allowInsecure: true });
+  return createDaemonClient({
+    nodeUrl: resolveDaemonNodeUrl(nodeUrl),
+    allowInsecure: true,
+  });
 }
 
 /**

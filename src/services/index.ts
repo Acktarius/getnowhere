@@ -1,31 +1,39 @@
 // Service container.
 //
-// CURRENT WIRING:
-//   walletService       → ConcealWalletService (REAL SDK: account/address/
-//                         sync/daemon; send is TODO — see markers there)
-//   relationshipService → MockRelationshipAdapter (uses REAL SDK messages
-//                         namespace for smart-message composition, mock persistence)
-//   smartMessageService → MockSmartMessageAdapter (uses REAL SDK messages
-//                         namespace for encode/parse/TTL, mock transport)
-//   chatTransport       → MockChatTransport (fully mock — Holepunch boundary)
-//
-// To complete real integration:
-//   1. Wire buildTransaction + daemon.sendrawtransaction into sendTransaction.
-//   2. Wire buildMessageTransaction for on-chain smart-message delivery.
-//   3. Replace MockChatTransport with a HolepunchChatTransport implementing
-//      the same ChatTransport interface.
+// PRODUCT WIRING (real imported, mock commented out):
+//   walletService         → ConcealWalletService
+//   relationshipService   → ConcealRelationshipAdapter
+//   smartMessageService   → ConcealSmartMessageAdapter
+//   chatTransport         → HolepunchChatTransport
+//   smartMessageProtocol  → SmartMessageProtocolAdapter
+//   sessionBootstrap      → SessionBootstrapAdapter
+//   p2pEncryption         → P2PEncryptionAdapter
 
+import { ConcealRelationshipAdapter } from "./conceal/ConcealRelationshipAdapter";
+import { ConcealSmartMessageAdapter } from "./conceal/ConcealSmartMessageAdapter";
 import { ConcealWalletService } from "./conceal/ConcealWalletService";
-import { MockChatTransport } from "./mock/MockChatTransport";
 import { MockLocalSecurityAdapter } from "./mock/MockLocalSecurityAdapter";
-import { MockRelationshipAdapter } from "./mock/MockRelationshipAdapter";
 import { MockSeedBackupAdapter } from "./mock/MockSeedBackupAdapter";
-import { MockSmartMessageAdapter } from "./mock/MockSmartMessageAdapter";
+import { HolepunchChatTransport } from "./p2p/HolepunchChatTransport";
+import { P2PEncryptionAdapter } from "./p2p/P2PEncryptionAdapter";
+import { SessionBootstrapAdapter } from "./p2p/sessionBootstrap";
+import { SmartMessageProtocolAdapter } from "./protocol/SmartMessageProtocolAdapter";
+
+// --- commented mocks (local revert only) ---
+// import { MockChatTransport } from "./mock/MockChatTransport";
+// import { MockRelationshipAdapter } from "./mock/MockRelationshipAdapter";
+// import { MockSmartMessageAdapter } from "./mock/MockSmartMessageAdapter";
 
 export const walletService = ConcealWalletService;
-export const relationshipService = MockRelationshipAdapter;
-export const smartMessageService = MockSmartMessageAdapter;
-export const chatTransport = MockChatTransport;
+export const relationshipService = ConcealRelationshipAdapter;
+// export const relationshipService = MockRelationshipAdapter;
+export const smartMessageService = ConcealSmartMessageAdapter;
+// export const smartMessageService = MockSmartMessageAdapter;
+export const chatTransport = HolepunchChatTransport;
+// export const chatTransport = MockChatTransport;
+export const smartMessageProtocol = SmartMessageProtocolAdapter;
+export const sessionBootstrap = SessionBootstrapAdapter;
+export const p2pEncryption = P2PEncryptionAdapter;
 export const localSecurityService = MockLocalSecurityAdapter;
 export const seedBackupService = MockSeedBackupAdapter;
 

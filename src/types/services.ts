@@ -1,14 +1,26 @@
-// Service-layer interfaces. These define the seams between the app and
-// the Conceal wallet engine, smart-message channel, and future Holepunch
-// transport. Mock adapters live in src/services/mock/* and are the only
-// implementations wired up today. Real adapters are TODO.
+// Service-layer interfaces. Seams between the app, Conceal smart-message
+// signaling, and required Holepunch live transport.
+// Product wiring: src/services/index.ts imports real adapters and comments out mocks.
 
 import type {
   ChatMessage,
   ChatRoom,
+  RoomLifecycleStatus,
   SmartMessageInvite,
   Transaction,
 } from "@/types/models";
+import type {
+  ChatContentEnvelopeV1,
+  ChatCreatePayload,
+  ChatInviteHandshake,
+  ChatRegisterPayload,
+  ChatRevokePayload,
+  ChatRevokeReasonCode,
+  CipherSuiteId,
+  HolepunchBootstrapContract,
+  InviteEnvelope,
+  P2PSessionConfig,
+} from "@/types/protocol";
 
 // ---------- Wallet ----------
 
@@ -110,28 +122,39 @@ export type ConcealRelationshipService = {
   completeRelationship(input: {
     contactId: string;
     paymentIdTo: string;
-  }): Promise<{ contactId: string; established: boolean }>;
+  }): Promise<{ contactId: string; eligible: boolean }>;
   // TODO(conceal): when an on-chain encrypted-message path is available,
   // route paymentIdTo exchange through it. Mock just persists.
 };
 
-// ---------- Smart message invite ----------
+// ---------- Smart message invite (Conceal channel) ----------
 
 export type ComposeInviteInput = {
   contactId: string;
   senderAlias: string;
-  expirySec?: number;
+  /** Seconds from now for inviteExpiry (accept window). Default 86400. */
+  inviteExpirySec?: number;
+  /** Seconds from now for roomTtl (hard destroy). Default 7d. */
+  roomTtlSec?: number;
   capabilities?: string[];
-  bootstrapData?: Uint8Array;
+  relationshipId: string;
+  /** Optional pre-generated handshake overrides (tests). */
+  handshakeOverrides?: Partial<ChatInviteHandshake>;
 };
 
 export type ComposedInvite = {
   roomId: string;
+  inviteId: string;
+  replayId: string;
   nonce: string;
   expiry: string;
+  inviteExpiry: number;
+  roomTtl: number;
   senderAlias: string;
   capabilities: string[];
   bootstrapEncrypted: string;
+  handshake: ChatInviteHandshake;
+  smartBody: string;
 };
 
 export type SmartMessageService = {
@@ -140,23 +163,45 @@ export type SmartMessageService = {
   sendInviteMessage(
     contactId: string,
     payload: string,
+    delivery: {
+      recipientAddress: string;
+      paymentId: string;
+    },
   ): Promise<{
     inviteId: string;
     status: "sent";
+    txHash?: string;
   }>;
   fetchIncomingMessages(): Promise<SmartMessageInvite[]>;
+  /** Scan received smart messages for chat.register (Alice handoff). */
+  fetchIncomingRegisters(): Promise<
+    Array<{
+      register: import("@/types/protocol").ChatRegisterPayload;
+      txHash: string;
+    }>
+  >;
   parseRelationshipMessages(): Promise<SmartMessageInvite[]>;
-  acceptInvite(inviteId: string): Promise<{ roomId: string }>;
-  // TODO(conceal): the real smart-message schema is not documented in the
-  // SDK surface we can see. Treat this adapter as the pluggable boundary.
+  acceptInvite(
+    inviteId: string,
+    register?: {
+      inviteId: string;
+      receiverEphemeralPublicKey: string;
+      replayId: string;
+    },
+  ): Promise<{ roomId: string }>;
+  declineInvite(inviteId: string): Promise<void>;
 };
 
-// ---------- Chat transport (future Holepunch boundary) ----------
+// ---------- Chat transport (required Holepunch boundary) ----------
 
 export type RoomBootstrap = {
   roomId: string;
   roomKeyRef: string;
   bootstrapSource: ChatRoom["bootstrapSource"];
+  lifecycleStatus?: RoomLifecycleStatus;
+  inviteId?: string;
+  inviteExpiry?: number;
+  roomTtl?: number;
 };
 
 export type ChatTransport = {
@@ -165,7 +210,16 @@ export type ChatTransport = {
     bootstrap?: RoomBootstrap;
   }): Promise<ChatRoom>;
   joinRoom(roomId: string): Promise<ChatRoom>;
+  /** Join topic and establish peer channel from bootstrap contract. */
+  connect(contract: HolepunchBootstrapContract): Promise<ChatRoom>;
+  disconnect(roomId: string): Promise<void>;
+  /** Retry after connect_failed. */
+  retryConnect(roomId: string): Promise<ChatRoom>;
   sendMessage(roomId: string, text: string): Promise<ChatMessage>;
+  sendContent?(
+    roomId: string,
+    envelope: ChatContentEnvelopeV1,
+  ): Promise<ChatMessage>;
   subscribe(
     roomId: string,
     handler: (message: ChatMessage) => void,
@@ -173,8 +227,6 @@ export type ChatTransport = {
   setPeerStatus(roomId: string, status: ChatRoom["peerStatus"]): Promise<void>;
   getRoom(roomId: string): Promise<ChatRoom | null>;
   listRooms(): Promise<ChatRoom[]>;
-  // TODO(holepunch): replace MockChatTransport with a Keet/Holepunch adapter.
-  // The interface above is the contract that adapter must satisfy.
 };
 
 export type PeerSession = {
@@ -192,28 +244,36 @@ export type RoomBootstrapService = {
   bootstrapManual(contactId: string): Promise<RoomBootstrap>;
 };
 
-// ---------- P2P chat protocol (see /docs/p2pchatprotocol.md) ----------
-//
-// These boundaries sit above the raw smart-message channel. Adapters are
-// initially mocked; no real P2P transport or AEAD crypto is wired yet.
-
-import type {
-  ChatInviteAcceptancePayload,
-  ChatInviteHandshake,
-  ChatInvitePayload,
-  CipherSuiteId,
-  InviteEnvelope,
-  P2PSessionConfig,
-} from "@/types/protocol";
+// ---------- P2P chat protocol (see /docs/security/p2pchatprotocol.md) ----------
 
 /**
- * Owns the protocol-message layer on top of the raw smart-message channel:
- * compose/encode chat.invite / chat.accept / chat.reject, validate incoming,
- * enforce relationship-gating and replay/expiry rules (§13 of the protocol
- * spec).
+ * Protocol layer on top of the raw smart-message channel:
+ * compose/encode create / register / revoke, validate, gate, replay/expiry.
  */
 export type SmartMessageProtocolService = {
-  /** Compose a chat.invite for an established relationship. Throws if the relationship is not established. */
+  composeCreate(input: {
+    contactId: string;
+    handshake: ChatInviteHandshake;
+    senderAlias: string;
+    capabilities?: string[];
+    relationshipEligible: boolean;
+  }): Promise<InviteEnvelope>;
+
+  parseIncomingCreate(smartBody: string): Promise<ChatCreatePayload | null>;
+
+  composeRegister(input: {
+    inviteId: string;
+    receiverEphemeralPublicKey: string;
+    replayId: string;
+  }): Promise<ChatRegisterPayload>;
+
+  composeRevoke(input: {
+    inviteId: string;
+    replayId?: string;
+    reasonCode?: ChatRevokeReasonCode;
+  }): Promise<ChatRevokePayload>;
+
+  /** @deprecated Use composeCreate. */
   composeInvite(input: {
     contactId: string;
     handshake: ChatInviteHandshake;
@@ -221,61 +281,58 @@ export type SmartMessageProtocolService = {
     capabilities?: string[];
   }): Promise<InviteEnvelope>;
 
-  /** Validate and parse an incoming chat.invite envelope. Enforces expiry + replay. */
   parseIncomingInvite(
     envelope: InviteEnvelope,
-  ): Promise<ChatInvitePayload | null>;
+  ): Promise<ChatCreatePayload | null>;
 
-  /** Compose a chat.accept for a received invite. */
   composeAccept(input: {
     inviteId: string;
     receiverEphemeralPublicKey: string;
     replayId: string;
-  }): Promise<ChatInviteAcceptancePayload>;
+  }): Promise<ChatRegisterPayload>;
 
-  /** Compose a chat.reject for a received invite (optional). */
-  composeReject(input: { inviteId: string; reason?: string }): Promise<{
-    type: "chat.reject";
+  composeReject(input: {
     inviteId: string;
     reason?: string;
-  }>;
+  }): Promise<ChatRevokePayload>;
 };
 
-/**
- * Derives a P2PSessionConfig from a completed invite/accept handshake.
- * Runs the KDF (or delegates to P2PEncryptionService) and emits the session
- * config + room bootstrap (§13, §9).
- */
 export type SessionBootstrapService = {
-  /** Derive the session config from both halves of the handshake. */
   deriveSession(input: {
     invite: ChatInviteHandshake;
-    acceptance: ChatInviteAcceptancePayload;
+    acceptance: ChatRegisterPayload;
+    peerRole: "initiator" | "responder";
+    localPrivateKeyRef?: string;
   }): Promise<P2PSessionConfig>;
 
-  /** Produce a RoomBootstrap from a derived session config. */
+  buildHolepunchContract(input: {
+    session: P2PSessionConfig;
+    invite: ChatInviteHandshake;
+    peerRole: "initiator" | "responder";
+    relayHints?: string[];
+  }): Promise<HolepunchBootstrapContract>;
+
   bootstrapFromSession(session: P2PSessionConfig): Promise<RoomBootstrap>;
 };
 
-/**
- * The AEAD seam: keypair generation, ECDH, HKDF, and seal/open of P2P message
- * frames under the session key with the nonce strategy from §8.
- *
- * ADAPTER-BACKED AND INITIALLY MOCKED. Do not assume this is a secure,
- * audited crypto implementation until a real adapter is wired.
- */
 export type P2PEncryptionService = {
-  /** Generate an ephemeral X25519 keypair. Returns public key hex + private key handle. */
   generateEphemeralKeypair(): Promise<{
     publicKeyHex: string;
     privateKeyRef: string;
+    /** Hex secret — stash for invite initiator across reloads only. */
+    privateKeyHex: string;
   }>;
 
-  /** Derive a P2PSessionConfig via X25519 ECDH + HKDF-SHA256. */
+  /** Re-load a stashed initiator ephemeral into the live key map. */
+  restoreEphemeralPrivateKey(privateKeyHex: string): Promise<{
+    privateKeyRef: string;
+  }>;
+
   deriveSessionConfig(input: {
     senderEphemeralPublicKey: string;
     receiverEphemeralPublicKey: string;
-    receiverPrivateKeyRef: string;
+    localPrivateKeyRef: string;
+    localIsSender: boolean;
     salt: string;
     info: {
       protocolVersion: number;
@@ -286,20 +343,22 @@ export type P2PEncryptionService = {
     nonceSeed: string;
   }): Promise<P2PSessionConfig>;
 
-  /** Seal a P2P message frame under the session key. */
   seal(input: {
     session: P2PSessionConfig;
     plaintext: Uint8Array;
     aad?: Uint8Array;
-  }): Promise<{ ciphertext: Uint8Array; nonce: Uint8Array }>;
+  }): Promise<{
+    ciphertext: Uint8Array;
+    nonce: Uint8Array;
+    session: P2PSessionConfig;
+  }>;
 
-  /** Open a P2P message frame under the session key. */
   open(input: {
     session: P2PSessionConfig;
     ciphertext: Uint8Array;
     nonce: Uint8Array;
     aad?: Uint8Array;
-  }): Promise<Uint8Array | null>;
+  }): Promise<{ plaintext: Uint8Array; session: P2PSessionConfig } | null>;
 };
 
 // ---------- Local security ----------

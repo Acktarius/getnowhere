@@ -1,86 +1,105 @@
-// Protocol types aligned to /docs/p2pchatprotocol.md.
-// These are the conceptual payload shapes for the P2P chat protocol.
-// Adapters implement the service interfaces in services.ts; no real
-// transport or crypto is wired yet — see TODO markers.
+// Protocol types aligned to /docs/security/p2pchatprotocol.md.
+// Wire module: contact. Wire actions (SDK ACTION_MAP): create→c, register→r, revoke→k.
+// UX: create / accept / decline. Accept is a handoff into Holepunch — not live chat.
 
 // ---------- Cipher suite (§8) ----------
 
 /**
  * Identifier for the AEAD cipher suite used by the P2P session layer.
  * Currently only ChaCha20-Poly1305 (RFC 8439) is defined.
- *
- * NOTE: the actual AEAD implementation is adapter-backed and initially
- * mocked. Do not assume this is a secure, audited crypto path yet.
  */
 export type CipherSuiteId = "CHACHA20_POLY1305_V1";
+
+export const CHAT_PROTOCOL_VERSION = 1;
+export const HOLEPUNCH_CONTRACT_VERSION = 1;
+
+/** SDK ACTION_MAP verbs for chat signaling on module `contact`. */
+export const CHAT_WIRE_ACTIONS = {
+  create: "create",
+  register: "register",
+  revoke: "revoke",
+} as const;
+
+export type ChatWireAction =
+  (typeof CHAT_WIRE_ACTIONS)[keyof typeof CHAT_WIRE_ACTIONS];
+
+/** Coarse decline reasons — no free-text PII. */
+export type ChatRevokeReasonCode =
+  | "user_declined"
+  | "expired"
+  | "superseded"
+  | "unknown";
 
 // ---------- Handshake (§7) ----------
 
 /**
- * Inner handshake structure carried in chat.invite and completed in
- * chat.accept. This is the cryptographic root of the P2P session.
- *
- * Authenticity comes from the Conceal smart-message channel (encrypted to
- * the counterpart's view key); the handshake's job is to establish the
- * P2P session key, not to authenticate the channel.
+ * Inner handshake carried in chat.create and completed in chat.register.
+ * Authenticity comes from the Conceal smart-message channel.
  */
 export type ChatInviteHandshake = {
   protocolVersion: number;
   inviteId: string;
   relationshipId: string;
-  /** P2P room identifier (hyperswarm topic / room key reference). */
+  /** P2P room identifier (feeds Holepunch topic derivation). */
   roomId: string;
   cipherSuite: CipherSuiteId;
   /** Sender's ephemeral X25519 public key (hex). */
   senderEphemeralPublicKey: string;
-  /** Receiver's ephemeral public key; filled in the chat.accept flow. */
+  /** Receiver's ephemeral public key; filled in chat.register. */
   receiverEphemeralPublicKey?: string;
   kdf: "HKDF_SHA256_V1";
-  /** Per-session random seed (hex); nonces derive deterministically from seed + counter. */
+  /** Per-session random seed (hex); nonces derive from seed + counter. */
   nonceSeed: string;
   nonceStrategy: "counter_from_seed";
   /** HKDF salt (hex); mixes in relationshipId + roomId. */
   salt: string;
-  /** Invite expiry, unix seconds. Enforced before accept. */
-  expirationTimestamp: number;
-  /** Unique per invite; tracked to reject duplicates (§10). */
+  /** Accept/register window, unix seconds. */
+  inviteExpiry: number;
+  /** Hard room end (pending or connected), unix seconds. */
+  roomTtl: number;
+  /** Unique per invite; tracked to reject duplicates. */
   replayId: string;
-  /** Opaque tag to correlate invite/accept without exposing relationship. */
   correlationTag?: string;
-  /** Optional capability/role token for the session. */
   capabilityToken?: string;
-  /** Adapter-specific hints (e.g. candidate relays). */
   transportMetadata?: Record<string, unknown>;
 };
 
-// ---------- Protocol messages (§6) ----------
+// ---------- Protocol messages (create / register / revoke) ----------
 
-/** `chat.invite` protocol message body. */
-export type ChatInvitePayload = {
-  type: "chat.invite";
+/** `chat.create` — wire action `create` → `c`. */
+export type ChatCreatePayload = {
+  type: "chat.create";
   handshake: ChatInviteHandshake;
   senderAlias: string;
   capabilities: string[];
 };
 
-/** `chat.accept` protocol message body. Completes the handshake. */
-export type ChatInviteAcceptancePayload = {
-  type: "chat.accept";
+/** @deprecated Use ChatCreatePayload — scaffold name kept as alias. */
+export type ChatInvitePayload = ChatCreatePayload;
+
+/** `chat.register` — wire action `register` → `r`; UX “accept”. */
+export type ChatRegisterPayload = {
+  type: "chat.register";
   inviteId: string;
-  /** Receiver's ephemeral X25519 public key (hex). */
   receiverEphemeralPublicKey: string;
-  /** Echo of the sender's replayId for correlation. */
   replayId: string;
+  acceptedAt?: string;
 };
 
-/** `chat.reject` protocol message body (optional). */
-export type ChatRejectPayload = {
-  type: "chat.reject";
+/** @deprecated Use ChatRegisterPayload. */
+export type ChatInviteAcceptancePayload = ChatRegisterPayload;
+
+/** `chat.revoke` — wire action `revoke` → `k`; UX “decline”. */
+export type ChatRevokePayload = {
+  type: "chat.revoke";
   inviteId: string;
-  reason?: string;
+  replayId?: string;
+  reasonCode?: ChatRevokeReasonCode;
 };
 
-/** `chat.rekey` protocol message body (optional, deferred). */
+/** @deprecated Use ChatRevokePayload. */
+export type ChatRejectPayload = ChatRevokePayload;
+
 export type ChatRekeyPayload = {
   type: "chat.rekey";
   sessionId: string;
@@ -88,7 +107,6 @@ export type ChatRekeyPayload = {
   newNonceSeed: string;
 };
 
-/** `chat.close` protocol message body (optional, deferred). */
 export type ChatClosePayload = {
   type: "chat.close";
   sessionId: string;
@@ -97,56 +115,121 @@ export type ChatClosePayload = {
 
 // ---------- Session (§9) ----------
 
-/**
- * Derived P2P session config. Produced by SessionBootstrapService from a
- * completed handshake. Key material is referenced, not necessarily held in
- * raw form in persisted storage (§12).
- *
- * TODO(protocol): real key material should live in a native keystore in the
- * Expo path; this struct holds references/handles, not raw secrets, where
- * possible.
- */
 export type P2PSessionConfig = {
   sessionId: string;
   roomId: string;
   relationshipId: string;
   cipherSuite: CipherSuiteId;
-  /** A→B direction key reference. Raw material is adapter-managed. */
   sendKeyRef: string;
-  /** B→A direction key reference. Raw material is adapter-managed. */
   recvKeyRef: string;
   nonceSeed: string;
   nonceStrategy: "counter_from_seed";
-  /** Monotonic per-direction counter; persisted to avoid nonce rewind (§8). */
   sendCounter: number;
   recvCounter: number;
   createdAt: string;
 };
 
-// ---------- Envelope (§6 transport) ----------
-
 /**
- * Wrapped smart-message envelope carrying an invite over the Conceal
- * smart-message channel. The `smartBody` is the encodeSmartMessage output;
- * `payload` is the app-level invite structure.
+ * Typed handoff from invite signaling into Holepunch transport.
+ * Built only after valid register + session derive. No raw private keys.
+ *
+ * ## What smart-message layer carries INTO this contract
+ * From create/register handshake + ECDH/HKDF derive:
+ * roomId, relationshipId, inviteId, sessionId, cipherSuite, send/recv key
+ * refs, nonceSeed, nonceStrategy, counters, peerRole, roomTtl.
+ *
+ * ## What Holepunch transport is responsible for (using this contract)
+ * - Join discovery topic (`transport.topicRef`)
+ * - Establish peer channel (initiator/responder)
+ * - Retry / backoff / connect_failed
+ * - Seal/open live frames only after room lifecycle === connected
+ *
+ * ## What this contract must NOT contain
+ * Ephemeral private keys, Conceal smart-message bodies, payment IDs, aliases.
  */
+export type HolepunchBootstrapContract = {
+  /** Contract schema version (bump on breaking handoff changes). */
+  contractVersion: number;
+  /** Stable room id from chat.create handshake. */
+  roomId: string;
+  /** Order-independent relationship binding. */
+  relationshipId: string;
+  /** Correlates create/register pair. */
+  inviteId: string;
+  /** Derived session id after ECDH/HKDF. */
+  sessionId: string;
+  /** Must be CHACHA20_POLY1305_V1 (RFC 8439 IETF AEAD, not XChaCha). */
+  cipherSuite: CipherSuiteId;
+  /** Opaque handle to A→B (or local-send) key material. */
+  sendKeyRef: string;
+  /** Opaque handle to B→A (or local-recv) key material. */
+  recvKeyRef: string;
+  /** 256-bit hex seed; nonces = HKDF(seed, direction, counter) → 96-bit. */
+  nonceSeed: string;
+  nonceStrategy: "counter_from_seed";
+  /** Persisted monotonic send counter — never rewind. */
+  sendCounter: number;
+  /** Persisted monotonic recv counter — never rewind. */
+  recvCounter: number;
+  /** Alice (create) = initiator; Bob (register) = responder. */
+  peerRole: "initiator" | "responder";
+  transport: {
+    kind: "holepunch";
+    /** Discovery topic — hash(gnh-chat-v1 || roomId || relationshipId). */
+    topicRef: string;
+    relayHints?: string[];
+  };
+  /** Hard room end unix sec — connecting/connected still expire. */
+  roomTtl: number;
+  establishedAt: string;
+};
+
+export type ConnectFailureCode =
+  | "timeout"
+  | "unreachable"
+  | "crypto_mismatch"
+  | "aborted"
+  | "expired"
+  | "unknown";
+
+// ---------- Content envelopes (Holepunch frames, not smart messages) ----------
+
+export type ChatContentKind = "text" | "reaction" | "edit" | "delete";
+
+export type ChatContentEnvelopeV1 = {
+  schemaVersion: 1;
+  messageId: string;
+  clientId: string;
+  sentAt: string;
+  kind: ChatContentKind;
+  text?: string;
+  targetMessageId?: string;
+  reaction?: string;
+};
+
+// ---------- Envelope (smart-message transport) ----------
+
 export type InviteEnvelope = {
   smartBody: string;
-  payload: ChatInvitePayload;
-  /** ISO timestamp of dispatch. */
+  payload: ChatCreatePayload;
   sentAt: string;
 };
 
-// ---------- Session state (§11) ----------
-
-/**
- * Session lifecycle state for a peer session.
- * idle → handshaking → active → (rekeying | closed)
- */
 export type PeerSessionState = {
   state: "idle" | "handshaking" | "active" | "rekeying" | "closed";
   sessionId?: string;
   roomId?: string;
-  /** Last activity timestamp; used for stale-room handling (§10). */
   lastActivityAt?: string;
+};
+
+/** Privacy-minimized tombstone after decline / expiry / destroy. */
+export type InviteTombstone = {
+  inviteId: string;
+  replayId: string;
+  roomId: string;
+  contactId: string;
+  status: "rejected" | "expired" | "failed" | "destroyed";
+  inviteExpiry: number;
+  roomTtl: number;
+  tombstonedAt: string;
 };
