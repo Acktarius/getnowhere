@@ -76,6 +76,8 @@ export type ChatRoom = {
   roomKeyRef: string;
   peerStatus: PeerStatus;
   lifecycleStatus: RoomLifecycleStatus;
+  /** Display category — not used in Hyperswarm topic derivation. */
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
   inviteId?: string;
   /** Unix seconds — accept/register window. */
   inviteExpiry?: number;
@@ -89,6 +91,9 @@ export type ChatRoom = {
 
 export type ChatMessageKind = "text" | "reaction" | "edit" | "delete";
 
+/** Delivery path — live = Holepunch; relay = L1 smart message. @see docs/features/chat-relay.md */
+export type MessageChannel = "live" | "relay";
+
 export type ChatMessage = {
   id: string;
   roomId: string;
@@ -96,6 +101,8 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   status: "sending" | "delivered" | "failed";
+  /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
+  channel?: MessageChannel;
   /** Client-generated id for idempotent send / edit / delete. */
   clientId?: string;
   kind?: ChatMessageKind;
@@ -118,6 +125,12 @@ export type TransactionKind =
   | "fusion"
   | "unknown";
 
+/** Wallet-history hint for L1 contact smartmessages (display only). */
+export type TransactionContactHint = {
+  module: "contact";
+  action: "create" | "register" | "revoke";
+};
+
 export type Transaction = {
   id: string;
   type: TransactionType;
@@ -129,6 +142,16 @@ export type Transaction = {
   timestamp: string;
   state: TransactionState;
   counterparty?: string;
+  /**
+   * Present when the tx carries a contact create/register/revoke smartmessage.
+   * UI dots only — does not imply relationship trust.
+   */
+  contactHint?: TransactionContactHint | null;
+  /**
+   * True while the tx is mempool / height 0. Preview only; never finalize trust.
+   * @see docs/features/lite-wallet.md
+   */
+  zeroConf?: boolean;
 };
 
 export type WalletState = {
@@ -163,6 +186,8 @@ export type SmartMessageInvite = {
   roomTtl: number;
   senderAlias: string;
   capabilities: string[];
+  /** Display topic selected at create (mirrored from handshake.roomTopic). */
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
   /** Wiped on tombstone. */
   bootstrapEncrypted?: string;
   status:
@@ -177,6 +202,11 @@ export type SmartMessageInvite = {
   createdAt: string;
   /** On-chain delivery tx hash when broadcast via buildMessageTransaction. */
   txHash?: string;
+  /**
+   * True when first seen in mempool (blockHeight 0). Known paymentId contacts may
+   * act on chat.create immediately; still treat new relationships cautiously.
+   */
+  zeroConf?: boolean;
 };
 
 export type AppTheme = "dark" | "light" | "system";

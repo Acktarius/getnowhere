@@ -1,7 +1,13 @@
 import { create } from "zustand";
-import { chatTransport } from "@/services";
-import { getMessagesForRoom } from "@/services/p2p/HolepunchChatTransport";
-import { assertCanSendLive } from "@/services/protocol/composerGate";
+import { chatTransport, smartMessageService } from "@/services";
+import {
+  getMessagesForRoom,
+  ingestChatRelay,
+} from "@/services/p2p/HolepunchChatTransport";
+import {
+  assertCanSendLive,
+  assertCanSendMessages,
+} from "@/services/protocol/composerGate";
 import type { ChatMessage, ChatRoom } from "@/types/models";
 
 type ChatStore = {
@@ -21,6 +27,7 @@ type ChatStore = {
       inviteId?: string;
       inviteExpiry?: number;
       roomTtl?: number;
+      roomTopic?: ChatRoom["roomTopic"];
     },
   ) => Promise<ChatRoom>;
   send: (roomId: string, text: string) => Promise<void>;
@@ -36,6 +43,8 @@ type ChatStore = {
   ) => Promise<void>;
   deleteMessage: (roomId: string, targetMessageId: string) => Promise<void>;
   retryConnect: (roomId: string) => Promise<ChatRoom>;
+  /** Scan L1 chat.relay into rooms (dedupe by roomId+sentAt+text). */
+  refreshRelays: () => Promise<void>;
   subscribeRoom: (roomId: string) => () => void;
   setMessages: (roomId: string, msgs: ChatMessage[]) => void;
 };
@@ -50,11 +59,83 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async loadRooms() {
     set({ loadingRooms: true });
-    const rooms = await chatTransport.listRooms();
+    const { isRoomRevoked, isInviteRevoked } = await import(
+      "@/services/p2p/revokedRoomsStore"
+    );
+    // Seed catalog from persisted invites / contact.roomId (first run after upgrade).
+    try {
+      const { useContactsStore } = await import("@/state/contactsStore");
+      const { contacts, invites } = useContactsStore.getState();
+      for (const inv of invites) {
+        if (
+          inv.status !== "sent" &&
+          inv.status !== "received" &&
+          inv.status !== "accepted"
+        ) {
+          continue;
+        }
+        if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
+          continue;
+        }
+        try {
+          await chatTransport.createRoom({
+            contactId: inv.contactId,
+            bootstrap: {
+              roomId: inv.roomId,
+              roomKeyRef: `key:${inv.roomId}`,
+              bootstrapSource: "conceal-smart-message",
+              lifecycleStatus:
+                inv.status === "accepted" ? "accepted" : "pending",
+              inviteId: inv.inviteId,
+              inviteExpiry: inv.inviteExpiry,
+              roomTtl: inv.roomTtl,
+              roomTopic: inv.roomTopic,
+            },
+          });
+        } catch {
+          /* revoked / invalid — skip */
+        }
+      }
+      for (const c of contacts) {
+        if (!c.roomId) continue;
+        if (isRoomRevoked(c.roomId)) continue;
+        const inv = invites.find((i) => i.roomId === c.roomId);
+        try {
+          await chatTransport.createRoom({
+            contactId: c.id,
+            bootstrap: {
+              roomId: c.roomId,
+              roomKeyRef: `key:${c.roomId}`,
+              bootstrapSource: "conceal-smart-message",
+              lifecycleStatus: "pending",
+              inviteId: inv?.inviteId,
+              inviteExpiry: inv?.inviteExpiry,
+              roomTtl: inv?.roomTtl,
+              roomTopic: inv?.roomTopic,
+            },
+          });
+        } catch {
+          /* revoked / invalid — skip */
+        }
+      }
+    } catch {
+      /* contacts may not be ready */
+    }
+    const rooms = (await chatTransport.listRooms()).filter(
+      (r) => !isRoomRevoked(r.id),
+    );
     set({ rooms, loadingRooms: false });
   },
 
   async openRoom(roomId) {
+    const { isRoomRevoked } = await import("@/services/p2p/revokedRoomsStore");
+    if (isRoomRevoked(roomId)) {
+      set((s) => ({
+        rooms: s.rooms.filter((r) => r.id !== roomId),
+        activeRoomId: s.activeRoomId === roomId ? null : s.activeRoomId,
+      }));
+      return null;
+    }
     // Prefer live transport state over a stale store copy (Alice handoff).
     let transportRoom = await chatTransport.getRoom(roomId);
     if (
@@ -69,6 +150,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const restored = await restoreRoomSession(roomId);
       if (restored) transportRoom = restored;
     }
+    // Re-check: leave may have completed while restore was in flight.
+    if (isRoomRevoked(roomId)) {
+      set((s) => ({
+        rooms: s.rooms.filter((r) => r.id !== roomId),
+        activeRoomId: s.activeRoomId === roomId ? null : s.activeRoomId,
+      }));
+      return null;
+    }
     if (transportRoom) {
       set((s) => ({
         rooms: [...s.rooms.filter((r) => r.id !== roomId), transportRoom!],
@@ -82,6 +171,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     }
     try {
       const room = await chatTransport.joinRoom(roomId);
+      if (isRoomRevoked(roomId)) return null;
       set((s) => ({
         rooms: [...s.rooms.filter((r) => r.id !== roomId), room],
         activeRoomId: roomId,
@@ -97,6 +187,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   async bootstrapRoom(contactId, bootstrap) {
+    if (bootstrap?.roomId) {
+      const { isRoomRevoked } = await import("@/services/p2p/revokedRoomsStore");
+      if (isRoomRevoked(bootstrap.roomId)) {
+        throw new Error("Room revoked.");
+      }
+    }
     const room = await chatTransport.createRoom({
       contactId,
       bootstrap: bootstrap
@@ -108,6 +204,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
             inviteId: bootstrap.inviteId,
             inviteExpiry: bootstrap.inviteExpiry,
             roomTtl: bootstrap.roomTtl,
+            roomTopic: bootstrap.roomTopic,
           }
         : undefined,
     });
@@ -115,12 +212,62 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     return room;
   },
 
+  async retryConnect(roomId) {
+    const { isRoomRevoked } = await import("@/services/p2p/revokedRoomsStore");
+    if (isRoomRevoked(roomId)) {
+      set((s) => ({ rooms: s.rooms.filter((r) => r.id !== roomId) }));
+      throw new Error("Room revoked.");
+    }
+    const room = await chatTransport.retryConnect(roomId);
+    set((s) => ({
+      rooms: [...s.rooms.filter((r) => r.id !== roomId), room],
+    }));
+    return room;
+  },
+
+  async refreshRelays() {
+    const inbound = await smartMessageService.fetchIncomingRelays();
+    const touched = new Set<string>();
+    for (const { relay } of inbound) {
+      const msg = await ingestChatRelay(relay);
+      if (msg) touched.add(msg.roomId);
+    }
+    set((s) => {
+      const roomIds = new Set([
+        ...Object.keys(s.messagesByRoom),
+        ...touched,
+        ...s.rooms.map((r) => r.id),
+      ]);
+      let changed = false;
+      const next = { ...s.messagesByRoom };
+      for (const roomId of roomIds) {
+        const fromTransport = getMessagesForRoom(roomId);
+        if (fromTransport.length === 0) continue;
+        const prev = next[roomId] ?? [];
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        for (const m of fromTransport) {
+          const existing = byId.get(m.id);
+          if (
+            !existing ||
+            existing.status !== m.status ||
+            existing.channel !== m.channel
+          ) {
+            byId.set(m.id, m);
+            changed = true;
+          }
+        }
+        next[roomId] = [...byId.values()];
+      }
+      return changed ? { messagesByRoom: next } : s;
+    });
+  },
+
   async send(roomId, text) {
     const room =
       get().rooms.find((r) => r.id === roomId) ??
       (await chatTransport.getRoom(roomId));
     if (!room) throw new Error("Room not found.");
-    assertCanSendLive(room.lifecycleStatus);
+    assertCanSendMessages(room.lifecycleStatus);
     // Transport notify → subscribeRoom appends; do not append here (avoids doubles).
     const msg = await chatTransport.sendMessage(roomId, text);
     set((s) => ({
@@ -219,23 +366,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  async retryConnect(roomId) {
-    const room = await chatTransport.retryConnect(roomId);
-    set((s) => ({
-      rooms: [...s.rooms.filter((r) => r.id !== roomId), room],
-    }));
-    return room;
-  },
-
   subscribeRoom(roomId) {
     const unsub = chatTransport.subscribe(roomId, (msg) => {
       set((s) => {
         const prev = s.messagesByRoom[roomId] ?? [];
-        if (prev.some((m) => m.id === msg.id)) return s;
+        const idx = prev.findIndex((m) => m.id === msg.id);
+        const list =
+          idx >= 0
+            ? prev.map((m, i) => (i === idx ? msg : m))
+            : [...prev, msg];
         return {
           messagesByRoom: {
             ...s.messagesByRoom,
-            [roomId]: [...prev, msg],
+            [roomId]: list,
           },
         };
       });

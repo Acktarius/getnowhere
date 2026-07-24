@@ -7,10 +7,16 @@ relationship (`paymentIdFrom` / `paymentIdTo`).
 **Chat invites are a separate protocol.** After a contact is
 `eligible` (both payment IDs), chat create / accept / decline uses Conceal smart messages on
 module `contact` with ACTION_MAP verbs `create` / `register` / `revoke`, then
-hands off to required Holepunch transport. See
-[`docs/security/p2pchatprotocol.md`](../security/p2pchatprotocol.md).
+hands off to required Holepunch transport owned by the P2P runtime
+(Node sidecar web-dev; Bare worklet on mobile — not the Vite bundle). See
+[`docs/security/p2pchatprotocol.md`](../security/p2pchatprotocol.md),
+[`docs/architecture/pairing-and-topics.md`](../architecture/pairing-and-topics.md),
+and [`docs/architecture/mobile-p2p-runtime.md`](../architecture/mobile-p2p-runtime.md)
+(and desktop Electron: [`electron-desktop.md`](../architecture/electron-desktop.md)).
 
 Do not overload “invitation” in product copy without clarifying relationship vs chat.
+Do not describe chat as a public room: topics are derived only via `deriveTopicRef`,
+and peers are verified after connect.
 
 ## Purpose
 

@@ -92,10 +92,36 @@ async function safeNodeFeeAddress(daemon: {
   getNodeFeeAddress(): Promise<string>;
 }): Promise<string> {
   try {
-    return await daemon.getNodeFeeAddress();
+    return await withTimeout(
+      daemon.getNodeFeeAddress(),
+      5_000,
+      "Node fee address",
+    );
   } catch {
     return "";
   }
+}
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s.`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function decodeFeeRecipient(feeAddress: string): DecodedRecipient {
@@ -131,8 +157,36 @@ function unspentOutputs(runtime: SdkRuntime): OwnedOutput[] {
 
 /** Refresh chain state before selecting inputs (avoids already-spent key images). */
 async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
+  // Live poll may already be mid deep-sync; never block invite/send forever.
+  const SPEND_SYNC_BUDGET_MS = 12_000;
   try {
-    await syncRuntime(runtime);
+    let networkHeight: number | null = null;
+    try {
+      networkHeight = await Promise.race([
+        runtime.daemon.getHeight(),
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 2500);
+        }),
+      ]);
+    } catch {
+      networkHeight = null;
+    }
+    const lag =
+      typeof networkHeight === "number"
+        ? Math.max(0, networkHeight - (runtime.state.scannedHeight ?? 0))
+        : 0;
+    // Far behind: wait briefly then spend from current outs (live poll keeps catching up).
+    const budgetMs = lag > 200 ? 8_000 : SPEND_SYNC_BUDGET_MS;
+    const outcome = await Promise.race([
+      syncRuntime(runtime).then(() => "ok" as const),
+      new Promise<"timeout">((resolve) => {
+        setTimeout(() => resolve("timeout"), budgetMs);
+      }),
+    ]);
+    if (outcome === "timeout") {
+      // Best-effort: build/broadcast still surfaces unmixable / no-funds clearly.
+      return;
+    }
   } catch (error) {
     throw new Error(
       `Wallet sync failed before send. ${error instanceof Error ? error.message : String(error)}`,
@@ -161,7 +215,11 @@ async function fetchDecoys(
   const amounts = [...new Set(outputs.map((out) => out.amount))];
   if (amounts.length === 0) return [];
   // Same as next-wallet: request MIXIN+1 outs (6) per amount.
-  const raw = await runtime.daemon.getRandomOuts(amounts, RING_SIZE);
+  const raw = await withTimeout(
+    runtime.daemon.getRandomOuts(amounts, RING_SIZE),
+    20_000,
+    "Decoy fetch",
+  );
   return decoysFromDaemon(raw);
 }
 
@@ -329,7 +387,11 @@ export async function sendCcx(input: {
   assertFullRings(built);
 
   try {
-    await runtime.daemon.sendRawTransaction(built.serialized);
+    await withTimeout(
+      runtime.daemon.sendRawTransaction(built.serialized),
+      25_000,
+      "Broadcast",
+    );
   } catch (error) {
     throw new Error(
       `Failed to broadcast the transaction. ${broadcastFailureMessage(error)}`,
@@ -377,6 +439,19 @@ export async function sendSmartMessage(input: {
     throw new Error("This wallet is view-only and cannot send messages.");
   }
 
+  // Hard ceiling so leave/invite UI never spins forever on a stuck daemon RPC.
+  return withTimeout(sendSmartMessageInner(runtime, input), 45_000, "Send");
+}
+
+async function sendSmartMessageInner(
+  runtime: SdkRuntime,
+  input: {
+    recipientAddress: string;
+    body: string;
+    paymentId?: string;
+    ttlUnixSeconds?: number;
+  },
+): Promise<{ hash: string }> {
   await syncBeforeSpend(runtime);
 
   const body = input.body.trim();
@@ -455,7 +530,11 @@ export async function sendSmartMessage(input: {
   assertFullRings(built);
 
   try {
-    await runtime.daemon.sendRawTransaction(built.serialized);
+    await withTimeout(
+      runtime.daemon.sendRawTransaction(built.serialized),
+      25_000,
+      "Broadcast",
+    );
   } catch (error) {
     throw new Error(
       `Failed to broadcast the message transaction. ${broadcastFailureMessage(error)}`,
@@ -489,10 +568,7 @@ export async function sendSmartMessage(input: {
     record,
   ]);
   await persistRuntime(runtime);
-  try {
-    await syncRuntime(runtime);
-  } catch {
-    /* next refresh reconciles */
-  }
+  // Never block leave/invite UI on tip catch-up — live poll will reconcile.
+  void syncRuntime(runtime).catch(() => {});
   return { hash: built.hash };
 }

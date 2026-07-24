@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type SheetProps = {
   open: boolean;
@@ -35,7 +35,7 @@ type ModalProps = {
   title: ReactNode;
   body?: ReactNode;
   confirmLabel?: string;
-  onConfirm?: () => void;
+  onConfirm?: () => void | Promise<void>;
   cancelLabel?: string;
   destructive?: boolean;
 };
@@ -50,10 +50,22 @@ export function ConfirmModal({
   cancelLabel = "Cancel",
   destructive,
 }: ModalProps) {
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) setBusy(false);
+  }, [open]);
+
   if (!open) return null;
+
   return (
     <>
-      <div className="scrim" onClick={onClose} />
+      <div
+        className="scrim"
+        onClick={() => {
+          if (!busy) onClose();
+        }}
+      />
       <div className="modal" role="dialog" aria-modal="true">
         <div className="modal__panel">
           <h3 style={{ fontSize: 17, marginBottom: 8 }}>{title}</h3>
@@ -62,17 +74,37 @@ export function ConfirmModal({
               {body}
             </p>
           )}
+          {busy && (
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>
+              Destroying room…
+            </p>
+          )}
           <div className="stack stack--gap-2" style={{ marginTop: 20 }}>
             <button
               className={`btn btn--block ${destructive ? "btn--danger" : "btn--primary"}`}
+              disabled={busy}
               onClick={() => {
-                onConfirm?.();
-                onClose();
+                if (busy) return;
+                setBusy(true);
+                void (async () => {
+                  try {
+                    await onConfirm?.();
+                    onClose();
+                  } catch {
+                    setBusy(false);
+                  }
+                })();
               }}
             >
-              {confirmLabel}
+              {busy ? "Leaving…" : confirmLabel}
             </button>
-            <button className="btn btn--block btn--ghost" onClick={onClose}>
+            <button
+              className="btn btn--block btn--ghost"
+              disabled={busy}
+              onClick={() => {
+                if (!busy) onClose();
+              }}
+            >
               {cancelLabel}
             </button>
           </div>

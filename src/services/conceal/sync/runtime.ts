@@ -576,6 +576,9 @@ export async function sync(): Promise<number> {
   return syncRuntime(requireRuntime());
 }
 
+/** Warn once per runtime when mempool RPC is unavailable (#109). */
+const poolScanWarned = new WeakSet<SdkRuntime>();
+
 /**
  * Sync a SPECIFIC runtime to the network tip, serialized against concurrent calls
  * for THAT wallet. Bound to the runtime so a mid-flight active-wallet switch never
@@ -592,6 +595,100 @@ export function syncRuntime(rt: SdkRuntime): Promise<number> {
   // caller's intent to catch up AFTER the current scan is honored, then await it.
   coord.pendingSync = true;
   return coord.inFlightSync;
+}
+
+/**
+ * Mempool-only pass (0-conf inbound messages + pending amounts).
+ * Fast path for L1 invites — does not wait on tip catch-up.
+ * @see conceal-next-wallet #109 + docs/features/lite-wallet.md
+ */
+export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
+  if (!rt.account) return false;
+  await ensureSdkReady();
+  const nowMs = Date.now();
+  let scannedIncoming: IncomingPendingRecord[] = [];
+  const scannedPoolMessageIds = new Set<string>();
+  let poolFetchOk = false;
+  const sentHashesForPool = new Set(
+    readSentRecords(rt.raw).map((record) => record.id),
+  );
+  const poolReceived = new Map<string, SdkMessageRecord>(
+    readReceivedRecords(rt.raw).map((record) => [record.id, record] as const),
+  );
+  try {
+    const poolTxs = await rt.daemon.getTransactionsPool();
+    if (rt.account) {
+      const poolScan = scanPoolForInbound(
+        poolTxs,
+        toScanTransaction,
+        txns.scanTransactionOutputs,
+        rt.account.keys,
+        nowMs,
+        sentHashesForPool,
+      );
+      scannedIncoming = poolScan.incoming;
+      for (const inbound of poolScan.receivedMessages) {
+        scannedPoolMessageIds.add(inbound.id);
+        applyInboundScanToReceived(poolReceived, inbound.id, inbound);
+      }
+      poolFetchOk = true;
+    }
+  } catch (error) {
+    if (!poolScanWarned.has(rt)) {
+      poolScanWarned.add(rt);
+      console.warn(
+        "Incoming-pending pool scan unavailable (non-fatal, silenced):",
+        error,
+      );
+    }
+  }
+  const beforeIncoming = readIncomingPendingRecords(rt.raw);
+  const nextIncoming = reconcileIncomingPending(
+    beforeIncoming,
+    scannedIncoming,
+    rt.state,
+    nowMs,
+  );
+  const incomingChanged = nextIncoming !== beforeIncoming;
+  const minedHashes = new Set(rt.state.transactions.map((tx) => tx.hash));
+  const activeMempoolHashes = new Set([
+    ...nextIncoming.map((record) => record.hash),
+    ...scannedPoolMessageIds,
+  ]);
+  if (!poolFetchOk) {
+    for (const record of poolReceived.values()) {
+      if (record.blockHeight === 0) activeMempoolHashes.add(record.id);
+    }
+  }
+  const prunedReceived = pruneStaleMempoolReceived(
+    [...poolReceived.values()],
+    activeMempoolHashes,
+    minedHashes,
+    nowMs,
+  );
+  const beforeReceivedList = readReceivedRecords(rt.raw);
+  const receivedFingerprint = (list: SdkMessageRecord[]) =>
+    [...list]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((record) => `${record.id}:${record.body}:${record.blockHeight}`)
+      .join("|");
+  const receivedListChanged =
+    receivedFingerprint(beforeReceivedList) !==
+    receivedFingerprint(prunedReceived);
+  if (incomingChanged) {
+    rt.raw = withIncomingPendingRecords(rt.raw, nextIncoming);
+  }
+  if (receivedListChanged) {
+    rt.raw = withReceivedRecords(rt.raw, prunedReceived);
+  }
+  const ttlDrop = dropExpiredTtl(rt.raw, Math.floor(nowMs / 1000));
+  if (ttlDrop.changed) {
+    rt.raw = ttlDrop.raw;
+  }
+  if (incomingChanged || receivedListChanged || ttlDrop.changed) {
+    await persistRuntime(rt);
+  }
+  return poolFetchOk;
 }
 
 /** Run scans back-to-back while follow-ups are pending, clearing the guard at the end. */
@@ -625,9 +722,6 @@ async function runSyncChain(
  * the user switches the active wallet mid-scan. Not called concurrently for the same
  * wallet — {@link syncRuntime} serializes all callers onto it.
  */
-// Runtimes whose mempool-pool RPC has already failed once — used to warn a single time
-// per runtime instead of on every background poll when a daemon lacks the pool RPC (#109).
-const poolScanWarned = new WeakSet<SdkRuntime>();
 // Same one-warning-per-runtime treatment for the durable outbound-queue drainer (#92).
 const queueDrainWarned = new WeakSet<SdkRuntime>();
 
@@ -814,6 +908,9 @@ async function buildSyncSources(
 async function syncOnce(rt: SdkRuntime): Promise<number> {
   // Await WASM crypto init before scanTransactionOutputsAndDeposits / ring math.
   await ensureSdkReady();
+  // Publish 0-conf messages BEFORE tip catch-up so L1 invites are not stuck
+  // behind a multi-minute deep sync (next-wallet stays near tip via live poll).
+  await pollMempoolRuntime(rt);
   const height = await rt.daemon.getHeight();
   // The "Sync speed" profile (DOOM skill levels) drives the deep-sync knobs — batch size, worker-pool
   // size, and multi-source node count — off the `options.readSpeed` number (an unknown/legacy value
@@ -1074,89 +1171,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
     await persistRuntime(rt);
   }
 
-  // Incoming pending (#109): scan the daemon mempool for outputs owned by THIS wallet so a
-  // payment addressed to us shows (0-conf row + "pending in" balance) before it mines,
-  // reconciled by hash once it does. The pool FETCH is best-effort — a daemon without the
-  // RPC, or any fetch/scan error, must never break the mined sync above — but the RECONCILE
-  // runs regardless of fetch success, so mined / TTL-expired entries are still dropped when
-  // the pool is transiently unreachable (#109 review — Codex-2). One clock for the pass.
-  const nowMs = Date.now();
-  let scannedIncoming: IncomingPendingRecord[] = [];
-  const sentHashesForPool = new Set(
-    readSentRecords(rt.raw).map((record) => record.id),
-  );
-  const poolReceived = new Map<string, SdkMessageRecord>(
-    readReceivedRecords(rt.raw).map((record) => [record.id, record] as const),
-  );
-  try {
-    const poolTxs = await rt.daemon.getTransactionsPool();
-    // The wallet may have been locked/torn down during the await — re-check before scanning.
-    if (rt.account) {
-      const poolScan = scanPoolForInbound(
-        poolTxs,
-        toScanTransaction,
-        txns.scanTransactionOutputs,
-        rt.account.keys,
-        nowMs,
-        sentHashesForPool,
-      );
-      scannedIncoming = poolScan.incoming;
-      for (const inbound of poolScan.receivedMessages) {
-        applyInboundScanToReceived(poolReceived, inbound.id, inbound);
-      }
-    }
-  } catch (error) {
-    // Warn once per runtime — a daemon lacking the pool RPC would otherwise log on every
-    // poll (#109 review — GLM-H2 / Gemini / Codex-4).
-    if (!poolScanWarned.has(rt)) {
-      poolScanWarned.add(rt);
-      console.warn(
-        "Incoming-pending pool scan unavailable (non-fatal, silenced):",
-        error,
-      );
-    }
-  }
-  const beforeIncoming = readIncomingPendingRecords(rt.raw);
-  const nextIncoming = reconcileIncomingPending(
-    beforeIncoming,
-    scannedIncoming,
-    rt.state,
-    nowMs,
-  );
-  const incomingChanged = nextIncoming !== beforeIncoming;
-  const minedHashes = new Set(rt.state.transactions.map((tx) => tx.hash));
-  const activeMempoolHashes = new Set(
-    nextIncoming.map((record) => record.hash),
-  );
-  const prunedReceived = pruneStaleMempoolReceived(
-    [...poolReceived.values()],
-    activeMempoolHashes,
-    minedHashes,
-  );
-  const beforeReceivedList = readReceivedRecords(rt.raw);
-  const receivedFingerprint = (list: SdkMessageRecord[]) =>
-    [...list]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((record) => `${record.id}:${record.body}:${record.blockHeight}`)
-      .join("|");
-  const receivedListChanged =
-    receivedFingerprint(beforeReceivedList) !==
-    receivedFingerprint(prunedReceived);
-  if (incomingChanged) {
-    rt.raw = withIncomingPendingRecords(rt.raw, nextIncoming);
-  }
-  if (receivedListChanged) {
-    rt.raw = withReceivedRecords(rt.raw, prunedReceived);
-  }
-  // Clock-TTL: drop sent/received copies whose mempool TTL has elapsed so they
-  // cannot linger in the blob (UI + wallet export).
-  const ttlDrop = dropExpiredTtl(rt.raw, Math.floor(nowMs / 1000));
-  if (ttlDrop.changed) {
-    rt.raw = ttlDrop.raw;
-  }
-  if (incomingChanged || receivedListChanged || ttlDrop.changed) {
-    await persistRuntime(rt);
-  }
+  // Reconcile mempool again after mined fold (drop confirmed / TTL; refresh 0-conf).
+  await pollMempoolRuntime(rt);
 
   // Durable outbound queue (#92): retry any due broadcasts (a send that hit a transient
   // network error stays queued until it relays), then drop entries whose tx has now mined

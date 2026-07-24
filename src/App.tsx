@@ -7,8 +7,10 @@ import {
   Routes,
   useLocation,
 } from "react-router-dom";
+import { ToastHost } from "@/components/ToastHost";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
+import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ChatsScreen } from "@/screens/chats/ChatsScreen";
@@ -95,6 +97,7 @@ function AppInner() {
 function RequireWallet() {
   const initialized = useWalletStore((s) => s.initialized);
   useSeedDemoContacts();
+  useWalletLiveSync(initialized);
   if (!initialized) return <Navigate to="/welcome" replace />;
   return <Outlet />;
 }
@@ -108,6 +111,7 @@ export default function App() {
       <HashRouter>
         <AppInner />
       </HashRouter>
+      <ToastHost />
     </div>
   );
 }

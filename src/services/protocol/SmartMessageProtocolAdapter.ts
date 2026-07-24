@@ -1,6 +1,7 @@
 /**
- * Smart-message protocol layer: create / register / revoke on module `contact`.
- * Uses SDK ACTION_MAP verbs (create→c, register→r, revoke→k).
+ * Smart-message protocol layer: create / register / revoke / relay on `contact`.
+ * Uses SDK ACTION_MAP verbs (create→c, register→r, revoke→k, execute→e).
+ * @see docs/security/p2pchatprotocol.md §16
  *
  * On-chain bodies must fit MAX_MESSAGE_BODY_BYTES (251). Create packs fields
  * into one base64url blob keyed by fixed offsets (see CREATE_PACK_FIELDS).
@@ -9,15 +10,21 @@
 import { MAX_MESSAGE_BODY_BYTES, messages } from "conceal-wallet-sdk";
 import { deriveInviteSalt } from "@/services/protocol/ids";
 import { isInviteExpired, nowUnix } from "@/services/protocol/roomLifecycle";
+import {
+  DEFAULT_ROOM_TOPIC,
+  roomTopicFromWireIndex,
+  roomTopicWireIndex,
+} from "@/services/protocol/roomTopics";
 import type {
   ChatCreatePayload,
   ChatInviteHandshake,
   ChatRegisterPayload,
+  ChatRelayPayload,
   ChatRevokePayload,
   ChatRevokeReasonCode,
   InviteEnvelope,
 } from "@/types/protocol";
-import { CHAT_PROTOCOL_VERSION, CHAT_WIRE_ACTIONS } from "@/types/protocol";
+import { CHAT_PROTOCOL_VERSION, CHAT_WIRE_ACTIONS, RELAY_MAX_TEXT_CHARS } from "@/types/protocol";
 import type { SmartMessageProtocolService } from "@/types/services";
 
 const MODULE_CONTACT = "contact";
@@ -40,7 +47,25 @@ function normalizeAction(action: string): string {
   if (action === "c") return "create";
   if (action === "r") return "register";
   if (action === "k") return "revoke";
+  if (action === "e" || action === "execute") return "relay";
   return action;
+}
+
+/**
+ * Lightweight contact-action peek for wallet history dots (no expiry/replay checks).
+ * @see docs/features/lite-wallet.md
+ */
+export function peekContactHint(
+  body: string,
+): { module: "contact"; action: "create" | "register" | "revoke" } | null {
+  if (!messages.isSmartMessage(body)) return null;
+  const parsed = messages.parseSmartMessage(body);
+  if (!parsed || parsed[0] !== MODULE_CONTACT) return null;
+  const action = normalizeAction(String(parsed[1] ?? ""));
+  if (action === "create" || action === "register" || action === "revoke") {
+    return { module: "contact", action };
+  }
+  return null;
 }
 
 function hexToBytes(hex: string): Uint8Array {
@@ -120,10 +145,17 @@ export const CREATE_PACK_FIELDS = [
   { key: "replayId", bytes: 8 },
 ] as const;
 
-export const CREATE_PACK_BYTES = CREATE_PACK_FIELDS.reduce(
+/** Bytes before optional roomTopic wire byte. */
+export const CREATE_PACK_BYTES_V1 = CREATE_PACK_FIELDS.reduce(
   (sum, f) => sum + f.bytes,
   0,
 );
+
+/** Slim pack + 1-byte roomTopic index (current). */
+export const CREATE_PACK_BYTES = CREATE_PACK_BYTES_V1 + 1;
+
+/** @deprecated alias — pre-topic pack length still accepted on parse. */
+export const CREATE_PACK_BYTES_LEGACY_SLIM = CREATE_PACK_BYTES_V1;
 
 /** Legacy 136-byte pack (pre-slim) — still accepted on parse. */
 export const CREATE_PACK_BYTES_LEGACY = 136;
@@ -195,6 +227,8 @@ export function packCreateHandshake(handshake: ChatInviteHandshake): string {
   writeUint32BE(buf, o, handshake.roomTtl);
   o += 4;
   buf.set(requireHexBytes(handshake.replayId, 8, "replayId"), o);
+  o += 8;
+  buf[o] = roomTopicWireIndex(handshake.roomTopic ?? DEFAULT_ROOM_TOPIC) & 0xff;
   return bytesToB64url(buf);
 }
 
@@ -202,7 +236,13 @@ function unpackSlimCreate(
   protocolVersion: number,
   buf: Uint8Array,
 ): ChatInviteHandshake | null {
-  if (buf.length !== CREATE_PACK_BYTES) return null;
+  // V1 slim (64) or V1+topic (65).
+  if (
+    buf.length !== CREATE_PACK_BYTES &&
+    buf.length !== CREATE_PACK_BYTES_V1
+  ) {
+    return null;
+  }
   let o = 0;
   const inviteId = bytesToHex(buf.subarray(o, o + 4));
   o += 4;
@@ -217,20 +257,26 @@ function unpackSlimCreate(
   const roomTtl = readUint32BE(buf, o);
   o += 4;
   const replayId = bytesToHex(buf.subarray(o, o + 8));
+  o += 8;
+  const roomTopic =
+    buf.length >= CREATE_PACK_BYTES
+      ? roomTopicFromWireIndex(buf[o] ?? 0)
+      : DEFAULT_ROOM_TOPIC;
   return {
     protocolVersion,
     inviteId,
-    relationshipId: "", // hydrate via hydrateCreateHandshake
+    relationshipId: "",
     roomId,
     cipherSuite: "CHACHA20_POLY1305_V1",
     senderEphemeralPublicKey,
     kdf: "HKDF_SHA256_V1",
     nonceSeed,
     nonceStrategy: "counter_from_seed",
-    salt: "", // hydrate via hydrateCreateHandshake
+    salt: "",
     inviteExpiry,
     roomTtl,
     replayId,
+    roomTopic,
   };
 }
 
@@ -392,12 +438,35 @@ export function encodeRegisterSmartBody(payload: ChatRegisterPayload): string {
 }
 
 export function encodeRevokeSmartBody(payload: ChatRevokePayload): string {
+  // Wire: contact | revoke | inviteId | replay | reason | roomId?
   const body = messages.encodeSmartMessage(
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.revoke,
     payload.inviteId,
     payload.replayId ? hexToB64url(payload.replayId) : "",
     payload.reasonCode ?? "user_declined",
+    payload.roomId ?? "",
+  );
+  assertBodyFits(body);
+  return body;
+}
+
+/** Wire: `{contact,e,roomId,sentAtUnix,text}` — Conceal MESSAGE encrypts on-chain. */
+export function encodeRelaySmartBody(payload: ChatRelayPayload): string {
+  const text = payload.text.trim();
+  if (!text) throw new Error("Relay text required.");
+  if (/[,{}]/.test(text)) {
+    throw new Error("Relay text cannot contain , { or }.");
+  }
+  if (text.length > RELAY_MAX_TEXT_CHARS) {
+    throw new Error("Relay text too long for smart-message body.");
+  }
+  const body = messages.encodeSmartMessage(
+    MODULE_CONTACT,
+    CHAT_WIRE_ACTIONS.relay,
+    payload.roomId,
+    String(payload.sentAt),
+    text,
   );
   assertBodyFits(body);
   return body;
@@ -410,6 +479,7 @@ export function parseChatSmartBody(
   | { action: "create"; payload: ChatCreatePayload }
   | { action: "register"; payload: ChatRegisterPayload }
   | { action: "revoke"; payload: ChatRevokePayload }
+  | { action: "relay"; payload: ChatRelayPayload }
   | null {
   const parsed = messages.parseSmartMessage(smartBody);
   if (!parsed || parsed[0] !== MODULE_CONTACT) return null;
@@ -494,6 +564,7 @@ export function parseChatSmartBody(
     const replayRaw = String(parsed[3] ?? "");
     const reasonCode = (String(parsed[4] ?? "user_declined") ||
       "user_declined") as ChatRevokeReasonCode;
+    const roomIdRaw = String(parsed[5] ?? "").trim();
     if (!inviteId) return null;
     let replayId: string | undefined;
     if (replayRaw) {
@@ -510,8 +581,25 @@ export function parseChatSmartBody(
       payload: {
         type: "chat.revoke",
         inviteId,
+        roomId: roomIdRaw || undefined,
         replayId,
         reasonCode,
+      },
+    };
+  }
+
+  if (action === "relay") {
+    const roomId = String(parsed[2] ?? "").trim();
+    const sentAt = Number(parsed[3] ?? 0);
+    const text = String(parsed[4] ?? "");
+    if (!roomId || !text || !Number.isFinite(sentAt) || sentAt <= 0) return null;
+    return {
+      action: "relay",
+      payload: {
+        type: "chat.relay",
+        roomId,
+        sentAt,
+        text,
       },
     };
   }
@@ -577,6 +665,7 @@ export const SmartMessageProtocolAdapter: SmartMessageProtocolService = {
     return {
       type: "chat.revoke",
       inviteId: input.inviteId,
+      roomId: input.roomId,
       replayId: input.replayId,
       reasonCode: input.reasonCode ?? "user_declined",
     };

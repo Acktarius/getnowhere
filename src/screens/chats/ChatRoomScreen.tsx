@@ -1,24 +1,36 @@
 import { RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { EmptyState } from "@/components/EmptyState";
-import { MessageBubble } from "@/components/MessageBubble";
-import { Sheet } from "@/components/Sheet";
-import { RoomLifecyclePill } from "@/components/StatusBadges";
-import { getMessagesForRoom } from "@/services/p2p/HolepunchChatTransport";
 import {
+  MessageBubble,
+  type BubbleReaction,
+} from "@/components/MessageBubble";
+import { ConfirmModal, Sheet } from "@/components/Sheet";
+import { RoomLifecyclePill } from "@/components/StatusBadges";
+import {
+  canComposeMessages,
   composerDisabledReason,
-  isComposerEnabled,
+  composerPreferredChannel,
+  isRetryableConnectFailure,
 } from "@/services/protocol/composerGate";
+import {
+  getLastSidecarDetail,
+  getMessagesForRoom,
+} from "@/services/p2p/HolepunchChatTransport";
+import { getHolepunchWsUrl } from "@/services/p2p/HolepunchSidecarClient";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
+import { toastError, toastSuccess } from "@/state/toastStore";
 import type { ChatMessage } from "@/types/models";
+import { RELAY_MAX_TEXT_CHARS } from "@/types/protocol";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 export function ChatRoomScreen() {
   const { roomId = "" } = useParams();
+  const navigate = useNavigate();
   const openRoom = useChatStore((s) => s.openRoom);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
   const subscribeRoom = useChatStore((s) => s.subscribeRoom);
@@ -40,17 +52,23 @@ export function ChatRoomScreen() {
     contactId ? s.contacts.find((c) => c.id === contactId) : undefined,
   );
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
+  const refreshRelays = useChatStore((s) => s.refreshRelays);
+  const revokeRoom = useContactsStore((s) => s.revokeRoom);
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [loadingRoom, setLoadingRoom] = useState(true);
   const [handoffHint, setHandoffHint] = useState<string | null>(null);
   const [handoffProbe, setHandoffProbe] = useState<{
     hasInitiatorKey: boolean;
+    role: "initiator" | "responder" | "unknown";
     registerCount: number;
     matchingRegister: boolean;
+    needsAccept?: boolean;
   } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +80,7 @@ export function ChatRoomScreen() {
       try {
         try {
           await refreshInvites();
+          await refreshRelays();
         } catch {
           /* wallet may still be syncing */
         }
@@ -109,11 +128,19 @@ export function ChatRoomScreen() {
     subscribeRoom,
     setMessages,
     refreshInvites,
+    refreshRelays,
   ]);
 
   // Reconnect when accepted/pending but never called connect() (attempts === 0).
   useEffect(() => {
     if (!room) return;
+    // crypto_mismatch is not auto-retryable — session keys diverged; user must
+    // resend/accept.  Stop polling immediately to prevent the connected↔mismatch loop.
+    if (
+      room.lifecycleStatus === "connect_failed" &&
+      !isRetryableConnectFailure(room.lastConnectError)
+    )
+      return;
     const needsConnect =
       (room.lifecycleStatus === "pending" ||
         room.lifecycleStatus === "accepted" ||
@@ -138,8 +165,10 @@ export function ChatRoomScreen() {
         setHandoffHint(probe.detail);
         setHandoffProbe({
           hasInitiatorKey: probe.hasInitiatorKey,
+          role: probe.role,
           registerCount: probe.registerCount,
           matchingRegister: probe.matchingRegister,
+          needsAccept: probe.needsAccept,
         });
         if (probe.handoffCompleted) await openRoom(roomId);
       } catch {
@@ -175,10 +204,29 @@ export function ChatRoomScreen() {
     };
   }, [roomId, openRoom]);
 
+  const reactionsByTarget = useMemo(() => {
+    const map = new Map<string, BubbleReaction[]>();
+    for (const m of messages) {
+      if (m.kind !== "reaction" || !m.targetMessageId || !m.reaction) continue;
+      const list = map.get(m.targetMessageId) ?? [];
+      list.push({
+        emoji: m.reaction,
+        from: m.direction === "out" ? "me" : "peer",
+      });
+      map.set(m.targetMessageId, list);
+    }
+    return map;
+  }, [messages]);
+
+  const visibleMessages = useMemo(
+    () => messages.filter((m) => m.kind !== "reaction"),
+    [messages],
+  );
+
   useEffect(() => {
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [visibleMessages.length]);
 
   if (loadingRoom) {
     return (
@@ -234,18 +282,31 @@ export function ChatRoomScreen() {
     );
   }
 
-  const live = isComposerEnabled(room.lifecycleStatus);
-  const disabledReason = composerDisabledReason(room.lifecycleStatus);
-  const superseded =
-    Boolean(contact.roomId) && contact.roomId !== roomId;
+  const live = canComposeMessages(room.lifecycleStatus);
+  const sendChannel = composerPreferredChannel(room.lifecycleStatus);
+  const viaChain = live && sendChannel === "relay";
+  const holepunchLive = room.lifecycleStatus === "connected";
+  const disabledReason = composerDisabledReason(
+    room.lifecycleStatus,
+    room.lastConnectError,
+  );
+  const superseded = Boolean(contact.roomId) && contact.roomId !== roomId;
 
   async function handleSend() {
     if (!draft.trim() || !live) return;
+    if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
+      toastError(
+        `Via-chain messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
+      );
+      return;
+    }
     setSending(true);
     const text = draft.trim();
     setDraft("");
     try {
       await send(roomId, text);
+    } catch (e) {
+      toastError((e as Error).message || "Send failed.");
     } finally {
       setSending(false);
     }
@@ -260,16 +321,34 @@ export function ChatRoomScreen() {
     }
   }
 
+  async function handleRevokeConfirm() {
+    if (revoking) return;
+    setRevoking(true);
+    try {
+      await revokeRoom(roomId);
+      toastSuccess("Room left.");
+      navigate("/chats", { replace: true });
+    } catch (e) {
+      toastError((e as Error).message || "Leave failed.");
+      throw e;
+    } finally {
+      setRevoking(false);
+    }
+  }
+
   const offline = room.peerStatus === "offline";
 
   return (
     <div className="screen" style={{ paddingBottom: 0 }}>
-      <ChatRoomHeader
-        contact={contact}
-        peerStatus={room.peerStatus}
-        roomId={roomId}
-        onShowDiagnostics={() => setDiagOpen(true)}
-      />
+        <ChatRoomHeader
+          contact={contact}
+          peerStatus={room.peerStatus}
+          roomId={roomId}
+          roomTopic={room.roomTopic}
+          onShowDiagnostics={() => setDiagOpen(true)}
+          onLeaveRoom={() => setLeaveOpen(true)}
+          leaving={revoking}
+        />
       <div
         style={{
           padding: "8px 14px",
@@ -283,6 +362,20 @@ export function ChatRoomScreen() {
         {!live && (
           <span className="muted" style={{ fontSize: 12 }}>
             {disabledReason}
+          </span>
+        )}
+        {viaChain && (
+          <span className="muted" style={{ fontSize: 12 }} title="L1 Conceal message">
+            via chain
+          </span>
+        )}
+        {room.lifecycleStatus === "connect_failed" && room.lastConnectError && (
+          <span
+            className="muted"
+            style={{ fontSize: 11, fontFamily: "var(--font-mono, monospace)" }}
+            title={disabledReason ?? undefined}
+          >
+            [{room.lastConnectError}]
           </span>
         )}
         {room.lifecycleStatus === "connect_failed" && (
@@ -329,7 +422,7 @@ export function ChatRoomScreen() {
           flexDirection: "column",
         }}
       >
-        {messages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           <EmptyState
             title={live ? "Connected room" : "Room not live yet"}
             body={
@@ -358,8 +451,10 @@ export function ChatRoomScreen() {
                         setHandoffHint(probe.detail);
                         setHandoffProbe({
                           hasInitiatorKey: probe.hasInitiatorKey,
+                          role: probe.role,
                           registerCount: probe.registerCount,
                           matchingRegister: probe.matchingRegister,
+                          needsAccept: probe.needsAccept,
                         });
                         await openRoom(roomId);
                       } finally {
@@ -369,36 +464,49 @@ export function ChatRoomScreen() {
                   >
                     <RefreshCw size={13} /> Connect now
                   </button>
-                  {contact && handoffProbe && !handoffProbe.hasInitiatorKey && (
+                  {contact && handoffProbe?.needsAccept && (
                     <Link
                       className="btn btn--sm btn--primary"
                       to={`/contacts/${contact.id}`}
                     >
-                      Resend invite from contact
+                      Open contact to Accept
                     </Link>
                   )}
+                  {contact &&
+                    handoffProbe &&
+                    !handoffProbe.hasInitiatorKey &&
+                    handoffProbe.role !== "responder" &&
+                    !handoffProbe.needsAccept && (
+                      <Link
+                        className="btn btn--sm btn--primary"
+                        to={`/contacts/${contact.id}`}
+                      >
+                        Resend invite from contact
+                      </Link>
+                    )}
                 </div>
               ) : undefined
             }
           />
         ) : (
           <>
-            {messages.map((m) => (
+            {visibleMessages.map((m) => (
               <MessageBubble
                 key={m.id}
                 message={m}
+                reactions={reactionsByTarget.get(m.id)}
                 onReact={
-                  live
+                  holepunchLive
                     ? (emoji) => sendReaction(roomId, m.id, emoji)
                     : undefined
                 }
                 onEdit={
-                  live && m.direction === "out"
+                  holepunchLive && m.direction === "out"
                     ? (text) => editMessage(roomId, m.id, text)
                     : undefined
                 }
                 onDelete={
-                  live && m.direction === "out"
+                  holepunchLive && m.direction === "out"
                     ? () => deleteMessage(roomId, m.id)
                     : undefined
                 }
@@ -421,8 +529,15 @@ export function ChatRoomScreen() {
           value={draft}
           disabled={!live || sending}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={live ? "Message…" : "Connect via Holepunch to send…"}
+          placeholder={
+            !live
+              ? "Connect or wait for session keys…"
+              : viaChain
+                ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
+                : "Message…"
+          }
           rows={1}
+          maxLength={viaChain ? RELAY_MAX_TEXT_CHARS : undefined}
           style={{
             flex: 1,
             resize: "none",
@@ -484,12 +599,29 @@ export function ChatRoomScreen() {
           {room.lastConnectError && (
             <div>Last error: {room.lastConnectError}</div>
           )}
+          <div>Sidecar: {getHolepunchWsUrl()}</div>
+          {getLastSidecarDetail() && (
+            <div>Sidecar status: {getLastSidecarDetail()}</div>
+          )}
           <div className="row-flex" style={{ gap: 8 }}>
             {offline ? <WifiOff size={14} /> : <Wifi size={14} />}
             <span>{offline ? "Offline" : "Online"}</span>
           </div>
         </div>
       </Sheet>
+
+      <ConfirmModal
+        open={leaveOpen}
+        title="Leave room?"
+        body="This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm."
+        confirmLabel="LEAVE ROOM"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={handleRevokeConfirm}
+        onClose={() => {
+          if (!revoking) setLeaveOpen(false);
+        }}
+      />
     </div>
   );
 }

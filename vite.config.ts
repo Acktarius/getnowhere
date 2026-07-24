@@ -2,9 +2,9 @@ import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// Web-app-first build, tuned for later embedding inside a minimal Expo
-// React-Native WebView shell (iOS + Android). See the README section
-// "Future Expo WebView Wrapper Notes" for the wrapping plan.
+// Web-app-first build, tuned for embedding in Electron and (optionally) a
+// mobile WebView UI shell. Networking stays in holepunch-sidecar / Bare —
+// never in the Vite bundle. See docs/architecture/ and README "Native delivery".
 //
 // WebView file:// compatibility (the three real blockers):
 //   1. `base: "./"` → every asset reference is relative (./assets/…), so the

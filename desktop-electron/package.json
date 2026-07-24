@@ -1,0 +1,19 @@
+{
+  "name": "gnh-desktop-electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron shell for Get Now Here (Vite UI + localhost Hyperswarm sidecar child)",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "start:alice": "GNH_ROLE=alice electron .",
+    "start:bob": "GNH_ROLE=bob electron .",
+    "start:alice:isolated": "GNH_ROLE=alice GNH_SWARM_MODE=isolated electron .",
+    "start:bob:isolated": "GNH_ROLE=bob GNH_SWARM_MODE=isolated HOLEPUNCH_PORT=7902 electron .",
+    "install:app": "npm install"
+  },
+  "devDependencies": {
+    "electron": "^40.10.6"
+  }
+}

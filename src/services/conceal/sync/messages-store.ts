@@ -151,15 +151,26 @@ export function patchSentMessageBlockHeights(
   return { records: changed ? next : records, changed };
 }
 
+/**
+ * Drop 0-conf rows that left the mempool without mining — but keep a grace window
+ * for the mempool→block gap (tx leaves the pool before our scanner folds the block).
+ * Without grace, chat creates vanish and Bob never sees Accept.
+ */
+export const MEMPOOL_RECEIVED_GRACE_MS = 2 * 60 * 60 * 1000;
+
 export function pruneStaleMempoolReceived(
   records: SdkMessageRecord[],
   activeMempoolHashes: ReadonlySet<string>,
   minedHashes: ReadonlySet<string>,
+  nowMs: number = Date.now(),
 ): SdkMessageRecord[] {
   return records.filter((record) => {
     if (record.blockHeight !== 0) return true;
     if (minedHashes.has(record.id)) return true;
-    return activeMempoolHashes.has(record.id);
+    if (activeMempoolHashes.has(record.id)) return true;
+    const ts = Date.parse(record.timestamp);
+    if (!Number.isFinite(ts)) return true;
+    return nowMs - ts < MEMPOOL_RECEIVED_GRACE_MS;
   });
 }
 

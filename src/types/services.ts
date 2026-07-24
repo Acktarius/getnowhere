@@ -14,6 +14,7 @@ import type {
   ChatCreatePayload,
   ChatInviteHandshake,
   ChatRegisterPayload,
+  ChatRelayPayload,
   ChatRevokePayload,
   ChatRevokeReasonCode,
   CipherSuiteId,
@@ -138,6 +139,8 @@ export type ComposeInviteInput = {
   roomTtlSec?: number;
   capabilities?: string[];
   relationshipId: string;
+  /** Display room category (work/family/…). Default general. */
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
   /** Optional pre-generated handshake overrides (tests). */
   handshakeOverrides?: Partial<ChatInviteHandshake>;
 };
@@ -152,6 +155,7 @@ export type ComposedInvite = {
   roomTtl: number;
   senderAlias: string;
   capabilities: string[];
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
   bootstrapEncrypted: string;
   handshake: ChatInviteHandshake;
   smartBody: string;
@@ -190,6 +194,37 @@ export type SmartMessageService = {
     },
   ): Promise<{ roomId: string }>;
   declineInvite(inviteId: string): Promise<void>;
+  /**
+   * Broadcast chat.revoke (room_revoked). Resolves only after tx is accepted
+   * by the daemon — caller then destroys the local room.
+   */
+  revokeRoom(input: {
+    contactId: string;
+    inviteId: string;
+    roomId: string;
+    replayId?: string;
+  }): Promise<{ txHash: string }>;
+  /** Scan received smart messages for chat.revoke. */
+  fetchIncomingRevokes(): Promise<
+    Array<{
+      revoke: import("@/types/protocol").ChatRevokePayload;
+      txHash: string;
+    }>
+  >;
+  /** Broadcast L1 chat.relay (SMS-class fallback; Conceal MESSAGE encrypts). */
+  sendChatRelay(input: {
+    contactId: string;
+    relay: ChatRelayPayload;
+  }): Promise<{ txHash: string }>;
+  /** Scan received smart messages for chat.relay (0-conf preview OK). */
+  fetchIncomingRelays(): Promise<
+    Array<{
+      relay: ChatRelayPayload;
+      txHash: string;
+      paymentIdFrom?: string;
+      zeroConf?: boolean;
+    }>
+  >;
 };
 
 // ---------- Chat transport (required Holepunch boundary) ----------
@@ -202,6 +237,7 @@ export type RoomBootstrap = {
   inviteId?: string;
   inviteExpiry?: number;
   roomTtl?: number;
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
 };
 
 export type ChatTransport = {
@@ -269,6 +305,7 @@ export type SmartMessageProtocolService = {
 
   composeRevoke(input: {
     inviteId: string;
+    roomId?: string;
     replayId?: string;
     reasonCode?: ChatRevokeReasonCode;
   }): Promise<ChatRevokePayload>;

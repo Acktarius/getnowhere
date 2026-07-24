@@ -255,6 +255,21 @@ button {
 .icon-btn:active {
   transform: scale(0.92);
 }
+.topbar__leave-btn {
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding-inline: 10px;
+}
+.topbar__leave-btn:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.topbar__leave-btn:disabled {
+  opacity: 0.55;
+}
 
 /* Branded display QR — wide = ≥85% of app screen for scanning */
 .wallet-qr {
@@ -537,6 +552,11 @@ button {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
+.pill--zeroconf {
+  background: color-mix(in srgb, var(--text-faint) 14%, transparent);
+  color: var(--text-faint);
+  font-weight: 500;
+}
 .pill--eligible {
   background: var(--primary-soft);
   color: var(--primary);
@@ -626,6 +646,39 @@ button {
   color: inherit;
   text-align: left;
   font: inherit;
+}
+/* L1 contact smartmessage dots — create blue, register green, revoke amber */
+.tx-contact-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.tx-contact-dot--create {
+  background: var(--secondary);
+}
+.tx-contact-dot--register {
+  background: var(--success);
+}
+.tx-contact-dot--revoke {
+  background: var(--accent);
+}
+.tx-contact-dot--zeroconf {
+  animation: tx-dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tx-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.82);
+  }
 }
 .tx-row__detail {
   display: flex;
@@ -1150,6 +1203,64 @@ button {
   50% {
     transform: translateY(80px);
   }
+}
+
+/* Toasts */
+.toast-host {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 72px);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev-1);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  animation: slide-up 180ms var(--ease-out) both;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.toast--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger-soft) 80%, var(--bg-elev-1));
+  color: var(--text);
+}
+.toast--success {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+}
+.toast__msg {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+.toast__close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-faint);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.toast__close:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
 }
 
 /* Utilities */

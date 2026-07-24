@@ -1,95 +1,118 @@
-# Web vs Wrapper
+# Web, desktop, and mobile hosts
 
-This project is built as a **web-first** application. Local development happens in the web app with `npm run dev`, while Expo.dev / EAS is used only for the native wrapper, iOS builds, signing, TestFlight, and App Store delivery.[web:14][web:35]
+This project is built as a **web-first** application. Daily work uses the Vite
+app (`npm run dev`). Packaged hosts:
+
+| Host | Role |
+|---|---|
+| Browser + `holepunch-sidecar/` | Web-dev UI + Hyperswarm |
+| `desktop-electron/` | Desktop shell (Alice/Bob testing today) |
+| `native-wrapper/` | Mobile Expo + Bare (target) + EAS store delivery |
 
 ## Purpose
 
-The goal of this split is to keep daily product development fast and simple while still using Expo's cloud build and submission services for Apple distribution.[web:14][web:35] EAS Build is Expo's hosted service for producing app binaries, and it supports building iOS separately with `eas build --platform ios`.[web:14]
+Keep product development fast in Vite while packaging desktop and mobile
+separately. Expo.dev / EAS is for mobile binaries and store submission.
+Electron is for desktop. Neither UI host imports `hyperswarm`.
 
-## Web app
+## Web app (product UI)
 
-The `web/` folder is the main product.
-
-It should contain:
-
-- React UI, routes, pages, and components.
-- State management and client-side business logic.
-- Invitation, relationship, and chat flows.
-- Wallet integration adapters that can run in the web-first architecture.
-- Shared TypeScript types, utilities, and service modules.
-- Build output for browser deployment and possible wrapper embedding.
-
-Rules for `web/`:
-
-- Use `npm run dev` for normal development.
-- Keep the app deployable as a normal web project.
-- Avoid tight coupling to Expo runtime APIs.
-- Avoid browser features that are known to behave badly inside mobile WebViews unless documented and tested.
-- Keep product logic here unless native APIs are truly required.
-
-## Native wrapper
-
-The `native-wrapper/` folder is a minimal Expo shell around the web app.
+Product UI and domain logic live at the **repo root** (`src/`, Vite config,
+root `package.json`) — there is no top-level `web/` folder.
 
 It should contain:
 
-- `app.json`
-- `eas.json`
-- Expo app metadata
-- Bundle identifiers
-- Icons, splash assets, and platform configuration
-- WebView host code, if the app is wrapped in a WebView
-- Native-only glue code required for packaging or store compliance
+- React UI, routes, pages, and components
+- State management and client-side business logic
+- Invitation, relationship, and chat flows
+- Wallet integration adapters
+- Shared TypeScript types, utilities, and service modules
+- Bridge **client** only for P2P (`HolepunchSidecarClient`) — no Hyperswarm
+- Build output for browser and for loading inside Electron / optional WebView
 
-Rules for `native-wrapper/`:
+Rules:
 
-- Keep it thin.
-- Do not duplicate product logic from `web/`.
-- Use it for packaging, build configuration, signing, and store delivery.[web:14][web:35]
-- Put Expo and EAS commands here, not in the web app.
-- Treat wrapper changes as release-engineering changes unless they directly affect runtime behavior.
+- Use `npm run dev` for normal development
+- Keep the app deployable as a normal static web project
+- Avoid tight coupling to Expo or Electron APIs in `src/`
+- Keep product logic here unless a host-specific API is truly required
+
+## Desktop shell
+
+`desktop-electron/` loads the Vite UI in a BrowserWindow, isolates Alice/Bob
+storage partitions, and attaches to (or owns) the localhost Hyperswarm sidecar
+child. See `docs/architecture/electron-desktop.md`.
+
+## Mobile wrapper
+
+`native-wrapper/` is the Expo shell for iOS/Android packaging (EAS Build /
+Submit). Hyperswarm on mobile is a **Bare worklet**, not WebView JS. See
+`docs/architecture/mobile-p2p-runtime.md`.
+
+It should contain:
+
+- `app.json` / `eas.json`, bundle ids, icons, splash
+- Bare worklet host + bridge (when implemented)
+- Optional WebView only as a UI shell — never as the swarm host
+
+Rules:
+
+- Keep it thin; do not duplicate product logic from `src/`
+- Put Expo and EAS commands here, not in the root web app scripts (except
+  convenience wrappers)
+- Treat wrapper changes as release-engineering unless they change runtime
+  behavior documented elsewhere
 
 ## Decision boundary
 
-Use this rule when deciding where code belongs:
+| Put it in… | When |
+|---|---|
+| `src/` | Product UX, domain logic, wallet, protocol, bridge client, encryption L1/L3 |
+| `holepunch-sidecar/` | Web-dev Hyperswarm host + WS bridge server |
+| `desktop-electron/` | Electron window lifecycle, Alice/Bob partitions, sidecar child ownership |
+| `native-wrapper/` | Expo/EAS packaging, Bare worklet host, store metadata |
 
-Put code in `web/` if it is part of the product experience, domain logic, UI flow, or cross-platform application behavior.
+## Networking architecture
 
-Put code in `native-wrapper/` if it exists only because the app must be packaged, signed, configured, or submitted as a native iOS or Android app.[web:14][web:35]
+Hyperswarm stays **out of the Vite / UI bundle**.
 
-## Examples
+- **Web-dev:** Vite ↔ WebSocket ↔ `holepunch-sidecar/`
+- **Desktop:** Vite in Electron renderer ↔ same bridge schema ↔ sidecar child
+  (MVP) or main / Pear-end later — `electron-desktop.md`
+- **Mobile:** Expo UI ↔ same bridge ↔ Bare worklet — `mobile-p2p-runtime.md`
 
-Place these in `web/`:
+Crypto (max security): L1 SmartMessage derive → L2 Hyperswarm Noise → L3
+ChaCha20-Poly1305 E2E before the bridge — `docs/security/encryption.md`.
 
-- Contact list UI
-- Invite acceptance flow
-- Chat session screen
-- Message composer
-- Shared encryption service interfaces
-- App state for onboarding and relationships
+Further detail:
 
-Place these in `native-wrapper/`:
-
-- Expo config
-- iOS bundle identifier
-- EAS build profiles
-- App icon and splash config
-- WebView container component
-- Store submission configuration
+- `holepunch-sidecar.md` — live bridge schema
+- `pairing-and-topics.md` — sole `topicRef` formula
+- `folder-structure.md` — tree map
+- `pear-runtime.md` — runtime responsibilities
 
 ## Commands
 
-Web app commands:
+Web-dev:
 
 ```bash
-cd web
 npm install
+npm run holepunch:install
+npm run holepunch   # optional if Electron owns the sidecar
 npm run dev
 npm run build
 npm run preview
 ```
 
-Native wrapper commands:
+Desktop:
+
+```bash
+npm run desktop:install
+npm run desktop:alice
+npm run desktop:bob
+```
+
+Mobile wrapper:
 
 ```bash
 cd native-wrapper
@@ -99,21 +122,33 @@ npx eas build --platform ios --profile production
 npx eas submit --platform ios
 ```
 
-Expo documents EAS Build as the hosted service for creating installable Android and iOS binaries, and EAS Submit as the command-line path for sending signed builds to the stores.[web:14][web:35]
-
 ## Documentation rule
 
-Any change that moves responsibility across the `web/` and `native-wrapper/` boundary must update this file in the same branch.
-
-Examples:
-
-- Moving a feature from browser-only to native-assisted behavior.
-- Adding a native dependency.
-- Changing how the wrapper loads the web app.
-- Changing the iOS build or submission flow.
+Any change that moves responsibility across `src/`, `holepunch-sidecar/`,
+`desktop-electron/`, or `native-wrapper/` must update this file and
+`folder-structure.md` in the same branch.
 
 ## Project wording
 
-Use this wording in docs and prompts:
+> Get Now Here is developed as a web-first application. Local work happens with
+> `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare.
+> Expo.dev / EAS covers store delivery.
 
-> Get Now Here is developed as a web-first application. Local work happens with `npm run dev` in the web app. Expo.dev / EAS is used only for the native wrapper, iOS builds, signing, TestFlight, and App Store delivery.[web:14][web:35]
+### Networking phrasing
+
+Prefer:
+
+- “Vite UI plus a Pear-shaped Node Hyperswarm sidecar (web-dev).”
+- “Desktop: Electron shell; shared localhost sidecar for Alice/Bob testing.”
+- “Mobile: Expo UI plus a Bare Hyperswarm worklet behind the same bridge.”
+- “L1 SmartMessage secret → L2 Noise transport → L3 ChaCha E2E on frames.”
+- “Topics come only from `deriveTopicRef`.”
+
+Avoid:
+
+- Referring to a top-level `web/` folder (use `src/`)
+- “The UI / WebView / renderer joins Hyperswarm”
+- “Noise alone is enough for chat plaintext across the bridge”
+- “React Native desktop” / “Nitro Hyperswarm”
+- Public room names as topics; trusting peers from topic join alone
+- Alternate `topicRef` formulas unless protocol + `ids.ts` change together

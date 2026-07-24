@@ -1,11 +1,8 @@
 // WalletService backed by conceal-wallet-sdk + next-wallet-parity sync runtime.
 
 import {
-  resolveWalletTransactionKind,
   getBalance as sdkGetBalance,
   getTransactions as sdkGetTransactions,
-  type WalletTransaction,
-  type WalletTransactionKind,
 } from "conceal-wallet-sdk";
 import {
   buildDaemon,
@@ -18,6 +15,7 @@ import {
   previewKeysFromSpend,
   validateCcxAddress,
 } from "@/services/conceal/ConcealWalletAdapter";
+import { mapWalletTransactions } from "@/services/conceal/mapWalletTransactions";
 import {
   adopt,
   changeRuntimePassword,
@@ -37,7 +35,7 @@ import {
   buildViewOnly,
   mnemonicFromSpendKey,
 } from "@/services/conceal/walletBuild";
-import type { Transaction, TransactionKind, WalletState } from "@/types/models";
+import type { Transaction, WalletState } from "@/types/models";
 import type {
   CreateWalletResult,
   ImportWalletInput,
@@ -51,42 +49,6 @@ const M_COIN = 1_000_000;
 
 function atomicToCCX(atomic: number): number {
   return atomic / M_COIN;
-}
-
-function kindFromSdk(kind: WalletTransactionKind | undefined): TransactionKind {
-  switch (kind) {
-    case "miner":
-      return "miner";
-    case "deposit":
-      return "deposit";
-    case "withdrawal":
-      return "withdrawal";
-    case "fusion":
-      return "fusion";
-    case "receive":
-    case "send":
-      return "transfer";
-    default:
-      return "unknown";
-  }
-}
-
-function mapSdkTransactions(txs: WalletTransaction[]): Transaction[] {
-  return txs.map((tx) => {
-    const kind = kindFromSdk(tx.kind ?? resolveWalletTransactionKind(tx));
-    return {
-      id: tx.hash || `tx_${tx.height}_${tx.amount}`,
-      type: tx.direction === "in" ? "incoming" : "outgoing",
-      kind,
-      amount: atomicToCCX(Math.abs(tx.amount)),
-      hash: tx.hash || "",
-      height: tx.height || undefined,
-      timestamp: tx.timestamp
-        ? new Date(tx.timestamp * 1000).toISOString()
-        : new Date().toISOString(),
-      state: "confirmed",
-    };
-  });
 }
 
 function mapBackupTransactions(rawTxs: unknown[]): Transaction[] {
@@ -157,7 +119,10 @@ function refreshSnapshotFromRuntime(): void {
   snapshot.balanceTotal = atomicToCCX(balance.total);
   snapshot.balanceAvailable = atomicToCCX(balance.spendable);
   snapshot.balancePending = 0;
-  snapshot.transactions = mapSdkTransactions(sdkGetTransactions(rt.state));
+  snapshot.transactions = mapWalletTransactions(
+    sdkGetTransactions(rt.state),
+    rt.raw,
+  );
   snapshot.address = rt.account.address;
   const tip = Math.max(rt.state.scannedHeight, 1);
   // Progress is approximate until a sync pass reports network height.

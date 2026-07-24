@@ -8,6 +8,7 @@ import {
   smartMessageService,
   walletService,
 } from "@/services";
+import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
 import {
   bindSmartMessageContacts,
   getHandshakeForInvite,
@@ -23,6 +24,11 @@ import {
 } from "@/services/contacts/contactsPersistence";
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
+import {
+  isInviteRevoked,
+  isRoomRevoked,
+  rememberRevokedRoom,
+} from "@/services/p2p/revokedRoomsStore";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
@@ -30,6 +36,7 @@ import { generatePaymentId, uid } from "@/utils/format";
 type CreateChatOptions = {
   inviteExpirySec?: number;
   roomTtlSec?: number;
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
 };
 
 type ContactsStore = {
@@ -59,8 +66,19 @@ type ContactsStore = {
   ) => Promise<{ roomId: string }>;
   acceptInvite: (inviteId: string) => Promise<{ roomId: string }>;
   declineInvite: (inviteId: string) => Promise<void>;
-  /** Drop a dead sent invite so Alice can create a new one. */
-  abandonPendingInvite: (contactId: string) => Promise<void>;
+  /**
+   * Leave forever: L1 chat.revoke (room_revoked), then destroy local room
+   * only after broadcast confirms. Peer destroys on scan.
+   */
+  revokeRoom: (roomId: string) => Promise<void>;
+  /** Drop a dead sent invite so Alice can create again (optionally one topic only). */
+  abandonPendingInvite: (
+    contactId: string,
+    opts?: {
+      roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
+      roomId?: string;
+    },
+  ) => Promise<void>;
   getById: (id: string) => Contact | undefined;
 };
 
@@ -143,6 +161,109 @@ function schedulePersistInvites(get: () => ContactsStore): void {
   persistInvites(get().invites);
 }
 
+/**
+ * Destructive flows (revoke/decline/abandon) must await the encrypted wallet
+ * blob write, not fire-and-forget it — otherwise an app quit right after
+ * "Room left" leaves the on-disk blob stale, and hydrateContacts() (which
+ * prefers the blob over localStorage) resurrects the deleted room on restart.
+ */
+async function persistContactsDurably(get: () => ContactsStore): Promise<void> {
+  await persistContacts(get().contacts);
+}
+
+/**
+ * Wipe local room completely after L1 revoke broadcast (or peer revoke scanned).
+ * Room MUST disappear from Chats — catalog, session, invites, contact.roomId, UI.
+ */
+async function applyRoomDestroyLocally(
+  get: () => ContactsStore,
+  set: (
+    partial:
+      | Partial<ContactsStore>
+      | ((s: ContactsStore) => Partial<ContactsStore>),
+  ) => void,
+  roomId: string,
+  inviteId?: string,
+): Promise<void> {
+  // Tombstone first so any concurrent openRoom/reconnect cannot re-upsert.
+  rememberRevokedRoom(roomId, inviteId);
+  try {
+    const { removeCatalogRoom } = await import(
+      "@/services/p2p/roomCatalogStore"
+    );
+    removeCatalogRoom(roomId);
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { removeRoomSession } = await import(
+      "@/services/p2p/roomSessionStore"
+    );
+    removeRoomSession(roomId);
+  } catch {
+    /* ignore */
+  }
+
+  const invites = get().invites.filter(
+    (i) =>
+      i.roomId === roomId ||
+      (inviteId &&
+        (i.inviteId === inviteId ||
+          normalizeInviteId(i.inviteId) === normalizeInviteId(inviteId))),
+  );
+  const ids = new Set(
+    invites.map((i) => i.inviteId).concat(inviteId ? [inviteId] : []),
+  );
+  for (const id of ids) {
+    pendingPrivateKeys.delete(id);
+    removePendingInitiatorKey(id);
+  }
+
+  set((s) => {
+    // Drop the invite entirely — tombstone alone still let loadRooms re-seed
+    // if status mapping raced; leave = gone from Chats.
+    const nextInvites = s.invites.filter((inv) => {
+      const matchInvite =
+        inviteId &&
+        normalizeInviteId(inv.inviteId) === normalizeInviteId(inviteId);
+      return inv.roomId !== roomId && !matchInvite;
+    });
+    const nextContacts = s.contacts.map((c) => {
+      if (c.roomId !== roomId) return c;
+      return recomputeStatus({
+        ...c,
+        roomId: undefined,
+        inviteStatus: "none",
+        chatStatus: "ready",
+      });
+    });
+    return { invites: nextInvites, contacts: nextContacts };
+  });
+  schedulePersistInvites(get);
+  await persistContactsDurably(get);
+
+  try {
+    await chatTransport.disconnect(roomId);
+  } catch {
+    /* already gone */
+  }
+
+  try {
+    const { useChatStore } = await import("@/state/chatStore");
+    useChatStore.setState((s) => ({
+      rooms: s.rooms.filter((r) => r.id !== roomId),
+      messagesByRoom: Object.fromEntries(
+        Object.entries(s.messagesByRoom).filter(([id]) => id !== roomId),
+      ),
+      activeRoomId: s.activeRoomId === roomId ? null : s.activeRoomId,
+    }));
+    // Re-list so Chats cannot keep a stale in-memory entry.
+    await useChatStore.getState().loadRooms();
+  } catch {
+    /* non-fatal */
+  }
+}
+
 type PendingKey = {
   privateKeyRef: string;
   peerRole: "initiator" | "responder";
@@ -155,7 +276,9 @@ const pendingPrivateKeys = new Map<string, PendingKey>();
 
 async function restorePendingInitiatorKeys(): Promise<void> {
   for (const rec of loadPendingInitiatorKeys()) {
-    if (pendingPrivateKeys.has(rec.inviteId)) continue;
+    const existing = pendingPrivateKeys.get(rec.inviteId);
+    // Re-load if: never seen, OR map entry exists but key was wiped after derive.
+    if (existing && exportKeyHex(existing.privateKeyRef) !== null) continue;
     const { privateKeyRef } = await p2pEncryption.restoreEphemeralPrivateKey(
       rec.privateKeyHex,
     );
@@ -198,16 +321,36 @@ export function hasPendingInitiatorForRoom(roomId: string): boolean {
       return true;
     }
   }
-  return loadPendingInitiatorKeys().some((r) => r.roomId === roomId);
+  return loadPendingInitiatorKeys().some(
+    (r) => r.roomId === roomId && (r.peerRole ?? "initiator") === "initiator",
+  );
+}
+
+function hasPendingResponderForRoom(roomId: string): boolean {
+  for (const pending of pendingPrivateKeys.values()) {
+    if (
+      pending.peerRole === "responder" &&
+      pending.handshake.roomId === roomId
+    ) {
+      return true;
+    }
+  }
+  return loadPendingInitiatorKeys().some(
+    (r) => r.roomId === roomId && r.peerRole === "responder",
+  );
 }
 
 export type InitiatorHandoffProbe = {
   roomId: string;
   hasInitiatorKey: boolean;
+  /** Alice initiator vs Bob responder vs unknown (no stash yet). */
+  role: "initiator" | "responder" | "unknown";
   registerCount: number;
   matchingRegister: boolean;
   handoffCompleted: boolean;
   detail: string;
+  /** When role=unknown and a received invite exists for this room. */
+  needsAccept?: boolean;
 };
 
 /**
@@ -225,10 +368,17 @@ export async function probeInitiatorHandoff(
     /* fall through to Alice probe */
   }
   const hasInitiatorKey = hasPendingInitiatorForRoom(roomId);
+  const hasResponderKey = hasPendingResponderForRoom(roomId);
+  const role: InitiatorHandoffProbe["role"] = hasInitiatorKey
+    ? "initiator"
+    : hasResponderKey
+      ? "responder"
+      : "unknown";
   let registerCount = 0;
   let matchingRegister = false;
   let handoffCompleted = false;
   let detail = "";
+  let needsAccept = false;
 
   try {
     const registers = await smartMessageService.fetchIncomingRegisters();
@@ -237,6 +387,11 @@ export async function probeInitiatorHandoff(
     const localInvite = useContactsStore
       .getState()
       .invites.find((i) => i.roomId === roomId);
+    const receivedForRoom = useContactsStore
+      .getState()
+      .invites.find(
+        (i) => i.roomId === roomId && i.status === "received",
+      );
     const pendingForRoom = [...pendingPrivateKeys.values()].filter(
       (p) => p.peerRole === "initiator" && p.handshake.roomId === roomId,
     );
@@ -304,10 +459,22 @@ export async function probeInitiatorHandoff(
         ]),
       ];
       const seenIds = registers.map((r) => r.register.inviteId);
-      if (!hasInitiatorKey) {
-        detail = matchingRegister
-          ? "Their accept is on-chain, but this device has no session key for this invite. Abandon it and send a new invite."
-          : "No initiator session key for this invite. Abandon it and send a new invite (required after refresh on older builds).";
+      if (role === "responder") {
+        detail = handoffCompleted
+          ? "Connecting…"
+          : "You already accepted — reconnecting to peer. If this stays offline, peer must open the same room.";
+      } else if (role === "unknown") {
+        if (receivedForRoom) {
+          needsAccept = true;
+          detail =
+            "Incoming invite is waiting. Open the contact and tap Accept (Connect now only helps the sender).";
+        } else if (localInvite?.status === "sent") {
+          detail =
+            "No initiator session key for this invite. Abandon it and send a new invite (required after refresh on older builds).";
+        } else {
+          detail =
+            "Room still pending. If you were invited, Accept on the contact. If you sent the invite, resend from the contact.";
+        }
       } else if (registerCount === 0) {
         detail =
           "No on-chain register in this wallet yet. Wait for their accept tx to sync, then Sync again.";
@@ -324,10 +491,12 @@ export async function probeInitiatorHandoff(
   return {
     roomId,
     hasInitiatorKey,
+    role,
     registerCount,
     matchingRegister,
     handoffCompleted,
     detail,
+    needsAccept,
   };
 }
 
@@ -341,18 +510,29 @@ function mergeInviteLists(
   }
   for (const inv of incoming) {
     const key = normalizeInviteId(inv.inviteId);
+    // Never resurrect a revoked room from an on-chain create.
+    if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
+      continue;
+    }
     const prev = byInviteId.get(key);
     if (!prev) {
       byInviteId.set(key, inv);
       continue;
     }
     // Prefer terminal / remote status over stale local "sent".
+    // `failed` = destroyed/revoked — must not lose to a re-scanned create.
     const rank = (s: SmartMessageInvite["status"]) =>
-      s === "accepted" || s === "rejected" || s === "expired"
+      s === "accepted" ||
+      s === "rejected" ||
+      s === "expired" ||
+      s === "failed"
         ? 2
         : s === "received"
           ? 1
           : 0;
+    if (rank(prev.status) === 2 && rank(inv.status) < 2) {
+      continue;
+    }
     byInviteId.set(key, rank(inv.status) >= rank(prev.status) ? inv : prev);
   }
   return [...byInviteId.values()];
@@ -473,26 +653,70 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
   async refreshInvites() {
     await restorePendingInitiatorKeys();
+
+    // Apply peer revokes first — never recreate a room we are about to destroy.
+    const revokes = await smartMessageService.fetchIncomingRevokes();
+    for (const { revoke } of revokes) {
+      const inv = get().invites.find(
+        (i) =>
+          normalizeInviteId(i.inviteId) ===
+          normalizeInviteId(revoke.inviteId),
+      );
+      const catalogHit = (
+        await import("@/services/p2p/roomCatalogStore")
+      )
+        .listCatalogRooms()
+        .find(
+          (r) =>
+            (revoke.roomId && r.id === revoke.roomId) ||
+            (r.inviteId &&
+              normalizeInviteId(r.inviteId) ===
+                normalizeInviteId(revoke.inviteId)),
+        );
+      const roomId = revoke.roomId || inv?.roomId || catalogHit?.id;
+      if (!roomId) continue;
+      if (isRoomRevoked(roomId)) {
+        // Ensure catalog/UI stay clean even if a prior pass left residue.
+        try {
+          await applyRoomDestroyLocally(get, set, roomId, revoke.inviteId);
+        } catch {
+          /* ignore */
+        }
+        continue;
+      }
+      try {
+        await applyRoomDestroyLocally(get, set, roomId, revoke.inviteId);
+      } catch {
+        /* retry next poll */
+      }
+    }
+
     const list = await smartMessageService.fetchIncomingMessages();
     const eligibleOnly = mergeInviteLists(get().invites, list).filter((inv) => {
+      if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
+        return false;
+      }
       if (inv.status !== "received" && inv.status !== "sent") return true;
       const contact = get().contacts.find((c) => c.id === inv.contactId);
       return contact ? isContactEligibleForInvite(contact) : false;
     });
 
-    // Per contact: only the newest received create is actionable (resend supersedes).
+    // Per contact + roomTopic: only the newest received create is actionable.
     const newestReceived = new Map<string, (typeof eligibleOnly)[number]>();
     for (const inv of eligibleOnly) {
       if (inv.status !== "received") continue;
-      const prev = newestReceived.get(inv.contactId);
+      if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) continue;
+      const key = `${inv.contactId}:${inv.roomTopic ?? "general"}`;
+      const prev = newestReceived.get(key);
       if (!prev || inv.createdAt >= prev.createdAt) {
-        newestReceived.set(inv.contactId, inv);
+        newestReceived.set(key, inv);
       }
     }
 
     const pruned = eligibleOnly.map((inv) => {
       if (inv.status !== "received") return inv;
-      const newest = newestReceived.get(inv.contactId);
+      const key = `${inv.contactId}:${inv.roomTopic ?? "general"}`;
+      const newest = newestReceived.get(key);
       if (newest && newest.inviteId !== inv.inviteId) {
         return { ...inv, status: "expired" as const };
       }
@@ -503,9 +727,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     schedulePersistInvites(get);
 
     for (const inv of newestReceived.values()) {
+      if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) continue;
       const contact = get().contacts.find((c) => c.id === inv.contactId);
       if (!contact || !isContactEligibleForInvite(contact)) continue;
-      // New create supersedes an old accepted room on Bob.
       const existing = await chatTransport.getRoom(inv.roomId);
       if (!existing) {
         await chatTransport.createRoom({
@@ -518,6 +742,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             inviteId: inv.inviteId,
             inviteExpiry: inv.inviteExpiry,
             roomTtl: inv.roomTtl,
+            roomTopic: inv.roomTopic,
           },
         });
       }
@@ -528,11 +753,21 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       });
     }
 
+    // Transport rooms are in-memory — push into chat store so Chats list updates
+    // without requiring a remount / loadRooms race.
+    try {
+      const { useChatStore } = await import("@/state/chatStore");
+      await useChatStore.getState().loadRooms();
+    } catch {
+      /* non-fatal */
+    }
+
     // Alice: scan Bob's on-chain register and finish Holepunch handoff.
     const registers = await smartMessageService.fetchIncomingRegisters();
     for (const { register } of registers) {
       const pending = findPendingInitiator(register.inviteId);
       if (!pending) continue;
+      if (isRoomRevoked(pending.handshake.roomId)) continue;
       try {
         await completeInitiatorHandoff(
           pending.handshake.inviteId,
@@ -563,13 +798,22 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       throw new Error("Missing paymentIdTo.");
     }
 
-    // Supersede any dead/pending sent invite for this contact.
-    if (
-      contact.inviteStatus === "sent" ||
-      contact.inviteStatus === "accepted" ||
-      contact.roomId
-    ) {
-      await get().abandonPendingInvite(contactId);
+    const roomTopic = options?.roomTopic ?? "general";
+
+    // A fresh create for this topic always supersedes any prior invite/room for
+    // the same topic — sent, received, AND accepted (stuck/failed rooms too).
+    // Missing "accepted" here previously orphaned the old room, leaving two
+    // live rooms with different roomIds for the same contact+topic.
+    const priorForTopic = get().invites.some(
+      (i) =>
+        i.contactId === contactId &&
+        (i.roomTopic ?? "general") === roomTopic &&
+        (i.status === "sent" ||
+          i.status === "received" ||
+          i.status === "accepted"),
+    );
+    if (priorForTopic || contact.inviteStatus === "failed") {
+      await get().abandonPendingInvite(contactId, { roomTopic });
     }
 
     const relationshipId = await deriveRelationshipId(
@@ -583,8 +827,10 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       relationshipId,
       inviteExpirySec: options?.inviteExpirySec,
       roomTtlSec: options?.roomTtlSec,
+      roomTopic,
       handshakeOverrides: {
         senderEphemeralPublicKey: keypair.publicKeyHex,
+        roomTopic,
       },
     });
     // Stash Alice initiator key across reloads until Bob's register arrives.
@@ -625,6 +871,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         inviteId: composed.inviteId,
         inviteExpiry: composed.inviteExpiry,
         roomTtl: composed.roomTtl,
+        roomTopic: composed.roomTopic ?? roomTopic,
       },
     });
 
@@ -653,12 +900,20 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           roomTtl: composed.roomTtl,
           senderAlias: composed.senderAlias,
           capabilities: composed.capabilities,
+          roomTopic: composed.roomTopic ?? roomTopic,
           bootstrapEncrypted: composed.bootstrapEncrypted,
-          status: "sent",
+          status: "sent" as const,
           createdAt: new Date().toISOString(),
           txHash: sent.txHash,
         },
-        ...s.invites,
+        ...s.invites.filter(
+          (i) =>
+            !(
+              i.contactId === contactId &&
+              (i.roomTopic ?? "general") === roomTopic &&
+              i.status === "sent"
+            ),
+        ),
       ],
     }));
     schedulePersistContacts(get);
@@ -669,17 +924,34 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
   async acceptInvite(inviteId) {
     let inv = get().invites.find((i) => i.id === inviteId);
-    if (!inv) {
+    // Prefer an already-parsed handshake (from refreshInvites). Only re-scan
+    // the chain when the ECDH material is missing (e.g. after restart).
+    let handshake = inv ? getHandshakeForInvite(inv.inviteId) : undefined;
+    if (!inv || !handshake) {
       const incoming = await smartMessageService.fetchIncomingMessages();
-      inv = incoming.find((i) => i.id === inviteId);
-      if (inv) {
-        set((s) => ({ invites: [inv!, ...s.invites] }));
+      if (!inv) {
+        inv = incoming.find((i) => i.id === inviteId);
+        if (inv) {
+          set((s) => ({ invites: [inv!, ...s.invites] }));
+        }
+      }
+      if (!inv) throw new Error("Invite not found.");
+      if (!handshake) {
+        const parsed = incoming.find(
+          (i) =>
+            i.inviteId === inv!.inviteId ||
+            i.id === inv!.id ||
+            i.roomId === inv!.roomId,
+        );
+        if (parsed) handshake = getHandshakeForInvite(parsed.inviteId);
       }
     }
     if (!inv) throw new Error("Invite not found.");
-
-    const handshake = getHandshakeForInvite(inv.inviteId);
-    if (!handshake) throw new Error("Missing create handshake for invite.");
+    if (!handshake) {
+      throw new Error(
+        "Missing create handshake for invite. Wait for wallet sync, then Accept again — or ask them to resend.",
+      );
+    }
 
     const keypair = await p2pEncryption.generateEphemeralKeypair();
     const register = await smartMessageProtocol.composeRegister({
@@ -711,6 +983,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       register,
     });
 
+    // L1 register must broadcast so Alice can hand off — this is the real wait.
     await smartMessageService.acceptInvite(inviteId, {
       inviteId: register.inviteId,
       receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
@@ -732,7 +1005,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       peerRole: "responder",
     });
 
-    await chatTransport.createRoom({
+    const room = await chatTransport.createRoom({
       contactId: inv.contactId,
       bootstrap: {
         roomId: inv.roomId,
@@ -742,17 +1015,16 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         inviteId: inv.inviteId,
         inviteExpiry: inv.inviteExpiry,
         roomTtl: inv.roomTtl,
+        roomTopic: inv.roomTopic ?? handshake.roomTopic,
       },
     });
 
-    const connected = await chatTransport.connect(contract);
-
-    // Same-browser only: no-op unless this device still holds Alice's initiator key.
-    await completeInitiatorHandoff(inv.inviteId, register, handshake);
-
     const { useChatStore } = await import("@/state/chatStore");
     useChatStore.setState((s) => ({
-      rooms: [...s.rooms.filter((r) => r.id !== inv!.roomId), connected],
+      rooms: [
+        ...s.rooms.filter((r) => r.id !== inv!.roomId),
+        { ...room, lifecycleStatus: "connecting", peerStatus: "connecting" },
+      ],
     }));
 
     set((s) => ({
@@ -762,10 +1034,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
               ...c,
               inviteStatus: "accepted",
               roomId: inv!.roomId,
-              chatStatus:
-                connected.lifecycleStatus === "connected"
-                  ? "active"
-                  : "connecting",
+              chatStatus: "connecting",
               lastInteractionAt: new Date().toISOString(),
             })
           : c,
@@ -779,16 +1048,48 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     schedulePersistContacts(get);
     schedulePersistInvites(get);
 
-    // Drop Bob's key stash once session is on disk.
-    const saved = (
-      await import("@/services/p2p/roomSessionStore")
-    ).loadRoomSession(inv.roomId);
-    if (saved) {
-      pendingPrivateKeys.delete(register.inviteId);
-      removePendingInitiatorKey(register.inviteId);
-    }
+    // Holepunch connect can take seconds — do not block redirect. Chat room
+    // screen already reconnects if peers are not live yet.
+    const roomId = inv.roomId;
+    const inviteIdForHandoff = inv.inviteId;
+    void (async () => {
+      try {
+        const connected = await chatTransport.connect(contract);
+        await completeInitiatorHandoff(
+          inviteIdForHandoff,
+          register,
+          handshake!,
+        );
+        useChatStore.setState((s) => ({
+          rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+        }));
+        set((s) => ({
+          contacts: s.contacts.map((c) =>
+            c.roomId === roomId
+              ? recomputeStatus({
+                  ...c,
+                  chatStatus:
+                    connected.lifecycleStatus === "connected"
+                      ? "active"
+                      : "connecting",
+                })
+              : c,
+          ),
+        }));
+        schedulePersistContacts(get);
+        const saved = (
+          await import("@/services/p2p/roomSessionStore")
+        ).loadRoomSession(roomId);
+        if (saved) {
+          pendingPrivateKeys.delete(register.inviteId);
+          removePendingInitiatorKey(register.inviteId);
+        }
+      } catch {
+        // ChatRoomScreen retry / refreshInvites will continue connect.
+      }
+    })();
 
-    return { roomId: inv.roomId };
+    return { roomId };
   },
 
   async declineInvite(inviteId) {
@@ -808,8 +1109,8 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             : c,
         ),
       }));
-      schedulePersistContacts(get);
       schedulePersistInvites(get);
+      await persistContactsDurably(get);
       const room = await chatTransport.getRoom(inv.roomId);
       if (room) {
         await chatTransport.disconnect(inv.roomId);
@@ -817,52 +1118,100 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     }
   },
 
-  async abandonPendingInvite(contactId) {
+  async revokeRoom(roomId) {
+    const inv = get().invites.find((i) => i.roomId === roomId);
+    const catalog = (
+      await import("@/services/p2p/roomCatalogStore")
+    ).loadCatalogRoom(roomId);
+    const room = await chatTransport.getRoom(roomId);
+    const contactId =
+      inv?.contactId ||
+      room?.contactId ||
+      catalog?.contactId ||
+      get().contacts.find((c) => c.roomId === roomId)?.id;
+    const inviteId = inv?.inviteId || room?.inviteId || catalog?.inviteId;
+    const replayId = inv?.replayId;
+    if (!contactId || !inviteId) {
+      throw new Error("Cannot leave room — missing contact or invite id.");
+    }
+    // Destroy immediately — do not wait for L1 broadcast/confirm.
+    await applyRoomDestroyLocally(get, set, roomId, inviteId);
+    // Notify counterpart on L1 in the background (best-effort).
+    void smartMessageService
+      .revokeRoom({ contactId, inviteId, roomId, replayId })
+      .catch(async (e) => {
+        const { toastError } = await import("@/state/toastStore");
+        toastError(
+          (e as Error)?.message ||
+            "Room destroyed here, but revoke tx failed to send.",
+        );
+      });
+  },
+
+  async abandonPendingInvite(contactId, opts) {
     const contact = get().contacts.find((c) => c.id === contactId);
-    const roomId = contact?.roomId;
-    const doomed = get().invites.filter(
-      (i) =>
-        i.contactId === contactId &&
-        (i.status === "sent" || i.roomId === roomId),
-    );
+    const topicFilter = opts?.roomTopic;
+    const roomFilter = opts?.roomId;
+    const doomed = get().invites.filter((i) => {
+      if (i.contactId !== contactId) return false;
+      if (roomFilter && i.roomId !== roomFilter) return false;
+      if (
+        topicFilter &&
+        (i.roomTopic ?? "general") !== topicFilter &&
+        i.roomId !== roomFilter
+      ) {
+        return false;
+      }
+      return (
+        i.status === "sent" ||
+        i.status === "received" ||
+        i.status === "accepted" ||
+        i.roomId === contact?.roomId
+      );
+    });
     for (const inv of doomed) {
       pendingPrivateKeys.delete(inv.inviteId);
       removePendingInitiatorKey(inv.inviteId);
-    }
-    if (roomId) {
-      for (const rec of loadPendingInitiatorKeys()) {
-        if (rec.roomId === roomId || rec.contactId === contactId) {
-          pendingPrivateKeys.delete(rec.inviteId);
-          removePendingInitiatorKey(rec.inviteId);
-        }
-      }
       try {
-        await chatTransport.disconnect(roomId);
+        await chatTransport.disconnect(inv.roomId);
       } catch {
-        /* room may not exist */
+        /* ignore */
       }
     }
-    set((s) => ({
-      invites: s.invites.filter(
+    const doomedRooms = new Set(doomed.map((i) => i.roomId));
+    set((s) => {
+      const remainingInvites = s.invites.filter(
+        (i) => !(i.contactId === contactId && doomedRooms.has(i.roomId)),
+      );
+      const latestOther = remainingInvites.find(
         (i) =>
-          !(
-            i.contactId === contactId &&
-            (i.status === "sent" || i.roomId === roomId)
-          ),
-      ),
-      contacts: s.contacts.map((c) =>
-        c.id === contactId
-          ? recomputeStatus({
-              ...c,
-              inviteStatus: "none",
-              chatStatus: "ready",
-              roomId: undefined,
-            })
-          : c,
-      ),
-    }));
-    schedulePersistContacts(get);
+          i.contactId === contactId &&
+          (i.status === "sent" ||
+            i.status === "received" ||
+            i.status === "accepted"),
+      );
+      return {
+        invites: remainingInvites,
+        contacts: s.contacts.map((c) =>
+          c.id === contactId
+            ? recomputeStatus({
+                ...c,
+                inviteStatus: latestOther?.status === "sent"
+                  ? "sent"
+                  : latestOther?.status === "received"
+                    ? "received"
+                    : latestOther?.status === "accepted"
+                      ? "accepted"
+                      : "none",
+                chatStatus: latestOther ? "invited" : "ready",
+                roomId: latestOther?.roomId,
+              })
+            : c,
+        ),
+      };
+    });
     schedulePersistInvites(get);
+    await persistContactsDurably(get);
   },
 
   getById(id) {
@@ -960,6 +1309,16 @@ export async function completeInitiatorHandoff(
   const pending = findPendingInitiator(inviteId);
   if (!pending) return;
 
+  // Room already live (or mid-connect) — do not re-derive and churn the proof.
+  const existingRoom = await chatTransport.getRoom(handshake.roomId);
+  if (
+    existingRoom &&
+    (existingRoom.lifecycleStatus === "connected" ||
+      existingRoom.lifecycleStatus === "connecting")
+  ) {
+    return;
+  }
+
   const session = await sessionBootstrap.deriveSession({
     invite: handshake,
     acceptance: {
@@ -1028,9 +1387,9 @@ export async function completeInitiatorHandoff(
   // Keep initiator stash until room session is persisted (reload reconnect).
   // Keys are wiped from the live map by deriveSessionConfig; disk stash stays
   // only as a last-resort re-handoff if session save failed.
-  const saved = (await import("@/services/p2p/roomSessionStore")).loadRoomSession(
-    roomId,
-  );
+  const saved = (
+    await import("@/services/p2p/roomSessionStore")
+  ).loadRoomSession(roomId);
   if (saved) {
     pendingPrivateKeys.delete(pending.handshake.inviteId);
     pendingPrivateKeys.delete(inviteId);

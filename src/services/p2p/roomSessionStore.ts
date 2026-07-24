@@ -1,6 +1,6 @@
 /**
  * Persist Holepunch session material so Alice/Bob can reconnect after refresh.
- * Mesh presence is still in-memory (BroadcastChannel); crypto session must survive.
+ * Crypto session must survive reload; Hyperswarm presence lives in the sidecar.
  */
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { HolepunchBootstrapContract } from "@/types/protocol";

@@ -243,6 +243,31 @@ export function WalletScreen() {
                       </div>
                       <div className="row__main">
                         <div className="row__title">
+                          {tx.contactHint && (
+                            <span
+                              className={[
+                                "tx-contact-dot",
+                                `tx-contact-dot--${tx.contactHint.action}`,
+                                tx.zeroConf ? "tx-contact-dot--zeroconf" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              title={
+                                tx.contactHint.action === "create"
+                                  ? "Contact create"
+                                  : tx.contactHint.action === "register"
+                                    ? "Contact register"
+                                    : "Contact revoke"
+                              }
+                              aria-label={
+                                tx.contactHint.action === "create"
+                                  ? "Contact create"
+                                  : tx.contactHint.action === "register"
+                                    ? "Contact register"
+                                    : "Contact revoke"
+                              }
+                            />
+                          )}
                           {tx.kind === "miner"
                             ? "Miner reward"
                             : tx.kind === "deposit"
@@ -260,6 +285,15 @@ export function WalletScreen() {
                               style={{ marginLeft: 4 }}
                             >
                               pending
+                            </span>
+                          )}
+                          {tx.zeroConf && (
+                            <span
+                              className="pill pill--zeroconf"
+                              style={{ marginLeft: 4 }}
+                              title="Mempool preview — not final"
+                            >
+                              0-conf
                             </span>
                           )}
                         </div>

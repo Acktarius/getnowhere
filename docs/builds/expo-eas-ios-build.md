@@ -14,9 +14,13 @@ Expo documents EAS Build as a hosted service for creating Android and iOS app bi
 
 For this project, that means:
 
-- Build the product in the web app.
-- Keep the native wrapper minimal.
+- Build the product in the web app for day-to-day work.
+- Keep the native wrapper focused on packaging + the mobile P2P host.
 - Use EAS for iOS packaging, signing, and store upload.
+- Hyperswarm on device runs in a **Bare worklet**, not in WebView JS — see
+  `docs/architecture/mobile-p2p-runtime.md`. Packaged desktop is **Electron**,
+  not React Native — see `docs/architecture/electron-desktop.md`. Do not use
+  Nitro / custom native modules as the Hyperswarm stack.
 
 ## Prerequisites
 
@@ -152,7 +156,7 @@ Use these repo rules for iOS delivery:
 - Keep build profiles in `native-wrapper/eas.json`.
 - Keep iOS identifiers, assets, and signing-related changes documented in `/docs/builds/`.
 - Any change to bundle identifier, signing setup, App Store Connect ID, or wrapper loading behavior must update this file in the same branch.
-- Do not move product logic from `web/` into `native-wrapper/` unless native APIs make it necessary.
+- Do not move product logic from `src/` into `native-wrapper/` unless native APIs make it necessary.
 
 ## Troubleshooting rules
 
@@ -169,4 +173,4 @@ If EAS Submit is unavailable, Expo notes that a manual App Store Connect upload 
 
 Use this wording in project documentation:
 
-> Get Now Here is developed as a web-first application. Local work happens with `npm run dev` in the web app. Expo.dev / EAS is used only for the native wrapper, iOS builds, signing, TestFlight, and App Store delivery.
+> Get Now Here is developed as a web-first application. Local work happens with `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS builds, signing, TestFlight, and App Store delivery. Desktop packaging uses Electron (`desktop-electron/`).

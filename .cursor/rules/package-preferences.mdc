@@ -1,0 +1,225 @@
+---
+description: Enforce package and repository setup preferences for JavaScript/TypeScript projects.
+globs:
+  - package.json
+alwaysApply: false
+---
+
+# package-preferences
+
+When working in a JavaScript or TypeScript repository, verify the repository matches the package preferences below.
+If something is missing or incorrect, update the repository safely and minimally.
+Do not replace unrelated existing configuration unless required for compatibility.
+Prefer idempotent changes.
+
+## Goals
+
+Ensure all of the following are in place:
+
+1. Biome is used for formatting and linting.
+2. A `.biome.json` preset file exists.
+3. `package.json` contains these scripts:
+   - `lint`
+   - `lint:fix`
+   - `format`
+   - `format:fix`
+   - `check`
+   - `check:fix`
+   - `types`
+4. `.npmrc` contains a 7-day exclusion setting.
+5. `.gitattributes` enforces Unix EOF / LF behavior.
+6. A `docs/` folder exists.
+7. `.github/workflows/ci-check.yml` exists and runs:
+   - npm audit
+   - biome format
+   - biome lint
+   - biome check
+   - types
+
+## Required behavior
+
+### 1) Biome setup
+
+If Biome is not installed, add it as a dev dependency using the package manager already used by the repo.
+Prefer `@biomejs/biome`.
+
+If no Biome config exists, create `.biome.json`.
+
+Use a small, safe preset like:
+
+```json
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": false
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        "useButtonType": "off",
+        "noAutofocus": "off",
+        "noRedundantRoles": "off",
+        "noStaticElementInteractions": "off",
+        "useKeyWithClickEvents": "off",
+        "noSvgWithoutTitle": "off"
+      },
+      "complexity": {
+        "noImportantStyles": "off",
+        "noUselessFragments": "off"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        "useIterableCallbackReturn": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}
+```
+
+If a Biome config already exists, do not overwrite it unless the user asks.
+Only make minimal compatible edits.
+
+### 2) package.json scripts
+
+Ensure `package.json` contains these scripts, preserving unrelated scripts:
+
+```json
+{
+  "scripts": {
+    "lint": "biome lint .",
+    "lint:fix": "biome lint . --write",
+    "format": "biome format .",
+    "format:fix": "biome format . --write",
+    "check": "biome check .",
+    "check:fix": "biome check . --write",
+    "types": "tsc --noEmit"
+  }
+}
+```
+
+Rules:
+- Merge with existing scripts instead of replacing the whole scripts block.
+- If the repo is not TypeScript-based and has no `tsconfig.json`, ask before adding or keep `types` unchanged if already present.
+- If `typescript` is missing but `types` is required and the repo is TypeScript-based, add the minimal compatible setup.
+
+### 3) .npmrc
+
+Ensure `.npmrc` contains the project’s required 7-day exclusion/retention setting.
+If the exact key is not already defined by the repo conventions, ask for confirmation rather than inventing a nonstandard npm setting.
+
+### 4) .gitattributes
+
+Ensure `.gitattributes` includes LF normalization appropriate for Unix line endings, for example:
+
+```gitattributes
+* text=auto eol=lf
+```
+
+If `.gitattributes` already exists, merge safely.
+
+### 5) docs folder
+
+Ensure a `docs/` directory exists.
+If absent, create it and add a small `.gitkeep` if needed.
+
+### 6) GitHub Actions
+
+Ensure `.github/workflows/ci-check.yml` exists.
+
+If absent, create a minimal workflow.
+If present, update it minimally.
+
+Target workflow behavior:
+- Trigger on push and pull_request
+- Set up Node
+- Install dependencies with the repo’s package manager
+- Run:
+  - `npm audit` (or equivalent for the package manager in use)
+  - `npm run format`
+  - `npm run lint`
+  - `npm run check`
+  - `npm run types`
+
+Use a safe default like:
+
+```yaml
+name: ci-check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Audit
+        run: npm audit
+
+      - name: Format
+        run: npm run format
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check
+        run: npm run check
+
+      - name: Types
+        run: npm run types
+```
+
+Adapt install/cache/audit commands to pnpm or yarn when the repository already uses them.
+
+## Safety rules
+
+- Inspect existing files before changing them.
+- Prefer minimal diffs.
+- Preserve package manager choice, lockfile, and existing conventions.
+- Do not delete user settings or workflows unless they are clearly replaced by an equivalent.
+- If `.npmrc` “7 days exclusion” is ambiguous, ask a clarifying question instead of guessing.
+- If the repository is not Node-based, do nothing and explain why.

@@ -1,10 +1,15 @@
 import { MessageSquare, Plus } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  RoomTopicIcon,
+  roomTopicLabel,
+} from "@/components/RoomTopicIcon";
 import { PeerStatusIndicator } from "@/components/StatusBadges";
 import { TopBar } from "@/components/TopBar";
+import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { initials, shortAddress, timeAgo } from "@/utils/format";
@@ -19,10 +24,13 @@ export function ChatsScreen() {
     loadRooms();
   }, [loadRooms]);
 
+  const visibleRooms = useMemo(
+    () => rooms.filter((r) => !isRoomRevoked(r.id)),
+    [rooms],
+  );
+
   const eligibleContacts = contacts.filter(
-    (c) =>
-      c.relationshipStatus === "eligible" &&
-      !rooms.some((r) => r.contactId === c.id),
+    (c) => c.relationshipStatus === "eligible",
   );
 
   return (
@@ -32,7 +40,7 @@ export function ChatsScreen() {
         className="screen-scroll stack stack--gap-4"
         style={{ padding: "16px 0 32px" }}
       >
-        {rooms.length === 0 && eligibleContacts.length === 0 ? (
+        {visibleRooms.length === 0 && eligibleContacts.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
             title="No active chats"
@@ -45,13 +53,13 @@ export function ChatsScreen() {
           />
         ) : (
           <>
-            {rooms.length > 0 && (
+            {visibleRooms.length > 0 && (
               <div className="section">
                 <div className="section__head">
                   <span className="section__title">Active rooms</span>
                 </div>
                 <div className="card card--flush stagger">
-                  {rooms.map((room) => {
+                  {visibleRooms.map((room) => {
                     const c = contacts.find((x) => x.id === room.contactId);
                     const last = (messagesByRoom[room.id] ?? []).at(-1);
                     return (
@@ -62,11 +70,15 @@ export function ChatsScreen() {
                         style={{ textDecoration: "none" }}
                       >
                         <div className="row__avatar">
-                          {c ? initials(c.alias) : "?"}
+                          <RoomTopicIcon topicId={room.roomTopic} size={18} />
                         </div>
                         <div className="row__main">
                           <div className="row__title">
                             {c?.alias ?? "Unknown contact"}
+                            <span className="muted" style={{ fontWeight: 500 }}>
+                              {" "}
+                              · {roomTopicLabel(room.roomTopic)}
+                            </span>
                           </div>
                           <div className="row__sub">
                             {room.lifecycleStatus !== "connected"
@@ -94,7 +106,7 @@ export function ChatsScreen() {
             {eligibleContacts.length > 0 && (
               <div className="section">
                 <div className="section__head">
-                  <span className="section__title">Ready to invite</span>
+                  <span className="section__title">Start a room</span>
                 </div>
                 <div className="card card--flush stagger">
                   {eligibleContacts.map((c) => (
@@ -108,14 +120,10 @@ export function ChatsScreen() {
                       <div className="row__main">
                         <div className="row__title">{c.alias}</div>
                         <div className="row__sub">
-                          {shortAddress(c.ccxAddress)}
+                          {shortAddress(c.ccxAddress)} · pick a topic
                         </div>
                       </div>
-                      <div className="row__meta">
-                        <span className="pill pill--eligible">
-                          <Plus size={11} /> Invite
-                        </span>
-                      </div>
+                      <Plus size={16} className="muted" />
                     </Link>
                   ))}
                 </div>

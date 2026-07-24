@@ -6,7 +6,7 @@ function contact(overrides: Partial<Contact> = {}): Contact {
   return {
     id: "c1",
     alias: "A",
-    ccxAddress: "ccx7" + "a".repeat(94),
+    ccxAddress: `ccx7${"a".repeat(94)}`,
     paymentIdFrom: "a".repeat(16),
     paymentIdTo: "b".repeat(16),
     relationshipStatus: "eligible",

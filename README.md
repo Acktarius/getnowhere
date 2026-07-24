@@ -1,47 +1,141 @@
 # getnowhere
 
-A web-app-first Conceal (CCX) wallet and private-relationship client. Built with
-React + TypeScript + Vite and developed entirely in the browser.
+A web-app-first Conceal (CCX) wallet and private-relationship client.
+React + TypeScript + Vite. The UI never joins Hyperswarm.
 
-## Local development
+**Networking:** Vite UI ↔ typed bridge ↔ Hyperswarm runtime.
+
+| Host | UI | Hyperswarm | Doc |
+|---|---|---|---|
+| Web-dev | Vite in browser | `holepunch-sidecar/` (Node WS) | `docs/architecture/holepunch-sidecar.md` |
+| Desktop | Vite in Electron | sidecar child (shared or isolated) | `docs/architecture/electron-desktop.md` |
+| Mobile | Expo (target) | Bare worklet (target) | `docs/architecture/mobile-p2p-runtime.md` |
+
+Crypto: L1 SmartMessage → L2 Noise → L3 ChaCha E2E — `docs/security/encryption.md`.
+
+## Install (once)
 
 ```bash
 npm install
-npm run dev      # start the Vite dev server (http://localhost:5173)
-npm run build    # produce a static build in dist/
-npm run preview  # serve the static build locally for verification
-npm run test     # unit tests (Vitest)
-npm run test:e2e # Playwright smoke (starts dev server)
-npm run preflight # types + tests + biome
+npm run holepunch:install
+npm run desktop:install
 ```
 
-No native toolchain is required for development or for the production web build.
+## Test scenarios
 
-## Future Expo WebView Wrapper Notes
+Pick the scenario that matches what you are verifying. Always start Vite for
+desktop shells that load `http://127.0.0.1:5173`.
 
-This project is a **web app first**. It is not an Expo or React Native app, and
-no native code lives in this repository. The goal is to keep the web app fully
-usable in a browser while making the production static build easy to embed
-later inside a minimal Expo React Native WebView shell for iOS and Android.
+### 1. Web UI only (no live P2P)
 
-### Web app first
+Wallet / invite / UI flows without Hyperswarm.
 
-- Develop and verify everything with `npm run dev` in a browser.
-- Ship the web build with `npm run build` (static output in `dist/`).
-- Native build and store submission will be handled **separately** with
-  EAS Build / EAS Submit inside a dedicated, minimal Expo repository that wraps
-  this build output in a WebView. That wrapper repo is not part of this project.
+```bash
+npm run dev
+```
 
-### What the Expo shell will do
+Open `http://127.0.0.1:5173`. Composer stays locked for live chat (no sidecar).
 
-- Load the static build output (`dist/`) as bundled local assets inside a
-  `react-native-webview` component (e.g. via `expo-asset` or a bundled folder),
-  OR host `dist/` and point the WebView at the URL for over-the-air updates.
-- For local bundled assets, the WebView loads from a `file://` or local asset
-  path, so all asset references in the build are **relative** (see Vite config
-  `base: "./"`). Do not host the build from a server root inside the shell.
-- Routing uses `HashRouter`, so deep links work without server rewrite rules
-  and from a bundled local path. No `BrowserRouter` server config is needed.
+### 2. Web + sidecar (browser Alice / Bob)
+
+Same-machine fan-out over one Node sidecar. Good for UI + bridge + L3 frames.
+**Not** two independent Hyperswarm DHT peers (both UIs share one process).
+
+```bash
+# Terminal 1
+npm run holepunch
+
+# Terminal 2
+npm run dev
+```
+
+Open two browser profiles (or private + normal) on the same origin. Create /
+import a different wallet in each. Live chat uses `ws://127.0.0.1:7901`.
+
+Optional second sidecar port:
+
+```bash
+HOLEPUNCH_PORT=7902 npm run holepunch
+# then VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7902 npm run dev
+```
+
+### 3. Desktop — shared swarm (quick Alice / Bob)
+
+Two Electron windows, isolated wallets/storage, **one** sidecar on `:7901`.
+First window owns the child; closing the owner drops Bob’s bridge.
+Title tags: `[shared:owner]` / `[shared:attach]`.
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npm run desktop:alice
+
+# Terminal 3
+npm run desktop:bob
+```
+
+Use for shell + partitions + local fan-out. Details:
+`docs/architecture/electron-desktop.md`.
+
+### 4. Desktop — isolated swarm (real peer path)
+
+Each Electron owns its own sidecar (alice `:7901`, bob `:7902`). Peers meet via
+DHT + Noise. Use this to verify end-to-end Hyperswarm + L3 + post-connect proof.
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npm run desktop:alice:isolated
+
+# Terminal 3
+npm run desktop:bob:isolated
+```
+
+### 5. Web as stand-in while building mobile
+
+There is no runnable `native-wrapper/` Expo app in-repo yet. Until Bare lands:
+
+- Develop product UI and protocol in **scenario 1–2** (Vite + sidecar).
+- Keep Hyperswarm out of the Vite bundle; bridge schema stays the contract for
+  a future Bare IPC host — `docs/architecture/mobile-p2p-runtime.md`.
+- Production `dist/` is tuned for WebView / `file://` embedding (see below).
+
+### 6. Automated checks
+
+```bash
+npm run test          # Vitest
+npm run test:e2e      # Playwright (starts Vite)
+npm run preflight     # types + tests + biome
+npm run build && npm run preview
+```
+
+## Scenario cheat sheet
+
+| Goal | Scenario | Swarm |
+|---|---|---|
+| UI / wallet without peers | 1 | none |
+| Bridge + L3 in browser | 2 | shared Node sidecar |
+| Electron shells, fast dual-wallet | 3 | shared `:7901` |
+| Prove DHT / Noise / proof handshake | 4 | two sidecars |
+| Mobile product work today | 5 → use 1–2 | same as web-dev |
+| CI / regression | 6 | mocks / e2e |
+
+## Native delivery notes
+
+Daily work is Vite. Desktop packaging is Electron. Mobile target is Expo + Bare
+(not React Native desktop, not Nitro Hyperswarm).
+
+### Web UI embedding
+
+- Desktop (dev): Vite at `http://127.0.0.1:5173`; swarm via localhost WS.
+- Desktop (release target): `dist/` in Electron; same bridge schema (WS/IPC).
+- Mobile (target): Expo UI + Bare IPC; WebView only if UI-only.
+- Vite `base: "./"` and `HashRouter` keep relative assets working from
+  local / `file://` loads.
 
 ### Config: local bundled assets vs. hosted assets
 
@@ -49,78 +143,35 @@ later inside a minimal Expo React Native WebView shell for iOS and Android.
   app's assets and load `index.html` via WebView. Relative `base: "./"` ensures
   `./assets/*.js` and `./assets/*.css` resolve from the bundle.
 - **Hosted (for OTA updates):** deploy `dist/` to any static host and point the
-  WebView at the URL. Relative paths still work at any subpath; no root-host
-  assumption. To pin to an absolute origin, override `base` at build time only
-  if you control that origin.
+  WebView at the URL. Relative paths still work at any subpath.
 
-### file:// compatibility (what the build does for you)
+### file:// compatibility
 
-The Vite config is specifically tuned so the production build loads from a
-`file://` URL inside a WebView, not just from an https origin. Three blockers
-are handled:
+The Vite config is tuned so `dist/` loads from `file://` inside a WebView:
 
-1. **Relative asset paths** — `base: "./"` makes every reference `./assets/…`
-   so it resolves next to `index.html` regardless of origin.
-2. **No dynamic-import chunks** — `inlineDynamicImports: true` forces a single
-   JS bundle. Code-split chunks load via dynamic `import()`, which is blocked
-   under `file://` (module fetch fails on opaque file origins).
-3. **Inlined WASM** — `assetsInlineLimit: 4_000_000` inlines the Conceal SDK's
-   `.wasm` modules as base64 data URLs inside the JS bundle. The SDK otherwise
-   loads WASM via `fetch(new URL('…_bg.wasm', import.meta.url))`, and `fetch()`
-   of a `file://` URL is blocked in most WebViews. Inlining removes the fetch
-   entirely.
-4. **No `crossorigin` on entry assets** — a build-only plugin strips the
-   `crossorigin` attribute Vite adds to the entry `<script>`/`<link>`. Under
-   `file://`, `crossorigin` triggers a CORS check on an opaque origin, which
-   fails and blocks the entry from executing.
+1. **Relative asset paths** — `base: "./"`
+2. **No dynamic-import chunks** — `inlineDynamicImports: true`
+3. **Inlined WASM** — `assetsInlineLimit` for Conceal SDK `.wasm`
+4. **No `crossorigin` on entry assets** — build plugin strips it for `file://`
 
-Result: `dist/` is self-contained (one JS file + one CSS file, both with
-relative paths) and can be loaded directly from a bundled local path. Verify
-after any config change that `dist/index.html` has no `crossorigin` and that
-no separate `.wasm` files are emitted.
+Verify after config changes: `dist/index.html` has no `crossorigin` and no
+separate `.wasm` files are emitted.
 
-### Storage adapters to replace with native secure storage
+### Storage adapters
 
-The app persists **only** through the `StorageAdapter` interface in
-`src/services/storage/StorageAdapter.ts`. It never calls `localStorage`
-directly. The default `webStorageAdapter` (localStorage) is for browser/dev
-use only.
-
-Before shipping inside Expo, inject a native-backed adapter before the React
-tree mounts so secrets never sit in WebView localStorage:
-
-```ts
-import { setActiveStorageAdapter } from "@/services/storage/StorageAdapter";
-// nativeSecureStorage implements StorageAdapter via a bridge to Keychain /
-// EncryptedSharedPreferences
-setActiveStorageAdapter(nativeSecureStorage);
-```
-
-Secrets and sensitive state that must move to native secure storage:
-
-- **App passcode** — `src/services/mock/MockLocalSecurityAdapter.ts` (today
-  in-memory only; the native adapter should back the passcode verify/set via
-  the `LocalSecurityService` seam).
-- **Wallet envelope / serialized wallet state** — the Conceal SDK wallet blob
-  and `serializeWalletState` output. Today held in-memory by the wallet
-  adapter; a native shell should persist these through the secure adapter.
-- **Seed phrase** — held only in-memory and never persisted; keep it that way
-  and never route it through any storage adapter.
-
-Non-secret data (theme/accent/onboarding flag) can stay in a shared-prefs-style
-adapter; it does not require Keychain-grade storage.
-
-### Safe runtime assumptions inside a WebView
-
-- Single WebView, single tab. No popups, no `window.open`, no multi-tab flows,
-  no browser-extension-wallet assumptions.
-- No service-worker dependency for core behavior.
-- Crypto runs in-browser via WASM (Conceal SDK) — works inside a WebView.
-- Network calls (daemon RPC) go to public Conceal nodes over HTTPS; a native
-  shell can add an `origin`/ATS allow-list if needed.
+Persist only through `StorageAdapter` (`src/services/storage/StorageAdapter.ts`).
+Default is `localStorage` for browser/dev. Before shipping in Expo, inject a
+native secure adapter (Keychain / EncryptedSharedPreferences) before React mounts.
+Seed phrase stays in-memory only — never route it through storage.
 
 ### What NOT to do in the web app
 
-- Do not introduce Capacitor / Cordova / Expo / React Native dependencies here.
-- Do not add server-side rendering or a backend server; the build is static.
-- Do not rely on desktop-only browser APIs for core flows.
+- Do not add Capacitor / Cordova / Expo / React Native deps to the Vite app.
+- Do not add SSR or a backend; the build is static.
+- Do not import `hyperswarm` in the Vite/React bundle.
+- Do not codegen Nitro-Hyperswarm or a React Native desktop shell.
+- Do not drop L3 ChaCha E2E because Noise exists — `docs/security/encryption.md`.
+
+## Docs
+
+Start at `docs/README.md`. Architecture runbooks beat this file for deep detail.

@@ -1,6 +1,7 @@
 /**
  * Pure room lifecycle transitions + TTL helpers.
- * Live messaging is allowed only when status === "connected".
+ * Live = `connected`; L1 relay = post-accept (not pending).
+ * @see docs/security/p2pchatprotocol.md §9 / §16
  */
 
 import type { RoomLifecycleStatus } from "@/types/models";
@@ -40,6 +41,26 @@ export function isRoomExpired(
 
 export function canSendLiveMessages(status: RoomLifecycleStatus): boolean {
   return status === "connected";
+}
+
+/** Post-accept only — never pending (avoids spam before invitee accepts). */
+export function isRelayEligibleStatus(status: RoomLifecycleStatus): boolean {
+  return (
+    status === "accepted" ||
+    status === "connecting" ||
+    status === "connect_failed"
+  );
+}
+
+export function preferredChannel(
+  status: RoomLifecycleStatus,
+): "live" | "relay" {
+  return status === "connected" ? "live" : "relay";
+}
+
+/** Live when connected; L1 relay when post-accept (no session keys required). */
+export function canSendMessages(status: RoomLifecycleStatus): boolean {
+  return status === "connected" || isRelayEligibleStatus(status);
 }
 
 const ALLOWED: Record<RoomLifecycleStatus, ReadonlySet<RoomLifecycleStatus>> = {

@@ -18,6 +18,9 @@ import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
+import {
+  RoomTopicIcon,
+} from "@/components/RoomTopicIcon";
 import { ConfirmModal, Sheet } from "@/components/Sheet";
 import {
   ChatStatusPill,
@@ -26,8 +29,10 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { toastError } from "@/state/toastStore";
 import { shortAddress, timeAgo } from "@/utils/format";
 
 export function ContactDetailScreen() {
@@ -62,6 +67,9 @@ export function ContactDetailScreen() {
   const [createSheet, setCreateSheet] = useState(false);
   const [inviteExpiryHours, setInviteExpiryHours] = useState(24);
   const [roomTtlDays, setRoomTtlDays] = useState(7);
+  const [roomTopic, setRoomTopic] = useState<
+    import("@/services/protocol/roomTopics").RoomTopicId
+  >("general");
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -70,20 +78,28 @@ export function ContactDetailScreen() {
   const [refreshingInvite, setRefreshingInvite] = useState(false);
 
   // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
+  // Poll while waiting — mempool txs are near-instant; one-shot mount miss them.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setRefreshingInvite(true);
+    let first = true;
+    const run = async () => {
+      if (first) setRefreshingInvite(true);
       try {
         await refreshInvites();
       } catch {
         /* wallet may still be syncing */
       } finally {
-        if (!cancelled) setRefreshingInvite(false);
+        if (first && !cancelled) setRefreshingInvite(false);
+        first = false;
       }
-    })();
+    };
+    void run();
+    const id = window.setInterval(() => {
+      void run();
+    }, 3000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, [id, refreshInvites]);
 
@@ -119,9 +135,9 @@ export function ContactDetailScreen() {
   const canInvite =
     eligible &&
     !showAccept &&
-    contact.inviteStatus !== "sent" &&
-    contact.inviteStatus !== "accepted" &&
     contact.inviteStatus !== "received";
+  /** Create another room with this contact (topic is chosen in the sheet). */
+  const canNewTopicRoom = eligible && !showAccept;
   /** Allow resend whenever the Holepunch room is not actually live. */
   const canResend =
     eligible &&
@@ -156,11 +172,14 @@ export function ContactDetailScreen() {
       const { roomId } = await sendInvite(contact.id, contact.alias, {
         inviteExpirySec: inviteExpiryHours * 3600,
         roomTtlSec: roomTtlDays * 86400,
+        roomTopic,
       });
       setCreateSheet(false);
       navigate(`/chats/${roomId}`);
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message || "Failed to create room.";
+      setError(msg);
+      toastError(msg);
     } finally {
       setSendingInvite(false);
     }
@@ -177,7 +196,9 @@ export function ContactDetailScreen() {
       const { roomId } = await acceptInvite(incomingInvite.id);
       navigate(`/chats/${roomId}`);
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message;
+      setError(msg);
+      toastError(msg);
     } finally {
       setActing(false);
     }
@@ -352,10 +373,12 @@ export function ContactDetailScreen() {
               {showAccept && incomingInvite ? (
                 <div className="card card--pad-md stack stack--gap-2">
                   <div className="muted" style={{ fontSize: 13.5 }}>
-                    {contact.inviteStatus === "accepted" &&
-                    contact.roomId !== incomingInvite.roomId
-                      ? "New chat invite supersedes the old room. Accept to connect the new invite."
-                      : "Incoming chat invite. Accepting starts Holepunch connect — the chat is live only after peers are connected."}
+                    {acting
+                      ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
+                      : contact.inviteStatus === "accepted" &&
+                          contact.roomId !== incomingInvite.roomId
+                        ? "New chat invite supersedes the old room. Accept to connect the new invite."
+                        : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
                   </div>
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
@@ -363,7 +386,13 @@ export function ContactDetailScreen() {
                       disabled={acting}
                       onClick={handleAccept}
                     >
-                      Accept
+                      {acting ? (
+                        <>
+                          <Loader2 size={16} className="spin" /> Accepting…
+                        </>
+                      ) : (
+                        "Accept"
+                      )}
                     </button>
                     <button
                       className="btn btn--secondary grow"
@@ -381,12 +410,12 @@ export function ContactDetailScreen() {
                 >
                   <Loader2 size={16} className="spin" /> Checking for invites…
                 </div>
-              ) : canInvite ? (
+              ) : canInvite || canNewTopicRoom ? (
                 <button
                   className="btn btn--block btn--primary"
                   onClick={() => setCreateSheet(true)}
                 >
-                  <MessageSquarePlus size={16} /> Create chat
+                  <MessageSquarePlus size={16} /> Create room
                 </button>
               ) : contact.inviteStatus === "sent" || canResend ? (
                 <div className="card card--pad-md center stack stack--gap-2">
@@ -482,14 +511,33 @@ export function ContactDetailScreen() {
 
       <Sheet
         open={createSheet}
-        title="Create chat"
+        title="Create room"
         onClose={() => setCreateSheet(false)}
       >
         <div className="stack stack--gap-3">
-          <p className="muted" style={{ fontSize: 13.5 }}>
-            Sends a Conceal smart-message create invite. Accept is only the
-            handoff into Holepunch — messaging starts after peers connect.
-          </p>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
+            {ROOM_TOPICS.map((t) => {
+              const selected = roomTopic === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`btn btn--sm ${selected ? "btn--primary" : "btn--secondary"}`}
+                  onClick={() => setRoomTopic(t.id)}
+                  style={{ justifyContent: "flex-start", gap: 8 }}
+                >
+                  <RoomTopicIcon topicId={t.id} size={15} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
           <label className="stack stack--gap-1">
             <span className="eyebrow">Invite expiry (hours)</span>
             <input
@@ -512,6 +560,7 @@ export function ContactDetailScreen() {
               onChange={(e) => setRoomTtlDays(Number(e.target.value) || 7)}
             />
           </label>
+          {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"
             disabled={sendingInvite}
@@ -523,11 +572,15 @@ export function ContactDetailScreen() {
               </>
             ) : (
               <>
-                <MessageSquarePlus size={16} /> Send create invite
+                <MessageSquarePlus size={16} /> Send invite
               </>
             )}
           </button>
-          {error && <div className="field__error">{error}</div>}
+          {sendingInvite && (
+            <p className="muted" style={{ fontSize: 12.5 }}>
+              Building on-chain invite…
+            </p>
+          )}
         </div>
       </Sheet>
 

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { walletService } from "@/services";
+import { toastError } from "@/state/toastStore";
 import type { WalletState } from "@/types/models";
 import { formatCCX, generatePaymentId } from "@/utils/format";
 
@@ -46,7 +47,9 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
       await onSent();
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message;
+      setError(msg);
+      toastError(msg);
     } finally {
       setBusy(false);
       setConfirming(false);

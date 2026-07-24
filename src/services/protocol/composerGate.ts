@@ -1,19 +1,26 @@
 /**
  * Shared chat send / composer gate.
- * Invite `accepted` is NOT enough — Holepunch room must be `connected`.
+ * Live = Holepunch `connected`; L1 relay = post-accept (not pending).
+ * @see docs/security/p2pchatprotocol.md §9 / §16
  */
 
-import { canSendLiveMessages } from "@/services/protocol/roomLifecycle";
-import type { RoomLifecycleStatus } from "@/types/models";
+import {
+  canSendLiveMessages,
+  canSendMessages,
+  isRelayEligibleStatus,
+  preferredChannel,
+} from "@/services/protocol/roomLifecycle";
+import type { MessageChannel, RoomLifecycleStatus } from "@/types/models";
+import type { ConnectFailureCode } from "@/types/protocol";
 
 export const COMPOSER_DISABLED_REASON: Record<
   Exclude<RoomLifecycleStatus, "connected">,
   string
 > = {
-  pending: "Waiting for invite accept — chat is not live yet.",
+  pending: "Waiting for invite accept — messaging not allowed yet.",
   accepted: "Invite accepted — connecting to peer (Holepunch).",
   connecting: "Holepunch connecting…",
-  connect_failed: "Peer connection failed — retry to enable messaging.",
+  connect_failed: "Peer connection failed — retry or send via chain.",
   declined: "Invite declined — room closed.",
   expired: "Room expired.",
   failed: "Room failed.",
@@ -21,22 +28,85 @@ export const COMPOSER_DISABLED_REASON: Record<
   destroyed: "Room destroyed.",
 };
 
+const CONNECT_ERROR_HINT: Record<ConnectFailureCode, string> = {
+  timeout:
+    "No peer on topic within timeout (DHT slow, wrong topic, or isolated swarms not meeting).",
+  unreachable:
+    "Holepunch bridge offline or unauthorized (shared Alice/Bob token mismatch?).",
+  crypto_mismatch:
+    "Peer reached topic but L1 proof failed (session keys do not match — resend invite).",
+  aborted: "Connect aborted.",
+  expired: "Room TTL expired during connect.",
+  unknown: "Unknown connect failure.",
+};
+
+/** @deprecated Prefer canComposeMessages(status). */
 export function isComposerEnabled(status: RoomLifecycleStatus): boolean {
   return canSendLiveMessages(status);
 }
 
+export function canComposeMessages(status: RoomLifecycleStatus): boolean {
+  return canSendMessages(status);
+}
+
+export function composerPreferredChannel(
+  status: RoomLifecycleStatus,
+): MessageChannel {
+  return preferredChannel(status);
+}
+
+export function connectFailureHint(
+  code: string | undefined,
+): string | null {
+  if (!code) return null;
+  if (code in CONNECT_ERROR_HINT) {
+    return CONNECT_ERROR_HINT[code as ConnectFailureCode];
+  }
+  return `Connect error: ${code}`;
+}
+
 export function composerDisabledReason(
   status: RoomLifecycleStatus,
+  lastConnectError?: string,
 ): string | null {
+  if (canComposeMessages(status)) return null;
   if (status === "connected") return null;
+  if (status === "connect_failed") {
+    return (
+      connectFailureHint(lastConnectError) ??
+      COMPOSER_DISABLED_REASON.connect_failed
+    );
+  }
   return COMPOSER_DISABLED_REASON[status];
+}
+
+/** timeout/unreachable/unknown → auto-retry; crypto_mismatch → requires resend. */
+export function isRetryableConnectFailure(code: string | undefined): boolean {
+  if (!code) return true;
+  return code !== "crypto_mismatch";
 }
 
 export function assertCanSendLive(status: RoomLifecycleStatus): void {
   if (!canSendLiveMessages(status)) {
     throw new Error(
       composerDisabledReason(status) ??
-        "Cannot send until Holepunch-connected.",
+        "Cannot send live until Holepunch-connected.",
     );
   }
 }
+
+export function assertCanSendMessages(status: RoomLifecycleStatus): void {
+  if (!canComposeMessages(status)) {
+    throw new Error(
+      composerDisabledReason(status) ??
+        "Cannot send until invite accepted (pending blocks relay).",
+    );
+  }
+}
+
+export {
+  canSendLiveMessages,
+  canSendMessages,
+  isRelayEligibleStatus,
+  preferredChannel,
+};

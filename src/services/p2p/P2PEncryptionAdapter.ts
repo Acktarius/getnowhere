@@ -15,7 +15,6 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { randomHex } from "@/services/protocol/ids";
 import type { P2PSessionConfig } from "@/types/protocol";
 import type { P2PEncryptionService } from "@/types/services";
-import { uid } from "@/utils/format";
 
 const privateKeys = new Map<string, Uint8Array>();
 
@@ -125,6 +124,16 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
     );
     const sendKey = input.localIsSender ? okm.slice(0, 32) : okm.slice(32, 64);
     const recvKey = input.localIsSender ? okm.slice(32, 64) : okm.slice(0, 32);
+    // Must be identical on both peers — AAD for proof/chat includes sessionId.
+    const sessionId = bytesToHex(
+      hkdf(
+        sha256,
+        okm,
+        new TextEncoder().encode("gnh-session-id-v1"),
+        encodeInfo(input.info),
+        16,
+      ),
+    );
     const sendKeyRef = `sk:${randomHex(12)}`;
     const recvKeyRef = `rk:${randomHex(12)}`;
     // Store derived keys in the same map for seal/open
@@ -133,7 +142,7 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
     wipePrivateKey(input.localPrivateKeyRef);
 
     return {
-      sessionId: uid("sess"),
+      sessionId,
       roomId: input.info.roomId,
       relationshipId: input.info.relationshipId,
       cipherSuite: input.info.cipherSuite,

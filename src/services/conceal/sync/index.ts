@@ -27,6 +27,7 @@ export {
   persistRuntime,
   requireRuntime,
   type SdkRuntime,
+  pollMempoolRuntime,
   sync,
   syncRuntime,
   unlock,

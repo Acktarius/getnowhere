@@ -7,40 +7,59 @@ import {
 import { P2PEncryptionAdapter } from "../../src/services/p2p/P2PEncryptionAdapter";
 import {
   assertCanSendLive,
+  assertCanSendMessages,
+  canComposeMessages,
   composerDisabledReason,
+  composerPreferredChannel,
   isComposerEnabled,
 } from "../../src/services/protocol/composerGate";
-import { canSendLiveMessages } from "../../src/services/protocol/roomLifecycle";
+import {
+  canSendLiveMessages,
+  canSendMessages,
+  isRelayEligibleStatus,
+  preferredChannel,
+} from "../../src/services/protocol/roomLifecycle";
 import type { RoomLifecycleStatus } from "../../src/types/models";
 
 describe("accepted vs connected composer gate", () => {
-  const blocked: RoomLifecycleStatus[] = [
-    "pending",
-    "accepted",
-    "connecting",
-    "connect_failed",
-    "declined",
-    "expired",
-    "failed",
-    "closed",
-    "destroyed",
-  ];
-
-  it("enables composer only when connected", () => {
-    for (const status of blocked) {
-      expect(isComposerEnabled(status)).toBe(false);
-      expect(canSendLiveMessages(status)).toBe(false);
-      expect(composerDisabledReason(status)).toBeTruthy();
-      expect(() => assertCanSendLive(status)).toThrow();
-    }
+  it("enables live composer only when connected", () => {
+    expect(isComposerEnabled("accepted")).toBe(false);
+    expect(canSendLiveMessages("accepted")).toBe(false);
+    expect(() => assertCanSendLive("accepted")).toThrow();
     expect(isComposerEnabled("connected")).toBe(true);
     expect(composerDisabledReason("connected")).toBeNull();
     expect(() => assertCanSendLive("connected")).not.toThrow();
   });
 
-  it("documents that accepted is not connected", () => {
-    expect(composerDisabledReason("accepted")).toMatch(/connecting/i);
-    expect(isComposerEnabled("accepted")).toBe(false);
+  it("allows relay after accept without session keys; blocks pending", () => {
+    for (const status of ["accepted", "connecting", "connect_failed"] as const) {
+      expect(isRelayEligibleStatus(status)).toBe(true);
+      expect(canComposeMessages(status)).toBe(true);
+      expect(canSendMessages(status)).toBe(true);
+      expect(preferredChannel(status)).toBe("relay");
+      expect(composerPreferredChannel(status)).toBe("relay");
+      expect(() => assertCanSendMessages(status)).not.toThrow();
+      expect(composerDisabledReason(status)).toBeNull();
+    }
+    expect(canComposeMessages("pending")).toBe(false);
+    expect(isRelayEligibleStatus("pending")).toBe(false);
+    expect(() => assertCanSendMessages("pending")).toThrow();
+    expect(composerDisabledReason("pending")).toMatch(/accept/i);
+  });
+
+  it("prefers live when connected", () => {
+    expect(preferredChannel("connected")).toBe("live");
+    expect(composerPreferredChannel("connected")).toBe("live");
+    expect(canComposeMessages("connected")).toBe(true);
+  });
+
+  it("surfaces connect_failed codes when composer blocked for other reasons", () => {
+    const blocked: RoomLifecycleStatus[] = ["declined", "expired", "destroyed"];
+    for (const status of blocked) {
+      expect(canComposeMessages(status)).toBe(false);
+    }
+    // connect_failed itself is relay-eligible
+    expect(canComposeMessages("connect_failed")).toBe(true);
   });
 });
 

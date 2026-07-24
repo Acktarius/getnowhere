@@ -3,3 +3,13 @@ For all designs I ask you to make, have them be beautiful, not cookie cutter. Ma
 By default, this template supports JSX syntax with Tailwind CSS classes, React hooks, and Lucide React for icons. Do not install other packages for UI themes, icons, etc unless absolutely necessary or I request them.
 
 Use icons from lucide-react for logos.
+
+## Get Now Here networking (mandatory)
+
+- Product UI is in `src/` (Vite). There is no top-level `web/` folder.
+- Do not import or initialize `hyperswarm` in UI / renderer code.
+- Web-dev / Electron MVP: `holepunch-sidecar/`. Mobile: Bare worklet. Desktop shell: `desktop-electron/`.
+- Bridge messages must match `HolepunchSidecarClient` (`join` / `leave` / `frame` / `ready` / `peers` / `error`).
+- Topic only: `sha256Hex(\`gnh-chat-v1||${roomId}||${relationshipId}\`)` via `deriveTopicRef`.
+- Crypto: L1 SmartMessage derive → L2 Hyperswarm Noise → L3 ChaCha20-Poly1305 E2E (do not drop L3).
+- Follow `docs/prompts/coding-constraints.md` and `docs/security/encryption.md`.

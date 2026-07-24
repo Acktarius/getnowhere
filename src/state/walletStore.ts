@@ -89,11 +89,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         address: addr,
         seedRef: res.seedRef,
         seedPhrase: res.seedPhrase,
-        syncStatus: "idle",
+        syncStatus: "syncing",
+        syncProgress: 0.05,
         initializing: false,
       });
-      await get().resync();
       await useContactsStore.getState().hydrate();
+      // Tip catch-up in background — UI (L2 chat) must not wait.
+      void get().resync();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -111,11 +113,12 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         address: addr,
         seedRef: res.seedRef,
         seedPhrase: res.seedPhrase,
-        syncStatus: "idle",
+        syncStatus: "syncing",
+        syncProgress: 0.05,
         initializing: false,
       });
-      await get().resync();
       await useContactsStore.getState().hydrate();
+      void get().resync();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -137,11 +140,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         address: addr,
         seedRef: "",
         seedPhrase: null,
-        syncStatus: "idle",
+        syncStatus: "syncing",
+        syncProgress: 0.05,
         initializing: false,
       });
-      await get().resync();
       await useContactsStore.getState().hydrate();
+      // Enter app immediately; live sync + resync catch tip in background.
+      void get().resync();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;

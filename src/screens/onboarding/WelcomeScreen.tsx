@@ -39,7 +39,7 @@ export function WelcomeScreen() {
       markOnboarded();
       setOpenSheet(false);
       setPassword("");
-      navigate("/wallet");
+      navigate("/contacts");
     } catch (e) {
       setError((e as Error).message);
     }

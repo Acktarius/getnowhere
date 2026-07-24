@@ -21,6 +21,18 @@ Wallet sync uses the same engine knobs as Conceal Next Wallet:
 Message-inbox enrichment and multi-wallet switching from next-wallet are stubbed; getnowhere
 keeps a single wallet and uses the separate P2P chat protocol for messaging.
 
+**Mempool (0-conf):** sync polls `getTransactionsPool` and reconstructs inbound smart
+messages before they mine. Chat `create` / `register` from a **known** `paymentIdFrom`
+(existing contact) are actionable immediately. Unknown payment IDs never become invites.
+Do not treat 0-conf as proof for establishing a *new* relationship.
+
+**Live poll (parity with next-wallet #112):** while the wallet is open, the app polls
+sync at ~2.5s while catching up and ~20s near tip (`useWalletLiveSync`). Invite fetch
+uses a **mempool-first** path (`pollMempoolRuntime`) so L1 creates/registers do not wait
+on deep tip catch-up. Contact detail also refreshes invites every ~3s while open.
+0-conf received copies are kept for a **2h grace** after leaving the mempool so the
+mempool→block gap cannot erase chat creates before Accept appears.
+
 ## Import
 
 Supported methods (same as next-wallet):
@@ -32,6 +44,9 @@ Supported methods (same as next-wallet):
 
 After a successful import the app navigates to **`/wallet`** (not a passcode / password-change
 screen). App unlock passcode can be set later under Settings → Passcode.
+
+**Open / import / restore:** decrypt and enter the app immediately. Tip catch-up runs in the
+background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync continues.
 
 ## Settings
 
@@ -51,10 +66,34 @@ screen). App unlock passcode can be set later under Settings → Passcode.
 - **Receive** — address + QR.
 - **Send** — real `buildTransaction` + `sendRawTransaction` via the sync runtime.
 - **History** — kinds: transfer, miner, deposit, withdrawal, fusion (display only).
+- **Spend failures** (no funds, unmixable denominations, build/broadcast errors) surface
+  as an in-app toast and inline error — invite create must not spin forever on deep sync.
+
+### Contact smartmessage dots (L1)
+
+Wallet history joins scanned txs with smartmessage bodies (`sentMessages` /
+`receivedMessages`) and shows a small colored dot when the body is module
+`contact`:
+
+| Action | Dot |
+|---|---|
+| `create` | blue (`--secondary`) |
+| `register` | green (`--success`) |
+| `revoke` | amber (`--accent`) |
+
+**0-conf / mempool:** unconfirmed smartmessage rows also show a pulsing dot and a
+subtle `0-conf` mark (alongside the existing pending pill). After the tx mines,
+`zeroConf` clears and the dot stays solid.
+
+**Non-final:** these affordances are **UI preview only**. Relationship eligibility,
+accept handoff, and trust still follow the mined (or existing confirmed) path —
+do **not** treat mempool alone as proof of a new relationship. See
+`docs/security/p2pchatprotocol.md` (§ 0-conf preview).
 
 ## Non-goals
 
 - Deposit / withdraw creation UI.
 - Multi-wallet index / switcher.
 - Next-wallet i18n, Cordova, biometric vault.
-- Holepunch / ChaCha P2P (see `docs/security/p2pchatprotocol.md`).
+- Holepunch / P2P chat crypto (L1–L3) — see `docs/security/p2pchatprotocol.md`
+  and `docs/security/encryption.md`.

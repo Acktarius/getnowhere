@@ -18,14 +18,20 @@ export const CHAT_WIRE_ACTIONS = {
   create: "create",
   register: "register",
   revoke: "revoke",
+  /** L1 chat relay — SDK maps execute → e. @see p2pchatprotocol.md §16 */
+  relay: "execute",
 } as const;
 
 export type ChatWireAction =
   (typeof CHAT_WIRE_ACTIONS)[keyof typeof CHAT_WIRE_ACTIONS];
 
-/** Coarse decline reasons — no free-text PII. */
+/** Text cap so `{contact,e,roomId,ts,text}` fits MAX_MESSAGE_BODY_BYTES (251). */
+export const RELAY_MAX_TEXT_CHARS = 200;
+
+/** Coarse revoke reasons — no free-text PII. */
 export type ChatRevokeReasonCode =
   | "user_declined"
+  | "room_revoked"
   | "expired"
   | "superseded"
   | "unknown";
@@ -59,6 +65,11 @@ export type ChatInviteHandshake = {
   roomTtl: number;
   /** Unique per invite; tracked to reject duplicates. */
   replayId: string;
+  /**
+   * Display room category (work/family/…). Not part of Hyperswarm topicRef.
+   * Omitted / unknown → general. Wire: 1 byte at end of slim create pack.
+   */
+  roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
   correlationTag?: string;
   capabilityToken?: string;
   transportMetadata?: Record<string, unknown>;
@@ -89,16 +100,35 @@ export type ChatRegisterPayload = {
 /** @deprecated Use ChatRegisterPayload. */
 export type ChatInviteAcceptancePayload = ChatRegisterPayload;
 
-/** `chat.revoke` — wire action `revoke` → `k`; UX “decline”. */
+/**
+ * `chat.revoke` — wire action `revoke` → `k`.
+ * UX: decline (`user_declined`) or leave-forever (`room_revoked`).
+ * `roomId` required for leave-forever so the peer can destroy without invite lookup.
+ */
 export type ChatRevokePayload = {
   type: "chat.revoke";
   inviteId: string;
+  /** Target chat room — present on room_revoked (and preferred for destroy). */
+  roomId?: string;
   replayId?: string;
   reasonCode?: ChatRevokeReasonCode;
 };
 
 /** @deprecated Use ChatRevokePayload. */
 export type ChatRejectPayload = ChatRevokePayload;
+
+/**
+ * `chat.relay` — wire action `execute` → `e`.
+ * App-layer text; Conceal MESSAGE ChaCha wraps the body on-chain.
+ * @see docs/security/p2pchatprotocol.md §16
+ */
+export type ChatRelayPayload = {
+  type: "chat.relay";
+  roomId: string;
+  /** Unix seconds. */
+  sentAt: number;
+  text: string;
+};
 
 export type ChatRekeyPayload = {
   type: "chat.rekey";
@@ -175,7 +205,7 @@ export type HolepunchBootstrapContract = {
   peerRole: "initiator" | "responder";
   transport: {
     kind: "holepunch";
-    /** Discovery topic — hash(gnh-chat-v1 || roomId || relationshipId). */
+    /** Discovery topic — sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`). */
     topicRef: string;
     relayHints?: string[];
   };
@@ -194,7 +224,8 @@ export type ConnectFailureCode =
 
 // ---------- Content envelopes (Holepunch frames, not smart messages) ----------
 
-export type ChatContentKind = "text" | "reaction" | "edit" | "delete";
+/** "proof" is an internal post-connect handshake kind; never surfaced in UI. */
+export type ChatContentKind = "text" | "reaction" | "edit" | "delete" | "proof";
 
 export type ChatContentEnvelopeV1 = {
   schemaVersion: 1;

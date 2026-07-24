@@ -6,7 +6,11 @@
 
 import { messages } from "conceal-wallet-sdk";
 import { readReceivedRecords } from "@/services/conceal/sync/messages-store";
-import { requireRuntime, syncRuntime } from "@/services/conceal/sync/runtime";
+import {
+  pollMempoolRuntime,
+  requireRuntime,
+  syncRuntime,
+} from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
 import {
   deriveInviteSalt,
@@ -18,6 +22,7 @@ import { nowUnix } from "@/services/protocol/roomLifecycle";
 import {
   encodeCreateSmartBody,
   encodeRegisterSmartBody,
+  encodeRelaySmartBody,
   encodeRevokeSmartBody,
   hydrateCreateHandshake,
   parseChatSmartBody,
@@ -25,7 +30,7 @@ import {
   SmartMessageProtocolAdapter,
 } from "@/services/protocol/SmartMessageProtocolAdapter";
 import type { SmartMessageInvite } from "@/types/models";
-import type { ChatInviteHandshake } from "@/types/protocol";
+import type { ChatInviteHandshake, ChatRelayPayload } from "@/types/protocol";
 import { CHAT_PROTOCOL_VERSION } from "@/types/protocol";
 import type {
   ComposedInvite,
@@ -172,6 +177,7 @@ async function inviteFromCreateBody(
     roomTtl: hs.roomTtl,
     senderAlias: meta.senderAlias ?? parsed.payload.senderAlias,
     capabilities: parsed.payload.capabilities,
+    roomTopic: hs.roomTopic,
     bootstrapEncrypted: btoa(`${hs.roomId}:${hs.replayId}:${meta.contactId}`),
     status: meta.status,
     createdAt: meta.createdAt,
@@ -262,6 +268,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       inviteExpiry,
       roomTtl,
       replayId,
+      roomTopic: input.roomTopic ?? input.handshakeOverrides?.roomTopic,
       ...input.handshakeOverrides,
     };
 
@@ -286,6 +293,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       roomTtl,
       senderAlias: input.senderAlias,
       capabilities,
+      roomTopic: handshake.roomTopic,
       bootstrapEncrypted,
       handshake,
       smartBody: envelope.smartBody,
@@ -350,11 +358,20 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
   async fetchIncomingMessages() {
     try {
       const rt = requireRuntime();
-      await syncRuntime(rt);
+      // Mempool first — do not wait on tip catch-up for 0-conf creates.
+      await pollMempoolRuntime(rt);
+      // Short tip sync so a create that already mined still appears.
+      await Promise.race([
+        syncRuntime(rt),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, 8_000);
+        }),
+      ]);
       const received = readReceivedRecords(rt.raw);
       const out: SmartMessageInvite[] = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
+        // Known paymentIdFrom only — strangers never become invites from mempool/mined.
         const contact = matchContactByPaymentId(record.paymentIdFrom);
         if (!contact) continue;
         const invite = await inviteFromCreateBody(record.body, {
@@ -366,7 +383,12 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           paymentIdFrom: contact.paymentIdFrom,
           paymentIdTo: contact.paymentIdTo,
         });
-        if (invite) out.push(invite);
+        if (invite) {
+          out.push({
+            ...invite,
+            zeroConf: record.blockHeight === 0,
+          });
+        }
       }
       // Keep any local sent copies that aren't on the received list.
       for (const inv of invitesById.values()) {
@@ -383,7 +405,8 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
   async fetchIncomingRegisters() {
     try {
       const rt = requireRuntime();
-      await syncRuntime(rt);
+      await pollMempoolRuntime(rt);
+      void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         register: import("@/types/protocol").ChatRegisterPayload;
@@ -458,6 +481,90 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     });
     const { invite: wiped } = tombstoneInvite(inv, "rejected");
     Object.assign(inv, wiped);
+  },
+
+  async revokeRoom(input) {
+    const revoke = await SmartMessageProtocolAdapter.composeRevoke({
+      inviteId: input.inviteId,
+      roomId: input.roomId,
+      replayId: input.replayId,
+      reasonCode: "room_revoked",
+    });
+    const { hash } = await broadcastSmartBody({
+      contactId: input.contactId,
+      smartBody: encodeRevokeSmartBody(revoke),
+    });
+    return { txHash: hash };
+  },
+
+  async fetchIncomingRevokes() {
+    try {
+      const rt = requireRuntime();
+      await pollMempoolRuntime(rt);
+      void syncRuntime(rt).catch(() => {});
+      const received = readReceivedRecords(rt.raw);
+      const out: Array<{
+        revoke: import("@/types/protocol").ChatRevokePayload;
+        txHash: string;
+      }> = [];
+      for (const record of received) {
+        if (!messages.isSmartMessage(record.body)) continue;
+        const parsed = parseChatSmartBody(record.body, {
+          allowSeenReplay: true,
+        });
+        if (parsed?.action !== "revoke") continue;
+        out.push({ revoke: parsed.payload, txHash: record.id });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  },
+
+  async sendChatRelay(input: { contactId: string; relay: ChatRelayPayload }) {
+    const smartBody = encodeRelaySmartBody(input.relay);
+    if (!messages.isKnownSmartMessage(smartBody)) {
+      throw new Error("Composed relay is not a recognized smart message.");
+    }
+    const { hash } = await broadcastSmartBody({
+      contactId: input.contactId,
+      smartBody,
+    });
+    return { txHash: hash };
+  },
+
+  async fetchIncomingRelays() {
+    try {
+      const rt = requireRuntime();
+      await pollMempoolRuntime(rt);
+      void syncRuntime(rt).catch(() => {});
+      const received = readReceivedRecords(rt.raw);
+      const out: Array<{
+        relay: ChatRelayPayload;
+        txHash: string;
+        paymentIdFrom?: string;
+        zeroConf?: boolean;
+      }> = [];
+      for (const record of received) {
+        if (!messages.isSmartMessage(record.body)) continue;
+        // Known paymentIdFrom only — same gate as create (no stranger spam).
+        const contact = matchContactByPaymentId(record.paymentIdFrom);
+        if (!contact) continue;
+        const parsed = parseChatSmartBody(record.body, {
+          allowSeenReplay: true,
+        });
+        if (parsed?.action !== "relay") continue;
+        out.push({
+          relay: parsed.payload,
+          txHash: record.id,
+          paymentIdFrom: record.paymentIdFrom ?? undefined,
+          zeroConf: record.blockHeight === 0,
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
   },
 };
 
