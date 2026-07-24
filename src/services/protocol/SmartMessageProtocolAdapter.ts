@@ -24,7 +24,11 @@ import type {
   ChatRevokeReasonCode,
   InviteEnvelope,
 } from "@/types/protocol";
-import { CHAT_PROTOCOL_VERSION, CHAT_WIRE_ACTIONS, RELAY_MAX_TEXT_CHARS } from "@/types/protocol";
+import {
+  CHAT_PROTOCOL_VERSION,
+  CHAT_WIRE_ACTIONS,
+  RELAY_MAX_TEXT_CHARS,
+} from "@/types/protocol";
 import type { SmartMessageProtocolService } from "@/types/services";
 
 const MODULE_CONTACT = "contact";
@@ -237,10 +241,7 @@ function unpackSlimCreate(
   buf: Uint8Array,
 ): ChatInviteHandshake | null {
   // V1 slim (64) or V1+topic (65).
-  if (
-    buf.length !== CREATE_PACK_BYTES &&
-    buf.length !== CREATE_PACK_BYTES_V1
-  ) {
+  if (buf.length !== CREATE_PACK_BYTES && buf.length !== CREATE_PACK_BYTES_V1) {
     return null;
   }
   let o = 0;
@@ -592,7 +593,8 @@ export function parseChatSmartBody(
     const roomId = String(parsed[2] ?? "").trim();
     const sentAt = Number(parsed[3] ?? 0);
     const text = String(parsed[4] ?? "");
-    if (!roomId || !text || !Number.isFinite(sentAt) || sentAt <= 0) return null;
+    if (!roomId || !text || !Number.isFinite(sentAt) || sentAt <= 0)
+      return null;
     return {
       action: "relay",
       payload: {

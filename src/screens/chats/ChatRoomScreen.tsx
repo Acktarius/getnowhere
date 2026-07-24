@@ -3,23 +3,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  MessageBubble,
-  type BubbleReaction,
-} from "@/components/MessageBubble";
+import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { ConfirmModal, Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
+import {
+  getLastSidecarDetail,
+  getMessagesForRoom,
+} from "@/services/p2p/HolepunchChatTransport";
+import { getHolepunchWsUrl } from "@/services/p2p/HolepunchSidecarClient";
 import {
   canComposeMessages,
   composerDisabledReason,
   composerPreferredChannel,
   isRetryableConnectFailure,
 } from "@/services/protocol/composerGate";
-import {
-  getLastSidecarDetail,
-  getMessagesForRoom,
-} from "@/services/p2p/HolepunchChatTransport";
-import { getHolepunchWsUrl } from "@/services/p2p/HolepunchSidecarClient";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { toastError, toastSuccess } from "@/state/toastStore";
@@ -340,15 +337,15 @@ export function ChatRoomScreen() {
 
   return (
     <div className="screen" style={{ paddingBottom: 0 }}>
-        <ChatRoomHeader
-          contact={contact}
-          peerStatus={room.peerStatus}
-          roomId={roomId}
-          roomTopic={room.roomTopic}
-          onShowDiagnostics={() => setDiagOpen(true)}
-          onLeaveRoom={() => setLeaveOpen(true)}
-          leaving={revoking}
-        />
+      <ChatRoomHeader
+        contact={contact}
+        peerStatus={room.peerStatus}
+        roomId={roomId}
+        roomTopic={room.roomTopic}
+        onShowDiagnostics={() => setDiagOpen(true)}
+        onLeaveRoom={() => setLeaveOpen(true)}
+        leaving={revoking}
+      />
       <div
         style={{
           padding: "8px 14px",
@@ -365,7 +362,11 @@ export function ChatRoomScreen() {
           </span>
         )}
         {viaChain && (
-          <span className="muted" style={{ fontSize: 12 }} title="L1 Conceal message">
+          <span
+            className="muted"
+            style={{ fontSize: 12 }}
+            title="L1 Conceal message"
+          >
             via chain
           </span>
         )}

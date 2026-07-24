@@ -188,7 +188,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async bootstrapRoom(contactId, bootstrap) {
     if (bootstrap?.roomId) {
-      const { isRoomRevoked } = await import("@/services/p2p/revokedRoomsStore");
+      const { isRoomRevoked } = await import(
+        "@/services/p2p/revokedRoomsStore"
+      );
       if (isRoomRevoked(bootstrap.roomId)) {
         throw new Error("Room revoked.");
       }
@@ -372,9 +374,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const prev = s.messagesByRoom[roomId] ?? [];
         const idx = prev.findIndex((m) => m.id === msg.id);
         const list =
-          idx >= 0
-            ? prev.map((m, i) => (i === idx ? msg : m))
-            : [...prev, msg];
+          idx >= 0 ? prev.map((m, i) => (i === idx ? msg : m)) : [...prev, msg];
         return {
           messagesByRoom: {
             ...s.messagesByRoom,

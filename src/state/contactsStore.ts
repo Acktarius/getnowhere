@@ -8,7 +8,6 @@ import {
   smartMessageService,
   walletService,
 } from "@/services";
-import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
 import {
   bindSmartMessageContacts,
   getHandshakeForInvite,
@@ -22,13 +21,14 @@ import {
   removePendingInitiatorKey,
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
-import { deriveRelationshipId } from "@/services/protocol/ids";
-import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
+import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
 import {
   isInviteRevoked,
   isRoomRevoked,
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
+import { deriveRelationshipId } from "@/services/protocol/ids";
+import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
@@ -389,9 +389,7 @@ export async function probeInitiatorHandoff(
       .invites.find((i) => i.roomId === roomId);
     const receivedForRoom = useContactsStore
       .getState()
-      .invites.find(
-        (i) => i.roomId === roomId && i.status === "received",
-      );
+      .invites.find((i) => i.roomId === roomId && i.status === "received");
     const pendingForRoom = [...pendingPrivateKeys.values()].filter(
       (p) => p.peerRole === "initiator" && p.handshake.roomId === roomId,
     );
@@ -522,10 +520,7 @@ function mergeInviteLists(
     // Prefer terminal / remote status over stale local "sent".
     // `failed` = destroyed/revoked — must not lose to a re-scanned create.
     const rank = (s: SmartMessageInvite["status"]) =>
-      s === "accepted" ||
-      s === "rejected" ||
-      s === "expired" ||
-      s === "failed"
+      s === "accepted" || s === "rejected" || s === "expired" || s === "failed"
         ? 2
         : s === "received"
           ? 1
@@ -659,12 +654,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     for (const { revoke } of revokes) {
       const inv = get().invites.find(
         (i) =>
-          normalizeInviteId(i.inviteId) ===
-          normalizeInviteId(revoke.inviteId),
+          normalizeInviteId(i.inviteId) === normalizeInviteId(revoke.inviteId),
       );
-      const catalogHit = (
-        await import("@/services/p2p/roomCatalogStore")
-      )
+      const catalogHit = (await import("@/services/p2p/roomCatalogStore"))
         .listCatalogRooms()
         .find(
           (r) =>
@@ -1196,13 +1188,14 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           c.id === contactId
             ? recomputeStatus({
                 ...c,
-                inviteStatus: latestOther?.status === "sent"
-                  ? "sent"
-                  : latestOther?.status === "received"
-                    ? "received"
-                    : latestOther?.status === "accepted"
-                      ? "accepted"
-                      : "none",
+                inviteStatus:
+                  latestOther?.status === "sent"
+                    ? "sent"
+                    : latestOther?.status === "received"
+                      ? "received"
+                      : latestOther?.status === "accepted"
+                        ? "accepted"
+                        : "none",
                 chatStatus: latestOther ? "invited" : "ready",
                 roomId: latestOther?.roomId,
               })

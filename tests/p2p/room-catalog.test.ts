@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { shouldRetireCatalogRoom } from "../../src/services/p2p/roomCatalogStore";
 import type { CatalogRoom } from "../../src/services/p2p/roomCatalogStore";
+import { shouldRetireCatalogRoom } from "../../src/services/p2p/roomCatalogStore";
 
 function room(partial: Partial<CatalogRoom>): CatalogRoom {
   return {

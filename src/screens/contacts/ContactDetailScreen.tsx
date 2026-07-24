@@ -18,9 +18,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
-import {
-  RoomTopicIcon,
-} from "@/components/RoomTopicIcon";
+import { RoomTopicIcon } from "@/components/RoomTopicIcon";
 import { ConfirmModal, Sheet } from "@/components/Sheet";
 import {
   ChatStatusPill,
@@ -67,9 +65,8 @@ export function ContactDetailScreen() {
   const [createSheet, setCreateSheet] = useState(false);
   const [inviteExpiryHours, setInviteExpiryHours] = useState(24);
   const [roomTtlDays, setRoomTtlDays] = useState(7);
-  const [roomTopic, setRoomTopic] = useState<
-    import("@/services/protocol/roomTopics").RoomTopicId
-  >("general");
+  const [roomTopic, setRoomTopic] =
+    useState<import("@/services/protocol/roomTopics").RoomTopicId>("general");
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -133,9 +130,7 @@ export function ContactDetailScreen() {
         contact.roomId !== incomingInvite.roomId),
   );
   const canInvite =
-    eligible &&
-    !showAccept &&
-    contact.inviteStatus !== "received";
+    eligible && !showAccept && contact.inviteStatus !== "received";
   /** Create another room with this contact (topic is chosen in the sheet). */
   const canNewTopicRoom = eligible && !showAccept;
   /** Allow resend whenever the Holepunch room is not actually live. */

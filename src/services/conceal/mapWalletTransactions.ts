@@ -4,8 +4,8 @@
  * @see docs/features/lite-wallet.md
  */
 import {
-  resolveWalletTransactionKind,
   type RawWalletV1,
+  resolveWalletTransactionKind,
   type WalletTransaction,
   type WalletTransactionKind,
 } from "conceal-wallet-sdk";

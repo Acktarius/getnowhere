@@ -1,4 +1,11 @@
-import { AlertCircle, Check, CheckCheck, Pencil, Trash2, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  CheckCheck,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/types/models";
 import { formatTime } from "@/utils/format";
@@ -37,9 +44,6 @@ export function MessageBubble({
   const deleted = Boolean(message.deletedAt) || message.kind === "delete";
   const canAct = !deleted && Boolean(onReact || onEdit || onDelete);
 
-  // Wire protocol still carries reaction rows; UI never renders them as bubbles.
-  if (message.kind === "reaction") return null;
-
   useEffect(() => {
     if (!pickerOpen) return;
     const onDoc = (e: PointerEvent) => {
@@ -48,6 +52,9 @@ export function MessageBubble({
     document.addEventListener("pointerdown", onDoc);
     return () => document.removeEventListener("pointerdown", onDoc);
   }, [pickerOpen]);
+
+  // Wire protocol still carries reaction rows; UI never renders them as bubbles.
+  if (message.kind === "reaction") return null;
 
   function clearLongPress() {
     if (longPressTimer.current !== null) {
@@ -121,8 +128,7 @@ export function MessageBubble({
             // Relay = grey (SMS-class); live out = accent.
             background: relay || !out ? "var(--bg-elev-2)" : "var(--primary)",
             color: relay || !out ? "var(--text)" : "var(--primary-fg)",
-            border:
-              relay || !out ? "1px solid var(--border-strong)" : "none",
+            border: relay || !out ? "1px solid var(--border-strong)" : "none",
             borderBottomRightRadius: out ? 5 : 16,
             borderBottomLeftRadius: out ? 16 : 5,
             opacity: deleted ? 0.55 : 1,
@@ -184,7 +190,10 @@ export function MessageBubble({
               <span style={{ fontSize: 10, opacity: 0.7 }}>edited</span>
             )}
             {relay && (
-              <span style={{ fontSize: 10, opacity: 0.65 }} title="L1 via chain">
+              <span
+                style={{ fontSize: 10, opacity: 0.65 }}
+                title="L1 via chain"
+              >
                 chain
               </span>
             )}

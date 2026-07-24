@@ -1,9 +1,6 @@
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
-import {
-  RoomTopicIcon,
-  roomTopicLabel,
-} from "@/components/RoomTopicIcon";
+import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import type { RoomTopicId } from "@/services/protocol/roomTopics";
 import type { Contact } from "@/types/models";
 import { initials } from "@/utils/format";

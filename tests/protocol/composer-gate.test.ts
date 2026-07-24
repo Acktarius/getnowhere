@@ -32,7 +32,11 @@ describe("accepted vs connected composer gate", () => {
   });
 
   it("allows relay after accept without session keys; blocks pending", () => {
-    for (const status of ["accepted", "connecting", "connect_failed"] as const) {
+    for (const status of [
+      "accepted",
+      "connecting",
+      "connect_failed",
+    ] as const) {
       expect(isRelayEligibleStatus(status)).toBe(true);
       expect(canComposeMessages(status)).toBe(true);
       expect(canSendMessages(status)).toBe(true);

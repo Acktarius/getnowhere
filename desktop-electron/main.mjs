@@ -5,12 +5,7 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -67,16 +62,10 @@ function clearTokenLock() {
   }
 }
 
-function wsUrlForToken(token) {
-  if (!token) return BASE_WS_URL;
-  return `${BASE_WS_URL}?token=${encodeURIComponent(token)}`;
-}
-
 /** Mutable: owner keeps token; attacher replaces with lockfile / shared default. */
 let authToken =
   process.env.GNH_SIDECAR_TOKEN ??
   (isIsolated ? randomUUID() : "gnh-desktop-shared");
-let swarmWsUrl = wsUrlForToken(authToken);
 
 /** @type {import('node:child_process').ChildProcess | null} */
 let swarmChild = null;
@@ -128,7 +117,6 @@ function adoptSharedToken() {
   const fromEnv = process.env.GNH_SIDECAR_TOKEN?.trim() || null;
   // Shared default matches owner when lockfile is missing/stale.
   authToken = fromLock ?? fromEnv ?? "gnh-desktop-shared";
-  swarmWsUrl = wsUrlForToken(authToken);
   if (fromLock) {
     log(`shared token from lockfile ${tokenLockPath()}`);
   } else if (fromEnv) {
@@ -175,7 +163,6 @@ async function spawnSidecar() {
   }
   ownsSwarm = true;
   writeTokenLock(authToken);
-  swarmWsUrl = wsUrlForToken(authToken);
   log(`owned Hyperswarm bridge ready at ${BASE_WS_URL} (token lock written)`);
 }
 

@@ -223,17 +223,13 @@ describe("session bootstrap + holepunch connect", () => {
     const sealed = await P2PEncryptionAdapter.seal({
       session: sendSession,
       plaintext: new TextEncoder().encode("ping"),
-      aad: new TextEncoder().encode(
-        `v1|room|${sendSession.sessionId}`,
-      ),
+      aad: new TextEncoder().encode(`v1|room|${sendSession.sessionId}`),
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recvSession,
       ciphertext: sealed.ciphertext,
       nonce: sealed.nonce,
-      aad: new TextEncoder().encode(
-        `v1|room|${recvSession.sessionId}`,
-      ),
+      aad: new TextEncoder().encode(`v1|room|${recvSession.sessionId}`),
     });
     expect(sendSession.sessionId).toBe(recvSession.sessionId);
     expect(opened).not.toBeNull();

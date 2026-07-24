@@ -3,12 +3,13 @@
  * leave forever (local or L1 room_revoked), unaccepted inviteExpiry, or roomTtl.
  * @see docs/security/p2pchatprotocol.md
  */
+
+import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import {
   isInviteExpired,
   isRoomExpired,
   nowUnix,
 } from "@/services/protocol/roomLifecycle";
-import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { ChatRoom, RoomLifecycleStatus } from "@/types/models";
 
@@ -76,9 +77,7 @@ export function shouldRetireCatalogRoom(
   return null;
 }
 
-export function upsertCatalogRoom(
-  room: CatalogRoom | ChatRoom,
-): CatalogRoom {
+export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
   // Leave forever must stay gone — never re-write a revoked room.
   if (isRoomRevoked(room.id)) {
     removeCatalogRoom(room.id);

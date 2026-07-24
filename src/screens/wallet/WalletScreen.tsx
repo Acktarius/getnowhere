@@ -245,6 +245,7 @@ export function WalletScreen() {
                         <div className="row__title">
                           {tx.contactHint && (
                             <span
+                              role="img"
                               className={[
                                 "tx-contact-dot",
                                 `tx-contact-dot--${tx.contactHint.action}`,

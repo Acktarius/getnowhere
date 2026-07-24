@@ -19,14 +19,14 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
+import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import {
-  loadCatalogRoom,
   listCatalogRooms,
+  loadCatalogRoom,
   patchCatalogRoom,
   removeCatalogRoom,
   upsertCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
-import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import {
   loadRoomSession,
   removeRoomSession,
@@ -539,8 +539,7 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       if (proofResult !== "ok") {
         // timeout = peer silent → retryable, keep session.
         // mismatch = AEAD open failed → wipe so a fresh derive can rekey.
-        const code =
-          proofResult === "timeout" ? "timeout" : "crypto_mismatch";
+        const code = proofResult === "timeout" ? "timeout" : "crypto_mismatch";
         state.room = {
           ...state.room,
           lifecycleStatus: "connect_failed",
@@ -595,7 +594,10 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   }
   const existing = rooms.get(id);
   if (existing) {
-    if (bootstrap?.lifecycleStatus && bootstrap.lifecycleStatus !== existing.room.lifecycleStatus) {
+    if (
+      bootstrap?.lifecycleStatus &&
+      bootstrap.lifecycleStatus !== existing.room.lifecycleStatus
+    ) {
       existing.room = {
         ...existing.room,
         lifecycleStatus: bootstrap.lifecycleStatus,

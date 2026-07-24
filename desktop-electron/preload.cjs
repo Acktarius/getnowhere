@@ -18,8 +18,7 @@ function buildWsUrl(base, token) {
   return `${clean}?token=${encodeURIComponent(token)}`;
 }
 
-const role =
-  readArg("--gnh-role=") || process.env.GNH_ROLE || "alice";
+const role = readArg("--gnh-role=") || process.env.GNH_ROLE || "alice";
 
 const wsToken =
   readArg("--gnh-ws-token=") || process.env.GNH_SIDECAR_TOKEN || "";

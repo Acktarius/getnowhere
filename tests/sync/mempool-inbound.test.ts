@@ -1,8 +1,8 @@
+import type { WalletState } from "conceal-wallet-sdk";
 import { describe, expect, it } from "vitest";
 import { reconcileIncomingPending } from "../../src/services/conceal/sync/incoming-pending-store";
 import { pruneStaleMempoolReceived } from "../../src/services/conceal/sync/messages-store";
 import { scanPoolForInbound } from "../../src/services/conceal/sync/pool";
-import type { WalletState } from "conceal-wallet-sdk";
 
 describe("mempool inbound scan (0-conf)", () => {
   it("skips empty / unusable pool slots", () => {

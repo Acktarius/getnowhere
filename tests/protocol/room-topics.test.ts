@@ -3,8 +3,8 @@ import {
   packCreateHandshake,
   unpackCreateHandshake,
 } from "../../src/services/protocol/SmartMessageProtocolAdapter";
-import { CHAT_PROTOCOL_VERSION } from "../../src/types/protocol";
 import type { ChatInviteHandshake } from "../../src/types/protocol";
+import { CHAT_PROTOCOL_VERSION } from "../../src/types/protocol";
 
 function sample(topic: ChatInviteHandshake["roomTopic"]): ChatInviteHandshake {
   return {

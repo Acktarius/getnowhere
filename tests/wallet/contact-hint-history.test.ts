@@ -1,22 +1,39 @@
-import { messages, type RawWalletV1, type WalletTransaction } from "conceal-wallet-sdk";
+import {
+  messages,
+  type RawWalletV1,
+  type WalletTransaction,
+} from "conceal-wallet-sdk";
 import { describe, expect, it } from "vitest";
 import { mapWalletTransactions } from "../../src/services/conceal/mapWalletTransactions";
 import { peekContactHint } from "../../src/services/protocol/SmartMessageProtocolAdapter";
 
 describe("peekContactHint", () => {
   it("maps create / register / revoke shorthand actions", () => {
-    expect(peekContactHint(messages.encodeSmartMessage("contact", "create", "x")))
-      .toEqual({ module: "contact", action: "create" });
     expect(
-      peekContactHint(messages.encodeSmartMessage("contact", "register", "i", "e", "r")),
+      peekContactHint(messages.encodeSmartMessage("contact", "create", "x")),
+    ).toEqual({ module: "contact", action: "create" });
+    expect(
+      peekContactHint(
+        messages.encodeSmartMessage("contact", "register", "i", "e", "r"),
+      ),
     ).toEqual({ module: "contact", action: "register" });
     expect(
-      peekContactHint(messages.encodeSmartMessage("contact", "revoke", "i", "r", "user_declined")),
+      peekContactHint(
+        messages.encodeSmartMessage(
+          "contact",
+          "revoke",
+          "i",
+          "r",
+          "user_declined",
+        ),
+      ),
     ).toEqual({ module: "contact", action: "revoke" });
   });
 
   it("ignores non-contact modules", () => {
-    expect(peekContactHint(messages.encodeSmartMessage("trust", "create", "x"))).toBeNull();
+    expect(
+      peekContactHint(messages.encodeSmartMessage("trust", "create", "x")),
+    ).toBeNull();
     expect(peekContactHint("not-a-smart-message")).toBeNull();
   });
 });
@@ -69,7 +86,13 @@ describe("mapWalletTransactions", () => {
           direction: "sent",
           counterpartyAddress: "ccx…",
           counterpartyName: "x",
-          body: messages.encodeSmartMessage("contact", "register", "i", "e", "r"),
+          body: messages.encodeSmartMessage(
+            "contact",
+            "register",
+            "i",
+            "e",
+            "r",
+          ),
           hasBody: true,
           paymentIdFrom: null,
           paymentIdTo: "abc",
@@ -85,7 +108,13 @@ describe("mapWalletTransactions", () => {
           direction: "received",
           counterpartyAddress: "recv:pid",
           counterpartyName: "PID",
-          body: messages.encodeSmartMessage("contact", "revoke", "i", "r", "room_revoked"),
+          body: messages.encodeSmartMessage(
+            "contact",
+            "revoke",
+            "i",
+            "r",
+            "room_revoked",
+          ),
           hasBody: true,
           paymentIdFrom: "pid",
           paymentIdTo: null,
@@ -105,7 +134,11 @@ describe("mapWalletTransactions", () => {
         },
       ],
       incomingPending: [
-        { hash: "pend2", amountAtomic: 1000, createdAt: Date.parse("2026-01-01T00:01:00.000Z") },
+        {
+          hash: "pend2",
+          amountAtomic: 1000,
+          createdAt: Date.parse("2026-01-01T00:01:00.000Z"),
+        },
       ],
     } as unknown as RawWalletV1;
 

@@ -1,14 +1,14 @@
 import {
   Briefcase,
   Heart,
+  type LucideIcon,
   MessageSquare,
   Palmtree,
   Users,
-  type LucideIcon,
 } from "lucide-react";
 import {
-  roomTopicById,
   type RoomTopicId,
+  roomTopicById,
 } from "@/services/protocol/roomTopics";
 
 const ICONS: Record<RoomTopicDefIcon, LucideIcon> = {

@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
 import { MAX_MESSAGE_BODY_BYTES } from "conceal-wallet-sdk";
+import { describe, expect, it } from "vitest";
 import {
   encodeRelaySmartBody,
   parseChatSmartBody,
 } from "../../src/services/protocol/SmartMessageProtocolAdapter";
-import { RELAY_MAX_TEXT_CHARS } from "../../src/types/protocol";
 import type { ChatRelayPayload } from "../../src/types/protocol";
+import { RELAY_MAX_TEXT_CHARS } from "../../src/types/protocol";
 
 describe("chat.relay wire encode/parse", () => {
   it("round-trips {contact,e,roomId,ts,text}", () => {

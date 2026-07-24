@@ -55,9 +55,7 @@ export function composerPreferredChannel(
   return preferredChannel(status);
 }
 
-export function connectFailureHint(
-  code: string | undefined,
-): string | null {
+export function connectFailureHint(code: string | undefined): string | null {
   if (!code) return null;
   if (code in CONNECT_ERROR_HINT) {
     return CONNECT_ERROR_HINT[code as ConnectFailureCode];

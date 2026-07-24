@@ -2,16 +2,14 @@
  * Mempool inbound scan — 0-conf owned outputs + smart-message reconstruction.
  * @see docs/features/lite-wallet.md
  */
+
+import type { transactions as txns, WalletKeys } from "conceal-wallet-sdk";
 import type { IncomingPendingRecord } from "@/services/conceal/sync/incoming-pending-store";
 import {
   reconstructReceivedMessage,
   type SdkMessageRecord,
 } from "@/services/conceal/sync/messages-store";
 import type { DaemonRawTransaction } from "@/services/conceal/sync/scan";
-import {
-  transactions as txns,
-  type WalletKeys,
-} from "conceal-wallet-sdk";
 
 type ToScan = (raw: DaemonRawTransaction) => txns.RawTransaction | null;
 type ScanOutputs = (

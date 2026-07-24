@@ -28,10 +28,7 @@ function writeAll(all: Record<string, RevokedRoomRecord>): void {
   getStorage().setItem(KEY, JSON.stringify(all));
 }
 
-export function rememberRevokedRoom(
-  roomId: string,
-  inviteId?: string,
-): void {
+export function rememberRevokedRoom(roomId: string, inviteId?: string): void {
   if (!roomId) return;
   const all = readAll();
   all[roomId] = {

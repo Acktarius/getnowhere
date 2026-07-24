@@ -3,10 +3,7 @@ import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  RoomTopicIcon,
-  roomTopicLabel,
-} from "@/components/RoomTopicIcon";
+import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { PeerStatusIndicator } from "@/components/StatusBadges";
 import { TopBar } from "@/components/TopBar";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
