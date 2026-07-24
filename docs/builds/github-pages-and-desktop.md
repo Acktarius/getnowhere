@@ -67,10 +67,14 @@ Alice/Bob on one machine (dev): keep using `npm run desktop:alice` / `desktop:bo
 ```bash
 npm run holepunch:install
 npm run desktop:install
+# Optional: regenerate icons/icon.png (ImageMagick `convert`/`magick`, or resvg fallback)
+bash desktop-electron/scripts/make-icon.sh
 GNH_PACKAGED_UI_URL=https://<owner>.github.io/<repo>/ npm run desktop:make
 ```
 
-Artifacts: `desktop-electron/out/make/`.
+Artifacts: `desktop-electron/out/make/deb/x64/*.deb` and `…/zip/linux/x64/*.zip`.
+
+Desktop icon: `desktop-electron/icons/icon.png` (128×128), wired in `forge.config.cjs` for packager + `.deb`.
 
 ## Out of scope here
 

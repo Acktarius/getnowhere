@@ -5,11 +5,14 @@
 
 const path = require("node:path");
 
+const iconPng = path.join(__dirname, "icons", "icon.png");
+
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {
   packagerConfig: {
     name: "GetNowHere",
     executableName: "getnowhere",
+    icon: iconPng,
     asar: true,
     extraResource: [
       path.join(__dirname, "resources", "sidecar"),
@@ -35,7 +38,12 @@ module.exports = {
       platforms: ["linux"],
       config: {
         options: {
-          maintainer: "Get Now Here",
+          name: "getnowhere",
+          productName: "Get Now Here",
+          bin: "getnowhere",
+          icon: iconPng,
+          maintainer: "Acktarius",
+          homepage: "https://github.com/acktarius/getnowhere",
           description:
             "Get Now Here desktop shell (Electron + local Hyperswarm sidecar; UI from GitHub Pages)",
         },

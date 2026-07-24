@@ -99,8 +99,8 @@ jobs:
         id: collect
         run: |
           mkdir -p output
-          find desktop-electron/out/make -type f \( -name '*.zip' -o -name '*.deb' \) -print
-          find desktop-electron/out/make -type f \( -name '*.zip' -o -name '*.deb' \) -exec cp -v {} output/ \;
+          find desktop-electron/out/make/deb/x64 -type f \( -name '*.zip' -o -name '*.deb' \) -print
+          find desktop-electron/out/make/deb/x64 -type f \( -name '*.zip' -o -name '*.deb' \) -exec cp -v {} output/ \;
           ls -la output
           (
             cd output
