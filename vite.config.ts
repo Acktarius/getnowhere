@@ -69,6 +69,12 @@ export default defineConfig(({ command }) => ({
       },
     },
   },
+  // Module workers (`new Worker(..., { type: "module" }` in scan-pool). Default
+  // worker.format "iife" conflicts with inlineDynamicImports (Rollup rejects
+  // IIFE/UMD for code-splitting builds). ES matches the Worker type.
+  worker: {
+    format: "es",
+  },
   optimizeDeps: {
     exclude: ["conceal-wallet-sdk", "conceal-lib-js"],
   },
