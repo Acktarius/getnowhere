@@ -11,17 +11,20 @@ import {
   getMessagesForRoom,
 } from "@/services/p2p/HolepunchChatTransport";
 import { getHolepunchWsUrl } from "@/services/p2p/HolepunchSidecarClient";
+import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
 import {
   canComposeMessages,
   composerDisabledReason,
   composerPreferredChannel,
-  isRetryableConnectFailure,
 } from "@/services/protocol/composerGate";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { toastError, toastSuccess } from "@/state/toastStore";
 import type { ChatMessage } from "@/types/models";
-import { RELAY_MAX_TEXT_CHARS } from "@/types/protocol";
+import {
+  type ConnectFailureCode,
+  RELAY_MAX_TEXT_CHARS,
+} from "@/types/protocol";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -135,7 +138,9 @@ export function ChatRoomScreen() {
     // resend/accept.  Stop polling immediately to prevent the connected↔mismatch loop.
     if (
       room.lifecycleStatus === "connect_failed" &&
-      !isRetryableConnectFailure(room.lastConnectError)
+      !isRetryableConnectFailure(
+        (room.lastConnectError ?? "unknown") as ConnectFailureCode,
+      )
     )
       return;
     const needsConnect =

@@ -13,7 +13,7 @@ import {
 import type { MessageChannel, RoomLifecycleStatus } from "@/types/models";
 import type { ConnectFailureCode } from "@/types/protocol";
 
-export const COMPOSER_DISABLED_REASON: Record<
+const COMPOSER_DISABLED_REASON: Record<
   Exclude<RoomLifecycleStatus, "connected">,
   string
 > = {
@@ -40,7 +40,7 @@ const CONNECT_ERROR_HINT: Record<ConnectFailureCode, string> = {
   unknown: "Unknown connect failure.",
 };
 
-/** @deprecated Prefer canComposeMessages(status). */
+/** @deprecated Prefer canSendLiveMessages(status) or assertCanSendLive(status) for live-only checks. */
 export function isComposerEnabled(status: RoomLifecycleStatus): boolean {
   return canSendLiveMessages(status);
 }
@@ -76,12 +76,6 @@ export function composerDisabledReason(
     );
   }
   return COMPOSER_DISABLED_REASON[status];
-}
-
-/** timeout/unreachable/unknown → auto-retry; crypto_mismatch → requires resend. */
-export function isRetryableConnectFailure(code: string | undefined): boolean {
-  if (!code) return true;
-  return code !== "crypto_mismatch";
 }
 
 export function assertCanSendLive(status: RoomLifecycleStatus): void {

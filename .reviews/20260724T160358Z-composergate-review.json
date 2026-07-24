@@ -1,0 +1,111 @@
+{
+  "review_id": "20260724T160358Z-composergate",
+  "kind": "review",
+  "created_at": "2026-07-24T16:03:58.417Z",
+  "scope": {
+    "type": "paths",
+    "description": "paths — composergate",
+    "head_sha": "b5bf37901040f541a57c7cc56f6295022dcabd02",
+    "paths": ["src/services/protocol/composerGate.ts"]
+  },
+  "lenses": ["architecture"],
+  "summary": {
+    "tentative_count": 4,
+    "confirmed": 3,
+    "downgraded": 0,
+    "false_positive": 1,
+    "needs_decision": 0,
+    "headline": "Reviewed composerGate.ts (architecture). 4 tentative → 3 confirmed (1 important, 2 minor), 1 false positive. Top action: unify isRetryableConnectFailure with holepunchPolicy / docs.",
+    "top_actions": [
+      "Single-source isRetryableConnectFailure: align composerGate with holepunchPolicy (or delete the unused policy helper) and point ChatRoomScreen + tests + p2pchatprotocol.md at one module",
+      "Fix @deprecated JSDoc on isComposerEnabled — prefer canSendLiveMessages / assertCanSendLive, not canComposeMessages",
+      "Optionally move COMPOSER_DISABLED_REASON / CONNECT_ERROR_HINT out of protocol into UI copy if layering is a hard rule"
+    ]
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Divergent duplicate isRetryableConnectFailure",
+      "lens": "architecture",
+      "location": "src/services/protocol/composerGate.ts:82",
+      "claim": "Duplicate isRetryableConnectFailure with divergent semantics vs holepunchPolicy creates split ownership of connect-retry policy; UI uses composerGate while docs/tests assert holepunchPolicy.",
+      "evidence": "composerGate retries any code except crypto_mismatch (incl. undefined/aborted/expired); holepunchPolicy allowlists timeout|unreachable|unknown. ChatRoomScreen imports composerGate; docs §Connect failure/retry and composer-gate.test.ts assert holepunchPolicy, which has zero production callers.",
+      "severity": "important",
+      "phase1_confidence": "high",
+      "verdict": "confirmed",
+      "verdict_reason": "Same-named helpers disagree. UI path uses the broader composerGate predicate; documented policy and tests cover holepunchPolicy. JSDoc on composerGate even states the holepunchPolicy taxonomy while implementing the broader gate."
+    },
+    {
+      "id": "F-002",
+      "title": "UI copy owned by protocol gate",
+      "lens": "architecture",
+      "location": "src/services/protocol/composerGate.ts:16",
+      "claim": "User-facing presentation strings (COMPOSER_DISABLED_REASON / CONNECT_ERROR_HINT) are owned by the protocol service layer, mixing UI copy into protocol.",
+      "evidence": "English prose maps in composerGate are returned by composerDisabledReason and rendered in ChatRoomScreen; also feed assertCanSend* Error messages.",
+      "severity": "minor",
+      "phase1_confidence": "medium",
+      "verdict": "confirmed",
+      "verdict_reason": "Presentation strings live under src/services/protocol/ while project rules prefer UI separate from protocol. Functional impact is low; cohesion of a composer-facing adapter softens but does not erase the layer mix."
+    },
+    {
+      "id": "F-003",
+      "title": "Dual import surface via re-exports",
+      "lens": "architecture",
+      "location": "src/services/protocol/composerGate.ts:105",
+      "claim": "Thin wrappers plus barrel re-export of roomLifecycle predicates create dual import surfaces for the same send/channel rules.",
+      "evidence": "canComposeMessages/composerPreferredChannel wrap roomLifecycle; file also re-exports canSendLiveMessages, canSendMessages, isRelayEligibleStatus, preferredChannel.",
+      "severity": "minor",
+      "phase1_confidence": "medium",
+      "verdict": "false_positive",
+      "verdict_reason": "Wrappers are intentional UI vocabulary aliases. Production does not import the re-exported roomLifecycle predicates from composerGate; transport/catalog import roomLifecycle directly. Unused re-exports are dead surface, not an active dual-import defect."
+    },
+    {
+      "id": "F-004",
+      "title": "Misleading deprecation target for isComposerEnabled",
+      "lens": "architecture",
+      "location": "src/services/protocol/composerGate.ts:43",
+      "claim": "Deprecated isComposerEnabled aliases live-only canSendLiveMessages while canComposeMessages is broader relay+live, creating a misleading module API boundary.",
+      "evidence": "isComposerEnabled → canSendLiveMessages; canComposeMessages → canSendMessages. For accepted/connecting/connect_failed they disagree. JSDoc says prefer canComposeMessages.",
+      "severity": "minor",
+      "phase1_confidence": "high",
+      "verdict": "confirmed",
+      "verdict_reason": "Deprecation comment points callers at a broader predicate and would flip live-only to relay+live. Tests still treat isComposerEnabled as live-only; no production callers remain — API/docs hazard, not a live bug."
+    }
+  ],
+  "coverage": {
+    "files_reviewed": ["src/services/protocol/composerGate.ts"],
+    "files_skipped": [],
+    "lenses_without_findings": []
+  },
+  "signals": {
+    "tools": [
+      {
+        "name": "tsc --noEmit (root types)",
+        "status": "pass"
+      },
+      {
+        "name": "biome lint src/services/protocol/composerGate.ts",
+        "status": "pass"
+      },
+      {
+        "name": "vitest tests/protocol/composer-gate.test.ts",
+        "status": "pass",
+        "summary": "7 passed"
+      },
+      {
+        "name": "review signals workspace map",
+        "status": "skipped",
+        "summary": "path outside workspace packages — used root tooling"
+      }
+    ]
+  },
+  "stats": {
+    "scouts": 1,
+    "skeptics_dedicated": 1,
+    "skeptics_batched": 1,
+    "inline_verdicts": 0,
+    "grounded_skips": 0,
+    "carried_forward": 0,
+    "second_opinions": 0
+  }
+}
