@@ -99,8 +99,21 @@ jobs:
         id: collect
         run: |
           mkdir -p output
-          find desktop-electron/out/make/deb/x64 -type f \( -name '*.zip' -o -name '*.deb' \) -print
-          find desktop-electron/out/make/deb/x64 -type f \( -name '*.zip' -o -name '*.deb' \) -exec cp -v {} output/ \;
+          # Forge nests: out/make/deb/x64/*.deb and out/make/zip/linux/x64/*.zip
+          shopt -s nullglob
+          files=(
+            desktop-electron/out/make/deb/x64/*.deb
+            desktop-electron/out/make/zip/linux/x64/*.zip
+          )
+          if ((${#files[@]} == 0)); then
+            mapfile -t files < <(find desktop-electron/out/make -type f \( -name '*.deb' -o -name '*.zip' \))
+          fi
+          if ((${#files[@]} == 0)); then
+            echo "ERROR: no desktop artifacts under desktop-electron/out/make"
+            find desktop-electron/out -type f | head -100
+            exit 1
+          fi
+          cp -v "${files[@]}" output/
           ls -la output
           (
             cd output
@@ -111,7 +124,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: getnowhere-linux-desktop
           path: output/
@@ -123,6 +136,7 @@ jobs:
         with:
           draft: true
           files: output/*
+          fail_on_unmatched_files: true
           body: |
             **Get Now Here — Ubuntu desktop (Electron + sidecar)**
 
@@ -135,3 +149,4 @@ jobs:
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
