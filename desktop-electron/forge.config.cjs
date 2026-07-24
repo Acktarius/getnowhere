@@ -1,0 +1,45 @@
+/**
+ * Electron Forge: Linux package with sidecar + Node runtime as extraResource.
+ * @see docs/builds/github-pages-and-desktop.md
+ */
+
+const path = require("node:path");
+
+/** @type {import('@electron-forge/shared-types').ForgeConfig} */
+module.exports = {
+  packagerConfig: {
+    name: "GetNowHere",
+    executableName: "getnowhere",
+    asar: true,
+    extraResource: [
+      path.join(__dirname, "resources", "sidecar"),
+      path.join(__dirname, "resources", "runtime"),
+      path.join(__dirname, "resources", "gnh-defaults.json"),
+    ],
+    ignore: (file) => {
+      if (file === "/out" || file.startsWith("/out/")) return true;
+      if (file === "/resources" || file.startsWith("/resources/")) return true;
+      if (file === "/scripts" || file.startsWith("/scripts/")) return true;
+      if (file === "/forge.config.cjs") return true;
+      return false;
+    },
+  },
+  rebuildConfig: {},
+  makers: [
+    {
+      name: "@electron-forge/maker-zip",
+      platforms: ["linux"],
+    },
+    {
+      name: "@electron-forge/maker-deb",
+      platforms: ["linux"],
+      config: {
+        options: {
+          maintainer: "Get Now Here",
+          description:
+            "Get Now Here desktop shell (Electron + local Hyperswarm sidecar; UI from GitHub Pages)",
+        },
+      },
+    },
+  ],
+};

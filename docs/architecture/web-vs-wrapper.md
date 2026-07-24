@@ -63,6 +63,13 @@ Rules:
 - Treat wrapper changes as release-engineering unless they change runtime
   behavior documented elsewhere
 
+## Packaged desktop (Ubuntu)
+
+CI publishes the UI to **GitHub Pages** and a Linux **Electron Forge** zip/deb
+that starts Electron + a bundled Hyperswarm sidecar, then loads the Pages URL.
+One-click desktop does **not** put Hyperswarm in the renderer. Details:
+`docs/builds/github-pages-and-desktop.md`.
+
 ## Decision boundary
 
 | Put it in… | When |

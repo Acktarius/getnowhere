@@ -81,6 +81,13 @@ type SidecarEvent =
 Mobile Bare IPC must speak this same schema (or a versioned superset documented
 here first).
 
+## Pages UI + packaged desktop
+
+Ship path (CI): GitHub Pages hosts the Vite `dist/`; Linux Electron Forge package
+bundles Electron + a Node sidecar process and loads that Pages URL. See
+`docs/builds/github-pages-and-desktop.md`. Web-dev still uses `npm run holepunch`
++ `npm run dev` without packaging.
+
 ## Storage and sync
 
 If replicated history is added later, keep replication in the runtime and expose

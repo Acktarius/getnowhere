@@ -13,6 +13,8 @@
     "desktop:bob": "npm --prefix desktop-electron run start:bob",
     "desktop:alice:isolated": "npm --prefix desktop-electron run start:alice:isolated",
     "desktop:bob:isolated": "npm --prefix desktop-electron run start:bob:isolated",
+    "desktop:prepare": "npm --prefix desktop-electron run prepare:sidecar",
+    "desktop:make": "npm --prefix desktop-electron run make",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "format": "biome format .",

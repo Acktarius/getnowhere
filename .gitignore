@@ -21,3 +21,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Electron Forge packaging (staged sidecar/Node + make output)
+desktop-electron/out/
+desktop-electron/resources/sidecar/
+desktop-electron/resources/runtime/
+desktop-electron/resources/gnh-defaults.json

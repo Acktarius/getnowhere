@@ -1,6 +1,7 @@
 /**
- * Electron shell: Vite UI + holepunch-sidecar child (no hyperswarm in renderer).
+ * Electron shell: Vite/Pages UI + holepunch-sidecar child (no hyperswarm in renderer).
  * @see docs/architecture/electron-desktop.md
+ * @see docs/builds/github-pages-and-desktop.md
  */
 
 import { spawn } from "node:child_process";
@@ -28,7 +29,52 @@ const SWARM_PORT = Number(process.env.HOLEPUNCH_PORT ?? defaultPort);
 
 const BASE_WS_URL =
   process.env.GNH_HOLEPUNCH_WS_URL ?? `ws://${SWARM_HOST}:${SWARM_PORT}`;
-const UI_URL = process.env.GNH_UI_URL ?? "http://127.0.0.1:5173";
+
+/**
+ * Packaged default UI URL from resources/gnh-defaults.json (CI writes Pages URL).
+ * Dev default remains Vite.
+ */
+function resolveUiUrl() {
+  if (process.env.GNH_UI_URL) return process.env.GNH_UI_URL;
+  if (app.isPackaged) {
+    try {
+      const defaultsPath = join(process.resourcesPath, "gnh-defaults.json");
+      if (existsSync(defaultsPath)) {
+        const parsed = JSON.parse(readFileSync(defaultsPath, "utf8"));
+        if (typeof parsed.uiUrl === "string" && parsed.uiUrl.trim()) {
+          return parsed.uiUrl.trim();
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return "http://127.0.0.1:5173";
+}
+
+const UI_URL = resolveUiUrl();
+
+/**
+ * Dev: repo holepunch-sidecar + system node.
+ * Packaged: resources/sidecar + resources/runtime/node.
+ */
+function sidecarLaunch() {
+  if (app.isPackaged) {
+    const root = join(process.resourcesPath, "sidecar");
+    return {
+      entry: join(root, "src", "server.mjs"),
+      cwd: root,
+      nodeBin:
+        process.env.GNH_NODE_BIN ??
+        join(process.resourcesPath, "runtime", "node"),
+    };
+  }
+  return {
+    entry: join(repoRoot, "holepunch-sidecar", "src", "server.mjs"),
+    cwd: join(repoRoot, "holepunch-sidecar"),
+    nodeBin: process.env.GNH_NODE_BIN ?? "node",
+  };
+}
 
 /**
  * Shared-mode token handoff: owner writes token to a tmp lockfile; attacher reads it.
@@ -115,7 +161,6 @@ function windowTitle(tag) {
 function adoptSharedToken() {
   const fromLock = readTokenLock();
   const fromEnv = process.env.GNH_SIDECAR_TOKEN?.trim() || null;
-  // Shared default matches owner when lockfile is missing/stale.
   authToken = fromLock ?? fromEnv ?? "gnh-desktop-shared";
   if (fromLock) {
     log(`shared token from lockfile ${tokenLockPath()}`);
@@ -127,13 +172,19 @@ function adoptSharedToken() {
 }
 
 async function spawnSidecar() {
-  const sidecarEntry = join(repoRoot, "holepunch-sidecar", "src", "server.mjs");
-  const nodeBin = process.env.GNH_NODE_BIN ?? "node";
+  const { entry, cwd, nodeBin } = sidecarLaunch();
+  if (!existsSync(entry)) {
+    throw new Error(`Sidecar entry missing: ${entry}`);
+  }
+  if (!existsSync(nodeBin) && nodeBin !== "node") {
+    throw new Error(`Bundled Node missing: ${nodeBin}`);
+  }
+
   log(
     `spawning Hyperswarm sidecar (${nodeBin}) on ${SWARM_HOST}:${SWARM_PORT}`,
   );
 
-  swarmChild = spawn(nodeBin, [sidecarEntry], {
+  swarmChild = spawn(nodeBin, [entry], {
     stdio: "inherit",
     env: {
       ...process.env,
@@ -141,7 +192,7 @@ async function spawnSidecar() {
       HOLEPUNCH_PORT: String(SWARM_PORT),
       GNH_SIDECAR_TOKEN: authToken,
     },
-    cwd: join(repoRoot, "holepunch-sidecar"),
+    cwd,
   });
 
   swarmChild.on("exit", (code, signal) => {
@@ -158,7 +209,9 @@ async function spawnSidecar() {
     clearTokenLock();
     throw new Error(
       `Hyperswarm bridge did not listen on ${SWARM_HOST}:${SWARM_PORT}.\n` +
-        "Run: npm run holepunch:install",
+        (app.isPackaged
+          ? "Packaged sidecar failed to start."
+          : "Run: npm run holepunch:install"),
     );
   }
   ownsSwarm = true;
@@ -172,7 +225,6 @@ async function ensureLocalSwarm() {
     return;
   }
 
-  // Shared: first binder owns; second attaches with the same token.
   if (await portOpen(SWARM_HOST, SWARM_PORT)) {
     ownsSwarm = false;
     adoptSharedToken();
@@ -191,7 +243,9 @@ async function ensureLocalSwarm() {
     }
     throw new Error(
       `Hyperswarm bridge did not listen on ${SWARM_HOST}:${SWARM_PORT}.\n` +
-        "Run: npm run holepunch:install",
+        (app.isPackaged
+          ? "Packaged sidecar failed to start."
+          : "Run: npm run holepunch:install"),
     );
   }
 }
@@ -266,7 +320,6 @@ function createWindow() {
       session: ses,
       additionalArguments: [
         `--gnh-role=${ROLE}`,
-        // Base URL only — never embed ?token= here (Electron truncates at ?).
         `--gnh-holepunch-ws=${BASE_WS_URL}`,
         `--gnh-ws-token=${authToken}`,
       ],

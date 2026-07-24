@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Electron shell for Get Now Here (Vite UI + localhost Hyperswarm sidecar child)",
+  "description": "Electron shell for Get Now Here (Vite/Pages UI + localhost Hyperswarm sidecar child)",
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
@@ -11,9 +11,18 @@
     "start:bob": "GNH_ROLE=bob electron .",
     "start:alice:isolated": "GNH_ROLE=alice GNH_SWARM_MODE=isolated electron .",
     "start:bob:isolated": "GNH_ROLE=bob GNH_SWARM_MODE=isolated HOLEPUNCH_PORT=7902 electron .",
+    "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
+    "package": "npm run prepare:sidecar && electron-forge package --platform=linux --arch=x64",
+    "make": "npm run prepare:sidecar && electron-forge make --platform=linux --arch=x64",
     "install:app": "npm install"
   },
   "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
     "electron": "^40.10.6"
+  },
+  "config": {
+    "forge": "./forge.config.cjs"
   }
 }

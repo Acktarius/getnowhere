@@ -1,0 +1,137 @@
+name: Pages and Desktop
+
+# Job 1: GitHub Pages UI (dist/)
+# Job 2: Electron Forge Linux package (Electron + bundled sidecar process)
+# @see docs/builds/github-pages-and-desktop.md
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-and-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pages:
+    name: GitHub Pages UI
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  desktop-linux:
+    name: Electron + sidecar (Linux)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            desktop-electron/package-lock.json
+            holepunch-sidecar/package-lock.json
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot dpkg rpm
+
+      - name: Install desktop deps
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Resolve Pages UI URL
+        id: ui
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          REPO="${{ github.event.repository.name }}"
+          # Project site default; override via repo var GNH_PACKAGED_UI_URL (e.g. https://getnowhere.im/)
+          DEFAULT_URL="https://${OWNER}.github.io/${REPO}/"
+          echo "url=${GNH_PACKAGED_UI_URL:-$DEFAULT_URL}" >> "$GITHUB_OUTPUT"
+        env:
+          GNH_PACKAGED_UI_URL: ${{ vars.GNH_PACKAGED_UI_URL }}
+
+      - name: Make Linux package
+        working-directory: desktop-electron
+        env:
+          GNH_PACKAGED_UI_URL: ${{ steps.ui.outputs.url }}
+          GNH_BUNDLE_NODE_VERSION: "24.14.1"
+        run: npm run make
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          mkdir -p output
+          find desktop-electron/out/make -type f \( -name '*.zip' -o -name '*.deb' \) -print
+          find desktop-electron/out/make -type f \( -name '*.zip' -o -name '*.deb' \) -exec cp -v {} output/ \;
+          ls -la output
+          (
+            cd output
+            sha256sum * > SHA256SUMS.txt
+          )
+          echo "hash_block<<EOF" >> "$GITHUB_OUTPUT"
+          cat output/SHA256SUMS.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: getnowhere-linux-desktop
+          path: output/
+          retention-days: 14
+
+      - name: Draft GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: output/*
+          body: |
+            **Get Now Here — Ubuntu desktop (Electron + sidecar)**
+
+            - UI: GitHub Pages (`${{ steps.ui.outputs.url }}`)
+            - App: Electron Forge zip/deb (spawns bundled Hyperswarm sidecar on `ws://127.0.0.1:7901`)
+
+            ### Checksums
+            ```
+            ${{ steps.collect.outputs.hash_block }}
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

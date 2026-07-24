@@ -31,12 +31,14 @@ getnowhere/
   desktop-electron/         # Electron shell (Alice/Bob + localhost swarm child)
     main.mjs
     preload.cjs
-    package.json
+    forge.config.cjs        # Linux Forge package (sidecar as extraResource)
+    scripts/prepare-sidecar.mjs
   docs/
     architecture/
+    builds/
+      github-pages-and-desktop.md
     security/
     features/
-    builds/
     prompts/
 ```
 
