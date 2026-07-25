@@ -1,0 +1,19 @@
+{
+  "plan": {
+    "engine": "specs",
+    "dir": "specs"
+  },
+  "adr": {
+    "enabled": true,
+    "dir": "docs",
+    "decisionsDoc": "decisions.md"
+  },
+  "e2e": {
+    "harness": {
+      "description": "Vite preview UI (e2e/ + playwright.config.ts) on 127.0.0.1:5173",
+      "recordedAt": "2026-07-25T02:07:25.279Z",
+      "start": "npm run build && npm run preview -- --host 127.0.0.1 --port 5173",
+      "dir": "e2e"
+    }
+  }
+}
