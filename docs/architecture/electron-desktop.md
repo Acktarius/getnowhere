@@ -57,6 +57,8 @@ Either start order works in shared mode. Closing the **attacher** only stops tha
 
 ### Shell UX
 
+- Default `BrowserWindow` size is **780×800** so the frame fits the Vite
+  `.app-shell` desktop max-width (760px) without changing CSS layout.
 - No application / window menu bar (`Menu.setApplicationMenu(null)`).
 - Use the window **close** control to exit.
 - Close always quits that Electron app; if it owns the sidecar child, the child

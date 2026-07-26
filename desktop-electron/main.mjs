@@ -306,8 +306,9 @@ function createWindow() {
       ? "shared:owner"
       : "shared:attach";
 
+  // Match `.app-shell` desktop max-width (760) + ≥768 media query; do not change CSS layout.
   mainWindow = new BrowserWindow({
-    width: 1180,
+    width: 780,
     height: 800,
     title: windowTitle(modeTag),
     autoHideMenuBar: true,
