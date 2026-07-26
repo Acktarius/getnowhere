@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ConcealSmartMessageAdapter } from "../../src/services/conceal/ConcealSmartMessageAdapter";
 import {
   __resetHolepunchTransport,
   __setHolepunchConnectTimeoutMs,
@@ -139,7 +140,7 @@ describe("session bootstrap + holepunch connect", () => {
     expect(canSendLiveMessages(result.lifecycleStatus)).toBe(false);
   });
 
-  it("connects when a peer is present and only then allows send", async () => {
+  it("sends via L1 relay before connect, then live once Holepunch-connected", async () => {
     __setHolepunchSidecarBackend(createAutoPeerSidecarBackend());
     __setHolepunchSkipProof(true);
     const { handshake, session, contract } = await buildContract(
@@ -161,15 +162,27 @@ describe("session bootstrap + holepunch connect", () => {
 
     const pending = await HolepunchChatTransport.getRoom("room-c");
     expect(canSendLiveMessages(pending!.lifecycleStatus)).toBe(false);
-    await expect(
-      HolepunchChatTransport.sendMessage("room-c", "hi"),
-    ).rejects.toThrow(/accepted|connecting|Holepunch/i);
+
+    // Eligible contact ("c1") is accepted but not yet Holepunch-connected —
+    // send must still succeed via L1 relay (grey bubble), never rejected.
+    const relaySpy = vi
+      .spyOn(ConcealSmartMessageAdapter, "sendChatRelay")
+      .mockResolvedValue({ txHash: "relay-tx-c" });
+    const relayMsg = await HolepunchChatTransport.sendMessage("room-c", "hi");
+    expect(relayMsg.channel).toBe("relay");
+    expect(relayMsg.status).toBe("delivered");
+    expect(relaySpy).toHaveBeenCalledWith(
+      expect.objectContaining({ contactId: "c1" }),
+    );
 
     const connected = await HolepunchChatTransport.connect(contract);
     expect(connected.lifecycleStatus).toBe("connected");
     const msg = await HolepunchChatTransport.sendMessage("room-c", "hello");
     expect(msg.text).toBe("hello");
     expect(msg.kind).toBe("text");
+    expect(msg.channel).toBe("live");
+
+    relaySpy.mockRestore();
   });
 
   it("seals and opens content with ChaCha20-Poly1305", async () => {

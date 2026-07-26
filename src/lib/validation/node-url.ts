@@ -1,4 +1,4 @@
-/** Conceal daemon proxy URLs must be HTTPS and use a trailing slash before RPC paths. */
+/** Daemon URLs must be HTTPS with a trailing slash before RPC paths. */
 export function normalizeNodeUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return trimmed;
@@ -11,13 +11,8 @@ export function getNodeUrlFormatHints(url: string): string[] {
   if (!trimmed) return [];
 
   const hints: string[] = [];
-  const isProxyPath = trimmed.startsWith("/");
-  if (
-    !isProxyPath &&
-    !trimmed.toLowerCase().startsWith("https://") &&
-    !trimmed.toLowerCase().startsWith("http://")
-  ) {
-    hints.push("URL must start with https:// (or /ccx-daemon/ in local dev)");
+  if (!trimmed.toLowerCase().startsWith("https://")) {
+    hints.push("URL must start with https://");
   }
   if (!trimmed.endsWith("/")) {
     hints.push("Add a trailing slash (/) at the end, e.g. …/daemon/");
@@ -33,15 +28,10 @@ export function validateNodeUrlFormat(
     return { ok: false, errors: ["Enter a node URL."] };
   }
 
-  const isProxyPath = trimmed.startsWith("/");
-  if (
-    !isProxyPath &&
-    !trimmed.toLowerCase().startsWith("https://") &&
-    !trimmed.toLowerCase().startsWith("http://")
-  ) {
+  if (!trimmed.toLowerCase().startsWith("https://")) {
     return {
       ok: false,
-      errors: ["URL must start with https:// (or /ccx-daemon/ in local dev)"],
+      errors: ["URL must start with https://"],
     };
   }
 
