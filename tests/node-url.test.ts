@@ -18,7 +18,10 @@ describe("node-url", () => {
   it("validates https + non-empty", () => {
     expect(validateNodeUrlFormat("").ok).toBe(false);
     expect(validateNodeUrlFormat("http://insecure/").ok).toBe(false);
-    expect(validateNodeUrlFormat("https://ok/daemon/").ok).toBe(true);
+    expect(validateNodeUrlFormat("/ccx-daemon/").ok).toBe(false);
+    expect(
+      validateNodeUrlFormat("https://explorer.conceal.network/daemon/").ok,
+    ).toBe(true);
   });
 
   it("hints while editing", () => {
