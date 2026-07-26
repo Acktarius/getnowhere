@@ -1,15 +1,20 @@
 # GitHub Pages UI + Linux desktop (Electron + sidecar)
 
-**One workflow, two jobs.** See `.github/workflows/pages-and-desktop.yml`.
+**Two workflows.** Pages and desktop releases are independent.
+
+| Workflow | File | Triggers |
+|---|---|---|
+| GitHub Pages | `.github/workflows/github-pages.yml` | push to `main`, `workflow_dispatch` |
+| Release Electron + sidecar | `.github/workflows/release-electron-sidecar.yml` | `v*` tags, `workflow_dispatch` |
 
 ```text
-Job 1 — Pages          npm run build → dist/ → GitHub Pages
-Job 2 — Desktop Linux  Electron Forge zip/deb
-                         ├─ Electron shell
-                         ├─ bundled Node (resources/runtime/node)
-                         └─ holepunch-sidecar (resources/sidecar)
-                              listens ws://127.0.0.1:7901
-                         loads UI from Pages URL
+Pages          npm run build → dist/ → GitHub Pages
+Desktop Linux  Electron Forge zip/deb
+                 ├─ Electron shell
+                 ├─ bundled Node (resources/runtime/node)
+                 └─ holepunch-sidecar (resources/sidecar)
+                      listens ws://127.0.0.1:7901
+                 loads UI from Pages URL
 ```
 
 Hyperswarm stays in the sidecar process. The Vite/Pages UI never imports it.
@@ -30,22 +35,24 @@ Production build keeps `base: "./"` in `vite.config.ts` so assets work from:
 
 Do not switch to absolute `/` unless you only ever host at domain root.
 
-## Job 1 — GitHub Pages
+## GitHub Pages workflow
 
-Triggers with the workflow (`main`, `v*` tags, `workflow_dispatch`).
+Triggers: push to `main`, or manual `workflow_dispatch`. Does **not** run on version tags.
 
-- Node 24, `npm ci`, `npm run build`
+- Job `test`: Node 24, `npm ci`, `npm run test` (Vitest)
+- Job `pages` (`needs: test`): `npm ci`, `npm run build` — skipped if tests fail
 - Uploads `dist/` via `upload-pages-artifact`
 - Deploys with `deploy-pages` (environment `github-pages`)
 
-## Job 2 — Electron + sidecar (Ubuntu)
+## Release Electron + sidecar workflow
 
-Same workflow, independent of Job 1 success (UI is loaded at runtime from Pages).
+Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages workflow (UI is loaded at runtime from Pages).
 
 - `runs-on: ubuntu-24.04`
 - Stages sidecar + official Node linux binary via `desktop-electron/scripts/prepare-sidecar.mjs`
 - `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`
 - Uploads CI artifacts; on `v*` tags creates a **draft** GitHub Release with checksums
+- Manual dispatch without a tag still builds and uploads artifacts; it does not create a release
 
 Packaged defaults (`resources/gnh-defaults.json`):
 
