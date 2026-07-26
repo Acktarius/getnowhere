@@ -20,7 +20,7 @@ Hyperswarm.
 8. `security/encryption.md` — threat model + L1/L2/L3
 9. `security/p2pchatprotocol.md`
 10. `builds/expo-eas-ios-build.md`
-10b. `builds/github-pages-and-desktop.md` — Pages UI + Linux Electron/sidecar
+10b. `builds/github-pages-and-desktop.md` — Pages UI + Linux Electron/sidecar (separate workflows)
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1 sealed chat fallback (grey bubbles)
