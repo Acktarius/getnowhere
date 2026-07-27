@@ -8,22 +8,25 @@
 | Release Electron + sidecar | `.github/workflows/release-electron-sidecar.yml` | `v*` tags, `workflow_dispatch` |
 
 ```text
-Pages          npm run build → dist/ → GitHub Pages
-Desktop Linux  Electron Forge zip/deb
+Pages          npm run build → dist/ → GitHub Pages (browser)
+Desktop Linux  npm run build → dist/ staged into package
+                 Electron Forge zip/deb
                  ├─ Electron shell
+                 ├─ embedded UI (resources/ui ← Vite dist/)
                  ├─ bundled Node (resources/runtime/node)
                  └─ holepunch-sidecar (resources/sidecar)
                       listens ws://127.0.0.1:7901
-                 loads UI from Pages URL
+                 loads UI via loadFile(resources/ui/index.html)
 ```
 
-Hyperswarm stays in the sidecar process. The Vite/Pages UI never imports it.
+Hyperswarm stays in the sidecar process. The Vite UI never imports it.
+
+Packaged desktop does **not** load GitHub Pages at runtime. Embedding `dist/`
+avoids a remote UI origin (Pages compromise / remote XSS surface) inside Electron.
 
 ## Repo setup (once)
 
-1. **Settings → Pages → Source = GitHub Actions**
-2. Optional repo variable `GNH_PACKAGED_UI_URL` (e.g. `https://getnowhere.im/`) to override the default project Pages URL `https://<owner>.github.io/<repo>/`
-3. Custom domain later: add `public/CNAME` only when DNS is ready (not required for Pages Actions)
+1. **Settings → Pages → Source = GitHub Actions** (browser / mobile web only)
 
 ## Vite `base`
 
@@ -31,7 +34,7 @@ Production build keeps `base: "./"` in `vite.config.ts` so assets work from:
 
 - GitHub project Pages (`/repo/`)
 - custom domain root
-- optional future `file://` embedding
+- packaged Electron `file://` (`resources/ui/`)
 
 Do not switch to absolute `/` unless you only ever host at domain root.
 
@@ -46,26 +49,22 @@ Triggers: push to `main`, or manual `workflow_dispatch`. Does **not** run on ver
 
 ## Release Electron + sidecar workflow
 
-Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages workflow (UI is loaded at runtime from Pages).
+Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages workflow.
 
 - `runs-on: ubuntu-24.04`
-- Stages sidecar + official Node linux binary via `desktop-electron/scripts/prepare-sidecar.mjs`
+- Root `npm ci` + `npm run build` → `dist/`
+- Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
 - `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`
 - Uploads CI artifacts; on `v*` tags creates a **draft** GitHub Release with checksums
 - Manual dispatch without a tag still builds and uploads artifacts; it does not create a release
 
-Packaged defaults (`resources/gnh-defaults.json`):
-
-| Field | Meaning |
-|---|---|
-| `uiUrl` | Pages URL Electron loads (`GNH_UI_URL` overrides at runtime) |
+Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override with `GNH_UI_URL` if needed.
 
 ## Install / run (user)
 
-1. Open the Pages site once (confirm UI loads in a browser).
-2. Download the `.deb` or `.zip` from the draft release / Actions artifact.
-3. Install or extract and run `getnowhere`.
-4. App starts Electron, spawns sidecar, opens Pages UI, talks to `ws://127.0.0.1:7901`.
+1. Download the `.deb` or `.zip` from the draft release / Actions artifact.
+2. Install or extract and run `getnowhere`.
+3. App starts Electron, spawns sidecar, loads embedded UI, talks to `ws://127.0.0.1:7901`.
 
 Alice/Bob on one machine (dev): keep using `npm run desktop:alice` / `desktop:bob` with `npm run dev`.
 
@@ -74,9 +73,10 @@ Alice/Bob on one machine (dev): keep using `npm run desktop:alice` / `desktop:bo
 ```bash
 npm run holepunch:install
 npm run desktop:install
+npm run build
 # Optional: regenerate icons/icon.png (ImageMagick `convert`/`magick`, or resvg fallback)
 bash desktop-electron/scripts/make-icon.sh
-GNH_PACKAGED_UI_URL=https://<owner>.github.io/<repo>/ npm run desktop:make
+npm run desktop:make
 ```
 
 Artifacts: `desktop-electron/out/make/deb/x64/*.deb` and `…/zip/linux/x64/*.zip`.
@@ -87,7 +87,6 @@ Desktop icon: `desktop-electron/icons/icon.png` (128×128), wired in `forge.conf
 
 - Windows/macOS Forge makers
 - nexe single-file sidecar
-- Baking UI into the AppImage (Pages URL is intentional)
 - `getnowhere.im` DNS / `public/CNAME` until confirmed
 
 ## Related

@@ -31,8 +31,9 @@ dist-ssr
 /test-results/.last-run.json
 
 
-# Electron Forge packaging (staged sidecar/Node + make output)
+# Electron Forge packaging (staged sidecar/Node/UI + make output)
 desktop-electron/out/
 desktop-electron/resources/sidecar/
 desktop-electron/resources/runtime/
+desktop-electron/resources/ui/
 desktop-electron/resources/gnh-defaults.json

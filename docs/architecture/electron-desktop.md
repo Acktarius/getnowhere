@@ -57,6 +57,8 @@ Either start order works in shared mode. Closing the **attacher** only stops tha
 
 ### Shell UX
 
+- Default `BrowserWindow` size is **780×800** so the frame fits the Vite
+  `.app-shell` desktop max-width (760px) without changing CSS layout.
 - No application / window menu bar (`Menu.setApplicationMenu(null)`).
 - Use the window **close** control to exit.
 - Close always quits that Electron app; if it owns the sidecar child, the child
@@ -102,9 +104,8 @@ Optional env:
 | `HOLEPUNCH_PORT` | `7901` (bob isolated: `7902`) | Sidecar listen port |
 | `GNH_HOLEPUNCH_WS_URL` | `ws://127.0.0.1:7901` | Base URL; token query added by main |
 | `GNH_SIDECAR_TOKEN` | random UUID | Required by sidecar when set |
-| `GNH_UI_URL` | `http://127.0.0.1:5173` (dev) / Pages URL (packaged defaults) | UI origin |
+| `GNH_UI_URL` | `http://127.0.0.1:5173` (dev) / embedded `resources/ui` (packaged) | UI origin override (`loadURL`); packaged default is `loadFile` |
 | `GNH_NODE_BIN` | `node` (dev) / bundled runtime (packaged) | Node used to spawn sidecar |
-| `GNH_PACKAGED_UI_URL` | set in CI before `prepare:sidecar` | Written into `gnh-defaults.json` |
 
 Isolated commands:
 
@@ -148,7 +149,7 @@ desktop-electron/
 |---|---|---|
 | A — now | Vite + sidecar (browser) | Node |
 | B — desktop MVP | Electron + sidecar **child** (Alice/Bob share `:7901`) | Node child |
-| B1 — Pages + Forge Linux | Pages UI + Electron Forge zip/deb with bundled sidecar | Node child in package |
+| B1 — Forge Linux | Embedded Vite `dist/` + Electron Forge zip/deb with bundled sidecar | Node child in package |
 | B2 — later | Optional embed swarm in Electron main / pear-electron | In-process |
 | C — mobile | Expo + Bare worklet | Bare |
 

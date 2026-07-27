@@ -1,5 +1,5 @@
 /**
- * Electron shell: Vite/Pages UI + holepunch-sidecar child (no hyperswarm in renderer).
+ * Electron shell: embedded Vite dist (packaged) or local Vite (dev) + sidecar child.
  * @see docs/architecture/electron-desktop.md
  * @see docs/builds/github-pages-and-desktop.md
  */
@@ -10,7 +10,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, Menu, session } from "electron";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -31,28 +31,22 @@ const BASE_WS_URL =
   process.env.GNH_HOLEPUNCH_WS_URL ?? `ws://${SWARM_HOST}:${SWARM_PORT}`;
 
 /**
- * Packaged default UI URL from resources/gnh-defaults.json (CI writes Pages URL).
- * Dev default remains Vite.
+ * Packaged: load embedded `resources/ui/index.html` (Vite `dist/`).
+ * Dev: Vite at 5173. `GNH_UI_URL` overrides either (http or file).
  */
-function resolveUiUrl() {
-  if (process.env.GNH_UI_URL) return process.env.GNH_UI_URL;
-  if (app.isPackaged) {
-    try {
-      const defaultsPath = join(process.resourcesPath, "gnh-defaults.json");
-      if (existsSync(defaultsPath)) {
-        const parsed = JSON.parse(readFileSync(defaultsPath, "utf8"));
-        if (typeof parsed.uiUrl === "string" && parsed.uiUrl.trim()) {
-          return parsed.uiUrl.trim();
-        }
-      }
-    } catch {
-      /* fall through */
-    }
+function resolveUiTarget() {
+  if (process.env.GNH_UI_URL?.trim()) {
+    return { kind: "url", value: process.env.GNH_UI_URL.trim() };
   }
-  return "http://127.0.0.1:5173";
+  if (app.isPackaged) {
+    const indexHtml = join(process.resourcesPath, "ui", "index.html");
+    if (!existsSync(indexHtml)) {
+      throw new Error(`Packaged UI missing: ${indexHtml}`);
+    }
+    return { kind: "file", value: indexHtml };
+  }
+  return { kind: "url", value: "http://127.0.0.1:5173" };
 }
-
-const UI_URL = resolveUiUrl();
 
 /**
  * Dev: repo holepunch-sidecar + system node.
@@ -306,8 +300,9 @@ function createWindow() {
       ? "shared:owner"
       : "shared:attach";
 
+  // Match `.app-shell` desktop max-width (760) + ≥768 media query; do not change CSS layout.
   mainWindow = new BrowserWindow({
-    width: 1180,
+    width: 780,
     height: 800,
     title: windowTitle(modeTag),
     autoHideMenuBar: true,
@@ -346,8 +341,15 @@ function createWindow() {
     void shutdown("window-close");
   });
 
-  log(`loading UI ${UI_URL} (partition ${partition}, mode=${SWARM_MODE})`);
-  void mainWindow.loadURL(UI_URL);
+  const ui = resolveUiTarget();
+  const uiLabel =
+    ui.kind === "file" ? pathToFileURL(ui.value).href : ui.value;
+  log(`loading UI ${uiLabel} (partition ${partition}, mode=${SWARM_MODE})`);
+  if (ui.kind === "file") {
+    void mainWindow.loadFile(ui.value);
+  } else {
+    void mainWindow.loadURL(ui.value);
+  }
 }
 
 app.whenReady().then(async () => {

@@ -83,8 +83,9 @@ here first).
 
 ## Pages UI + packaged desktop
 
-Ship path (CI): GitHub Pages hosts the Vite `dist/`; Linux Electron Forge package
-bundles Electron + a Node sidecar process and loads that Pages URL. See
+Ship paths (CI): GitHub Pages still hosts Vite `dist/` for browsers; the Linux
+Electron Forge package **embeds** the same `dist/` under `resources/ui` and
+loads it with `loadFile` (no runtime Pages fetch). See
 `docs/builds/github-pages-and-desktop.md`. Web-dev still uses `npm run holepunch`
 + `npm run dev` without packaging.
 
