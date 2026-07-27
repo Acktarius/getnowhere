@@ -1,5 +1,5 @@
 /**
- * Stage sidecar + Node runtime under resources/ for Electron Forge extraResource.
+ * Stage sidecar + Node runtime + Vite `dist/` under resources/ for Forge.
  * @see docs/builds/github-pages-and-desktop.md
  */
 
@@ -11,7 +11,6 @@ import {
   existsSync,
   mkdirSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -24,9 +23,9 @@ const repoRoot = join(desktopRoot, "..");
 const resources = join(desktopRoot, "resources");
 const sidecarOut = join(resources, "sidecar");
 const runtimeOut = join(resources, "runtime");
+const uiOut = join(resources, "ui");
 
 const NODE_VERSION = process.env.GNH_BUNDLE_NODE_VERSION ?? "24.14.1";
-const UI_URL = process.env.GNH_PACKAGED_UI_URL ?? "http://127.0.0.1:5173";
 
 function log(...args) {
   console.log("[prepare-sidecar]", ...args);
@@ -44,6 +43,21 @@ function stageSidecar() {
     cwd: sidecarOut,
     stdio: "inherit",
   });
+}
+
+/** Copy repo-root Vite `dist/` into resources/ui (required for packaged loadFile). */
+function stageUi() {
+  const dist = join(repoRoot, "dist");
+  const indexHtml = join(dist, "index.html");
+  if (!existsSync(indexHtml)) {
+    throw new Error(
+      `UI dist missing: ${indexHtml}\nRun: npm run build (repo root) before desktop:make`,
+    );
+  }
+  rmSync(uiOut, { recursive: true, force: true });
+  mkdirSync(uiOut, { recursive: true });
+  cpSync(dist, uiOut, { recursive: true });
+  log(`staged UI → ${uiOut}`);
 }
 
 async function stageNodeRuntime() {
@@ -87,14 +101,8 @@ async function stageNodeRuntime() {
   log(`staged ${nodeBin}`);
 }
 
-function writeDefaults() {
-  const path = join(resources, "gnh-defaults.json");
-  writeFileSync(path, `${JSON.stringify({ uiUrl: UI_URL }, null, 2)}\n`);
-  log(`defaults uiUrl=${UI_URL}`);
-}
-
 mkdirSync(resources, { recursive: true });
+stageUi();
 stageSidecar();
 await stageNodeRuntime();
-writeDefaults();
 log("done");

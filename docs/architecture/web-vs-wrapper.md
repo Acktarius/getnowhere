@@ -65,10 +65,10 @@ Rules:
 
 ## Packaged desktop (Ubuntu)
 
-CI publishes the UI to **GitHub Pages** and a Linux **Electron Forge** zip/deb
-that starts Electron + a bundled Hyperswarm sidecar, then loads the Pages URL.
-One-click desktop does **not** put Hyperswarm in the renderer. Details:
-`docs/builds/github-pages-and-desktop.md`.
+CI builds Vite `dist/`, then a Linux **Electron Forge** zip/deb that embeds that
+UI (`resources/ui`) plus a bundled Hyperswarm sidecar. The packaged app does
+**not** load GitHub Pages at runtime. One-click desktop does **not** put
+Hyperswarm in the renderer. Details: `docs/builds/github-pages-and-desktop.md`.
 
 ## Decision boundary
 

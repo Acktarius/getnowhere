@@ -1,6 +1,6 @@
 name: Release Electron + sidecar
 
-# Electron Forge Linux package (Electron + bundled sidecar process).
+# Electron Forge Linux package (Electron + bundled sidecar + embedded Vite UI).
 # @see docs/builds/github-pages-and-desktop.md
 
 on:
@@ -28,6 +28,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: |
+            package-lock.json
             desktop-electron/package-lock.json
             holepunch-sidecar/package-lock.json
 
@@ -36,25 +37,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fakeroot dpkg rpm
 
+      - name: Install UI deps
+        run: npm ci
+
+      - name: Build UI (dist/)
+        run: npm run build
+
       - name: Install desktop deps
         working-directory: desktop-electron
         run: npm ci
 
-      - name: Resolve Pages UI URL
-        id: ui
-        run: |
-          OWNER="${{ github.repository_owner }}"
-          REPO="${{ github.event.repository.name }}"
-          # Project site default; override via repo var GNH_PACKAGED_UI_URL (e.g. https://getnowhere.im/)
-          DEFAULT_URL="https://${OWNER}.github.io/${REPO}/"
-          echo "url=${GNH_PACKAGED_UI_URL:-$DEFAULT_URL}" >> "$GITHUB_OUTPUT"
-        env:
-          GNH_PACKAGED_UI_URL: ${{ vars.GNH_PACKAGED_UI_URL }}
-
       - name: Make Linux package
         working-directory: desktop-electron
         env:
-          GNH_PACKAGED_UI_URL: ${{ steps.ui.outputs.url }}
           GNH_BUNDLE_NODE_VERSION: "24.14.1"
         run: npm run make
 
@@ -103,7 +98,7 @@ jobs:
           body: |
             **Get Now Here — Ubuntu desktop (Electron + sidecar)**
 
-            - UI: GitHub Pages (`${{ steps.ui.outputs.url }}`)
+            - UI: embedded Vite `dist/` (shipped inside the package)
             - App: Electron Forge zip/deb (spawns bundled Hyperswarm sidecar on `ws://127.0.0.1:7901`)
 
             ### Checksums

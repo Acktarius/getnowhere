@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Electron shell for Get Now Here (Vite/Pages UI + localhost Hyperswarm sidecar child)",
+  "description": "Electron shell for Get Now Here (embedded Vite UI + localhost Hyperswarm sidecar child)",
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",

@@ -1,5 +1,5 @@
 /**
- * Electron Forge: Linux package with sidecar + Node runtime as extraResource.
+ * Electron Forge: Linux package with sidecar + Node + embedded Vite UI.
  * @see docs/builds/github-pages-and-desktop.md
  */
 
@@ -17,7 +17,7 @@ module.exports = {
     extraResource: [
       path.join(__dirname, "resources", "sidecar"),
       path.join(__dirname, "resources", "runtime"),
-      path.join(__dirname, "resources", "gnh-defaults.json"),
+      path.join(__dirname, "resources", "ui"),
     ],
     ignore: (file) => {
       if (file === "/out" || file.startsWith("/out/")) return true;
@@ -45,7 +45,7 @@ module.exports = {
           maintainer: "Acktarius",
           homepage: "https://github.com/acktarius/getnowhere",
           description:
-            "Get Now Here desktop shell (Electron + local Hyperswarm sidecar; UI from GitHub Pages)",
+            "Get Now Here desktop shell (Electron + local Hyperswarm sidecar; embedded UI)",
         },
       },
     },
