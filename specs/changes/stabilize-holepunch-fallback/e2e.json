@@ -1,0 +1,23 @@
+{
+  "change": "stabilize-holepunch-fallback",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Build production UI",
+      "cmd": "npm run build",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Exercise post-accept fallback loop",
+      "cmd": "npx playwright test e2e/holepunch-fallback.spec.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Verify transport lifecycle invariants",
+      "cmd": "npx vitest run tests/protocol/composer-gate.test.ts tests/p2p/holepunch-chat-transport.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

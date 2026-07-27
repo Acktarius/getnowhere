@@ -14,6 +14,12 @@ interface GnhDesktopBridge {
   holepunchWsUrl?: string;
   /** Optional sidecar auth token (empty in web-dev). */
   wsToken?: string;
+  /**
+   * Privilege-free, best-effort Linux UFW advisory (Electron only; absent in
+   * the browser build). Never proof that a specific port is blocked.
+   * @see docs/architecture/electron-desktop.md
+   */
+  ufwState?: "active" | "inactive" | "unknown";
 }
 
 interface Window {

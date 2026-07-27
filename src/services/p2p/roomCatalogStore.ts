@@ -7,8 +7,10 @@
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import {
   isInviteExpired,
+  isPostAcceptStatus,
   isRoomExpired,
   nowUnix,
+  resolveIncomingLifecycle,
 } from "@/services/protocol/roomLifecycle";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { ChatRoom, RoomLifecycleStatus } from "@/types/models";
@@ -28,6 +30,7 @@ export type CatalogRoom = Pick<
   | "roomTtl"
   | "createdAt"
   | "lastMessageAt"
+  | "lastConnectError"
 >;
 
 function readAll(): Record<string, CatalogRoom> {
@@ -47,13 +50,7 @@ function writeAll(all: Record<string, CatalogRoom>): void {
 }
 
 function wasAccepted(status: RoomLifecycleStatus): boolean {
-  return (
-    status === "accepted" ||
-    status === "connecting" ||
-    status === "connected" ||
-    status === "connect_failed" ||
-    status === "closed"
-  );
+  return isPostAcceptStatus(status);
 }
 
 /**
@@ -92,19 +89,26 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
   }
   const all = readAll();
   const prev = all[room.id];
+  const incomingLifecycle =
+    room.lifecycleStatus ?? prev?.lifecycleStatus ?? "pending";
   const next: CatalogRoom = {
     id: room.id,
     contactId: room.contactId || prev?.contactId || "",
     bootstrapSource:
       room.bootstrapSource ?? prev?.bootstrapSource ?? "conceal-smart-message",
     roomKeyRef: room.roomKeyRef || prev?.roomKeyRef || `key:${room.id}`,
-    lifecycleStatus: room.lifecycleStatus ?? prev?.lifecycleStatus ?? "pending",
+    // Monotonic: a stale `pending` hydration must never regress a room past acceptance.
+    lifecycleStatus: resolveIncomingLifecycle(
+      prev?.lifecycleStatus ?? "pending",
+      incomingLifecycle,
+    ),
     roomTopic: room.roomTopic ?? prev?.roomTopic,
     inviteId: room.inviteId ?? prev?.inviteId,
     inviteExpiry: room.inviteExpiry ?? prev?.inviteExpiry,
     roomTtl: room.roomTtl ?? prev?.roomTtl,
     createdAt: room.createdAt || prev?.createdAt || new Date().toISOString(),
     lastMessageAt: room.lastMessageAt ?? prev?.lastMessageAt,
+    lastConnectError: room.lastConnectError ?? prev?.lastConnectError,
   };
   all[room.id] = next;
   writeAll(all);

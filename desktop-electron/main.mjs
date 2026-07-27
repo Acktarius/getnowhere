@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, Menu, session } from "electron";
+import { getUfwAdvisory } from "./firewall-status.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -113,6 +114,8 @@ let ownsSwarm = false;
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
 let shuttingDown = false;
+/** Read-only, privilege-free advisory — never a firewall-mutation trigger. */
+let ufwAdvisory = { state: "unknown", reason: "not-checked" };
 
 app.setName(`getnowhere-desktop-${ROLE}`);
 app.setPath(
@@ -317,6 +320,7 @@ function createWindow() {
         `--gnh-role=${ROLE}`,
         `--gnh-holepunch-ws=${BASE_WS_URL}`,
         `--gnh-ws-token=${authToken}`,
+        `--gnh-ufw-state=${ufwAdvisory.state}`,
       ],
     },
   });
@@ -328,6 +332,7 @@ function createWindow() {
     role: ROLE,
     holepunchWsUrl: BASE_WS_URL,
     wsToken: authToken,
+    ufwState: ufwAdvisory.state,
   });
   mainWindow.webContents.on("did-finish-load", () => {
     void mainWindow?.webContents.executeJavaScript(
@@ -354,6 +359,12 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    // Best-effort and privilege-free — never blocks or fails startup.
+    ufwAdvisory = await getUfwAdvisory().catch(() => ({
+      state: "unknown",
+      reason: "check-failed",
+    }));
+    log(`UFW advisory: ${ufwAdvisory.state} (${ufwAdvisory.reason})`);
     await ensureLocalSwarm();
     createWindow();
   } catch (e) {

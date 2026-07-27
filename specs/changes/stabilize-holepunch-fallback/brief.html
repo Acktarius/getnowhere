@@ -1,0 +1,97 @@
+<!-- forge-brief-specs-hash:fa52adfea40afafd -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stabilize Holepunch fallback</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      code { background: #f1f3f4; padding: 0.1rem 0.3rem; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Stabilize Holepunch fallback</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      After Alice and Bob accept a chat, Holepunch retries will no longer make
+      the room briefly look unaccepted or disable chain messaging. Connection
+      attempts will be bounded, and the screen will clearly separate the
+      Holepunch connection from the temporary chain fallback.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>The composer stays enabled after acceptance, including while Holepunch connects or times out.</li>
+      <li>Room state never falls back to <code>pending</code> because stale bootstrap data was loaded.</li>
+      <li>Periodic refresh cannot stack hundreds of simultaneous connection attempts.</li>
+      <li>Holepunch receives up to 120 seconds for DHT peer discovery.</li>
+      <li>Status copy says Holepunch is connecting and that messages temporarily use chain fallback.</li>
+      <li>Linux desktop can warn that active UFW may be interfering after a Holepunch timeout.</li>
+      <li>LAN troubleshooting explains UDP, internet/DHT bootstrap, topics, and firewalls.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      Acceptance becomes monotonic: stale <code>pending</code> data cannot
+      overwrite a post-accept room. All callers for one room share a single
+      active Holepunch attempt, and failures are saved so reloads preserve the
+      correct relay-eligible state. True unaccepted invites remain blocked.
+      On Linux, Electron also performs a privilege-free, best-effort UFW check
+      and passes only a simple advisory to chat diagnostics.
+    </p>
+    <pre>
+accepted → Holepunch connecting → connected
+    │              │
+    └── chain fallback enabled ──→ connect failed
+                                      │
+                                      └── chain fallback + bounded retry
+    </pre>
+
+    <h2>What changes for you</h2>
+    <p>
+      No new setup or protocol is introduced. During a slow or failed
+      Holepunch connection, you can keep sending grey chain messages. The
+      connection label and fallback hint will describe those as separate paths.
+      If Electron detects active UFW after a timeout, diagnostics will explain
+      that dynamic UDP may be blocked without asking for administrator access.
+    </p>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>A longer deadline means the explicit timeout appears later, but chain messaging remains usable.</li>
+      <li>Holepunch still cannot guarantee a LAN connection when UDP or DHT bootstrap traffic is blocked.</li>
+      <li>Active UFW is a clue, not proof of the failure; the warning remains conditional.</li>
+      <li>Final acceptance needs two real machines because a local browser test cannot reproduce every firewall and NAT.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Sending chain messages before an invite is accepted.</li>
+      <li>Adding LAN-only mDNS discovery or a relay network.</li>
+      <li>Changing firewall rules, invoking sudo, or determining a fixed Hyperswarm UDP port.</li>
+      <li>Changing bridge messages, topic derivation, or encryption.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Preserve post-accept messaging — 2 tasks.</li>
+      <li>Bound Holepunch reconnect work — 3 tasks.</li>
+      <li>Clarify fallback status and operations — 3 tasks.</li>
+      <li>Verify the complete change — 3 tasks.</li>
+    </ul>
+  </body>
+</html>

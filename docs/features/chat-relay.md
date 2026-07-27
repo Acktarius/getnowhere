@@ -23,6 +23,12 @@ Relay does **not** replace L2.
 - `pending` / terminal → blocked.
 - Subtle “via chain” hint when the next send is relay.
 
+## Inbound refresh
+
+- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L1' stays live).
+- Also rescans on enter and when lifecycle becomes relay-eligible.
+- Global wallet poll also calls `refreshRelays` (slower when near tip).
+
 ## Limits
 
 - Text only; no `,` `{` `}` in body (smart-message delimiters).

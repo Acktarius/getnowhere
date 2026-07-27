@@ -10,7 +10,10 @@ import {
   getLastSidecarDetail,
   getMessagesForRoom,
 } from "@/services/p2p/HolepunchChatTransport";
-import { getHolepunchWsUrl } from "@/services/p2p/HolepunchSidecarClient";
+import {
+  getHolepunchWsUrl,
+  getUfwAdvisoryState,
+} from "@/services/p2p/HolepunchSidecarClient";
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
 import {
   canComposeMessages,
@@ -187,16 +190,19 @@ export function ChatRoomScreen() {
     };
   }, [room?.lifecycleStatus, room?.connectAttempts, roomId, openRoom]);
 
-  // Keep UI peer/lifecycle in sync with transport (mesh hellos + reconnect).
+  // Keep UI peer/lifecycle in sync; always rescan L1' (Holepunch can fail mid-chat).
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       try {
-        if (!cancelled) await openRoom(roomId);
+        if (cancelled) return;
+        await openRoom(roomId);
+        await refreshRelays();
       } catch {
         /* ignore */
       }
     };
+    void tick();
     const id = window.setInterval(() => {
       void tick();
     }, 2500);
@@ -204,7 +210,19 @@ export function ChatRoomScreen() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [roomId, openRoom]);
+  }, [roomId, openRoom, refreshRelays]);
+
+  // One-shot rescan when room becomes relay-eligible (pending → accepted/…).
+  useEffect(() => {
+    if (!room) return;
+    if (
+      room.lifecycleStatus === "accepted" ||
+      room.lifecycleStatus === "connecting" ||
+      room.lifecycleStatus === "connect_failed"
+    ) {
+      void refreshRelays().catch(() => {});
+    }
+  }, [room?.lifecycleStatus, refreshRelays]);
 
   const reactionsByTarget = useMemo(() => {
     const map = new Map<string, BubbleReaction[]>();
@@ -293,6 +311,15 @@ export function ChatRoomScreen() {
     room.lastConnectError,
   );
   const superseded = Boolean(contact.roomId) && contact.roomId !== roomId;
+  // Best-effort, Electron-Linux-only advisory — never proof a specific port
+  // (e.g. localhost bridge 7901) is blocked, only that UFW appears active
+  // while a retryable Holepunch failure repeats.
+  const showUfwAdvisory =
+    room.lifecycleStatus === "connect_failed" &&
+    isRetryableConnectFailure(
+      (room.lastConnectError ?? "unknown") as ConnectFailureCode,
+    ) &&
+    getUfwAdvisoryState() === "active";
 
   async function handleSend() {
     if (!draft.trim() || !live) return;
@@ -370,9 +397,9 @@ export function ChatRoomScreen() {
           <span
             className="muted"
             style={{ fontSize: 12 }}
-            title="L1 Conceal message"
+            title="Messages send over blockchain until Holepunch connects."
           >
-            via chain
+            Messages via chain fallback
           </span>
         )}
         {room.lifecycleStatus === "connect_failed" && room.lastConnectError && (
@@ -608,6 +635,14 @@ export function ChatRoomScreen() {
           <div>Sidecar: {getHolepunchWsUrl()}</div>
           {getLastSidecarDetail() && (
             <div>Sidecar status: {getLastSidecarDetail()}</div>
+          )}
+          {showUfwAdvisory && (
+            <div className="muted" style={{ fontSize: 12 }}>
+              UFW appears active on this machine and may be blocking
+              Holepunch&apos;s dynamic UDP traffic (separate from the localhost
+              bridge on port 7901). Check your firewall rules if this keeps
+              failing.
+            </div>
           )}
           <div className="row-flex" style={{ gap: 8 }}>
             {offline ? <WifiOff size={14} /> : <Wifi size={14} />}

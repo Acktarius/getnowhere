@@ -63,6 +63,32 @@ export function canSendMessages(status: RoomLifecycleStatus): boolean {
   return status === "connected" || isRelayEligibleStatus(status);
 }
 
+/** Once accepted, a room must never again look pre-accept. */
+const POST_ACCEPT_STATUSES = new Set<RoomLifecycleStatus>([
+  "accepted",
+  "connecting",
+  "connected",
+  "connect_failed",
+  "closed",
+]);
+
+export function isPostAcceptStatus(status: RoomLifecycleStatus): boolean {
+  return POST_ACCEPT_STATUSES.has(status);
+}
+
+/**
+ * Monotonic guard for bootstrap/catalog/session hydration: a stale `pending`
+ * payload must never regress a room that has already moved past acceptance.
+ * @see docs/security/p2pchatprotocol.md §9 / §16
+ */
+export function resolveIncomingLifecycle(
+  current: RoomLifecycleStatus,
+  incoming: RoomLifecycleStatus,
+): RoomLifecycleStatus {
+  if (incoming === "pending" && isPostAcceptStatus(current)) return current;
+  return incoming;
+}
+
 const ALLOWED: Record<RoomLifecycleStatus, ReadonlySet<RoomLifecycleStatus>> = {
   pending: new Set(["accepted", "declined", "expired", "failed", "destroyed"]),
   accepted: new Set(["connecting", "expired", "destroyed", "failed"]),

@@ -62,9 +62,9 @@ export function RoomLifecyclePill({ status }: { status: RoomLifecycleStatus }) {
   const labels: Record<RoomLifecycleStatus, string> = {
     pending: "Pending",
     accepted: "Accepted",
-    connecting: "Connecting",
+    connecting: "Holepunch connecting",
     connected: "Connected",
-    connect_failed: "Connect failed",
+    connect_failed: "Holepunch failed",
     declined: "Declined",
     expired: "Expired",
     failed: "Failed",

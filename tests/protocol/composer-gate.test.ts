@@ -16,8 +16,10 @@ import {
 import {
   canSendLiveMessages,
   canSendMessages,
+  isPostAcceptStatus,
   isRelayEligibleStatus,
   preferredChannel,
+  resolveIncomingLifecycle,
 } from "../../src/services/protocol/roomLifecycle";
 import type { RoomLifecycleStatus } from "../../src/types/models";
 
@@ -67,9 +69,51 @@ describe("accepted vs connected composer gate", () => {
   });
 });
 
+describe("post-accept lifecycle is monotonic", () => {
+  it("blocks a stale pending payload from regressing a post-accept room", () => {
+    const postAccept: RoomLifecycleStatus[] = [
+      "accepted",
+      "connecting",
+      "connected",
+      "connect_failed",
+      "closed",
+    ];
+    for (const current of postAccept) {
+      expect(isPostAcceptStatus(current)).toBe(true);
+      expect(resolveIncomingLifecycle(current, "pending")).toBe(current);
+      // Relay eligibility (accepted/connecting/connect_failed) must survive
+      // a stale pending hydration too.
+      if (isRelayEligibleStatus(current)) {
+        expect(
+          isRelayEligibleStatus(resolveIncomingLifecycle(current, "pending")),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("leaves a genuinely unaccepted pending room blocked", () => {
+    expect(isPostAcceptStatus("pending")).toBe(false);
+    expect(resolveIncomingLifecycle("pending", "pending")).toBe("pending");
+    expect(canComposeMessages("pending")).toBe(false);
+  });
+
+  it("still allows explicit terminal/forward transitions through hydration", () => {
+    expect(resolveIncomingLifecycle("connecting", "connected")).toBe(
+      "connected",
+    );
+    expect(resolveIncomingLifecycle("connect_failed", "connecting")).toBe(
+      "connecting",
+    );
+    expect(resolveIncomingLifecycle("connected", "expired")).toBe("expired");
+    expect(resolveIncomingLifecycle("connected", "destroyed")).toBe(
+      "destroyed",
+    );
+  });
+});
+
 describe("holepunch connect policy", () => {
-  it("uses 30s timeout and exponential backoff with cap", () => {
-    expect(HOLEPUNCH_CONNECT_TIMEOUT_MS).toBe(30_000);
+  it("uses a 120s timeout (DHT convergence) and exponential backoff with cap", () => {
+    expect(HOLEPUNCH_CONNECT_TIMEOUT_MS).toBe(120_000);
     const a1 = holepunchBackoffMs(1);
     const a3 = holepunchBackoffMs(3);
     expect(a1).toBeGreaterThanOrEqual(1000);
