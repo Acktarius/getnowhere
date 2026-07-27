@@ -15,11 +15,27 @@ import Hyperswarm from "hyperswarm";
 
 /**
  * @typedef {{
- *   discovery: { flushed: () => Promise<void>, destroy?: () => Promise<void> } | null
+ *   discovery: { flushed: () => Promise<void>, refresh?: (o?: object) => Promise<void>, destroy?: () => Promise<void> } | null
  *   localClients: Set<LocalClient>
  *   remotePeerIds: Set<string>
+ *   refreshTimer: ReturnType<typeof setInterval> | null
  * }} TopicState
  */
+
+/** Short id for log lines — never log full keys/topics. */
+function short(hex) {
+  return typeof hex === "string" ? hex.slice(0, 8) : "?";
+}
+
+/**
+ * Re-announce/re-lookup cadence while a topic has zero remote peers.
+ * Hyperswarm's own idle re-lookup can be ~10-12 minutes (refresh interval +
+ * jitter), which is far slower than a human waiting for "connected". Nudging
+ * `discovery.refresh()` on a short interval re-queries + re-announces so a
+ * peer that joins shortly after we did is still found quickly.
+ */
+const REFRESH_NUDGE_MS = 8_000;
+const MAX_REFRESH_NUDGES = 10;
 
 /** Encode one bridge message as a single NDJSON line (Noise streams coalesce). */
 export function encodeSwarmLine(obj) {
@@ -65,15 +81,24 @@ export function createSwarmMesh(opts = {}) {
     opts.swarm ??
     (disableDiscovery
       ? {
-          dht: { ready: async () => {} },
+          dht: { ready: async () => {}, nodes: [] },
           join: () => ({
             flushed: async () => {},
+            refresh: async () => {},
             destroy: async () => {},
           }),
           on() {},
           destroy: async () => {},
         }
       : new Hyperswarm());
+
+  // Defensive: Hyperswarm/HyperDHT are EventEmitters. An unhandled 'error'
+  // event would otherwise crash this process outright with no trace on the
+  // WS bridge — surface it instead.
+  swarm.on("error", (err) => {
+    console.error(`[swarm] error: ${err?.message ?? err}`);
+  });
+
   /** @type {Map<string, TopicState>} */
   const topics = new Map();
   /** @type {Map<object, Set<string>>} */
@@ -88,10 +113,47 @@ export function createSwarmMesh(opts = {}) {
         discovery: null,
         localClients: new Set(),
         remotePeerIds: new Set(),
+        refreshTimer: null,
       };
       topics.set(topicRef, state);
     }
     return state;
+  }
+
+  function stopRefreshNudge(state) {
+    if (state.refreshTimer) {
+      clearInterval(state.refreshTimer);
+      state.refreshTimer = null;
+    }
+  }
+
+  /**
+   * Poke the DHT to re-announce/re-lookup a topic every REFRESH_NUDGE_MS
+   * until a remote peer shows up or MAX_REFRESH_NUDGES is reached. Without
+   * this, discovering a peer that joins after us can silently wait on
+   * Hyperswarm's own ~10-12 minute idle refresh cycle.
+   * @param {string} topicRef
+   * @param {TopicState} state
+   */
+  function startRefreshNudge(topicRef, state) {
+    if (disableDiscovery || state.refreshTimer || !state.discovery) return;
+    let attempts = 0;
+    state.refreshTimer = setInterval(() => {
+      if (peerCount(topicRef) > 0) {
+        stopRefreshNudge(state);
+        return;
+      }
+      attempts += 1;
+      console.log(
+        `[swarm] topic ${short(topicRef)}… still 0 peers — re-announcing (attempt ${attempts}/${MAX_REFRESH_NUDGES})`,
+      );
+      state.discovery
+        ?.refresh?.({ client: true, server: true })
+        ?.catch((err) => {
+          console.warn(`[swarm] refresh failed: ${err?.message ?? err}`);
+        });
+      if (attempts >= MAX_REFRESH_NUDGES) stopRefreshNudge(state);
+    }, REFRESH_NUDGE_MS);
   }
 
   function peerCount(topicRef) {
@@ -156,6 +218,13 @@ export function createSwarmMesh(opts = {}) {
     conns.add(conn);
     connTopics.set(conn, new Set());
 
+    const peerId = conn.remotePublicKey
+      ? b4a.toString(conn.remotePublicKey, "hex")
+      : null;
+    console.log(
+      `[swarm] connection open peer=${short(peerId)} direction=${info?.client ? "outbound" : "inbound"}`,
+    );
+
     // Hyperswarm already knows shared topics — do not wait only on app hello.
     for (const topicBuf of info?.topics || []) {
       adoptRemoteTopic(conn, b4a.toString(topicBuf, "hex"));
@@ -191,14 +260,16 @@ export function createSwarmMesh(opts = {}) {
       }
     });
 
-    conn.on("error", () => {});
+    conn.on("error", (err) => {
+      console.warn(
+        `[swarm] connection error peer=${short(peerId)}: ${err?.message ?? err}`,
+      );
+    });
     conn.once("close", () => {
+      console.log(`[swarm] connection closed peer=${short(peerId)}`);
       conns.delete(conn);
       const joined = connTopics.get(conn) ?? new Set();
       connTopics.delete(conn);
-      const peerId = conn.remotePublicKey
-        ? b4a.toString(conn.remotePublicKey, "hex")
-        : null;
       for (const topicRef of joined) {
         const state = topics.get(topicRef);
         if (!state || !peerId) continue;
@@ -223,9 +294,23 @@ export function createSwarmMesh(opts = {}) {
       if (!disableDiscovery && !state.discovery) {
         // Announce only after DHT bootstrap — joining earlier is flaky on LAN/UFW hosts.
         await swarm.dht.ready();
+        // dht.ready() resolves even when zero bootstrap nodes were reachable
+        // (no error is ever thrown) — an empty routing table here means peers
+        // can never be found until outbound UDP / internet reachability is
+        // fixed, but nothing upstream would otherwise report that.
+        const nodeCount = swarm.dht.nodes?.length ?? 0;
+        if (nodeCount === 0) {
+          console.warn(
+            "[swarm] DHT routing table is empty after bootstrap — outbound UDP to the public HyperDHT bootstrap nodes looks blocked or unreachable; peer discovery cannot work until this resolves",
+          );
+        } else {
+          console.log(`[swarm] DHT bootstrap ok — ${nodeCount} routing node(s)`);
+        }
         const topic = b4a.from(topicRef, "hex");
         state.discovery = swarm.join(topic, { client: true, server: true });
         await state.discovery.flushed();
+        console.log(`[swarm] topic ${short(topicRef)}… announced (flushed)`);
+        startRefreshNudge(topicRef, state);
       }
 
       // Adopt remotes that already hello'd / peerInfo-shared this topic.
@@ -250,6 +335,7 @@ export function createSwarmMesh(opts = {}) {
       emitPeers(topicRef);
 
       if (state.localClients.size === 0) {
+        stopRefreshNudge(state);
         try {
           await state.discovery?.destroy?.();
         } catch {
@@ -304,6 +390,7 @@ export function createSwarmMesh(opts = {}) {
 
     peerCount,
     async destroy() {
+      for (const state of topics.values()) stopRefreshNudge(state);
       await swarm.destroy();
       topics.clear();
       conns.clear();

@@ -5,12 +5,26 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import {
   createLineReader,
   createSwarmMesh,
   encodeSwarmLine,
 } from "../src/swarm.mjs";
+
+/** Minimal fake Hyperswarm for tests that need a real (non-stubbed) join path. */
+function fakeHyperswarm({ nodes = [{}], refresh = async () => {} } = {}) {
+  return {
+    dht: { ready: async () => {}, nodes },
+    join: () => ({
+      flushed: async () => {},
+      refresh,
+      destroy: async () => {},
+    }),
+    on() {},
+    destroy: async () => {},
+  };
+}
 
 function fakeClient() {
   /** @type {object[]} */
@@ -65,6 +79,93 @@ describe("swarm mesh local fan-out", () => {
     );
 
     await mesh.destroy();
+  });
+});
+
+describe("discovery refresh nudge", () => {
+  it("re-announces on an interval while zero peers are found, then stops at the attempt cap", async () => {
+    let refreshCount = 0;
+    const swarm = fakeHyperswarm({
+      refresh: async () => {
+        refreshCount += 1;
+      },
+    });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "33".repeat(32);
+
+    mock.timers.enable({ apis: ["setInterval"] });
+    try {
+      await mesh.join(topic, a);
+      assert.equal(refreshCount, 0);
+
+      mock.timers.tick(8_000);
+      assert.equal(refreshCount, 1);
+
+      // Well past MAX_REFRESH_NUDGES (10) worth of ticks — must not exceed the cap.
+      mock.timers.tick(8_000 * 20);
+      assert.equal(refreshCount, 10);
+    } finally {
+      await mesh.destroy();
+      mock.timers.reset();
+    }
+  });
+
+  it("stops re-announcing once a remote peer is adopted on the topic", async () => {
+    let refreshCount = 0;
+    let connectionHandler;
+    const swarm = fakeHyperswarm({
+      refresh: async () => {
+        refreshCount += 1;
+      },
+    });
+    swarm.on = (event, handler) => {
+      if (event === "connection") connectionHandler = handler;
+    };
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "44".repeat(32);
+
+    mock.timers.enable({ apis: ["setInterval"] });
+    try {
+      await mesh.join(topic, a);
+
+      const remotePublicKeyHex = "ab".repeat(32);
+      const fakeConn = {
+        remotePublicKey: Buffer.from(remotePublicKeyHex, "hex"),
+        on() {},
+        once() {},
+        write() {},
+      };
+      connectionHandler(fakeConn, { topics: [Buffer.from(topic, "hex")] });
+
+      assert.equal(mesh.peerCount(topic), 1);
+      mock.timers.tick(8_000 * 5);
+      assert.equal(refreshCount, 0);
+    } finally {
+      await mesh.destroy();
+      mock.timers.reset();
+    }
+  });
+
+  it("warns but still joins when the DHT routing table is empty after bootstrap", async () => {
+    const swarm = fakeHyperswarm({ nodes: [] });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "55".repeat(32);
+
+    const warnCalls = [];
+    const restore = console.warn;
+    console.warn = (msg) => warnCalls.push(msg);
+    try {
+      await mesh.join(topic, a);
+    } finally {
+      console.warn = restore;
+      await mesh.destroy();
+    }
+
+    assert.ok(a.inbox.some((m) => m.type === "ready"));
+    assert.ok(warnCalls.some((m) => /DHT routing table is empty/.test(m)));
   });
 });
 

@@ -168,6 +168,26 @@ Tighten later once you confirm L2 connects. Electron may show a read-only
 advisory when UFW looks active after a Holepunch timeout — it never changes
 firewall rules.
 
+### Sidecar diagnostics
+
+`npm run holepunch` now logs connection lifecycle (`connection open/closed`,
+peer id prefix, inbound/outbound), DHT bootstrap health (`dht.nodes.length`
+after `dht.ready()`), and re-announce attempts to stdout. An empty routing
+table after bootstrap means outbound UDP to the public HyperDHT bootstrap
+nodes is blocked or unreachable — peer discovery cannot work until that is
+fixed, independent of any local UFW/inbound rule. Watch this output first when
+diagnosing "L2 doesn't connect" before touching firewall rules.
+
+### Discovery re-announce nudge
+
+`discovery.flushed()` only confirms the local announce was published — it
+says nothing about whether the other peer has been discovered yet. Left
+alone, Hyperswarm's own idle re-lookup can wait ~10-12 minutes before trying
+again if the peer joins shortly after us. The sidecar now calls
+`discovery.refresh()` every 8s (up to 10 attempts) while a topic still has
+zero remote peers, so a peer that joins moments after us is still found
+quickly instead of waiting on that internal cycle.
+
 ## Connected rule
 
 Transport peer count ≥ 1 is necessary but not sufficient. The UI marks
