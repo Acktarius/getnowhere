@@ -114,6 +114,16 @@ npm run desktop:alice:isolated
 npm run desktop:bob:isolated
 ```
 
+### Two physical machines
+
+Use one sidecar (or one Electron app) **per machine**. Do not expect shared-mode
+localhost fan-out to reach the other PC. Holepunch needs UDP through the host
+firewall — allowing TCP `7901` alone is not enough. See
+`docs/architecture/holepunch-sidecar.md` § Two machines on one LAN.
+
+On Linux, Electron may pass a read-only UFW advisory into the renderer after
+repeated Holepunch timeouts; it never requests elevation or changes rules.
+
 ## Architecture (MVP)
 
 ```text
