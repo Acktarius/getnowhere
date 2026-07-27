@@ -18,9 +18,10 @@ const COMPOSER_DISABLED_REASON: Record<
   string
 > = {
   pending: "Waiting for invite accept — messaging not allowed yet.",
-  accepted: "Invite accepted — connecting to peer (Holepunch).",
+  accepted: "Invite accepted — Holepunch connecting to peer.",
   connecting: "Holepunch connecting…",
-  connect_failed: "Peer connection failed — retry or send via chain.",
+  connect_failed:
+    "Holepunch connection failed — retry, or messages still send via chain fallback.",
   declined: "Invite declined — room closed.",
   expired: "Room expired.",
   failed: "Room failed.",

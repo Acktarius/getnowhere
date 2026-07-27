@@ -46,6 +46,23 @@ function appendToken(baseUrl: string, token: string): string {
   return `${baseUrl}${sep}token=${encodeURIComponent(token)}`;
 }
 
+/**
+ * Read-only Electron-Linux advisory ("active" | "inactive" | "unknown").
+ * Absent (→ "unknown") in the browser build; never used to imply a specific
+ * port is blocked. @see docs/architecture/electron-desktop.md
+ */
+export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
+  try {
+    if (typeof window !== "undefined") {
+      const bridge = window.gnhDesktop ?? window.__GNH_DESKTOP__;
+      if (bridge?.ufwState) return bridge.ufwState;
+    }
+  } catch {
+    /* non-dom */
+  }
+  return "unknown";
+}
+
 export function getHolepunchWsUrl(): string {
   try {
     if (typeof window !== "undefined") {

@@ -1,6 +1,7 @@
 /**
  * Hyperswarm topic mesh (Pear worker shape).
  * One Hyperswarm per process. Frames are opaque; no session keys here.
+ * @see docs/architecture/holepunch-sidecar.md
  */
 
 import b4a from "b4a";
@@ -20,8 +21,59 @@ import Hyperswarm from "hyperswarm";
  * }} TopicState
  */
 
-export function createSwarmMesh() {
-  const swarm = new Hyperswarm();
+/** Encode one bridge message as a single NDJSON line (Noise streams coalesce). */
+export function encodeSwarmLine(obj) {
+  return b4a.from(`${JSON.stringify(obj)}\n`);
+}
+
+/**
+ * Incremental NDJSON splitter for Hyperswarm connection data.
+ * @returns {{ push: (chunk: Uint8Array | string) => object[] }}
+ */
+export function createLineReader() {
+  let buf = "";
+  return {
+    push(chunk) {
+      buf += typeof chunk === "string" ? chunk : b4a.toString(chunk);
+      /** @type {object[]} */
+      const out = [];
+      let idx;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        try {
+          out.push(JSON.parse(line));
+        } catch {
+          /* ignore malformed line */
+        }
+      }
+      return out;
+    },
+  };
+}
+
+/**
+ * @param {{
+ *   swarm?: { dht?: { ready?: () => Promise<void> }, join?: Function, on?: Function, destroy?: () => Promise<void> }
+ *   disableDiscovery?: boolean
+ * }} [opts] Test hooks: inject swarm / skip DHT announce for local fan-out tests.
+ */
+export function createSwarmMesh(opts = {}) {
+  const disableDiscovery = opts.disableDiscovery === true;
+  const swarm =
+    opts.swarm ??
+    (disableDiscovery
+      ? {
+          dht: { ready: async () => {} },
+          join: () => ({
+            flushed: async () => {},
+            destroy: async () => {},
+          }),
+          on() {},
+          destroy: async () => {},
+        }
+      : new Hyperswarm());
   /** @type {Map<string, TopicState>} */
   const topics = new Map();
   /** @type {Map<object, Set<string>>} */
@@ -58,8 +110,24 @@ export function createSwarmMesh() {
     }
   }
 
+  /**
+   * Register a remote peer on a topic shared over this connection.
+   * @param {object} conn
+   * @param {string} topicRef
+   */
+  function adoptRemoteTopic(conn, topicRef) {
+    if (!/^[0-9a-f]{64}$/i.test(topicRef)) return;
+    connTopics.get(conn)?.add(topicRef);
+    const state = topics.get(topicRef);
+    if (!state || state.localClients.size === 0 || !conn.remotePublicKey) return;
+    const peerId = b4a.toString(conn.remotePublicKey, "hex");
+    const before = state.remotePeerIds.size;
+    state.remotePeerIds.add(peerId);
+    if (state.remotePeerIds.size !== before) emitPeers(topicRef);
+  }
+
   function writeSwarm(obj, topicRefFilter) {
-    const buf = b4a.from(JSON.stringify(obj));
+    const buf = encodeSwarmLine(obj);
     for (const conn of conns) {
       if (topicRefFilter) {
         const joined = connTopics.get(conn);
@@ -77,48 +145,48 @@ export function createSwarmMesh() {
     for (const [topicRef, state] of topics) {
       if (state.localClients.size === 0) continue;
       try {
-        conn.write(b4a.from(JSON.stringify({ type: "hello", topicRef })));
+        conn.write(encodeSwarmLine({ type: "hello", topicRef }));
       } catch {
         /* ignore */
       }
     }
   }
 
-  swarm.on("connection", (conn) => {
+  swarm.on("connection", (conn, info) => {
     conns.add(conn);
     connTopics.set(conn, new Set());
+
+    // Hyperswarm already knows shared topics — do not wait only on app hello.
+    for (const topicBuf of info?.topics || []) {
+      adoptRemoteTopic(conn, b4a.toString(topicBuf, "hex"));
+    }
+    info?.on?.("topic", (topicBuf) => {
+      adoptRemoteTopic(conn, b4a.toString(topicBuf, "hex"));
+    });
+
     announceTopicsOnConn(conn);
 
+    const lines = createLineReader();
     conn.on("data", (data) => {
-      let msg;
-      try {
-        msg = JSON.parse(b4a.toString(data));
-      } catch {
-        return;
-      }
-      if (!msg || typeof msg.topicRef !== "string") return;
+      for (const msg of lines.push(data)) {
+        if (!msg || typeof msg.topicRef !== "string") continue;
 
-      if (msg.type === "hello") {
-        const peerId = b4a.toString(conn.remotePublicKey, "hex");
-        connTopics.get(conn)?.add(msg.topicRef);
-        const state = topics.get(msg.topicRef);
-        if (state && state.localClients.size > 0) {
-          state.remotePeerIds.add(peerId);
-          emitPeers(msg.topicRef);
+        if (msg.type === "hello") {
+          adoptRemoteTopic(conn, msg.topicRef);
+          continue;
         }
-        return;
-      }
 
-      if (msg.type === "frame" && typeof msg.payload === "string") {
-        const state = topics.get(msg.topicRef);
-        if (!state) return;
-        for (const client of state.localClients) {
-          client.send({
-            type: "frame",
-            topicRef: msg.topicRef,
-            roomId: msg.roomId,
-            payload: msg.payload,
-          });
+        if (msg.type === "frame" && typeof msg.payload === "string") {
+          const state = topics.get(msg.topicRef);
+          if (!state) continue;
+          for (const client of state.localClients) {
+            client.send({
+              type: "frame",
+              topicRef: msg.topicRef,
+              roomId: msg.roomId,
+              payload: msg.payload,
+            });
+          }
         }
       }
     });
@@ -152,19 +220,21 @@ export function createSwarmMesh() {
       const state = getTopic(topicRef);
       state.localClients.add(client);
 
-      if (!state.discovery) {
+      if (!disableDiscovery && !state.discovery) {
+        // Announce only after DHT bootstrap — joining earlier is flaky on LAN/UFW hosts.
+        await swarm.dht.ready();
         const topic = b4a.from(topicRef, "hex");
         state.discovery = swarm.join(topic, { client: true, server: true });
         await state.discovery.flushed();
       }
 
-      // Adopt remotes that already hello'd this topic before we joined.
+      // Adopt remotes that already hello'd / peerInfo-shared this topic.
       for (const [conn, joinedTopics] of connTopics) {
         if (!joinedTopics.has(topicRef) || !conn.remotePublicKey) continue;
         state.remotePeerIds.add(b4a.toString(conn.remotePublicKey, "hex"));
       }
 
-      writeSwarm({ type: "hello", topicRef }); // announce to all conns (discovery)
+      writeSwarm({ type: "hello", topicRef });
       client.send({ type: "ready", topicRef });
       emitPeers(topicRef);
     },

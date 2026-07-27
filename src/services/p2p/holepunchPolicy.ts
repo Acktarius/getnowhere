@@ -6,8 +6,9 @@
 
 import type { ConnectFailureCode } from "@/types/protocol";
 
-/** Per-attempt connect timeout (ms). */
-export const HOLEPUNCH_CONNECT_TIMEOUT_MS = 30_000;
+/** 120s HyperDHT discovery deadline; single-flight prevents overlap.
+ * @see docs/architecture/holepunch-sidecar.md */
+export const HOLEPUNCH_CONNECT_TIMEOUT_MS = 120_000;
 
 /** Max backoff delay between retries (ms). */
 export const HOLEPUNCH_BACKOFF_CAP_MS = 60_000;

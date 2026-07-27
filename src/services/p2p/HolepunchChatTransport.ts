@@ -42,6 +42,7 @@ import {
   isRoomExpired,
   nowUnix,
   preferredChannel,
+  resolveIncomingLifecycle,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
 import type { ChatMessage, ChatRoom } from "@/types/models";
@@ -86,6 +87,29 @@ const topicRooms = new Map<string, Set<string>>();
 let backendUnsubs: Array<() => void> = [];
 let backendWired = false;
 let lastSidecarDetail: string | undefined;
+
+/** Per-room single-flight guard: concurrent connect/restore share one attempt. */
+const inFlightConnects = new Map<string, Promise<ChatRoom>>();
+/** Earliest time an *automatic* retry (poll-driven restore) may start a new attempt. */
+const nextAutoRetryAt = new Map<string, number>();
+
+/**
+ * Run `run` as the sole active connection attempt for `roomId`. A concurrent
+ * caller receives the same in-flight promise instead of starting a new swarm
+ * join, and the guard releases as soon as the attempt settles either way.
+ */
+function runConnectSingleFlight(
+  roomId: string,
+  run: () => Promise<ChatRoom>,
+): Promise<ChatRoom> {
+  const existing = inFlightConnects.get(roomId);
+  if (existing) return existing;
+  const attempt = run().finally(() => {
+    inFlightConnects.delete(roomId);
+  });
+  inFlightConnects.set(roomId, attempt);
+  return attempt;
+}
 
 /** Post-connect L1 proof before `connected`. @see docs/security/encryption.md */
 const PROOF_TIMEOUT_MS = 5_000;
@@ -523,6 +547,11 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       lastConnectError: "unreachable",
     };
     rooms.set(state.room.id, state);
+    patchCatalogRoom(state.room.id, {
+      lifecycleStatus: "connect_failed",
+      lastConnectError: "unreachable",
+    });
+    scheduleAutoRetryBackoff(state);
     return state.room;
   }
 
@@ -549,7 +578,9 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         rooms.set(state.room.id, state);
         patchCatalogRoom(state.room.id, {
           lifecycleStatus: "connect_failed",
+          lastConnectError: code,
         });
+        scheduleAutoRetryBackoff(state);
         if (code === "crypto_mismatch") {
           removeRoomSession(state.room.id);
         }
@@ -563,7 +594,11 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         lastConnectError: undefined,
       };
       rooms.set(state.room.id, state);
-      patchCatalogRoom(state.room.id, { lifecycleStatus: "connected" });
+      patchCatalogRoom(state.room.id, {
+        lifecycleStatus: "connected",
+        lastConnectError: undefined,
+      });
+      nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
       return state.room;
     }
@@ -577,7 +612,20 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
     lastConnectError: "timeout",
   };
   rooms.set(state.room.id, state);
+  patchCatalogRoom(state.room.id, {
+    lifecycleStatus: "connect_failed",
+    lastConnectError: "timeout",
+  });
+  scheduleAutoRetryBackoff(state);
   return state.room;
+}
+
+/** Schedule the earliest time a poll-driven (automatic) retry may reattempt. */
+function scheduleAutoRetryBackoff(state: RoomState): void {
+  nextAutoRetryAt.set(
+    state.room.id,
+    Date.now() + holepunchBackoffMs(state.room.connectAttempts ?? 1),
+  );
 }
 
 function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
@@ -600,7 +648,12 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     ) {
       existing.room = {
         ...existing.room,
-        lifecycleStatus: bootstrap.lifecycleStatus,
+        // Monotonic: a stale `pending` hydration must never regress a room
+        // that already moved past acceptance. @see docs/security/p2pchatprotocol.md §9
+        lifecycleStatus: resolveIncomingLifecycle(
+          existing.room.lifecycleStatus,
+          bootstrap.lifecycleStatus,
+        ),
         roomTopic: bootstrap.roomTopic ?? existing.room.roomTopic,
         inviteId: bootstrap.inviteId ?? existing.room.inviteId,
         inviteExpiry: bootstrap.inviteExpiry ?? existing.room.inviteExpiry,
@@ -612,6 +665,7 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     return existing;
   }
   const catalog = loadCatalogRoom(id);
+  const baseLifecycle = catalog?.lifecycleStatus ?? "pending";
   const room: ChatRoom = {
     id,
     contactId: contactId || catalog?.contactId || "",
@@ -621,13 +675,15 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
       "conceal-smart-message",
     roomKeyRef: bootstrap?.roomKeyRef ?? catalog?.roomKeyRef ?? `key:${id}`,
     peerStatus: "offline",
-    lifecycleStatus:
-      bootstrap?.lifecycleStatus ?? catalog?.lifecycleStatus ?? "pending",
+    lifecycleStatus: bootstrap?.lifecycleStatus
+      ? resolveIncomingLifecycle(baseLifecycle, bootstrap.lifecycleStatus)
+      : baseLifecycle,
     roomTopic: bootstrap?.roomTopic ?? catalog?.roomTopic,
     inviteId: bootstrap?.inviteId ?? catalog?.inviteId,
     inviteExpiry: bootstrap?.inviteExpiry ?? catalog?.inviteExpiry,
     roomTtl: bootstrap?.roomTtl ?? catalog?.roomTtl,
     connectAttempts: 0,
+    lastConnectError: catalog?.lastConnectError,
     createdAt: catalog?.createdAt ?? new Date().toISOString(),
     lastMessageAt: catalog?.lastMessageAt,
   };
@@ -702,38 +758,50 @@ export const HolepunchChatTransport: ChatTransport = {
   },
 
   async connect(contract) {
-    contractsByRoom.set(contract.roomId, contract);
-    let state = rooms.get(contract.roomId);
-    if (!state) {
-      state = ensureRoom("", {
+    return runConnectSingleFlight(contract.roomId, async () => {
+      contractsByRoom.set(contract.roomId, contract);
+      let state = rooms.get(contract.roomId);
+      if (!state) {
+        state = ensureRoom("", {
+          roomId: contract.roomId,
+          roomKeyRef: contract.sessionId,
+          bootstrapSource: "conceal-smart-message",
+          lifecycleStatus: "accepted",
+          inviteId: contract.inviteId,
+          roomTtl: contract.roomTtl,
+        });
+      }
+      state.contract = contract;
+      state.session = {
+        sessionId: contract.sessionId,
         roomId: contract.roomId,
-        roomKeyRef: contract.sessionId,
-        bootstrapSource: "conceal-smart-message",
-        lifecycleStatus: "accepted",
-        inviteId: contract.inviteId,
-        roomTtl: contract.roomTtl,
-      });
-    }
-    state.contract = contract;
-    state.session = {
-      sessionId: contract.sessionId,
-      roomId: contract.roomId,
-      relationshipId: contract.relationshipId,
-      cipherSuite: contract.cipherSuite,
-      sendKeyRef: contract.sendKeyRef,
-      recvKeyRef: contract.recvKeyRef,
-      nonceSeed: contract.nonceSeed,
-      nonceStrategy: contract.nonceStrategy,
-      sendCounter: contract.sendCounter,
-      recvCounter: contract.recvCounter,
-      createdAt: contract.establishedAt,
-    };
-    if (state.room.lifecycleStatus === "pending") {
-      state.room.lifecycleStatus = "accepted";
-    }
-    rooms.set(contract.roomId, state);
-    upsertCatalogRoom(state.room);
-    return attemptConnect(state);
+        relationshipId: contract.relationshipId,
+        cipherSuite: contract.cipherSuite,
+        sendKeyRef: contract.sendKeyRef,
+        recvKeyRef: contract.recvKeyRef,
+        nonceSeed: contract.nonceSeed,
+        nonceStrategy: contract.nonceStrategy,
+        sendCounter: contract.sendCounter,
+        recvCounter: contract.recvCounter,
+        createdAt: contract.establishedAt,
+      };
+      if (state.room.lifecycleStatus === "pending") {
+        state.room.lifecycleStatus = "accepted";
+      }
+      rooms.set(contract.roomId, state);
+      upsertCatalogRoom(state.room);
+      // A poll-driven automatic reconnect must still honor backoff between
+      // settled attempts; only a settled connect_failed room can be gated.
+      const retryAt = nextAutoRetryAt.get(contract.roomId);
+      if (
+        state.room.lifecycleStatus === "connect_failed" &&
+        retryAt &&
+        retryAt > Date.now()
+      ) {
+        return state.room;
+      }
+      return attemptConnect(state);
+    });
   },
 
   async disconnect(roomId) {
@@ -768,6 +836,7 @@ export const HolepunchChatTransport: ChatTransport = {
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
     contractsByRoom.delete(roomId);
+    nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
     removeCatalogRoom(roomId);
   },
@@ -775,9 +844,11 @@ export const HolepunchChatTransport: ChatTransport = {
   async retryConnect(roomId) {
     const state = rooms.get(roomId);
     if (!state?.contract) throw new Error("Nothing to retry.");
-    const attempt = state.room.connectAttempts ?? 1;
-    await sleep(holepunchBackoffMs(attempt));
-    return attemptConnect(state);
+    return runConnectSingleFlight(roomId, async () => {
+      const attempt = state.room.connectAttempts ?? 1;
+      await sleep(holepunchBackoffMs(attempt));
+      return attemptConnect(state);
+    });
   },
 
   async sendMessage(roomId, text) {
@@ -956,6 +1027,8 @@ export function __resetHolepunchTransport(): void {
   subscribers.clear();
   topicRooms.clear();
   contractsByRoom.clear();
+  inFlightConnects.clear();
+  nextAutoRetryAt.clear();
   __setHolepunchSidecarBackend(null);
 }
 

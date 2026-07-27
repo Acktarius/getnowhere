@@ -1,0 +1,42 @@
+{
+  "change": "stabilize-holepunch-fallback",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "post-accept lifecycle and durable failure",
+      "library": "src/services/p2p/HolepunchChatTransport.ts; src/services/p2p/roomCatalogStore.ts",
+      "runtimeOwner": "src/state/chatStore.ts openRoom/bootstrapRoom -> HolepunchChatTransport",
+      "writes": "in-memory ChatRoom and gnh.roomCatalog lifecycle/error state",
+      "reads": "bootstrap contract, restored session, and durable room catalog",
+      "uiConsumer": "src/screens/chats/ChatRoomScreen.tsx composer and diagnostics",
+      "evidence": "tests/protocol/composer-gate.test.ts; focused transport test; e2e/holepunch-fallback.spec.ts"
+    },
+    {
+      "capability": "single-flight Holepunch reconnect",
+      "library": "src/services/p2p/HolepunchChatTransport.ts; src/services/p2p/holepunchPolicy.ts",
+      "runtimeOwner": "src/state/chatStore.ts openRoom/retryConnect called by ChatRoomScreen",
+      "writes": "room connectAttempts, lifecycleStatus, peerStatus, and lastConnectError",
+      "reads": "room bootstrap contract and sidecar peer events",
+      "uiConsumer": "src/screens/chats/ChatRoomScreen.tsx lifecycle and retry controls",
+      "evidence": "focused transport single-flight tests; e2e/holepunch-fallback.spec.ts"
+    },
+    {
+      "capability": "Holepunch versus chain fallback status",
+      "library": "src/services/protocol/composerGate.ts; src/components/StatusBadges.tsx",
+      "runtimeOwner": "src/screens/chats/ChatRoomScreen.tsx render and send handlers",
+      "writes": "rendered lifecycle, fallback hint, failure code, and message channel",
+      "reads": "ChatRoom lifecycleStatus and lastConnectError",
+      "uiConsumer": "chat room user",
+      "evidence": "e2e/holepunch-fallback.spec.ts"
+    },
+    {
+      "capability": "Electron Linux UFW advisory",
+      "library": "desktop-electron/firewall-status.mjs",
+      "runtimeOwner": "desktop-electron/main.mjs startup -> preload bridge -> ChatRoomScreen diagnostics",
+      "writes": "read-only gnhDesktop firewall advisory and conditional diagnostics warning",
+      "reads": "Linux UFW availability/state and room retryable failure code",
+      "uiConsumer": "Electron chat diagnostics user",
+      "evidence": "desktop-electron/test/firewall-status.test.mjs; e2e/holepunch-fallback.spec.ts"
+    }
+  ]
+}

@@ -139,6 +139,35 @@ HOLEPUNCH_PORT=7902 npm run holepunch
 
 Then `VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7902` for that profile.
 
+## Two machines on one LAN
+
+Each machine runs its **own** sidecar (or Electron isolated shell). The UI on
+each host still talks to **localhost** `ws://127.0.0.1:7901` — that bridge port
+is not Hyperswarm traffic.
+
+Peers meet through HyperDHT (UDP). Requirements:
+
+1. Matching `topicRef` (same accepted room / relationship).
+2. Outbound UDP to public DHT bootstrap nodes (`*.hyperdht.org:49737`).
+3. Host firewall allows **inbound UDP** for HyperDHT / holepunch (dynamic ports
+   around the DHT socket — not TCP `7901`).
+4. Clean sidecar shutdown so `swarm.destroy()` can unannounce (avoids stale DHT
+   records that slow the next join).
+
+### UFW pitfall
+
+`ufw allow 7901` only affects the local WebSocket bridge. It does **not** open
+Holepunch. On Ubuntu with UFW active, prefer allowing LAN UDP while testing:
+
+```bash
+sudo ufw allow from 192.168.0.0/16 to any proto udp comment 'GNH Holepunch LAN'
+sudo ufw status verbose
+```
+
+Tighten later once you confirm L2 connects. Electron may show a read-only
+advisory when UFW looks active after a Holepunch timeout — it never changes
+firewall rules.
+
 ## Connected rule
 
 Transport peer count ≥ 1 is necessary but not sufficient. The UI marks

@@ -297,10 +297,12 @@ Raw private keys, smart-message bodies, payment IDs, display aliases, bootstrap 
 
 These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
 
-1. Join `topicRef` via Hyperswarm (`swarm.join`, client+server).
+1. Await DHT bootstrap, then join `topicRef` via Hyperswarm
+   (`swarm.join`, client+server) and `discovery.flushed()`.
 2. Establish peer channel; set room `connecting` → `connected` only when
    **peer count ≥ 1** (never self-alone). Else `connect_failed` (`timeout` /
-   `unreachable` if sidecar is down).
+   `unreachable` if sidecar is down). Peer count uses Hyperswarm `peerInfo`
+   topics plus an NDJSON app hello (Noise streams coalesce raw JSON).
 3. Retry with exponential backoff + jitter (see §10); respect `roomTtl`.
 4. Seal/open **live** content envelopes when lifecycle is `connected` (app
    ChaCha20-Poly1305; runtime carries opaque sealed frames over bridge + DHT).
@@ -308,10 +310,13 @@ These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
 6. After transport connect, perform application-layer peer verification
    (relationship / invite identifiers). A shared topic alone does not imply
    trust.
+7. On process exit, `swarm.destroy()` so HyperDHT can unannounce (stale DHT
+   records slow the next join).
 
 **Runtime (web-first):** Vite UI ↔ live bridge WebSocket
 (`VITE_HOLEPUNCH_WS_URL`, default `ws://127.0.0.1:7901`) ↔
-`holepunch-sidecar` (Hyperswarm). See
+`holepunch-sidecar` (Hyperswarm). Port `7901` is localhost bridge only — LAN
+peers need UDP/DHT, not an open TCP `7901` between machines. See
 `docs/architecture/holepunch-sidecar.md`.
 UI must never import `hyperswarm` (`docs/prompts/coding-constraints.md`).
 

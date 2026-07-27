@@ -31,8 +31,13 @@ const baseWs =
 
 const holepunchWsUrl = buildWsUrl(baseWs, wsToken);
 
+// Read-only advisory only — never `active`/`inactive` proof of a blocked
+// port, and never used to request elevation or mutate firewall rules.
+const ufwState = readArg("--gnh-ufw-state=") || "unknown";
+
 contextBridge.exposeInMainWorld("gnhDesktop", {
   role,
   holepunchWsUrl,
   wsToken,
+  ufwState,
 });
