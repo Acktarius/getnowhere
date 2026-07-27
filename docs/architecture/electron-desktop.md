@@ -117,8 +117,19 @@ npm run desktop:bob:isolated
 ### Two physical machines
 
 Use one sidecar (or one Electron app) **per machine**. Do not expect shared-mode
-localhost fan-out to reach the other PC. Holepunch needs UDP through the host
-firewall — allowing TCP `7901` alone is not enough. See
+localhost fan-out to reach the other PC.
+
+**Same LAN lab:** HyperDHT prefers a private-address LAN shortcut when both
+peers share one reflexive public host. Ubuntu UFW (or similar) default-deny
+will block that inbound UDP even when DHT bootstrap succeeds — allow LAN UDP
+on **both** hosts for the test, then restart the apps. Allowing TCP `7901`
+alone is useless (localhost bridge only).
+
+**Internet / different NATs (product path):** ordinary users must **not** be
+required to edit UFW or open ports. Outbound UDP + holepunch is the normal
+path; hostile NAT needs an L2 relay, not a firewall cookbook.
+
+Full triage (topic match, NAT buckets, connection-direction dedup logs):
 `docs/architecture/holepunch-sidecar.md` § Two machines on one LAN.
 
 On Linux, Electron may pass a read-only UFW advisory into the renderer after

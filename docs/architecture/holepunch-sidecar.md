@@ -139,34 +139,75 @@ HOLEPUNCH_PORT=7902 npm run holepunch
 
 Then `VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7902` for that profile.
 
-## Two machines on one LAN
+## Two machines on one LAN (developer pitfall)
 
-Each machine runs its **own** sidecar (or Electron isolated shell). The UI on
-each host still talks to **localhost** `ws://127.0.0.1:7901` — that bridge port
-is not Hyperswarm traffic.
+Each machine runs its **own** sidecar (or Electron shell). The UI on each host
+still talks to **localhost** `ws://127.0.0.1:7901` — that bridge port is not
+Hyperswarm traffic.
 
-Peers meet through HyperDHT (UDP). Requirements:
+### Same LAN vs internet peers (product expectation)
 
-1. Matching `topicRef` (same accepted room / relationship).
+| Setup | How HyperDHT connects | Must end users edit UFW / open ports? |
+|---|---|---|
+| Two PCs on the **same LAN** (same private subnet), host firewall default-deny (e.g. Ubuntu UFW) | HyperDHT detects the **same reflexive public host** and prefers a **LAN shortcut**: UDP ping to the peer’s **private** address on dynamic DHT ports | **Developer / lab only.** Inbound LAN UDP must be allowed on **both** hosts or L2 never opens. This is **not** the expected end-user product path. |
+| Two users on **different networks / NATs** (normal worldwide use) | Public DHT rendezvous + UDP holepunch via **outbound** traffic and temporary NAT mappings | **No.** Ordinary users must not be told to open UFW or forward ports. |
+| Hostile NAT (symmetric NAT / some CGNAT) | Direct punch fails even when DHT bootstrap works | **No.** UFW will not fix it — need an L2 relay (product work); L1 chain relay is today’s post-accept safety net (`docs/security/p2pchatprotocol.md` §16). |
+
+Product constraint: **do not require ordinary users to configure host firewalls.**
+Same-LAN + UFW is a known **developer** edge case when testing two physical
+machines behind one router.
+
+### Same-LAN requirements (lab)
+
+1. Matching `topicRef` (same accepted room / relationship) — compare `Topic:`
+   in Room diagnostics on both peers.
 2. Outbound UDP to public DHT bootstrap nodes (`*.hyperdht.org:49737`).
-3. Host firewall allows **inbound UDP** for HyperDHT / holepunch (dynamic ports
-   around the DHT socket — not TCP `7901`).
+3. Host firewall allows **inbound UDP from the LAN** for HyperDHT / holepunch
+   (**dynamic** ports on the DHT socket — **not** TCP `7901`).
 4. Clean sidecar shutdown so `swarm.destroy()` can unannounce (avoids stale DHT
    records that slow the next join).
 
-### UFW pitfall
+When both peers share one reflexive public host, diagnose **LAN inbound UDP**
+before assuming a protocol bug. Internet holepunch is not the primary path for
+that pair.
+
+### UFW pitfall (same-LAN lab only)
 
 `ufw allow 7901` only affects the local WebSocket bridge. It does **not** open
-Holepunch. On Ubuntu with UFW active, prefer allowing LAN UDP while testing:
+Holepunch.
+
+On Ubuntu with UFW active while testing **two machines on one LAN**, allow UDP
+from the LAN subnet on **both** computers (each host is the receiver of the
+other’s LAN ping). Match the subnet your NICs actually use (example for a
+common home `192.168/16` LAN):
 
 ```bash
+# Example only — adjust the source range to your LAN (e.g. 10.0.0.0/8)
 sudo ufw allow from 192.168.0.0/16 to any proto udp comment 'GNH Holepunch LAN'
 sudo ufw status verbose
 ```
 
-Tighten later once you confirm L2 connects. Electron may show a read-only
-advisory when UFW looks active after a Holepunch timeout — it never changes
-firewall rules.
+Restart both sidecars / Electron apps after changing rules so connect state is
+not stuck on a pre-fix backoff. Tighten or remove the rule once lab L2 is
+confirmed.
+
+Electron may show a read-only UFW advisory when UFW looks active after a
+Holepunch timeout — it never requests elevation or changes rules.
+
+### Connection direction logs (not a failure)
+
+Both peers join Hyperswarm as `client: true, server: true`, so both may dial.
+Hyperswarm keeps **one** stream per remote key and destroys the duplicate
+(`ERR_DUPLICATE`). Sidecar stdout then shows:
+
+- One side: `connection open … direction=outbound` (and often
+  `connection reset by peer` on the discarded dial)
+- Other side: `connection open … direction=inbound` for the **same** surviving
+  stream
+
+That asymmetry is **normal** after a successful connect. If chat frames arrive
+over L2, treat the reset lines as dedup noise, not a broken link. (Improving
+those log labels is a follow-up; do not misread them as “inbound blocked.”)
 
 ### Sidecar diagnostics
 
@@ -214,23 +255,28 @@ the sidecar logs enough to tell them apart:
    stored payment IDs and never travels on the wire, so mismatched inputs
    split the topic while the invite, accept, and `roomId` all still agree —
    see `docs/architecture/pairing-and-topics.md`.
-2. **NAT/firewall defeats the punch** — the lookup **did** find the peer
-   (`DHT candidates known` > 0) but no `connection open` log ever follows.
-   The DHT rendezvous succeeded; the actual UDP hole punch between the two
-   peers' NATs did not. Symmetric NAT / CGNAT on either side is the classic
-   cause.
+2. **Punch / LAN path fails after discovery** — the lookup **did** find the
+   peer (`DHT candidates known` > 0) but no lasting `connection open` follows.
+   Split this further:
+   - **Same LAN + host firewall** — both peers share one reflexive public
+     host; HyperDHT’s LAN shortcut needs inbound UDP on dynamic ports. Lab
+     fix: allow LAN UDP on both hosts (see § Two machines on one LAN). **Not**
+     an end-user product requirement.
+   - **Cross-internet NAT** — holepunch between two residential/mobile NATs
+     failed. Symmetric NAT / CGNAT is the classic cause; opening UFW on the
+     client does not replace a relay.
 3. **We are the one behind a hostile NAT** — logged once per topic join as
-   `[swarm] NAT: firewalled=… randomized=… reflexive=host:port`.
-   `randomized=true` means our external port varies per destination (the
-   signature of a symmetric NAT); direct holepunch to *any* peer is unlikely
-   to succeed from behind one without a relay, independent of the remote
-   side's network.
+   `[swarm] NAT: firewalled=… randomized=… reflexive=…` (do not paste real
+   addresses into tickets or chat context). `randomized=true` means our
+   external port varies per destination (symmetric-NAT signature); direct
+   holepunch to *any* peer is unlikely without a relay.
 
-When it is bucket 2 or 3, the fix is not a firewall rule — it is a relay path
-(Hyperswarm's own relay-through connect, or simply relying on the L1 chain
-relay fallback the app already uses post-accept; see
-`docs/security/p2pchatprotocol.md` §16). Watch this output before assuming a
-protocol bug.
+When bucket 2 is **cross-internet** or bucket 3 applies, the product fix is a
+relay path (Hyperswarm relay-through, or the L1 chain relay fallback the app
+already uses post-accept; see `docs/security/p2pchatprotocol.md` §16) — **not**
+telling users to edit UFW. When bucket 2 is **same-LAN lab + UFW**, allow LAN
+UDP on both machines for that test only. Watch sidecar output before assuming
+a protocol bug.
 
 ## Connected rule
 

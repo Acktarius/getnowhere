@@ -316,8 +316,10 @@ These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
 **Runtime (web-first):** Vite UI ↔ live bridge WebSocket
 (`VITE_HOLEPUNCH_WS_URL`, default `ws://127.0.0.1:7901`) ↔
 `holepunch-sidecar` (Hyperswarm). Port `7901` is localhost bridge only — LAN
-peers need UDP/DHT, not an open TCP `7901` between machines. See
-`docs/architecture/holepunch-sidecar.md`.
+peers need UDP/DHT, not an open TCP `7901` between machines. Same-LAN + host
+firewall (UFW) is a **developer lab** pitfall; ordinary users on different
+NATs must not be required to edit firewalls — see
+`docs/architecture/holepunch-sidecar.md` § Two machines on one LAN.
 UI must never import `hyperswarm` (`docs/prompts/coding-constraints.md`).
 
 ### Composer / send enablement (product rule)
