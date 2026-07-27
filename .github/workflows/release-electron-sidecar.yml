@@ -47,6 +47,21 @@ jobs:
         working-directory: desktop-electron
         run: npm ci
 
+      # Tag v0.1.2 → package version 0.1.2 so Forge names include …-0.1.2-… / _0.1.2_
+      - name: Sync version from tag
+        id: ver
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            BASE="$(node -p "require('./desktop-electron/package.json').version")"
+            # Hyphen only — upload-artifact names disallow '+'
+            VERSION="${BASE}-ci.${GITHUB_SHA::7}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          npm version "${VERSION}" --prefix desktop-electron --no-git-tag-version --allow-same-version
+          echo "Desktop package version → ${VERSION}"
+
       - name: Make Linux package
         working-directory: desktop-electron
         env:
@@ -84,7 +99,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: getnowhere-linux-desktop
+          name: getnowhere-linux-desktop-${{ steps.ver.outputs.version }}
           path: output/
           retention-days: 14
 
@@ -97,9 +112,6 @@ jobs:
           fail_on_unmatched_files: true
           body: |
             **Get Now Here — Ubuntu desktop (Electron + sidecar)**
-
-            - UI: embedded Vite `dist/` (shipped inside the package)
-            - App: Electron Forge zip/deb (spawns bundled Hyperswarm sidecar on `ws://127.0.0.1:7901`)
 
             ### Checksums
             ```

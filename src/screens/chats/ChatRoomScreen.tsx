@@ -9,6 +9,7 @@ import { RoomLifecyclePill } from "@/components/StatusBadges";
 import {
   getLastSidecarDetail,
   getMessagesForRoom,
+  getTopicRefForRoom,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   getHolepunchWsUrl,
@@ -30,6 +31,63 @@ import {
 } from "@/types/protocol";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+
+/** Shared leave confirmation — used from every screen state, even before the room finishes loading. */
+function LeaveRoomModal({
+  open,
+  revoking,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  revoking: boolean;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  return (
+    <ConfirmModal
+      open={open}
+      title="Leave room?"
+      body="This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm."
+      confirmLabel="LEAVE ROOM"
+      cancelLabel="Cancel"
+      destructive
+      onConfirm={onConfirm}
+      onClose={() => {
+        if (!revoking) onClose();
+      }}
+    />
+  );
+}
+
+/** Reduced diagnostics for states where the full room record isn't loaded yet. */
+function LoadingDiagnosticsSheet({
+  open,
+  roomId,
+  contactAlias,
+  onClose,
+}: {
+  open: boolean;
+  roomId: string;
+  contactAlias?: string;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet open={open} title="Room diagnostics" onClose={onClose}>
+      <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
+        <div>Room id: {roomId}</div>
+        <div>Contact: {contactAlias ?? "…"}</div>
+        <div>Sidecar: {getHolepunchWsUrl()}</div>
+        {getLastSidecarDetail() && (
+          <div>Sidecar status: {getLastSidecarDetail()}</div>
+        )}
+        <div className="muted" style={{ fontSize: 12 }}>
+          Full room state appears once opening finishes.
+        </div>
+      </div>
+    </Sheet>
+  );
+}
 
 export function ChatRoomScreen() {
   const { roomId = "" } = useParams();
@@ -265,8 +323,23 @@ export function ChatRoomScreen() {
           }}
           peerStatus="offline"
           roomId={roomId}
+          onShowDiagnostics={() => setDiagOpen(true)}
+          onLeaveRoom={() => setLeaveOpen(true)}
+          leaving={revoking}
         />
         <EmptyState title="Opening room…" body="Loading chat session." />
+        <LoadingDiagnosticsSheet
+          open={diagOpen}
+          roomId={roomId}
+          contactAlias={contact?.alias}
+          onClose={() => setDiagOpen(false)}
+        />
+        <LeaveRoomModal
+          open={leaveOpen}
+          revoking={revoking}
+          onConfirm={handleRevokeConfirm}
+          onClose={() => setLeaveOpen(false)}
+        />
       </div>
     );
   }
@@ -288,6 +361,9 @@ export function ChatRoomScreen() {
           }}
           peerStatus="offline"
           roomId={roomId}
+          onShowDiagnostics={() => setDiagOpen(true)}
+          onLeaveRoom={() => setLeaveOpen(true)}
+          leaving={revoking}
         />
         <EmptyState
           title="Room unavailable"
@@ -298,6 +374,18 @@ export function ChatRoomScreen() {
             </Link>
           }
         />
+        <LoadingDiagnosticsSheet
+          open={diagOpen}
+          roomId={roomId}
+          contactAlias={contact?.alias}
+          onClose={() => setDiagOpen(false)}
+        />
+        <LeaveRoomModal
+          open={leaveOpen}
+          revoking={revoking}
+          onConfirm={handleRevokeConfirm}
+          onClose={() => setLeaveOpen(false)}
+        />
       </div>
     );
   }
@@ -305,6 +393,7 @@ export function ChatRoomScreen() {
   const live = canComposeMessages(room.lifecycleStatus);
   const sendChannel = composerPreferredChannel(room.lifecycleStatus);
   const viaChain = live && sendChannel === "relay";
+  /** True Holepunch L2; `live` alone also covers L1 relay. @see docs/security/encryption.md */
   const holepunchLive = room.lifecycleStatus === "connected";
   const disabledReason = composerDisabledReason(
     room.lifecycleStatus,
@@ -426,7 +515,9 @@ export function ChatRoomScreen() {
           className="card card--pad-md"
           style={{ margin: "8px 14px 0", fontSize: 13.5 }}
         >
-          This room was superseded by a newer invite ({contact.roomId}).
+          Your contact sent a new invite for this chat, replacing this room with
+          a new one ({contact.roomId}). This room ({roomId}) is no longer
+          current — open the new room to continue chatting.
           <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
             <Link
               className="btn btn--sm btn--primary"
@@ -457,17 +548,25 @@ export function ChatRoomScreen() {
       >
         {visibleMessages.length === 0 ? (
           <EmptyState
-            title={live ? "Connected room" : "Room not live yet"}
+            title={
+              holepunchLive
+                ? "Connected room"
+                : viaChain
+                  ? "Connected via chain fallback"
+                  : "Room not live yet"
+            }
             body={
-              live
+              holepunchLive
                 ? "Encrypted Holepunch session is ready. Messages use ChaCha20-Poly1305."
-                : room.lifecycleStatus === "accepted" &&
-                    (room.connectAttempts ?? 0) === 0
-                  ? "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
-                  : room.lifecycleStatus === "pending"
-                    ? (handoffHint ??
-                      "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
-                    : "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
+                : viaChain
+                  ? "Holepunch hasn't connected yet. Messages send over the blockchain (Conceal-encrypted memo) until it does — this is not the Holepunch/ChaCha20-Poly1305 session."
+                  : room.lifecycleStatus === "accepted" &&
+                      (room.connectAttempts ?? 0) === 0
+                    ? "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
+                    : room.lifecycleStatus === "pending"
+                      ? (handoffHint ??
+                        "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
+                      : "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
             }
             action={
               room.lifecycleStatus === "pending" ||
@@ -607,6 +706,10 @@ export function ChatRoomScreen() {
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
           <div>Room id: {room.id}</div>
+          {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
+          <div>
+            Topic: {getTopicRefForRoom(room.id) ?? "— not joined yet —"}
+          </div>
           <div>Lifecycle: {room.lifecycleStatus}</div>
           <div>Peer: {room.peerStatus}</div>
           <div>Bootstrap: {room.bootstrapSource}</div>
@@ -651,17 +754,11 @@ export function ChatRoomScreen() {
         </div>
       </Sheet>
 
-      <ConfirmModal
+      <LeaveRoomModal
         open={leaveOpen}
-        title="Leave room?"
-        body="This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm."
-        confirmLabel="LEAVE ROOM"
-        cancelLabel="Cancel"
-        destructive
+        revoking={revoking}
         onConfirm={handleRevokeConfirm}
-        onClose={() => {
-          if (!revoking) setLeaveOpen(false);
-        }}
+        onClose={() => setLeaveOpen(false)}
       />
     </div>
   );

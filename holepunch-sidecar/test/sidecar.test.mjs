@@ -5,12 +5,33 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import {
   createLineReader,
   createSwarmMesh,
   encodeSwarmLine,
+  refreshNudgeDelayMs,
 } from "../src/swarm.mjs";
+
+/** Minimal fake Hyperswarm for tests that need a real (non-stubbed) join path. */
+function fakeHyperswarm({
+  nodes = [{}],
+  refresh = async () => {},
+  dht = {},
+  peers,
+} = {}) {
+  return {
+    dht: { ready: async () => {}, nodes, ...dht },
+    peers,
+    join: () => ({
+      flushed: async () => {},
+      refresh,
+      destroy: async () => {},
+    }),
+    on() {},
+    destroy: async () => {},
+  };
+}
 
 function fakeClient() {
   /** @type {object[]} */
@@ -65,6 +86,215 @@ describe("swarm mesh local fan-out", () => {
     );
 
     await mesh.destroy();
+  });
+});
+
+describe("discovery refresh nudge", () => {
+  it("escalates the delay but never stops re-announcing while zero peers are found", async () => {
+    let refreshCount = 0;
+    const swarm = fakeHyperswarm({
+      refresh: async () => {
+        refreshCount += 1;
+      },
+    });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "33".repeat(32);
+
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      await mesh.join(topic, a);
+      assert.equal(refreshCount, 0);
+
+      // First three nudges are 8s apart.
+      mock.timers.tick(8_000);
+      assert.equal(refreshCount, 1);
+      mock.timers.tick(8_000);
+      mock.timers.tick(8_000);
+      assert.equal(refreshCount, 3);
+
+      // Fourth has backed off to 30s — 8s must not be enough on its own.
+      mock.timers.tick(8_000);
+      assert.equal(refreshCount, 3);
+      mock.timers.tick(22_000);
+      assert.equal(refreshCount, 4);
+
+      // Steady state keeps going indefinitely (old build capped out at 10).
+      for (let i = 0; i < 30; i++) mock.timers.tick(60_000);
+      assert.ok(
+        refreshCount > 10,
+        `expected uncapped nudges, got ${refreshCount}`,
+      );
+    } finally {
+      await mesh.destroy();
+      mock.timers.reset();
+    }
+  });
+
+  it("exposes the escalating delay schedule", () => {
+    assert.equal(refreshNudgeDelayMs(0), 8_000);
+    assert.equal(refreshNudgeDelayMs(2), 8_000);
+    assert.equal(refreshNudgeDelayMs(3), 30_000);
+    assert.equal(refreshNudgeDelayMs(5), 30_000);
+    assert.equal(refreshNudgeDelayMs(6), 60_000);
+    assert.equal(refreshNudgeDelayMs(999), 60_000);
+  });
+
+  it("stops re-announcing once a remote peer is adopted on the topic", async () => {
+    let refreshCount = 0;
+    let connectionHandler;
+    const swarm = fakeHyperswarm({
+      refresh: async () => {
+        refreshCount += 1;
+      },
+    });
+    swarm.on = (event, handler) => {
+      if (event === "connection") connectionHandler = handler;
+    };
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "44".repeat(32);
+
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      await mesh.join(topic, a);
+
+      const remotePublicKeyHex = "ab".repeat(32);
+      const fakeConn = {
+        remotePublicKey: Buffer.from(remotePublicKeyHex, "hex"),
+        on() {},
+        once() {},
+        write() {},
+      };
+      connectionHandler(fakeConn, { topics: [Buffer.from(topic, "hex")] });
+
+      assert.equal(mesh.peerCount(topic), 1);
+      mock.timers.tick(8_000 * 5);
+      assert.equal(refreshCount, 0);
+    } finally {
+      await mesh.destroy();
+      mock.timers.reset();
+    }
+  });
+
+  it("resumes re-announcing when the adopted peer is lost", async () => {
+    let refreshCount = 0;
+    let connectionHandler;
+    const swarm = fakeHyperswarm({
+      refresh: async () => {
+        refreshCount += 1;
+      },
+    });
+    swarm.on = (event, handler) => {
+      if (event === "connection") connectionHandler = handler;
+    };
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "88".repeat(32);
+
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      await mesh.join(topic, a);
+
+      let closeHandler;
+      const fakeConn = {
+        remotePublicKey: Buffer.from("ab".repeat(32), "hex"),
+        on() {},
+        once(event, handler) {
+          if (event === "close") closeHandler = handler;
+        },
+        write() {},
+      };
+      connectionHandler(fakeConn, { topics: [Buffer.from(topic, "hex")] });
+      assert.equal(mesh.peerCount(topic), 1);
+
+      mock.timers.tick(8_000 * 3);
+      assert.equal(refreshCount, 0);
+
+      closeHandler();
+      assert.equal(mesh.peerCount(topic), 0);
+
+      // Backoff restarts from the fast step for the reconnect.
+      mock.timers.tick(8_000);
+      assert.equal(refreshCount, 1);
+    } finally {
+      await mesh.destroy();
+      mock.timers.reset();
+    }
+  });
+
+  it("warns but still joins when the DHT routing table is empty after bootstrap", async () => {
+    const swarm = fakeHyperswarm({ nodes: [] });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "55".repeat(32);
+
+    const warnCalls = [];
+    const restore = console.warn;
+    console.warn = (msg) => warnCalls.push(msg);
+    try {
+      await mesh.join(topic, a);
+    } finally {
+      console.warn = restore;
+      await mesh.destroy();
+    }
+
+    assert.ok(a.inbox.some((m) => m.type === "ready"));
+    assert.ok(warnCalls.some((m) => /DHT routing table is empty/.test(m)));
+  });
+
+  it("logs a symmetric-NAT warning when the DHT reports a randomized reflexive port", async () => {
+    const swarm = fakeHyperswarm({
+      dht: {
+        firewalled: true,
+        randomized: true,
+        host: "203.0.113.5",
+        port: 41234,
+      },
+    });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "66".repeat(32);
+
+    const logCalls = [];
+    const restore = console.log;
+    console.log = (msg) => logCalls.push(msg);
+    try {
+      await mesh.join(topic, a);
+    } finally {
+      console.log = restore;
+      await mesh.destroy();
+    }
+
+    assert.ok(
+      logCalls.some(
+        (m) => /NAT:/.test(m) && /randomized=true/.test(m) && /symmetric-NAT/.test(m),
+      ),
+    );
+  });
+
+  it("reports DHT-known candidate count separately from established peer count in the nudge log", async () => {
+    const swarm = fakeHyperswarm({ peers: new Map([["a", {}]]) });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "77".repeat(32);
+
+    const logCalls = [];
+    const restore = console.log;
+    console.log = (msg) => logCalls.push(msg);
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      await mesh.join(topic, a);
+      mock.timers.tick(8_000);
+    } finally {
+      console.log = restore;
+      mock.timers.reset();
+      await mesh.destroy();
+    }
+
+    assert.ok(
+      logCalls.some((m) => /still 0 peers \(DHT candidates known: 1\)/.test(m)),
+    );
   });
 });
 

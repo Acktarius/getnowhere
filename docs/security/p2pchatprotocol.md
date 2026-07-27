@@ -316,8 +316,10 @@ These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
 **Runtime (web-first):** Vite UI ↔ live bridge WebSocket
 (`VITE_HOLEPUNCH_WS_URL`, default `ws://127.0.0.1:7901`) ↔
 `holepunch-sidecar` (Hyperswarm). Port `7901` is localhost bridge only — LAN
-peers need UDP/DHT, not an open TCP `7901` between machines. See
-`docs/architecture/holepunch-sidecar.md`.
+peers need UDP/DHT, not an open TCP `7901` between machines. Same-LAN + host
+firewall (UFW) is a **developer lab** pitfall; ordinary users on different
+NATs must not be required to edit firewalls — see
+`docs/architecture/holepunch-sidecar.md` § Two machines on one LAN.
 UI must never import `hyperswarm` (`docs/prompts/coding-constraints.md`).
 
 ### Composer / send enablement (product rule)
@@ -400,6 +402,14 @@ different `roomId`s for the same contact+topic — the peer that already
 registered for the old room and the peer now expecting the new one disagree on
 which room is current (`Room diagnostics` shows mismatched room ids on each
 side; UI surfaces this as "superseded").
+
+**Resend UX guard:** an accepted room using the L1 relay fallback (not yet
+Holepunch-`connected`) is a *working* session, not a failure. The contact
+detail "Resend invite" action must confirm before triggering the supersede
+above when `inviteStatus === "accepted"` and the room is relay-eligible
+(`isRelayEligibleStatus`) — resending silently ends the peer's current room.
+Copy must not tell the sender to "recover" a session that is already relaying
+messages.
 
 **Leave forever (revoke):** either peer may end a room before `roomTtl` by
 sending `chat.revoke` (`room_revoked`) to the other over L1. Wire fields:

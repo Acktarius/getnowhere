@@ -1,0 +1,23 @@
+<!-- forge-brief-specs-hash:9afeab7e037e8d12 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>L1 / L1′ / L2 — retire L3 naming</title>
+</head>
+<body>
+  <h1>Retire “L3” — clarify L1′ fallback</h1>
+  <p><strong>What:</strong> Docs and rules now say there are only two layers
+    (L1 SmartMessage + L2 Holepunch Noise), plus <strong>L1′</strong> relay when
+    Holepunch is down. Live ChaCha sealing is an L1 session-key use, not a third
+    layer.</p>
+  <p><strong>Why:</strong> Calling it “L3” confused the threat model and
+    encouraged “drop L3” shortcuts.</p>
+  <p><strong>Room UX:</strong> One room per room id; live and relay messages share
+    one timeline (different bubble style). That merge is intentional.</p>
+  <p><strong>Scope:</strong> Documentation and wording only — no protocol or app
+    behavior change in this change.</p>
+  <p><strong>Approve if:</strong> You agree L3 should not appear as a layer name,
+    and L1′ is the name for on-chain execute relay.</p>
+</body>
+</html>

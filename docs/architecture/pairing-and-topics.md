@@ -37,6 +37,29 @@ topicRef = sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`)
 - Display topics (work/family/…) live in `handshake.roomTopic` / UI only — see
   `src/services/protocol/roomTopics.ts`.
 
+### Canonical hex inputs (mandatory)
+
+`relationshipId` is **never on the wire** — each peer derives it locally from
+its own contact record (`deriveRelationshipId(paymentIdFrom, paymentIdTo)`,
+order-independent). Every hex id that feeds a derivation must therefore be
+canonicalized with `normalizeHexId` (trim + lowercase) before hashing:
+
+```ts
+relationshipId = sha256Hex(`gnh-rel-v1|${lowerA}|${lowerB}`) // sorted pair
+```
+
+L1 delivery matching already compares payment IDs case-insensitively
+(`matchContactByPaymentId`). Hashing unnormalized values therefore produced a
+**silent split-brain**: the invite is delivered, accepted, and both sides show
+the same `roomId`, yet a case difference in one stored payment ID yields a
+different `relationshipId` → different `topicRef` → each peer announces on a
+topic the other never looks up. The sidecar reports this as
+`DHT candidates known: 0` with a healthy routing table
+(`docs/architecture/holepunch-sidecar.md`).
+
+Room diagnostics shows `Topic:` per room — compare it on both peers (and
+against the sidecar's `topic <prefix>…` log) before suspecting NAT or firewall.
+
 ## Multiple rooms per relationship
 
 One eligible contact (pair of payment IDs) may have **many** chat rooms. Each

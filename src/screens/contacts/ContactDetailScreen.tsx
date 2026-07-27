@@ -27,6 +27,7 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
@@ -58,6 +59,16 @@ export function ContactDetailScreen() {
       room?.lifecycleStatus === "connected" && room.peerStatus === "online"
     );
   });
+  /**
+   * Room already accepted and messaging over the L1 chain relay — resending
+   * here would silently end the peer's working session, not "recover" it.
+   * @see docs/security/p2pchatprotocol.md §16
+   */
+  const roomRelayActive = useChatStore((s) => {
+    if (!contactRoomId) return false;
+    const room = s.rooms.find((r) => r.id === contactRoomId);
+    return Boolean(room && isRelayEligibleStatus(room.lifecycleStatus));
+  });
 
   const [copiedAddr, copyAddr] = useCopy();
   const [copiedFrom, copyFrom] = useCopy();
@@ -70,6 +81,7 @@ export function ContactDetailScreen() {
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
+  const [confirmResend, setConfirmResend] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [refreshingInvite, setRefreshingInvite] = useState(false);
@@ -145,7 +157,16 @@ export function ContactDetailScreen() {
       contact.chatStatus === "invited") &&
     !roomLive;
 
-  async function handleResendInvite() {
+  function handleResendInvite() {
+    // Peer may already be chatting via chain relay — confirm before nuking it.
+    if (contact?.inviteStatus === "accepted" && roomRelayActive) {
+      setConfirmResend(true);
+      return;
+    }
+    void doResendInvite();
+  }
+
+  async function doResendInvite() {
     if (!contact) return;
     setError(null);
     setSendingInvite(true);
@@ -419,7 +440,9 @@ export function ContactDetailScreen() {
                       ? "Chat session is live."
                       : contact.inviteStatus === "sent"
                         ? "Invite sent. If the pending room stays offline after they accept, resend a new invite (new room id)."
-                        : "Invite was marked accepted but Holepunch is not connected. Resend a new invite to recover."}
+                        : roomRelayActive
+                          ? "Invite accepted — chatting via blockchain relay while Holepunch connects. Only resend if messages truly are not delivering; resending ends this room for both sides."
+                          : "Invite was marked accepted but Holepunch is not connected. Resend a new invite to recover."}
                   </div>
                   {contact.roomId && (
                     <button
@@ -436,7 +459,7 @@ export function ContactDetailScreen() {
                     <button
                       className="btn btn--sm btn--primary"
                       disabled={sendingInvite}
-                      onClick={() => void handleResendInvite()}
+                      onClick={handleResendInvite}
                     >
                       <MessageSquarePlus size={14} /> Resend invite
                     </button>
@@ -624,6 +647,15 @@ export function ContactDetailScreen() {
         destructive
         onConfirm={() => blockContact(contact.id)}
         onClose={() => setConfirmBlock(false)}
+      />
+      <ConfirmModal
+        open={confirmResend}
+        title="Resend invite?"
+        body="Your contact already accepted this invite and is chatting via the blockchain relay while Holepunch connects. Resending creates a new room and ends their current one — they will see it as superseded. Only do this if messages truly are not delivering."
+        confirmLabel="Resend anyway"
+        destructive
+        onConfirm={() => void doResendInvite()}
+        onClose={() => setConfirmResend(false)}
       />
     </div>
   );

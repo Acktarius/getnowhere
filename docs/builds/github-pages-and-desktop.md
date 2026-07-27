@@ -54,9 +54,10 @@ Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages wor
 - `runs-on: ubuntu-24.04`
 - Root `npm ci` + `npm run build` → `dist/`
 - Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
+- Syncs `desktop-electron` package version from the tag (`v0.1.2` → `0.1.2`) so Forge artifact names include it
 - `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`
-- Uploads CI artifacts; on `v*` tags creates a **draft** GitHub Release with checksums
-- Manual dispatch without a tag still builds and uploads artifacts; it does not create a release
+- Uploads CI artifacts as `getnowhere-linux-desktop-<version>`; on `v*` tags creates a **draft** GitHub Release with checksums
+- Manual dispatch without a tag still builds and uploads artifacts (version `<package.json>-ci.<short-sha>`); it does not create a release
 
 Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override with `GNH_UI_URL` if needed.
 
