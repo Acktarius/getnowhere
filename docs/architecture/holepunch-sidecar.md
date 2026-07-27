@@ -183,24 +183,37 @@ diagnosing "L2 doesn't connect" before touching firewall rules.
 `discovery.flushed()` only confirms the local announce was published — it
 says nothing about whether the other peer has been discovered yet. Left
 alone, Hyperswarm's own idle re-lookup can wait ~10-12 minutes before trying
-again if the peer joins shortly after us. The sidecar now calls
-`discovery.refresh()` every 8s (up to 10 attempts) while a topic still has
-zero remote peers, so a peer that joins moments after us is still found
-quickly instead of waiting on that internal cycle.
+again if the peer joins shortly after us. The sidecar calls
+`discovery.refresh()` on an escalating delay while a topic has zero remote
+peers: 8s for the first three attempts, then 30s, then 60s steady state.
+
+The schedule is **never capped** while the topic stays joined. An earlier
+build stopped after 10 attempts (~80s), which silently dropped back to the
+slow internal cycle exactly when it mattered — two peers whose 80s windows did
+not overlap (one user opens the room minutes after the other) could miss each
+other for the whole session and look identical to a NAT or topic failure. The
+nudge also **resumes** if an adopted peer is later lost, so a reconnect does
+not wait on that internal cycle either.
+
+Steady state costs one log line per minute per topic with no peer; that noise
+is the intended signal when diagnosing a room that never connects.
 
 ### Why "DHT bootstrap ok" does not guarantee L2 connects
 
 `dht.nodes.length > 0` only proves outbound UDP reachability to the small,
 fixed set of **public bootstrap nodes** — a much lower bar than two arbitrary
-residential/mobile NATs punching a hole to each other. A repeatable "still 0
-peers" after all 10 re-announce nudges narrows to one of three buckets, and
-the sidecar now logs enough to tell them apart:
+residential/mobile NATs punching a hole to each other. A "still 0 peers" that
+persists across many re-announce nudges narrows to one of three buckets, and
+the sidecar logs enough to tell them apart:
 
 1. **Topic mismatch or DHT propagation miss** — the lookup itself finds
    nobody. Logged as `DHT candidates known: 0` on every nudge tick
    (`swarm.peers.size`, network-wide candidates the DHT has surfaced via
-   lookup, not scoped to one topic). Check both sides derive the identical
-   `topicRef` (`deriveTopicRef`) before suspecting the network.
+   lookup, not scoped to one topic). Compare `Topic:` in Room diagnostics on
+   both peers first: `relationshipId` is derived locally on each side from the
+   stored payment IDs and never travels on the wire, so mismatched inputs
+   split the topic while the invite, accept, and `roomId` all still agree —
+   see `docs/architecture/pairing-and-topics.md`.
 2. **NAT/firewall defeats the punch** — the lookup **did** find the peer
    (`DHT candidates known` > 0) but no `connection open` log ever follows.
    The DHT rendezvous succeeded; the actual UDP hole punch between the two

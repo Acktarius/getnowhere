@@ -9,6 +9,7 @@ import { RoomLifecyclePill } from "@/components/StatusBadges";
 import {
   getLastSidecarDetail,
   getMessagesForRoom,
+  getTopicRefForRoom,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   getHolepunchWsUrl,
@@ -705,6 +706,10 @@ export function ChatRoomScreen() {
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
           <div>Room id: {room.id}</div>
+          {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
+          <div>
+            Topic: {getTopicRefForRoom(room.id) ?? "— not joined yet —"}
+          </div>
           <div>Lifecycle: {room.lifecycleStatus}</div>
           <div>Peer: {room.peerStatus}</div>
           <div>Bootstrap: {room.bootstrapSource}</div>

@@ -1015,6 +1015,20 @@ export function getLastSidecarDetail(): string | undefined {
   return lastSidecarDetail;
 }
 
+/**
+ * Discovery topic this room joins — both peers must show the same value, or
+ * they announce on unmeetable topics while agreeing on the roomId.
+ * @see docs/architecture/pairing-and-topics.md
+ */
+export function getTopicRefForRoom(roomId: string): string | undefined {
+  const state = rooms.get(roomId);
+  return (
+    state?.topicRef ??
+    state?.contract?.transport.topicRef ??
+    contractsByRoom.get(roomId)?.transport.topicRef
+  );
+}
+
 export function __resetHolepunchTransport(): void {
   for (const u of backendUnsubs) u();
   backendUnsubs = [];

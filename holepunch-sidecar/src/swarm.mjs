@@ -18,7 +18,7 @@ import Hyperswarm from "hyperswarm";
  *   discovery: { flushed: () => Promise<void>, refresh?: (o?: object) => Promise<void>, destroy?: () => Promise<void> } | null
  *   localClients: Set<LocalClient>
  *   remotePeerIds: Set<string>
- *   refreshTimer: ReturnType<typeof setInterval> | null
+ *   refreshTimer: ReturnType<typeof setTimeout> | null
  * }} TopicState
  */
 
@@ -31,11 +31,21 @@ function short(hex) {
  * Re-announce/re-lookup cadence while a topic has zero remote peers.
  * Hyperswarm's own idle re-lookup can be ~10-12 minutes (refresh interval +
  * jitter), which is far slower than a human waiting for "connected". Nudging
- * `discovery.refresh()` on a short interval re-queries + re-announces so a
- * peer that joins shortly after we did is still found quickly.
+ * `discovery.refresh()` re-queries + re-announces so a peer that joins after
+ * us is found quickly.
+ *
+ * Delays escalate but never stop while the topic is joined: the peer may open
+ * their room minutes or hours later, and a fixed attempt cap would drop back
+ * to that slow internal cycle exactly when they finally show up.
+ * @see docs/architecture/holepunch-sidecar.md
  */
-const REFRESH_NUDGE_MS = 8_000;
-const MAX_REFRESH_NUDGES = 10;
+const REFRESH_NUDGE_STEPS_MS = [8_000, 8_000, 8_000, 30_000, 30_000, 30_000];
+const REFRESH_NUDGE_STEADY_MS = 60_000;
+
+/** Delay before the nudge numbered `attempts + 1` (0-based lookup). */
+export function refreshNudgeDelayMs(attempts) {
+  return REFRESH_NUDGE_STEPS_MS[attempts] ?? REFRESH_NUDGE_STEADY_MS;
+}
 
 /** Encode one bridge message as a single NDJSON line (Noise streams coalesce). */
 export function encodeSwarmLine(obj) {
@@ -143,27 +153,30 @@ export function createSwarmMesh(opts = {}) {
 
   function stopRefreshNudge(state) {
     if (state.refreshTimer) {
-      clearInterval(state.refreshTimer);
+      clearTimeout(state.refreshTimer);
       state.refreshTimer = null;
     }
   }
 
   /**
-   * Poke the DHT to re-announce/re-lookup a topic every REFRESH_NUDGE_MS
-   * until a remote peer shows up or MAX_REFRESH_NUDGES is reached. Without
-   * this, discovering a peer that joins after us can silently wait on
-   * Hyperswarm's own ~10-12 minute idle refresh cycle.
+   * Poke the DHT to re-announce/re-lookup a topic on an escalating delay for as
+   * long as it has zero remote peers. Stops on the first adopted peer and
+   * resumes if that peer is later lost.
    * @param {string} topicRef
    * @param {TopicState} state
    */
   function startRefreshNudge(topicRef, state) {
     if (disableDiscovery || state.refreshTimer || !state.discovery) return;
     let attempts = 0;
-    state.refreshTimer = setInterval(() => {
-      if (peerCount(topicRef) > 0) {
-        stopRefreshNudge(state);
-        return;
-      }
+
+    const schedule = () => {
+      if (!state.discovery || state.localClients.size === 0) return;
+      state.refreshTimer = setTimeout(tick, refreshNudgeDelayMs(attempts));
+    };
+
+    const tick = () => {
+      state.refreshTimer = null;
+      if (peerCount(topicRef) > 0) return;
       attempts += 1;
       // `swarm.peers` is DHT-discovered candidates network-wide (any topic),
       // not scoped to topicRef — but 0 here means the lookup itself is
@@ -172,15 +185,17 @@ export function createSwarmMesh(opts = {}) {
       // found and connect/holepunch attempts are failing instead.
       const candidates = swarm.peers?.size ?? 0;
       console.log(
-        `[swarm] topic ${short(topicRef)}… still 0 peers (DHT candidates known: ${candidates}) — re-announcing (attempt ${attempts}/${MAX_REFRESH_NUDGES})`,
+        `[swarm] topic ${short(topicRef)}… still 0 peers (DHT candidates known: ${candidates}) — re-announcing (attempt ${attempts})`,
       );
       state.discovery
         ?.refresh?.({ client: true, server: true })
         ?.catch((err) => {
           console.warn(`[swarm] refresh failed: ${err?.message ?? err}`);
         });
-      if (attempts >= MAX_REFRESH_NUDGES) stopRefreshNudge(state);
-    }, REFRESH_NUDGE_MS);
+      schedule();
+    };
+
+    schedule();
   }
 
   function peerCount(topicRef) {
@@ -302,6 +317,8 @@ export function createSwarmMesh(opts = {}) {
         if (!state || !peerId) continue;
         state.remotePeerIds.delete(peerId);
         emitPeers(topicRef);
+        // Back to zero peers — resume fast re-announce for the reconnect.
+        if (peerCount(topicRef) === 0) startRefreshNudge(topicRef, state);
       }
     });
   });

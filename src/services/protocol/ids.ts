@@ -1,9 +1,22 @@
 /**
  * Relationship id + Holepunch topic helpers (deterministic, order-independent).
+ * @see docs/architecture/pairing-and-topics.md
  */
 
+/**
+ * Canonical form for every hex id that feeds a derivation: trimmed + lowercase.
+ * L1 delivery matching is already case-insensitive, so an unnormalized
+ * derivation would let two peers agree on the invite/room yet hash different
+ * relationshipIds — a silently unmeetable Hyperswarm topic on each side.
+ */
+export function normalizeHexId(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 export function sortPaymentIds(a: string, b: string): [string, string] {
-  return a.toLowerCase() <= b.toLowerCase() ? [a, b] : [b, a];
+  const x = normalizeHexId(a);
+  const y = normalizeHexId(b);
+  return x <= y ? [x, y] : [y, x];
 }
 
 export async function sha256Hex(input: string): Promise<string> {
@@ -22,11 +35,14 @@ export async function deriveRelationshipId(
   return sha256Hex(`gnh-rel-v1|${a}|${b}`);
 }
 
+/** Inputs are canonicalized so both peers hash byte-identical strings. */
 export async function deriveTopicRef(
   roomId: string,
   relationshipId: string,
 ): Promise<string> {
-  return sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`);
+  const room = normalizeHexId(roomId);
+  const rel = normalizeHexId(relationshipId);
+  return sha256Hex(`gnh-chat-v1||${room}||${rel}`);
 }
 
 /**
