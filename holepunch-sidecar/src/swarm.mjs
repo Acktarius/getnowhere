@@ -120,6 +120,27 @@ export function createSwarmMesh(opts = {}) {
     return state;
   }
 
+  /**
+   * DHT bootstrap only proves we can reach the public rendezvous nodes — a far
+   * lower bar than two arbitrary NATs punching a hole to each other.
+   * `randomized` (external port varies per destination, aka symmetric NAT) is
+   * the classic signature of a NAT that direct holepunch cannot cross without
+   * a relay; log it once so a stuck "0 peers" case is diagnosable after the
+   * fact instead of indistinguishable from a topic mismatch.
+   * @see docs/architecture/holepunch-sidecar.md
+   */
+  function logNatDiagnostics() {
+    const dht = swarm.dht;
+    if (!dht || typeof dht.firewalled === "undefined") return;
+    const addr = dht.host && dht.port ? `${dht.host}:${dht.port}` : "unknown";
+    const note = dht.randomized
+      ? " — external port varies per destination (symmetric-NAT signature); direct holepunch to peers is unlikely to succeed without a relay"
+      : "";
+    console.log(
+      `[swarm] NAT: firewalled=${dht.firewalled} randomized=${dht.randomized} reflexive=${addr}${note}`,
+    );
+  }
+
   function stopRefreshNudge(state) {
     if (state.refreshTimer) {
       clearInterval(state.refreshTimer);
@@ -144,8 +165,14 @@ export function createSwarmMesh(opts = {}) {
         return;
       }
       attempts += 1;
+      // `swarm.peers` is DHT-discovered candidates network-wide (any topic),
+      // not scoped to topicRef — but 0 here means the lookup itself is
+      // finding nobody (topic mismatch or DHT propagation), whereas a
+      // non-zero count with 0 established peers means the candidate was
+      // found and connect/holepunch attempts are failing instead.
+      const candidates = swarm.peers?.size ?? 0;
       console.log(
-        `[swarm] topic ${short(topicRef)}… still 0 peers — re-announcing (attempt ${attempts}/${MAX_REFRESH_NUDGES})`,
+        `[swarm] topic ${short(topicRef)}… still 0 peers (DHT candidates known: ${candidates}) — re-announcing (attempt ${attempts}/${MAX_REFRESH_NUDGES})`,
       );
       state.discovery
         ?.refresh?.({ client: true, server: true })
@@ -306,6 +333,7 @@ export function createSwarmMesh(opts = {}) {
         } else {
           console.log(`[swarm] DHT bootstrap ok — ${nodeCount} routing node(s)`);
         }
+        logNatDiagnostics();
         const topic = b4a.from(topicRef, "hex");
         state.discovery = swarm.join(topic, { client: true, server: true });
         await state.discovery.flushed();

@@ -13,9 +13,15 @@ import {
 } from "../src/swarm.mjs";
 
 /** Minimal fake Hyperswarm for tests that need a real (non-stubbed) join path. */
-function fakeHyperswarm({ nodes = [{}], refresh = async () => {} } = {}) {
+function fakeHyperswarm({
+  nodes = [{}],
+  refresh = async () => {},
+  dht = {},
+  peers,
+} = {}) {
   return {
-    dht: { ready: async () => {}, nodes },
+    dht: { ready: async () => {}, nodes, ...dht },
+    peers,
     join: () => ({
       flushed: async () => {},
       refresh,
@@ -166,6 +172,60 @@ describe("discovery refresh nudge", () => {
 
     assert.ok(a.inbox.some((m) => m.type === "ready"));
     assert.ok(warnCalls.some((m) => /DHT routing table is empty/.test(m)));
+  });
+
+  it("logs a symmetric-NAT warning when the DHT reports a randomized reflexive port", async () => {
+    const swarm = fakeHyperswarm({
+      dht: {
+        firewalled: true,
+        randomized: true,
+        host: "203.0.113.5",
+        port: 41234,
+      },
+    });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "66".repeat(32);
+
+    const logCalls = [];
+    const restore = console.log;
+    console.log = (msg) => logCalls.push(msg);
+    try {
+      await mesh.join(topic, a);
+    } finally {
+      console.log = restore;
+      await mesh.destroy();
+    }
+
+    assert.ok(
+      logCalls.some(
+        (m) => /NAT:/.test(m) && /randomized=true/.test(m) && /symmetric-NAT/.test(m),
+      ),
+    );
+  });
+
+  it("reports DHT-known candidate count separately from established peer count in the nudge log", async () => {
+    const swarm = fakeHyperswarm({ peers: new Map([["a", {}]]) });
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const topic = "77".repeat(32);
+
+    const logCalls = [];
+    const restore = console.log;
+    console.log = (msg) => logCalls.push(msg);
+    mock.timers.enable({ apis: ["setInterval"] });
+    try {
+      await mesh.join(topic, a);
+      mock.timers.tick(8_000);
+    } finally {
+      console.log = restore;
+      mock.timers.reset();
+      await mesh.destroy();
+    }
+
+    assert.ok(
+      logCalls.some((m) => /still 0 peers \(DHT candidates known: 1\)/.test(m)),
+    );
   });
 });
 

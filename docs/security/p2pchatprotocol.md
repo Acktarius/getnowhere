@@ -401,6 +401,14 @@ registered for the old room and the peer now expecting the new one disagree on
 which room is current (`Room diagnostics` shows mismatched room ids on each
 side; UI surfaces this as "superseded").
 
+**Resend UX guard:** an accepted room using the L1 relay fallback (not yet
+Holepunch-`connected`) is a *working* session, not a failure. The contact
+detail "Resend invite" action must confirm before triggering the supersede
+above when `inviteStatus === "accepted"` and the room is relay-eligible
+(`isRelayEligibleStatus`) — resending silently ends the peer's current room.
+Copy must not tell the sender to "recover" a session that is already relaying
+messages.
+
 **Leave forever (revoke):** either peer may end a room before `roomTtl` by
 sending `chat.revoke` (`room_revoked`) to the other over L1. Wire fields:
 `inviteId`, optional `replayId`, `reasonCode`, and **`roomId`** (required for

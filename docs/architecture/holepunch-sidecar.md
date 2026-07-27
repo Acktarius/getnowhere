@@ -188,6 +188,37 @@ again if the peer joins shortly after us. The sidecar now calls
 zero remote peers, so a peer that joins moments after us is still found
 quickly instead of waiting on that internal cycle.
 
+### Why "DHT bootstrap ok" does not guarantee L2 connects
+
+`dht.nodes.length > 0` only proves outbound UDP reachability to the small,
+fixed set of **public bootstrap nodes** — a much lower bar than two arbitrary
+residential/mobile NATs punching a hole to each other. A repeatable "still 0
+peers" after all 10 re-announce nudges narrows to one of three buckets, and
+the sidecar now logs enough to tell them apart:
+
+1. **Topic mismatch or DHT propagation miss** — the lookup itself finds
+   nobody. Logged as `DHT candidates known: 0` on every nudge tick
+   (`swarm.peers.size`, network-wide candidates the DHT has surfaced via
+   lookup, not scoped to one topic). Check both sides derive the identical
+   `topicRef` (`deriveTopicRef`) before suspecting the network.
+2. **NAT/firewall defeats the punch** — the lookup **did** find the peer
+   (`DHT candidates known` > 0) but no `connection open` log ever follows.
+   The DHT rendezvous succeeded; the actual UDP hole punch between the two
+   peers' NATs did not. Symmetric NAT / CGNAT on either side is the classic
+   cause.
+3. **We are the one behind a hostile NAT** — logged once per topic join as
+   `[swarm] NAT: firewalled=… randomized=… reflexive=host:port`.
+   `randomized=true` means our external port varies per destination (the
+   signature of a symmetric NAT); direct holepunch to *any* peer is unlikely
+   to succeed from behind one without a relay, independent of the remote
+   side's network.
+
+When it is bucket 2 or 3, the fix is not a firewall rule — it is a relay path
+(Hyperswarm's own relay-through connect, or simply relying on the L1 chain
+relay fallback the app already uses post-accept; see
+`docs/security/p2pchatprotocol.md` §16). Watch this output before assuming a
+protocol bug.
+
 ## Connected rule
 
 Transport peer count ≥ 1 is necessary but not sufficient. The UI marks
