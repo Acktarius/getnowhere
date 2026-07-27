@@ -132,6 +132,7 @@ export function ChatRoomScreen() {
     needsAccept?: boolean;
   } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -411,7 +412,7 @@ export function ChatRoomScreen() {
     getUfwAdvisoryState() === "active";
 
   async function handleSend() {
-    if (!draft.trim() || !live) return;
+    if (!draft.trim() || !live || sending) return;
     if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
       toastError(
         `Via-chain messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
@@ -421,12 +422,15 @@ export function ChatRoomScreen() {
     setSending(true);
     const text = draft.trim();
     setDraft("");
+    // Send button steals focus; keep composer ready for the next message.
+    composerRef.current?.focus();
     try {
       await send(roomId, text);
     } catch (e) {
       toastError((e as Error).message || "Send failed.");
     } finally {
       setSending(false);
+      composerRef.current?.focus();
     }
   }
 
@@ -658,8 +662,9 @@ export function ChatRoomScreen() {
         }}
       >
         <textarea
+          ref={composerRef}
           value={draft}
-          disabled={!live || sending}
+          disabled={!live}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={
             !live
@@ -690,6 +695,7 @@ export function ChatRoomScreen() {
           }}
         />
         <button
+          type="button"
           className="btn btn--primary"
           disabled={!live || sending || !draft.trim()}
           onClick={() => void handleSend()}

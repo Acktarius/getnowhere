@@ -149,13 +149,41 @@ Hyperswarm traffic.
 
 | Setup | How HyperDHT connects | Must end users edit UFW / open ports? |
 |---|---|---|
-| Two PCs on the **same LAN** (same private subnet), host firewall default-deny (e.g. Ubuntu UFW) | HyperDHT detects the **same reflexive public host** and prefers a **LAN shortcut**: UDP ping to the peer’s **private** address on dynamic DHT ports | **Developer / lab only.** Inbound LAN UDP must be allowed on **both** hosts or L2 never opens. This is **not** the expected end-user product path. |
+| Two PCs on the **same LAN** (same private subnet), **no VPN**, host firewall default-deny (e.g. Ubuntu UFW) | HyperDHT detects the **same reflexive public host** and prefers a **LAN shortcut**: UDP ping to the peer’s **private** address on dynamic DHT ports | **Developer / lab only.** Inbound LAN UDP must be allowed on **both** hosts or L2 never opens. This is **not** the expected end-user product path. |
+| Same physical LAN, but **one peer on a VPN** | Reflexive public hosts usually **differ** (VPN egress ≠ home router). HyperDHT skips the LAN shortcut and uses normal **internet-style holepunch** (outbound UDP + temporary mappings) | **No** for that pair — lab confirmed L2 can connect without a LAN UDP allow rule. Still not a product “use a VPN” requirement. |
 | Two users on **different networks / NATs** (normal worldwide use) | Public DHT rendezvous + UDP holepunch via **outbound** traffic and temporary NAT mappings | **No.** Ordinary users must not be told to open UFW or forward ports. |
 | Hostile NAT (symmetric NAT / some CGNAT) | Direct punch fails even when DHT bootstrap works | **No.** UFW will not fix it — need an L2 relay (product work); L1 chain relay is today’s post-accept safety net (`docs/security/p2pchatprotocol.md` §16). |
 
 Product constraint: **do not require ordinary users to configure host firewalls.**
-Same-LAN + UFW is a known **developer** edge case when testing two physical
-machines behind one router.
+Same-LAN + UFW (both peers off VPN, same reflexive host) is a known **developer**
+edge case when testing two physical machines behind one router.
+
+### Why a VPN on one machine can “fix” the LAN UFW pitfall
+
+Observed in lab: two computers on the same network, **one using a VPN**, L2
+connected **without** allowing LAN UDP in UFW.
+
+Mechanism: the LAN shortcut only runs when both sides advertise the **same**
+reflexive public host. A VPN typically gives that peer a different public
+egress, so HyperDHT treats them like an internet pair and holepunches over the
+outbound/VPN path instead of pinging private LAN addresses. Host UFW rules that
+only bite **inbound from the LAN subnet** never see that traffic.
+
+**Practical local test tip:** to verify L2 between two physical machines on the
+same LAN **without** editing UFW, put **one** peer on a VPN (or otherwise give
+it a different public egress). That is often enough to get a working connect
+for day-to-day development. Prefer this over opening broad LAN UDP rules when
+you only need “does chat work?” — not when you are specifically debugging the
+same-LAN path.
+
+Implications:
+
+- This tip **masks** the same-LAN + UFW failure mode; it does not prove that
+  path is healthy.
+- Do **not** tell end users to install a VPN to make chat work — accidental
+  path change, not product design.
+- To reproduce the real same-LAN + UFW failure, both peers must be **off VPN**
+  and share one reflexive public host.
 
 ### Same-LAN requirements (lab)
 

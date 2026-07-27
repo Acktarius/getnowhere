@@ -120,10 +120,13 @@ Use one sidecar (or one Electron app) **per machine**. Do not expect shared-mode
 localhost fan-out to reach the other PC.
 
 **Same LAN lab:** HyperDHT prefers a private-address LAN shortcut when both
-peers share one reflexive public host. Ubuntu UFW (or similar) default-deny
-will block that inbound UDP even when DHT bootstrap succeeds — allow LAN UDP
-on **both** hosts for the test, then restart the apps. Allowing TCP `7901`
-alone is useless (localhost bridge only).
+peers share one reflexive public host (both off VPN). Ubuntu UFW (or similar)
+default-deny will block that inbound UDP even when DHT bootstrap succeeds —
+allow LAN UDP on **both** hosts for the test, then restart the apps. Allowing
+TCP `7901` alone is useless (localhost bridge only). **Quick local tip:** put
+**one** peer on a VPN so HyperDHT holepunches like an internet pair and you can
+test L2 without editing UFW (masks the same-LAN path — see
+`docs/architecture/holepunch-sidecar.md`).
 
 **Internet / different NATs (product path):** ordinary users must **not** be
 required to edit UFW or open ports. Outbound UDP + holepunch is the normal
