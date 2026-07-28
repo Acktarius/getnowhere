@@ -4,18 +4,32 @@
  */
 
 import { WebSocketServer } from "ws";
+import { startParentDeathWatch } from "./parent-death.mjs";
 import { createSwarmMesh } from "./swarm.mjs";
 
 const host = process.env.HOLEPUNCH_HOST ?? "127.0.0.1";
 const port = Number(process.env.HOLEPUNCH_PORT ?? 7901);
 const requiredToken = process.env.GNH_SIDECAR_TOKEN ?? "";
 
-const mesh = createSwarmMesh();
+const mesh = createSwarmMesh({
+  disableDiscovery: process.env.GNH_DISABLE_DISCOVERY === "1",
+});
 const wss = new WebSocketServer({ host, port });
 
 function send(ws, msg) {
   if (ws.readyState === ws.OPEN) {
     ws.send(JSON.stringify(msg));
+  }
+}
+
+function announceListening(boundHost, boundPort) {
+  console.log(`[holepunch-sidecar] listening ws://${boundHost}:${boundPort}`);
+  if (typeof process.send === "function") {
+    process.send({
+      type: "listening",
+      host: boundHost,
+      port: boundPort,
+    });
   }
 }
 
@@ -117,7 +131,26 @@ wss.on("connection", (ws, req) => {
 });
 
 wss.on("listening", () => {
-  console.log(`[holepunch-sidecar] listening ws://${host}:${port}`);
+  const addr = wss.address();
+  const boundPort =
+    typeof addr === "object" && addr && "port" in addr ? addr.port : port;
+  const boundHost =
+    typeof addr === "object" && addr && "address" in addr
+      ? addr.address
+      : host;
+  announceListening(boundHost === "::" ? host : boundHost, boundPort);
+});
+
+wss.on("error", (err) => {
+  const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+  if (code === "EADDRINUSE") {
+    console.error(
+      `[holepunch-sidecar] address already in use: ${host}:${port}`,
+    );
+  } else {
+    console.error(`[holepunch-sidecar] server error: ${err.message}`);
+  }
+  process.exit(1);
 });
 
 async function shutdown() {
@@ -126,6 +159,15 @@ async function shutdown() {
   await mesh.destroy();
   process.exit(0);
 }
+
+startParentDeathWatch({
+  intervalMs: Number(process.env.GNH_PARENT_POLL_MS ?? 1000),
+  onDeath: async () => {
+    console.error("[holepunch-sidecar] parent process died; exiting");
+    wss.close();
+    await mesh.destroy();
+  },
+});
 
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());

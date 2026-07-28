@@ -54,7 +54,7 @@ function appendToken(baseUrl: string, token: string): string {
 export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
   try {
     if (typeof window !== "undefined") {
-      const bridge = window.gnhDesktop ?? window.__GNH_DESKTOP__;
+      const bridge = window.gnhDesktop;
       if (bridge?.ufwState) return bridge.ufwState;
     }
   } catch {
@@ -66,7 +66,7 @@ export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
 export function getHolepunchWsUrl(): string {
   try {
     if (typeof window !== "undefined") {
-      const bridge = window.gnhDesktop ?? window.__GNH_DESKTOP__;
+      const bridge = window.gnhDesktop;
       if (bridge) {
         const base =
           bridge.holepunchWsUrl?.trim() ||

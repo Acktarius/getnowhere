@@ -1,0 +1,24 @@
+{
+  "change": "packaged-desktop-identity",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar IPC reports a real ephemeral port",
+      "cmd": "cd holepunch-sidecar && node scripts/e2e-ephemeral-ipc.mjs",
+      "expect": "ephemeral-ipc-ok",
+      "timeoutMs": 30000
+    },
+    {
+      "name": "Sidecar exits non-zero on an occupied port",
+      "cmd": "cd holepunch-sidecar && node scripts/e2e-bind-conflict.mjs",
+      "expect": "bind-conflict-ok",
+      "timeoutMs": 30000
+    },
+    {
+      "name": "Desktop identity decision table",
+      "cmd": "npm --prefix desktop-electron test -- --test-name-pattern=desktop-identity",
+      "expect": "pass",
+      "timeoutMs": 60000
+    }
+  ]
+}

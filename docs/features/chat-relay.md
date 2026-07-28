@@ -25,7 +25,7 @@ Relay does **not** replace L2.
 
 ## Inbound refresh
 
-- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L1' stays live).
+- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L3 stays live).
 - Also rescans on enter and when lifecycle becomes relay-eligible.
 - Global wallet poll also calls `refreshRelays` (slower when near tip).
 

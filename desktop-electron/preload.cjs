@@ -1,43 +1,22 @@
 /**
- * Expose gnhDesktop { role, holepunchWsUrl, wsToken } to the Vite renderer.
+ * Expose gnhDesktop { role?, holepunchWsUrl, wsToken, ufwState } to the Vite renderer.
  * @see docs/architecture/electron-desktop.md
  *
- * Important: do NOT put `?token=` in --gnh-holepunch-ws — Chromium/Electron can
- * truncate additionalArguments at `?`. Pass base URL + token separately.
+ * Pulled over a synchronous IPC round-trip to main (`gnh:get-desktop-info`)
+ * instead of `additionalArguments` / `executeJavaScript`, so the auth token
+ * never sits in this process's command line or in the page's main-world
+ * scope. Normalization lives in preload-bridge.cjs (no electron import, so
+ * it's testable) and trusts ONLY main's IPC reply — see that file for why it
+ * never falls back to ambient process.env.
  */
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
+const { normalizeGnhDesktopInfo } = require("./preload-bridge.cjs");
 
-function readArg(prefix) {
-  const hit = process.argv.find((a) => a.startsWith(prefix));
-  return hit ? hit.slice(prefix.length) : "";
+let raw = null;
+try {
+  raw = ipcRenderer.sendSync("gnh:get-desktop-info");
+} catch {
+  /* main not ready / channel missing — normalize() falls back to defaults */
 }
 
-function buildWsUrl(base, token) {
-  const clean = (base || "ws://127.0.0.1:7901").split("?")[0].trim();
-  if (!token) return clean;
-  return `${clean}?token=${encodeURIComponent(token)}`;
-}
-
-const role = readArg("--gnh-role=") || process.env.GNH_ROLE || "alice";
-
-const wsToken =
-  readArg("--gnh-ws-token=") || process.env.GNH_SIDECAR_TOKEN || "";
-
-// Prefer CLI arg (from main) over env. Env VITE_* is for Vite only — not used here.
-const baseWs =
-  readArg("--gnh-holepunch-ws=") ||
-  process.env.GNH_HOLEPUNCH_WS_URL ||
-  "ws://127.0.0.1:7901";
-
-const holepunchWsUrl = buildWsUrl(baseWs, wsToken);
-
-// Read-only advisory only — never `active`/`inactive` proof of a blocked
-// port, and never used to request elevation or mutate firewall rules.
-const ufwState = readArg("--gnh-ufw-state=") || "unknown";
-
-contextBridge.exposeInMainWorld("gnhDesktop", {
-  role,
-  holepunchWsUrl,
-  wsToken,
-  ufwState,
-});
+contextBridge.exposeInMainWorld("gnhDesktop", normalizeGnhDesktopInfo(raw));

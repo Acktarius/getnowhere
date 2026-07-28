@@ -99,10 +99,30 @@ state through the bridge. The UI must not import Hypercore/Hyperswarm primitives
 ```
 holepunch-sidecar/
   package.json
-  src/swarm.mjs    # one Hyperswarm; multi-topic join + local/remote fan-out
-  src/server.mjs   # ws://127.0.0.1:7901 by default
+  src/swarm.mjs         # one Hyperswarm; multi-topic join + local/remote fan-out
+  src/server.mjs        # WebSocket bridge (default ws://127.0.0.1:7901)
+  src/parent-death.mjs  # exit when Electron parent dies
   test/
 ```
+
+## Packaged desktop bridge (ephemeral port)
+
+When Electron spawns the sidecar with `HOLEPUNCH_PORT=0` and an IPC channel
+(`stdio` includes `'ipc'`):
+
+1. The OS assigns a free loopback port.
+2. On `listening`, the sidecar logs the **real** bound port (`wss.address().port`,
+   never `0`) and `process.send({ type: "listening", host, port })`.
+3. Electron waits for that IPC message (bounded timeout), then builds
+   `ws://127.0.0.1:<port>` for the renderer.
+4. Packaged builds use a per-launch `randomUUID()` token and **do not** write a
+   `$TMPDIR/gnh-sidecar-*.token` lockfile.
+5. On `EADDRINUSE` (or other listen errors), the sidecar logs and exits non-zero.
+6. The sidecar watches parent death (`process.ppid` poll) and exits if Electron
+   dies without a graceful stop — so Hyperswarm does not linger under init.
+
+Web-dev `npm run holepunch` and the Alice/Bob harness keep fixed ports and
+`stdio: inherit` (no IPC required).
 
 ## Run (Alice / Bob on one machine)
 
@@ -324,8 +344,10 @@ Electron main always sets a per-launch token — `docs/architecture/electron-des
 |---|---|---|
 | `VITE_HOLEPUNCH_WS_URL` | `ws://127.0.0.1:7901` | Vite web app |
 | `HOLEPUNCH_HOST` | `127.0.0.1` | sidecar |
-| `HOLEPUNCH_PORT` | `7901` | sidecar |
+| `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar |
 | `GNH_SIDECAR_TOKEN` | (unset) | sidecar — required when set |
+| `GNH_PARENT_POLL_MS` | `1000` | sidecar parent-death poll |
+| `GNH_DISABLE_DISCOVERY` | unset | test-only: skip Hyperswarm DHT |
 
 See also:
 

@@ -249,7 +249,7 @@ export function ChatRoomScreen() {
     };
   }, [room?.lifecycleStatus, room?.connectAttempts, roomId, openRoom]);
 
-  // Keep UI peer/lifecycle in sync; always rescan L1' (Holepunch can fail mid-chat).
+  // Keep UI peer/lifecycle in sync; always rescan L3 (Holepunch can fail mid-chat).
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {

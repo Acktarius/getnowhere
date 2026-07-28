@@ -1,0 +1,168 @@
+<!-- forge-brief-specs-hash:7506b7e212dac773 -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Operator brief — Packaged desktop identity</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 4rem;
+        max-width: 48rem;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        line-height: 1.6;
+        color: #16181d;
+        background: #fff;
+      }
+      h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+      h2 { font-size: 1.15rem; margin-top: 2.25rem; border-bottom: 1px solid #e3e5ea; padding-bottom: 0.3rem; }
+      .sub { color: #5b6270; margin-top: 0; }
+      code { background: #f4f5f7; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+      table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.95rem; }
+      th, td { border: 1px solid #e3e5ea; padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+      th { background: #f8f9fb; }
+      ul { padding-left: 1.2rem; }
+      li { margin: 0.35rem 0; }
+      .callout { background: #fff8e6; border-left: 3px solid #e0a800; padding: 0.75rem 1rem; margin: 1.25rem 0; }
+      pre.mermaid { background: #f8f9fb; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>Packaged desktop identity</h1>
+    <p class="sub">Operator brief — change <code>packaged-desktop-identity</code></p>
+
+    <h2>TL;DR</h2>
+    <p>
+      The installed desktop app currently pretends to be "Alice", the throwaway
+      identity we invented for running two copies side by side during
+      development. That name is stamped on the log output, the window title, and
+      the folder holding the user's wallet. Along with it, the app ships a
+      fixed, documented local network port and a shared password that is the
+      same on every machine in the world.
+    </p>
+    <p>
+      After this change an installed app has no development identity at all, and
+      the private channel it opens on the user's own machine is different every
+      single time it starts — different port, different password, no traces left
+      behind.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>Launching the installed app prints <code>[desktop]</code>, not <code>[desktop:alice]</code>.</li>
+      <li>The window is titled simply "Get Now Here", with no role or debug tag.</li>
+      <li>User data lives in <code>~/.config/getnowhere</code> instead of <code>~/.config/getnowhere-desktop-alice</code>.</li>
+      <li>Each launch opens its private local channel on a port the operating system picks at random, so there is no fixed number for anything else to look for.</li>
+      <li>The app learns that port through a private message from the networking process, not by reading a log line.</li>
+      <li>Each launch generates a fresh random password for that channel, and never writes it to a temporary file the way it does today.</li>
+      <li>The installed app always starts its own networking process and will never latch onto one it did not start.</li>
+      <li>Only one installed copy can run at a time, so the wallet folder is never opened by two processes. A second launch focuses the first window.</li>
+      <li>If the main app is killed hard, the networking process exits too, so it does not keep talking on the mesh by itself.</li>
+      <li>Running the app the developer way — <code>npm run desktop:alice</code> and <code>desktop:bob</code> — behaves exactly as it does now.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      Today one setting controls eleven different things, and it quietly falls
+      back to "alice" whenever nobody says otherwise. Installed builds never say
+      otherwise. The fix moves that whole decision into one small, testable piece
+      of code that asks a single question first: is this an installed app, or a
+      developer running from source? Installed builds simply do not participate
+      in the developer identity, and they ignore the developer's environment
+      switches so the leak cannot happen again through a side door.
+    </p>
+    <p>
+      For the local channel, the app asks the operating system for any free
+      port. The networking process reports that port over a private IPC channel,
+      and only then does the app connect. Installed builds also take a
+      single-instance lock on the profile folder — random ports stop TCP
+      collisions, but without the lock two copies would still share the wallet
+      database. The networking process watches for its parent and exits if the
+      main app dies without a clean shutdown.
+    </p>
+
+    <pre class="mermaid">
+flowchart TD
+    A[App starts] --> B{Installed, or run from source?}
+    B -- Installed --> C[No role. Storage in ~/.config/getnowhere]
+    C --> L[Single-instance lock on profile]
+    L --> E[Start own networking process on any free port]
+    E --> F[IPC: process replies with the port it got]
+    F --> G[Connect using a fresh random password]
+    B -- From source --> D[Alice or Bob. Storage per role]
+    D --> H[Fixed port 7901, shared password, may join an existing process]
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>No new commands. Your development workflow is untouched.</li>
+      <li>After installing the new build, the app starts empty — see the warning below.</li>
+      <li>Old data can be removed with <code>rm -rf ~/.config/getnowhere-desktop-alice ~/.config/getnowhere-desktop-bob</code>.</li>
+      <li>If you ever need a specific port for troubleshooting, setting <code>HOLEPUNCH_PORT</code> still forces one.</li>
+    </ul>
+
+    <div class="callout">
+      <strong>Data loss is intentional here.</strong> Everything the desktop app
+      remembers — the encrypted wallet, contacts, and the keys for existing chat
+      rooms — is stored inside the folder named after "alice". Renaming that
+      folder means installed builds start clean. You accepted this because the
+      project is still in testing, and because writing a migration tool would be
+      the only part of this work that touches a folder containing a wallet.
+      Anyone who already created a wallet in an installed build needs their
+      recovery phrase.
+    </div>
+
+    <h2>Risks and open questions</h2>
+    <table>
+      <tr><th>Risk</th><th>How it's handled</th></tr>
+      <tr>
+        <td>Existing installed users lose access to their wallet</td>
+        <td>Called out in the release notes; the recovery phrase is the way back</td>
+      </tr>
+      <tr>
+        <td>The app waits forever for the networking process to report its port</td>
+        <td>The wait is time-limited on the IPC message; on timeout startup fails clearly</td>
+      </tr>
+      <tr>
+        <td>Two installed copies corrupt the wallet folder</td>
+        <td>Single-instance lock after the profile path is set; second launch focuses the first</td>
+      </tr>
+      <tr>
+        <td>Networking process survives a hard kill of the main app</td>
+        <td>Sidecar watches parent death and exits, tearing down the mesh</td>
+      </tr>
+      <tr>
+        <td>The developer Alice/Bob setup breaks by accident</td>
+        <td>Tests assert today's exact values for both roles and both modes</td>
+      </tr>
+      <tr>
+        <td>Final confirmation needs a real desktop</td>
+        <td>The installed-app check is a manual step at the end; the networking half runs automatically</td>
+      </tr>
+    </table>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>No migration tool, and no attempt to move or rescue existing data.</li>
+      <li>Installed builds are single-instance; only the developer Alice/Bob harness still runs two copies.</li>
+      <li>No change to how two people actually find and talk to each other, and no change to the encryption layers.</li>
+      <li>No change to the web or mobile builds.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li><strong>Identity rules</strong> — the one testable place that decides installed vs developer (2 tasks)</li>
+      <li><strong>Networking process</strong> — IPC port report, bind failure, parent-death exit (2 tasks)</li>
+      <li><strong>Desktop shell</strong> — new rules, IPC handshake, single-instance lock, fresh password (4 tasks)</li>
+      <li><strong>Documentation</strong> — architecture and build notes (2 tasks)</li>
+      <li><strong>Verification</strong> — full test suites, a real installed-app run, and a developer regression pass (3 tasks)</li>
+    </ul>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({ startOnLoad: true });
+    </script>
+  </body>
+</html>

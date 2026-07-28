@@ -24,5 +24,4 @@ interface GnhDesktopBridge {
 
 interface Window {
   gnhDesktop?: GnhDesktopBridge;
-  __GNH_DESKTOP__?: GnhDesktopBridge;
 }

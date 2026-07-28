@@ -6,14 +6,44 @@ mobile Bare. MVP shell lives in `desktop-electron/`.
 ## Intent
 
 - **Desktop package:** Electron shell around the Vite UI.
-- Hyperswarm stays **out of the renderer**. For localhost Alice/Bob testing, main
-  owns (or attaches to) the `holepunch-sidecar` process on `127.0.0.1:7901`.
+- Hyperswarm stays **out of the renderer**. Packaged builds own a private
+  sidecar child; localhost Alice/Bob testing may share or isolate sidecars
+  (below).
 - **Mobile:** unchanged — Expo UI + Bare worklet (`mobile-p2p-runtime.md`).
 - **Out of scope:** React Native desktop, Nitro Hyperswarm modules.
+
+## Packaged vs development
+
+Identity is resolved by `desktop-electron/desktop-identity.mjs` from
+`app.isPackaged` (not from a default `alice` role).
+
+| | Packaged (`getnowhere` / `.deb`) | Dev harness |
+|---|---|---|
+| Role | none | `GNH_ROLE` (`alice` / `bob`) |
+| Log prefix | `[desktop]` | `[desktop:alice]` |
+| `userData` | `~/.config/getnowhere` | `~/.config/getnowhere-desktop-<role>` |
+| Partition | `persist:gnh` | `persist:gnh-<role>` |
+| Window title | `Get Now Here` | `Get Now Here — Alice [shared:owner]` |
+| Swarm | always own sidecar; never attach | shared attach or isolated |
+| Port | ephemeral (`HOLEPUNCH_PORT=0`) unless overridden | `7901` / bob isolated `7902` |
+| Port handoff | Node IPC `{ type: "listening", port }` | `waitForPort` |
+| Bridge token | per-launch `randomUUID()`; no lockfile | shared default or UUID |
+| Single instance | yes (`requestSingleInstanceLock` after `setPath`) | no (Alice/Bob need two) |
+
+Packaged builds **ignore** `GNH_ROLE`, `GNH_SWARM_MODE`, and `GNH_SIDECAR_TOKEN`.
+They still honor `HOLEPUNCH_HOST`, `HOLEPUNCH_PORT`, `GNH_UI_URL`, `GNH_NODE_BIN`,
+and `GNH_HOLEPUNCH_WS_URL` as operational overrides.
+
+Pre-release note: renaming `userData` / partition orphans older
+`getnowhere-desktop-alice` trees (no migration). Remove with
+`rm -rf ~/.config/getnowhere-desktop-alice ~/.config/getnowhere-desktop-bob`.
+After a hard kill, a stale Chromium `SingletonLock` under `~/.config/getnowhere`
+can block relaunch until removed.
 
 ## Dev: two instances on one PC (Alice / Bob)
 
 Goal: two Electron windows, two Conceal wallets, Hyperswarm via sidecar child(ren).
+**Dev only** — not used by packaged installs.
 
 ### Swarm modes (`GNH_SWARM_MODE`)
 
@@ -31,17 +61,20 @@ windows always match. Owner also writes `$TMPDIR/gnh-sidecar-<host>-<port>.token
 
 **Isolated mode:** each role gets a random UUID token for its own sidecar.
 
-Pass **base WS URL and token as separate Electron args** — never put `?token=` in
-`--gnh-holepunch-ws` (Chromium can truncate `additionalArguments` at `?`).
-
-```text
---gnh-holepunch-ws=ws://127.0.0.1:7901
---gnh-ws-token=<token>
-```
-
-Preload builds `window.gnhDesktop.holepunchWsUrl` with the query. Root `.env`
-`VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7901` is for browser-only web-dev (no token);
-Electron must use `gnhDesktop`, not that env alone.
+Main hands `{ role?, holepunchWsUrl, wsToken, ufwState }` to preload over a
+synchronous IPC round-trip (`gnh:get-desktop-info`, `ipcRenderer.sendSync`),
+scoped to that window's own `webContents` — **not** `additionalArguments` and
+not `executeJavaScript` into the page's main-world scope. Both of those older
+paths leaked the token further than necessary: `additionalArguments` lands in
+this process's command line (readable via `/proc/<pid>/cmdline` or `ps` by
+any co-resident process), and `executeJavaScript` places it in the
+main-world scope of the page (more exposed to page-level XSS than the
+isolated preload world `contextBridge` uses). `desktop-electron/preload-bridge.cjs`
+validates the IPC reply's shape before exposing it as `window.gnhDesktop`;
+base URL and token stay separate fields — `HolepunchSidecarClient.ts`
+reassembles `?token=` itself. Root `.env` `VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7901`
+is for browser-only web-dev (no token); Electron must use `gnhDesktop`, not
+that env alone.
 
 Optional: set the same `GNH_SIDECAR_TOKEN` in both terminals. Web-dev
 (`npm run holepunch` without the env) stays open (no token).
@@ -94,18 +127,18 @@ npm run desktop:bob
 Import / create a different wallet in each window. Live chat uses
 `ws://127.0.0.1:7901` (injected as `window.gnhDesktop.holepunchWsUrl`).
 
-Optional env:
+Optional env (**dev harness**; packaged ignores the first three):
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `GNH_ROLE` | `alice` | `alice` \| `bob` (storage partition + title) |
-| `GNH_SWARM_MODE` | `shared` | `shared` \| `isolated` |
-| `HOLEPUNCH_HOST` | `127.0.0.1` | Swarm bind / attach host |
-| `HOLEPUNCH_PORT` | `7901` (bob isolated: `7902`) | Sidecar listen port |
-| `GNH_HOLEPUNCH_WS_URL` | `ws://127.0.0.1:7901` | Base URL; token query added by main |
-| `GNH_SIDECAR_TOKEN` | random UUID | Required by sidecar when set |
-| `GNH_UI_URL` | `http://127.0.0.1:5173` (dev) / embedded `resources/ui` (packaged) | UI origin override (`loadURL`); packaged default is `loadFile` |
-| `GNH_NODE_BIN` | `node` (dev) / bundled runtime (packaged) | Node used to spawn sidecar |
+| Variable | Default | Meaning | Packaged |
+|---|---|---|---|
+| `GNH_ROLE` | `alice` | `alice` \| `bob` (storage partition + title) | ignored |
+| `GNH_SWARM_MODE` | `shared` | `shared` \| `isolated` | ignored (always isolated) |
+| `GNH_SIDECAR_TOKEN` | random / shared default | Required by sidecar when set | ignored (fresh UUID) |
+| `HOLEPUNCH_HOST` | `127.0.0.1` | Swarm bind / attach host | honored |
+| `HOLEPUNCH_PORT` | `7901` (bob isolated: `7902`) | Sidecar listen port (`0` = ephemeral) | honored |
+| `GNH_HOLEPUNCH_WS_URL` | derived from host/port | Base URL; token query added by main | honored |
+| `GNH_UI_URL` | `http://127.0.0.1:5173` (dev) / embedded `resources/ui` (packaged) | UI origin override (`loadURL`); packaged default is `loadFile` | honored |
+| `GNH_NODE_BIN` | `node` (dev) / bundled runtime (packaged) | Node used to spawn sidecar | honored |
 
 Isolated commands:
 
@@ -163,9 +196,19 @@ Same live schema as web-dev (`HolepunchSidecarClient.ts`):
 ```text
 desktop-electron/
   package.json
-  main.mjs          # window + sidecar child lifecycle
-  preload.cjs       # exposes gnhDesktop { role, holepunchWsUrl, wsToken }
+  desktop-identity.mjs  # packaged vs Alice/Bob decision table
+  main.mjs              # window + sidecar child lifecycle; owns gnh:get-desktop-info IPC
+  preload-bridge.cjs    # pure normalize(ipcReply) → gnhDesktop bridge object (no electron import)
+  preload.cjs           # ipcRenderer.sendSync + contextBridge.exposeInMainWorld("gnhDesktop", ...)
 ```
+
+`preload-bridge.cjs` validates only the object `main.mjs` returned over
+`gnh:get-desktop-info` — it never reads `process.env`. `main.mjs` is the
+single place that knows `app.isPackaged`; an independent env fallback here
+(the previous argv-based design's actual bug) let a leftover dev-harness
+variable (e.g. `GNH_ROLE=alice` exported in a terminal from prior testing)
+leak into a packaged install's renderer just because that shell's
+environment gets inherited.
 
 ## Delivery phases
 
@@ -183,13 +226,15 @@ Packaging runbook: `docs/builds/github-pages-and-desktop.md`.
 
 Prefer:
 
-- “Electron desktop shell; Hyperswarm via localhost sidecar child for Alice/Bob testing.”
-- “Close stops that app’s UI and, if it owns the sidecar, the shared swarm.”
+- “Electron desktop shell; Hyperswarm via a localhost sidecar child.”
+- “Packaged builds use an ephemeral bridge port and a per-launch token.”
+- “Close stops that app’s UI and, if it owns the sidecar, the swarm.”
 
 Avoid:
 
 - “The Electron renderer joins Hyperswarm.”
 - “React Native desktop.”
 - “Nitro Hyperswarm module.”
+- Implying packaged installs are “Alice”.
 
 See also: `mobile-p2p-runtime.md`, `holepunch-sidecar.md`, `pear-runtime.md`.
