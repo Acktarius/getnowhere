@@ -7,6 +7,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -14,6 +15,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, session } from "electron";
 import { resolveDesktopIdentity } from "./desktop-identity.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
+
+const require = createRequire(import.meta.url);
+const { resolveDesktopInfoReply } = require("./desktop-info-ipc.cjs");
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, "..");
@@ -153,6 +157,22 @@ let mainWindow = null;
 let shuttingDown = false;
 /** Read-only, privilege-free advisory — never a firewall-mutation trigger. */
 let ufwAdvisory = { state: "unknown", reason: "not-checked" };
+
+/** @type {object | null} Bridge payload; ready before `new BrowserWindow`. @see docs/architecture/electron-desktop.md */
+let desktopInfo = null;
+/** @type {number | null} */
+let allowedWebContentsId = null;
+
+function installDesktopInfoHandler() {
+  ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
+  ipcMain.on(DESKTOP_INFO_CHANNEL, (event) => {
+    event.returnValue = resolveDesktopInfoReply({
+      desktopInfo,
+      allowedWebContentsId,
+      senderId: event.sender.id,
+    });
+  });
+}
 
 app.setName(APP_NAME);
 app.setPath("userData", join(app.getPath("appData"), USER_DATA_DIR));
@@ -413,6 +433,16 @@ function createWindow() {
       ? "shared:owner"
       : "shared:attach";
 
+  // IPC before BrowserWindow — preload may sendSync on about:blank during ctor.
+  desktopInfo = {
+    holepunchWsUrl: baseWs,
+    wsToken: authToken,
+    ufwState: ufwAdvisory.state,
+    ...(ROLE ? { role: ROLE } : {}),
+  };
+  allowedWebContentsId = null;
+  installDesktopInfoHandler();
+
   // Match `.app-shell` desktop max-width (760) + ≥768 media query; do not change CSS layout.
   mainWindow = new BrowserWindow({
     width: 780,
@@ -428,23 +458,14 @@ function createWindow() {
       session: ses,
     },
   });
+  allowedWebContentsId = mainWindow.webContents.id;
 
   Menu.setApplicationMenu(null);
   mainWindow.setMenuBarVisibility(false);
 
-  const desktopInfo = {
-    holepunchWsUrl: baseWs,
-    wsToken: authToken,
-    ufwState: ufwAdvisory.state,
-    ...(ROLE ? { role: ROLE } : {}),
-  };
-  const desktopWebContents = mainWindow.webContents;
-  ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
-  ipcMain.on(DESKTOP_INFO_CHANNEL, (event) => {
-    // Only this window's own preload may read its bridge config.
-    event.returnValue = event.sender === desktopWebContents ? desktopInfo : null;
-  });
   mainWindow.once("closed", () => {
+    desktopInfo = null;
+    allowedWebContentsId = null;
     ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
   });
 
@@ -457,7 +478,9 @@ function createWindow() {
   const ui = resolveUiTarget();
   const uiLabel =
     ui.kind === "file" ? pathToFileURL(ui.value).href : ui.value;
-  log(`loading UI ${uiLabel} (partition ${partition}, mode=${SWARM_MODE})`);
+  log(
+    `loading UI ${uiLabel} (partition ${partition}, mode=${SWARM_MODE}, bridge ${baseWs})`,
+  );
   if (ui.kind === "file") {
     void mainWindow.loadFile(ui.value);
   } else {

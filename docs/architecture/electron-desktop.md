@@ -69,12 +69,22 @@ paths leaked the token further than necessary: `additionalArguments` lands in
 this process's command line (readable via `/proc/<pid>/cmdline` or `ps` by
 any co-resident process), and `executeJavaScript` places it in the
 main-world scope of the page (more exposed to page-level XSS than the
-isolated preload world `contextBridge` uses). `desktop-electron/preload-bridge.cjs`
-validates the IPC reply's shape before exposing it as `window.gnhDesktop`;
-base URL and token stay separate fields — `HolepunchSidecarClient.ts`
-reassembles `?token=` itself. Root `.env` `VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7901`
-is for browser-only web-dev (no token); Electron must use `gnhDesktop`, not
-that env alone.
+isolated preload world `contextBridge` uses).
+
+**Ordering:** set the desktop-info payload and register the sync IPC handler
+*before* `new BrowserWindow`. Sandboxed preload can `sendSync` during the
+initial `about:blank` load inside the constructor. If the handler is missing
+then, `preload-bridge.cjs` falls back to `ws://127.0.0.1:7901` with an empty
+token while the packaged sidecar listens on an ephemeral port — the UI never
+joins, and Hyperswarm shows no outbound/inbound. Until `webContents.id` is
+bound, the handler still returns the prepared payload (see
+`desktop-info-ipc.cjs`).
+
+`desktop-electron/preload-bridge.cjs` validates the IPC reply's shape before
+exposing it as `window.gnhDesktop`; base URL and token stay separate fields —
+`HolepunchSidecarClient.ts` reassembles `?token=` itself. Root `.env`
+`VITE_HOLEPUNCH_WS_URL=ws://127.0.0.1:7901` is for browser-only web-dev (no
+token); Electron must use `gnhDesktop`, not that env alone.
 
 Optional: set the same `GNH_SIDECAR_TOKEN` in both terminals. Web-dev
 (`npm run holepunch` without the env) stays open (no token).
