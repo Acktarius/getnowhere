@@ -4,7 +4,7 @@
  */
 
 import { WebSocketServer } from "ws";
-import { startParentDeathWatch } from "./parent-death.mjs";
+import { isPidAlive, startParentDeathWatch } from "./parent-death.mjs";
 import { createSwarmMesh } from "./swarm.mjs";
 
 const host = process.env.HOLEPUNCH_HOST ?? "127.0.0.1";
@@ -43,10 +43,12 @@ wss.on("connection", (ws, req) => {
       /* malformed URL → reject */
     }
     if (clientToken !== requiredToken) {
+      console.warn("[holepunch-sidecar] WS rejected: bad or missing token");
       ws.close(4001, "Unauthorized");
       return;
     }
   }
+  console.log("[holepunch-sidecar] WS client connected");
   /** @type {import('./swarm.mjs').LocalClient} */
   const client = {
     send: (msg) => send(ws, msg),
@@ -160,14 +162,28 @@ async function shutdown() {
   process.exit(0);
 }
 
-startParentDeathWatch({
-  intervalMs: Number(process.env.GNH_PARENT_POLL_MS ?? 1000),
-  onDeath: async () => {
-    console.error("[holepunch-sidecar] parent process died; exiting");
-    wss.close();
-    await mesh.destroy();
-  },
-});
+if (process.env.GNH_DISABLE_PARENT_DEATH === "1") {
+  console.log("[holepunch-sidecar] parent-death watch disabled");
+} else {
+  startParentDeathWatch({
+    intervalMs: Number(process.env.GNH_PARENT_POLL_MS ?? 1000),
+    onSkip: (reason) => {
+      console.warn(`[holepunch-sidecar] parent-death watch skipped: ${reason}`);
+    },
+    onDeath: async () => {
+      console.error(
+        `[holepunch-sidecar] parent process died (was ppid=${process.ppid}); exiting`,
+      );
+      wss.close();
+      await mesh.destroy();
+    },
+  });
+  if (isPidAlive(process.ppid)) {
+    console.log(
+      `[holepunch-sidecar] parent-death watch on ppid=${process.ppid}`,
+    );
+  }
+}
 
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());

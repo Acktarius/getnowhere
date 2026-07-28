@@ -39,4 +39,25 @@ function normalizeGnhDesktopInfo(raw) {
   return bridge;
 }
 
-module.exports = { normalizeGnhDesktopInfo, DEFAULT_WS_URL };
+/**
+ * Prefer argv from main's `additionalArguments` (proven in v0.1.6), then IPC.
+ * Ephemeral port + token must reach the renderer even if sync IPC races
+ * about:blank — otherwise the UI reconnect-loops on :7901 with no token.
+ * @param {unknown} ipcRaw
+ * @param {unknown} argvRaw
+ */
+function resolvePreloadDesktopInfo(ipcRaw, argvRaw) {
+  const argvInfo = argvRaw && typeof argvRaw === "object" ? argvRaw : null;
+  const argvUrl =
+    typeof argvInfo?.holepunchWsUrl === "string"
+      ? argvInfo.holepunchWsUrl.trim()
+      : "";
+  if (argvUrl) return normalizeGnhDesktopInfo(argvInfo);
+  return normalizeGnhDesktopInfo(ipcRaw);
+}
+
+module.exports = {
+  normalizeGnhDesktopInfo,
+  resolvePreloadDesktopInfo,
+  DEFAULT_WS_URL,
+};

@@ -15,6 +15,12 @@
       "timeoutMs": 30000
     },
     {
+      "name": "Sidecar stays alive while parent lives (parent-death regression)",
+      "cmd": "cd holepunch-sidecar && node scripts/e2e-parent-stays-alive.mjs",
+      "expect": "parent-stays-alive-ok",
+      "timeoutMs": 30000
+    },
+    {
       "name": "Desktop identity decision table",
       "cmd": "npm --prefix desktop-electron test -- --test-name-pattern=desktop-identity",
       "expect": "pass",

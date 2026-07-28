@@ -2,21 +2,39 @@
  * Expose gnhDesktop { role?, holepunchWsUrl, wsToken, ufwState } to the Vite renderer.
  * @see docs/architecture/electron-desktop.md
  *
- * Pulled over a synchronous IPC round-trip to main (`gnh:get-desktop-info`)
- * instead of `additionalArguments` / `executeJavaScript`, so the auth token
- * never sits in this process's command line or in the page's main-world
- * scope. Normalization lives in preload-bridge.cjs (no electron import, so
- * it's testable) and trusts ONLY main's IPC reply — see that file for why it
- * never falls back to ambient process.env.
+ * Primary: `additionalArguments` (proven v0.1.6). Fallback: sync IPC
+ * `gnh:get-desktop-info` so ephemeral port + token still reach the renderer.
  */
 const { contextBridge, ipcRenderer } = require("electron");
-const { normalizeGnhDesktopInfo } = require("./preload-bridge.cjs");
+const { resolvePreloadDesktopInfo } = require("./preload-bridge.cjs");
 
-let raw = null;
-try {
-  raw = ipcRenderer.sendSync("gnh:get-desktop-info");
-} catch {
-  /* main not ready / channel missing — normalize() falls back to defaults */
+function readArg(prefix) {
+  const hit = process.argv.find((a) => a.startsWith(prefix));
+  return hit ? hit.slice(prefix.length) : "";
 }
 
-contextBridge.exposeInMainWorld("gnhDesktop", normalizeGnhDesktopInfo(raw));
+function argvDesktopInfo() {
+  const holepunchWsUrl = readArg("--gnh-holepunch-ws=");
+  const wsToken = readArg("--gnh-ws-token=");
+  const ufwState = readArg("--gnh-ufw-state=");
+  const role = readArg("--gnh-role=");
+  if (!holepunchWsUrl && !wsToken) return null;
+  return {
+    ...(holepunchWsUrl ? { holepunchWsUrl } : {}),
+    ...(wsToken ? { wsToken } : {}),
+    ...(ufwState ? { ufwState } : {}),
+    ...(role ? { role } : {}),
+  };
+}
+
+let ipcRaw = null;
+try {
+  ipcRaw = ipcRenderer.sendSync("gnh:get-desktop-info");
+} catch {
+  /* main not ready / channel missing */
+}
+
+contextBridge.exposeInMainWorld(
+  "gnhDesktop",
+  resolvePreloadDesktopInfo(ipcRaw, argvDesktopInfo()),
+);

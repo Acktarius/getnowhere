@@ -155,14 +155,16 @@ describe("sidecar listening IPC and bind failure", () => {
 });
 
 describe("parent death watch", () => {
-  it("exits when ppid becomes 1", async () => {
-    let calls = 0;
+  it("exits when the recorded parent PID is no longer alive", async () => {
+    let alive = true;
     /** @type {number[]} */
     const exits = [];
     const stop = startParentDeathWatch({
-      getPpid: () => {
-        calls += 1;
-        return calls < 2 ? 12345 : 1;
+      getPpid: () => 12345,
+      parentAlive: () => {
+        const was = alive;
+        alive = false;
+        return was;
       },
       exit: (code) => {
         exits.push(code ?? 0);
@@ -174,7 +176,7 @@ describe("parent death watch", () => {
     assert.ok(exits.includes(1));
   });
 
-  it("exits when ppid changes from the initial parent", async () => {
+  it("stays alive when ppid changes but the original parent PID still exists", async () => {
     let n = 0;
     /** @type {number[]} */
     const exits = [];
@@ -183,6 +185,7 @@ describe("parent death watch", () => {
         n += 1;
         return n === 1 ? 99 : 100;
       },
+      parentAlive: (pid) => pid === 99,
       exit: (code) => {
         exits.push(code ?? 0);
       },
@@ -190,6 +193,40 @@ describe("parent death watch", () => {
     });
     await new Promise((r) => setTimeout(r, 80));
     stop();
-    assert.ok(exits.includes(1));
+    assert.equal(exits.length, 0);
+  });
+
+  it("skips the watch when parent is not usable at start (no false exit)", async () => {
+    /** @type {number[]} */
+    const exits = [];
+    /** @type {string[]} */
+    const skips = [];
+    const stop = startParentDeathWatch({
+      getPpid: () => 1,
+      exit: (code) => {
+        exits.push(code ?? 0);
+      },
+      onSkip: (reason) => {
+        skips.push(reason);
+      },
+      intervalMs: 20,
+    });
+    await new Promise((r) => setTimeout(r, 80));
+    stop();
+    assert.equal(exits.length, 0);
+    assert.ok(skips.length >= 1);
+  });
+});
+
+describe("isPidAlive", () => {
+  it("reports the current process as alive", async () => {
+    const { isPidAlive } = await import("../src/parent-death.mjs");
+    assert.equal(isPidAlive(process.pid), true);
+  });
+
+  it("reports ≤1 as not alive", async () => {
+    const { isPidAlive } = await import("../src/parent-death.mjs");
+    assert.equal(isPidAlive(1), false);
+    assert.equal(isPidAlive(0), false);
   });
 });

@@ -114,12 +114,16 @@ When Electron spawns the sidecar with `HOLEPUNCH_PORT=0` and an IPC channel
 2. On `listening`, the sidecar logs the **real** bound port (`wss.address().port`,
    never `0`) and `process.send({ type: "listening", host, port })`.
 3. Electron waits for that IPC message (bounded timeout), then builds
-   `ws://127.0.0.1:<port>` for the renderer.
+   `ws://127.0.0.1:<port>` for the renderer (also via `additionalArguments`).
 4. Packaged builds use a per-launch `randomUUID()` token and **do not** write a
    `$TMPDIR/gnh-sidecar-*.token` lockfile.
 5. On `EADDRINUSE` (or other listen errors), the sidecar logs and exits non-zero.
-6. The sidecar watches parent death (`process.ppid` poll) and exits if Electron
-   dies without a graceful stop — so Hyperswarm does not linger under init.
+6. Parent-death watch: poll whether the **start-time parent PID** is still alive
+   (`kill(pid, 0)`; EPERM counts as alive). Skip the watch if that PID is not
+   usable at start. **Do not** exit on bare `process.ppid` changes — that was
+   the v0.1.7 regression vs v0.1.6 (sidecar died ~1s after listen → UI
+   Holepunch fail↔connecting, no outbound/inbound). Set
+   `GNH_DISABLE_PARENT_DEATH=1` to disable.
 
 Web-dev `npm run holepunch` and the Alice/Bob harness keep fixed ports and
 `stdio: inherit` (no IPC required).

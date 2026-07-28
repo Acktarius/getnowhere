@@ -444,6 +444,14 @@ function createWindow() {
   installDesktopInfoHandler();
 
   // Match `.app-shell` desktop max-width (760) + ≥768 media query; do not change CSS layout.
+  // additionalArguments: backup if sync IPC misses in sandboxed preload (see preload.cjs).
+  const argvBridge = [
+    `--gnh-holepunch-ws=${baseWs}`,
+    `--gnh-ws-token=${authToken}`,
+    `--gnh-ufw-state=${ufwAdvisory.state}`,
+  ];
+  if (ROLE) argvBridge.push(`--gnh-role=${ROLE}`);
+
   mainWindow = new BrowserWindow({
     width: 780,
     height: 800,
@@ -456,6 +464,7 @@ function createWindow() {
       sandbox: true,
       partition,
       session: ses,
+      additionalArguments: argvBridge,
     },
   });
   allowedWebContentsId = mainWindow.webContents.id;

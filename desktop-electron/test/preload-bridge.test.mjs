@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import preloadBridge from "../preload-bridge.cjs";
 
-const { normalizeGnhDesktopInfo } = preloadBridge;
+const { normalizeGnhDesktopInfo, resolvePreloadDesktopInfo } = preloadBridge;
 
 test("packaged IPC reply (no role) omits role even with ambient GNH_ROLE set", () => {
   const priorRole = process.env.GNH_ROLE;
@@ -60,4 +60,33 @@ test("ignores non-string role/token fields instead of throwing", () => {
   assert.equal("role" in bridge, false);
   assert.equal(bridge.wsToken, "");
   assert.equal(bridge.holepunchWsUrl, "ws://127.0.0.1:7901");
+});
+
+test("resolvePreloadDesktopInfo prefers argv over IPC (v0.1.6 handoff)", () => {
+  const bridge = resolvePreloadDesktopInfo(
+    {
+      holepunchWsUrl: "ws://127.0.0.1:46205",
+      wsToken: "ipc-token",
+      ufwState: "active",
+    },
+    {
+      holepunchWsUrl: "ws://127.0.0.1:38865",
+      wsToken: "argv-token",
+    },
+  );
+  assert.equal(bridge.holepunchWsUrl, "ws://127.0.0.1:38865");
+  assert.equal(bridge.wsToken, "argv-token");
+});
+
+test("resolvePreloadDesktopInfo uses IPC when argv has no URL", () => {
+  const bridge = resolvePreloadDesktopInfo(
+    {
+      holepunchWsUrl: "ws://127.0.0.1:46205",
+      wsToken: "ipc-token",
+      ufwState: "unknown",
+    },
+    null,
+  );
+  assert.equal(bridge.holepunchWsUrl, "ws://127.0.0.1:46205");
+  assert.equal(bridge.wsToken, "ipc-token");
 });
