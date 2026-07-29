@@ -72,9 +72,11 @@ empty token, and reconnect-loop while the real sidecar listens on an
 ephemeral port. Register IPC before `new BrowserWindow` anyway (see
 `desktop-info-ipc.cjs`).
 
-`desktop-electron/preload-bridge.cjs` validates the payload before exposing
-`window.gnhDesktop`; base URL and token stay separate —
-`HolepunchSidecarClient.ts` reassembles `?token=`. Root `.env`
+`preload.cjs` must stay a **single file**: sandboxed preload cannot
+`require('./preload-bridge.cjs')` (that threw after v0.1.6 and left
+`window.gnhDesktop` undefined). Pure helpers are mirrored in
+`preload-bridge.cjs` for `node --test` only. Base URL and token stay
+separate — `HolepunchSidecarClient.ts` reassembles `?token=`. Root `.env`
 `VITE_HOLEPUNCH_WS_URL` is browser web-dev only.
 
 Optional: set the same `GNH_SIDECAR_TOKEN` in both terminals. Web-dev
@@ -91,8 +93,8 @@ Either start order works in shared mode. Closing the **attacher** only stops tha
 
 ### Shell UX
 
-- Default `BrowserWindow` size is **780×800** so the frame fits the Vite
-  `.app-shell` desktop max-width (760px) without changing CSS layout.
+- Default `BrowserWindow` size is **600×800** (onboarding-friendly width; Vite
+  `.app-shell` desktop max-width remains 760px).
 - No application / window menu bar (`Menu.setApplicationMenu(null)`).
 - Use the window **close** control to exit.
 - Close always quits that Electron app; if it owns the sidecar child, the child
@@ -199,17 +201,16 @@ desktop-electron/
   package.json
   desktop-identity.mjs  # packaged vs Alice/Bob decision table
   main.mjs              # window + sidecar child lifecycle; owns gnh:get-desktop-info IPC
-  preload-bridge.cjs    # pure normalize(ipcReply) → gnhDesktop bridge object (no electron import)
-  preload.cjs           # ipcRenderer.sendSync + contextBridge.exposeInMainWorld("gnhDesktop", ...)
+  preload-bridge.cjs    # pure normalize/resolve helpers for node:test (mirror of preload.cjs)
+  preload.cjs           # self-contained sandboxed preload → exposeInMainWorld("gnhDesktop", ...)
 ```
 
-`preload-bridge.cjs` validates only the object `main.mjs` returned over
-`gnh:get-desktop-info` — it never reads `process.env`. `main.mjs` is the
-single place that knows `app.isPackaged`; an independent env fallback here
-(the previous argv-based design's actual bug) let a leftover dev-harness
-variable (e.g. `GNH_ROLE=alice` exported in a terminal from prior testing)
-leak into a packaged install's renderer just because that shell's
-environment gets inherited.
+`preload.cjs` is the runtime bridge (argv + sync IPC). It never reads
+`process.env`. `preload-bridge.cjs` mirrors the same normalize/resolve helpers
+for `node --test` only — sandboxed preload cannot `require` sibling files
+(Electron polyfill). `main.mjs` is the single place that knows
+`app.isPackaged`; an independent env fallback in preload was the packaged
+`GNH_ROLE=alice` leak (shell env inherited at launch).
 
 ## Delivery phases
 

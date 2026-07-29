@@ -80,8 +80,20 @@
     validate the IPC reply's shape (still no `electron` import, still no
     `env` read) instead of parsing argv; removed `window.__GNH_DESKTOP__`
     from `src/vite-env.d.ts` and `HolepunchSidecarClient.ts` since it's now
-    dead. Verified with `npm --prefix desktop-electron test`, `npm test`,
+    dead.     Verified with `npm --prefix desktop-electron test`, `npm test`,
     `npm run types`.
+  - [x] 3.4.3 Follow-up fix (sandbox preload): `preload.cjs` had
+    `require("./preload-bridge.cjs")`, which throws under
+    `webPreferences.sandbox: true` (Electron only polyfills `require` for
+    `electron` + a few builtins — not local files). That left
+    `window.gnhDesktop` undefined → UI fell back to unauthenticated
+    `:7901` → `WS rejected` / no L2 join. Inlined normalize/resolve into
+    self-contained `preload.cjs`; kept `preload-bridge.cjs` as the
+    `node --test` mirror; restored argv as primary handoff with IPC
+    secondary (3.4.2 IPC-only was insufficient alone). Documented in
+    `docs/architecture/electron-desktop.md`. Verified: Alice
+    `window.gnhDesktop` populated; isolated Alice/Bob L2 connects;
+    `npm --prefix desktop-electron test` green.
 
 ## 4. Documentation
 
@@ -102,7 +114,9 @@
   `npm run desktop:make`, install, run `getnowhere` from a terminal, and confirm
   the log prefix is `[desktop]`, the title is `Get Now Here`, the sidecar port is
   ephemeral, storage lands in `~/.config/getnowhere`, no `gnh-sidecar-*.token`
-  appears, and a second launch focuses the first window.
-- [ ] 5.3 Dev regression: run `npm run desktop:alice` and `npm run desktop:bob`
-  together and confirm unchanged roles, titles, partitions, and shared `:7901`
-  attach behavior.
+  appears, and a second launch focuses the first window. Also confirm
+  `window.gnhDesktop` is defined (sandbox preload self-contained — 3.4.3).
+- [x] 5.3 Dev regression: Alice/Bob handoff and isolated L2 verified after 3.4.3
+  (`window.gnhDesktop` populated; `WS client connected`; isolated Alice/Bob
+  peer connect). Shared `:7901` attach path still available via
+  `npm run desktop:alice` / `desktop:bob`.

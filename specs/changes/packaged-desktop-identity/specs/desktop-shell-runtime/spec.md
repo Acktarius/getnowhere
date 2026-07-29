@@ -134,6 +134,16 @@ emitting an unhandled error event, and SHALL exit when its parent process dies.
 
 The preload bridge SHALL expose `holepunchWsUrl`, `wsToken`, and `ufwState` to
 the renderer, and SHALL expose `role` only when a development role is in effect.
+Sandboxed `preload.cjs` SHALL be self-contained (no local `require`) so
+`window.gnhDesktop` is always defined in the Electron renderer.
+
+#### Scenario: Preload exposes gnhDesktop under sandbox
+
+- GIVEN the Electron window uses `sandbox: true` and `contextIsolation: true`
+- WHEN the renderer evaluates `window.gnhDesktop`
+- THEN the value is an object (not `undefined`)
+- AND `holepunchWsUrl` and `wsToken` are strings (token may be empty only for
+  open web-dev sidecars without auth)
 
 #### Scenario: Packaged bridge omits role
 

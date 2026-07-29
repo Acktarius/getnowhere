@@ -1,15 +1,12 @@
 /**
  * Pure normalization of the gnhDesktop bridge payload — no `electron`
- * import, so it is unit-testable with `node --test` (preload.cjs itself
- * cannot be, same reason main.mjs needs desktop-identity.mjs extracted).
+ * import, so it is unit-testable with `node --test`.
  *
- * Takes whatever main.mjs returned over the `gnh:get-desktop-info` sync IPC
- * channel and validates its shape before it's exposed to the renderer.
- * Deliberately never reads `process.env`: main.mjs is the single place that
- * knows `app.isPackaged`, and the previous argv-based delivery already
- * showed that any independent fallback here can leak a leftover dev-harness
- * value into a packaged build.
+ * Sandboxed `preload.cjs` cannot `require` this file (Electron polyfill only
+ * allows `electron` + a few builtins). Keep the helpers in preload.cjs in sync
+ * with this module.
  * @see docs/architecture/electron-desktop.md
+ * @see https://www.electronjs.org/docs/latest/tutorial/sandbox
  */
 
 const DEFAULT_WS_URL = "ws://127.0.0.1:7901";
