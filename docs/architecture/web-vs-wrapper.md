@@ -43,6 +43,21 @@ Rules:
 storage partitions, and attaches to (or owns) the localhost Hyperswarm sidecar
 child. See `docs/architecture/electron-desktop.md`.
 
+## Local wipe (Settings)
+
+Settings exposes two wipe actions, both implemented in
+`src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
+`removeItem` (not a full storage clear):
+
+| Action | Clears | Keeps |
+|---|---|---|
+| **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |
+| **Reset app data** | Wallet-tied keys **plus** prefs and side channels (`ccx-*`) | Nothing local for this identity |
+
+All hosts use the same UI path. Electron isolation is partition-scoped
+`localStorage` (Alice/Bob / packaged `persist:gnh`) — this change does not add
+a separate IPC wipe.
+
 ## Mobile wrapper
 
 `native-wrapper/` is the Expo shell for iOS/Android packaging (EAS Build /

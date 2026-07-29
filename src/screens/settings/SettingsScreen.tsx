@@ -33,6 +33,10 @@ import {
   updateWalletSyncSettings,
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
+import {
+  deleteWalletData,
+  resetAppData,
+} from "@/services/storage/appDataLifecycle";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
@@ -47,6 +51,7 @@ export function SettingsScreen() {
   const [syncSpeed, setSyncSpeed] = useState<SyncSpeed>(DEFAULT_SYNC_SPEED);
   const [readMinerTx, setReadMinerTx] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [wipeBusy, setWipeBusy] = useState(false);
 
   useEffect(() => {
     void refreshAutoNode();
@@ -87,6 +92,36 @@ export function SettingsScreen() {
       await updateWalletSyncSettings({ checkMinerTx: on });
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  async function onDeleteWallet() {
+    const ok = window.confirm(
+      "Delete wallet? This removes your wallet, contacts, and rooms. Theme and other preferences are kept. The app will reload.",
+    );
+    if (!ok) return;
+    setWipeBusy(true);
+    try {
+      await deleteWalletData();
+    } catch (err) {
+      setWipeBusy(false);
+      const message = err instanceof Error ? err.message : String(err);
+      window.alert(`Could not delete wallet: ${message}`);
+    }
+  }
+
+  async function onResetAppData() {
+    const ok = window.confirm(
+      "Reset all app data? This removes your wallet, contacts, rooms, theme, and preferences. The app will reload.",
+    );
+    if (!ok) return;
+    setWipeBusy(true);
+    try {
+      await resetAppData();
+    } catch (err) {
+      setWipeBusy(false);
+      const message = err instanceof Error ? err.message : String(err);
+      window.alert(`Could not reset app data: ${message}`);
     }
   }
 
@@ -313,8 +348,21 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        <div className="section">
-          <button className="btn btn--block btn--danger">
+        <div className="section" style={{ display: "grid", gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn--block btn--danger"
+            disabled={wipeBusy}
+            onClick={() => void onDeleteWallet()}
+          >
+            <Trash2 size={15} /> Delete wallet
+          </button>
+          <button
+            type="button"
+            className="btn btn--block btn--danger"
+            disabled={wipeBusy}
+            onClick={() => void onResetAppData()}
+          >
             <Trash2 size={15} /> Reset app data
           </button>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 8 }}>
