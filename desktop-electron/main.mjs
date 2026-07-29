@@ -453,7 +453,7 @@ function createWindow() {
   if (ROLE) argvBridge.push(`--gnh-role=${ROLE}`);
 
   mainWindow = new BrowserWindow({
-    width: 780,
+    width: 600,
     height: 800,
     title: windowTitle(modeTag),
     autoHideMenuBar: true,

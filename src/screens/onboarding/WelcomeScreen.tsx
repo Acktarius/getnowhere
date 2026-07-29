@@ -6,6 +6,7 @@ import { SecureInput } from "@/components/SecureInput";
 import { Sheet } from "@/components/Sheet";
 import { markOnboarded } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
+import { version } from "../../../package.json";
 
 export function WelcomeScreen() {
   const navigate = useNavigate();
@@ -159,6 +160,9 @@ export function WelcomeScreen() {
           </div>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 4 }}>
             No phone numbers. No emails. No usernames.
+          </p>
+          <p className="center faint" style={{ fontSize: 11 }}>
+            {version}
           </p>
         </div>
       </div>
