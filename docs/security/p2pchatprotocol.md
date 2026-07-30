@@ -302,7 +302,9 @@ These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
 2. Establish peer channel; set room `connecting` → `connected` only when
    **peer count ≥ 1** (never self-alone). Else `connect_failed` (`timeout` /
    `unreachable` if sidecar is down). Peer count uses Hyperswarm `peerInfo`
-   topics plus an NDJSON app hello (Noise streams coalesce raw JSON).
+   topics / `topic` events for topics this process has joined (invite already
+   carries `topicRef`; the sidecar does not advertise local topics via NDJSON
+   hello). Noise streams still use NDJSON for opaque `frame` lines.
 3. Retry with exponential backoff + jitter (see §10); respect `roomTtl`.
 4. Seal/open **live** content envelopes when lifecycle is `connected` (app
    ChaCha20-Poly1305; runtime carries opaque sealed frames over bridge + DHT).

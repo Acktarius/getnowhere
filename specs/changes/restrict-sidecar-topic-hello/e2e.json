@@ -1,0 +1,12 @@
+{
+  "change": "restrict-sidecar-topic-hello",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar mesh: no cross-topic topicRef leak",
+      "cmd": "node --test holepunch-sidecar/test/sidecar.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

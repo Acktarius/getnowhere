@@ -37,3 +37,6 @@ desktop-electron/resources/sidecar/
 desktop-electron/resources/runtime/
 desktop-electron/resources/ui/
 desktop-electron/resources/gnh-defaults.json
+
+# Local security-review notes (not for commit)
+.findings/

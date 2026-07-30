@@ -221,13 +221,15 @@ export function createSwarmMesh(opts = {}) {
    */
   function adoptRemoteTopic(conn, topicRef) {
     if (!/^[0-9a-f]{64}$/i.test(topicRef)) return;
-    connTopics.get(conn)?.add(topicRef);
-    const state = topics.get(topicRef);
+    const normalized = topicRef.toLowerCase();
+    const state = topics.get(normalized);
+    // Only track topics we joined — never seed from unsolicited hellos.
     if (!state || state.localClients.size === 0 || !conn.remotePublicKey) return;
+    connTopics.get(conn)?.add(normalized);
     const peerId = b4a.toString(conn.remotePublicKey, "hex");
     const before = state.remotePeerIds.size;
     state.remotePeerIds.add(peerId);
-    if (state.remotePeerIds.size !== before) emitPeers(topicRef);
+    if (state.remotePeerIds.size !== before) emitPeers(normalized);
   }
 
   function writeSwarm(obj, topicRefFilter) {
@@ -245,17 +247,6 @@ export function createSwarmMesh(opts = {}) {
     }
   }
 
-  function announceTopicsOnConn(conn) {
-    for (const [topicRef, state] of topics) {
-      if (state.localClients.size === 0) continue;
-      try {
-        conn.write(encodeSwarmLine({ type: "hello", topicRef }));
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
   swarm.on("connection", (conn, info) => {
     conns.add(conn);
     connTopics.set(conn, new Set());
@@ -267,7 +258,7 @@ export function createSwarmMesh(opts = {}) {
       `[swarm] connection open peer=${short(peerId)} direction=${info?.client ? "outbound" : "inbound"}`,
     );
 
-    // Hyperswarm already knows shared topics — do not wait only on app hello.
+    // Hyperswarm-shared topics only — invite already carries topicRef.
     for (const topicBuf of info?.topics || []) {
       adoptRemoteTopic(conn, b4a.toString(topicBuf, "hex"));
     }
@@ -275,25 +266,22 @@ export function createSwarmMesh(opts = {}) {
       adoptRemoteTopic(conn, b4a.toString(topicBuf, "hex"));
     });
 
-    announceTopicsOnConn(conn);
-
     const lines = createLineReader();
     conn.on("data", (data) => {
       for (const msg of lines.push(data)) {
         if (!msg || typeof msg.topicRef !== "string") continue;
 
-        if (msg.type === "hello") {
-          adoptRemoteTopic(conn, msg.topicRef);
-          continue;
-        }
+        // Ignore NDJSON hello — do not adopt or advertise topics over the wire.
+        if (msg.type === "hello") continue;
 
         if (msg.type === "frame" && typeof msg.payload === "string") {
-          const state = topics.get(msg.topicRef);
+          const frameTopic = msg.topicRef.toLowerCase();
+          const state = topics.get(frameTopic);
           if (!state) continue;
           for (const client of state.localClients) {
             client.send({
               type: "frame",
-              topicRef: msg.topicRef,
+              topicRef: frameTopic,
               roomId: msg.roomId,
               payload: msg.payload,
             });
@@ -332,6 +320,7 @@ export function createSwarmMesh(opts = {}) {
       if (!/^[0-9a-f]{64}$/i.test(topicRef)) {
         throw new Error("topicRef must be 64 hex chars");
       }
+      topicRef = topicRef.toLowerCase();
       const state = getTopic(topicRef);
       state.localClients.add(client);
 
@@ -358,13 +347,12 @@ export function createSwarmMesh(opts = {}) {
         startRefreshNudge(topicRef, state);
       }
 
-      // Adopt remotes that already hello'd / peerInfo-shared this topic.
+      // Adopt remotes already Hyperswarm-associated with this topic.
       for (const [conn, joinedTopics] of connTopics) {
         if (!joinedTopics.has(topicRef) || !conn.remotePublicKey) continue;
         state.remotePeerIds.add(b4a.toString(conn.remotePublicKey, "hex"));
       }
 
-      writeSwarm({ type: "hello", topicRef });
       client.send({ type: "ready", topicRef });
       emitPeers(topicRef);
     },
@@ -374,6 +362,7 @@ export function createSwarmMesh(opts = {}) {
      * @param {LocalClient} client
      */
     async leave(topicRef, client) {
+      topicRef = topicRef.toLowerCase();
       const state = topics.get(topicRef);
       if (!state) return;
       state.localClients.delete(client);
@@ -397,7 +386,8 @@ export function createSwarmMesh(opts = {}) {
      * @param {{ topicRef: string, roomId?: string, payload: string }} frame
      */
     sendFrame(client, frame) {
-      const { topicRef, roomId, payload } = frame;
+      const topicRef = frame.topicRef.toLowerCase();
+      const { roomId, payload } = frame;
       const state = topics.get(topicRef);
       if (!state) return;
 

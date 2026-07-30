@@ -27,7 +27,8 @@ All Hyperswarm lifecycle operations happen in the runtime:
 
 - create swarm
 - join / leave derived `topicRef`
-- accept connections and report peer counts
+- accept connections and report peer counts (Hyperswarm-shared topics only —
+  invite already carries `topicRef`; do not NDJSON-hello the local topic set)
 - multiplex opaque sealed frames
 - report state changes to the UI
 

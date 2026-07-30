@@ -1,0 +1,94 @@
+<!-- forge-brief-specs-hash:c82157559d84e7ee -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stop leaking chat room topics over Holepunch</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      code { background: #f1f3f4; padding: 0.1rem 0.3rem; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+      pre.flow {
+        background: #f8f9fa;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Stop leaking chat room topics over Holepunch</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      Today, if you have two chat rooms open, a peer who only belongs in room A
+      can learn the secret address of room B from the Holepunch sidecar. After
+      this change, the sidecar only treats a peer as present on topics
+      Hyperswarm already says you share — it never advertises your full room
+      list on the wire.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>No more broadcasting every joined room’s topic to every peer connection.</li>
+      <li>A peer invited only to room A cannot learn room B’s discovery topic from hello messages.</li>
+      <li>Forged “hello, I’m on topic B” messages cannot fake peer presence on B.</li>
+      <li>Docs match reality: invite already carries the topic; Holepunch only rendezvous.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      Alice and Bob already know the room topic from the invite. Both join that
+      topic on Hyperswarm. The sidecar counts a remote peer only when Hyperswarm
+      reports the shared topic on that connection. It stops sending (and stops
+      trusting) app-level hello messages that listed every local topic.
+    </p>
+    <pre class="flow">
+Invite (SmartMessage) → both know topicRef
+        ↓
+Each side joins topic on Hyperswarm
+        ↓
+Connection + shared topic events → peer count
+        ✗  (removed) NDJSON hello of all local topics
+    </pre>
+
+    <h2>What changes for you</h2>
+    <p>
+      No new UI or invite flow. Sidecar behavior and docs change under the hood.
+      If Holepunch peer counting is slightly slower on rare inbound paths, chain
+      / SmartMessage fallback remains the safety net — same product story as
+      today when discovery is slow.
+    </p>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Inbound connections sometimes start with no topic list from Hyperswarm; we rely on later topic events instead of hello.</li>
+      <li>Manual check still useful: Alice in A+B, Eve only in A — Eve must never see B’s topic on the wire.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Changing how topicRef is derived from room / relationship ids.</li>
+      <li>Changing post-connect crypto proof or L3 encryption.</li>
+      <li>Redesigning SmartMessage invite / L1′ fallback.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Lock the leak with sidecar regression tests (1 task)</li>
+      <li>Fix swarm topic association in the sidecar (1 task)</li>
+      <li>Docs + product-loop evidence (2 tasks)</li>
+    </ul>
+  </body>
+</html>
