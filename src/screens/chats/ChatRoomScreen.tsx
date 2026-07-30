@@ -400,7 +400,6 @@ export function ChatRoomScreen() {
     room.lifecycleStatus,
     room.lastConnectError,
   );
-  const superseded = Boolean(contact.roomId) && contact.roomId !== roomId;
   // Best-effort, Electron-Linux-only advisory — never proof a specific port
   // (e.g. localhost bridge 7901) is blocked, only that UFW appears active
   // while a retryable Holepunch failure repeats.
@@ -514,32 +513,6 @@ export function ChatRoomScreen() {
           </button>
         )}
       </div>
-      {superseded && (
-        <div
-          className="card card--pad-md"
-          style={{ margin: "8px 14px 0", fontSize: 13.5 }}
-        >
-          Your contact sent a new invite for this chat, replacing this room with
-          a new one ({contact.roomId}). This room ({roomId}) is no longer
-          current — open the new room to continue chatting.
-          <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
-            <Link
-              className="btn btn--sm btn--primary"
-              to={`/contacts/${contact.id}`}
-            >
-              Open contact to Accept
-            </Link>
-            {contact.roomId && (
-              <Link
-                className="btn btn--sm btn--secondary"
-                to={`/chats/${contact.roomId}`}
-              >
-                Open new room
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
       <div
         ref={scrollerRef}
         style={{

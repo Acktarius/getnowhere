@@ -37,7 +37,9 @@ const APP_PREF_LOCAL_SIDE_KEYS = [
 
 const APP_PREF_SESSION_KEYS = ["ccx-auto-node"] as const;
 
-function createMemoryAdapter(): StorageAdapter & { store: Map<string, string> } {
+function createMemoryAdapter(): StorageAdapter & {
+  store: Map<string, string>;
+} {
   const store = new Map<string, string>();
   return {
     store,

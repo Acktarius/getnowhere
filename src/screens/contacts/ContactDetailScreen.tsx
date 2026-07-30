@@ -27,6 +27,8 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
 import { useChatStore } from "@/state/chatStore";
@@ -48,7 +50,6 @@ export function ContactDetailScreen() {
   const acceptInvite = useContactsStore((s) => s.acceptInvite);
   const declineInvite = useContactsStore((s) => s.declineInvite);
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
-  const abandonPendingInvite = useContactsStore((s) => s.abandonPendingInvite);
   const invites = useContactsStore((s) => s.invites);
   const contactRoomId = useContactsStore((s) => s.getById(id)?.roomId);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
@@ -59,11 +60,7 @@ export function ContactDetailScreen() {
       room?.lifecycleStatus === "connected" && room.peerStatus === "online"
     );
   });
-  /**
-   * Room already accepted and messaging over the L1 chain relay — resending
-   * here would silently end the peer's working session, not "recover" it.
-   * @see docs/security/p2pchatprotocol.md §16
-   */
+  /** Latest contact room is on L1 relay (Holepunch not connected yet). */
   const roomRelayActive = useChatStore((s) => {
     if (!contactRoomId) return false;
     const room = s.rooms.find((r) => r.id === contactRoomId);
@@ -81,7 +78,7 @@ export function ContactDetailScreen() {
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
-  const [confirmResend, setConfirmResend] = useState(false);
+  const [confirmSameTopic, setConfirmSameTopic] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
   const [refreshingInvite, setRefreshingInvite] = useState(false);
@@ -158,29 +155,21 @@ export function ContactDetailScreen() {
     !roomLive;
 
   function handleResendInvite() {
-    // Peer may already be chatting via chain relay — confirm before nuking it.
-    if (contact?.inviteStatus === "accepted" && roomRelayActive) {
-      setConfirmResend(true);
-      return;
-    }
-    void doResendInvite();
-  }
-
-  async function doResendInvite() {
-    if (!contact) return;
-    setError(null);
-    setSendingInvite(true);
-    try {
-      await abandonPendingInvite(contact.id);
-      setCreateSheet(true);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSendingInvite(false);
-    }
+    // Open create sheet — does not abandon existing rooms. Same-topic confirm
+    // runs when the user submits Create.
+    setCreateSheet(true);
   }
 
   async function handleInvite() {
+    if (!contact) return;
+    if (hasOpenRoomForTopic(listCatalogRooms(), contact.id, roomTopic)) {
+      setConfirmSameTopic(true);
+      return;
+    }
+    await submitInvite();
+  }
+
+  async function submitInvite() {
     if (!contact) return;
     setError(null);
     setSendingInvite(true);
@@ -191,6 +180,7 @@ export function ContactDetailScreen() {
         roomTopic,
       });
       setCreateSheet(false);
+      setConfirmSameTopic(false);
       navigate(`/chats/${roomId}`);
     } catch (e) {
       const msg = (e as Error).message || "Failed to create room.";
@@ -393,7 +383,7 @@ export function ContactDetailScreen() {
                       ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
                       : contact.inviteStatus === "accepted" &&
                           contact.roomId !== incomingInvite.roomId
-                        ? "New chat invite supersedes the old room. Accept to connect the new invite."
+                        ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
                         : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
                   </div>
                   <div className="row-flex" style={{ gap: 8 }}>
@@ -439,10 +429,10 @@ export function ContactDetailScreen() {
                     {roomLive
                       ? "Chat session is live."
                       : contact.inviteStatus === "sent"
-                        ? "Invite sent. If the pending room stays offline after they accept, resend a new invite (new room id)."
+                        ? "Invite sent. You can open the pending room, or create another room (new room id) if needed."
                         : roomRelayActive
-                          ? "Invite accepted — chatting via blockchain relay while Holepunch connects. Only resend if messages truly are not delivering; resending ends this room for both sides."
-                          : "Invite was marked accepted but Holepunch is not connected. Resend a new invite to recover."}
+                          ? "Invite accepted — chatting via blockchain relay while Holepunch connects. Creating another room keeps this one open."
+                          : "Invite was marked accepted but Holepunch is not connected. You can open this room or create another."}
                   </div>
                   {contact.roomId && (
                     <button
@@ -649,13 +639,12 @@ export function ContactDetailScreen() {
         onClose={() => setConfirmBlock(false)}
       />
       <ConfirmModal
-        open={confirmResend}
-        title="Resend invite?"
-        body="Your contact already accepted this invite and is chatting via the blockchain relay while Holepunch connects. Resending creates a new room and ends their current one — they will see it as superseded. Only do this if messages truly are not delivering."
-        confirmLabel="Resend anyway"
-        destructive
-        onConfirm={() => void doResendInvite()}
-        onClose={() => setConfirmResend(false)}
+        open={confirmSameTopic}
+        title="Create another room?"
+        body="You already have an open room with the same topic. Are you sure you want to create a new one?"
+        confirmLabel="Create new room"
+        onConfirm={() => void submitInvite()}
+        onClose={() => setConfirmSameTopic(false)}
       />
     </div>
   );

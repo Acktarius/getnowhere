@@ -1,0 +1,12 @@
+{
+  "change": "multi-room-per-contact",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Multi-room helpers and protocol gates",
+      "cmd": "npx vitest run tests/protocol/multi-room.test.ts tests/protocol/composer-gate.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

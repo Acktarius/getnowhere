@@ -394,24 +394,19 @@ next unlock resurrects the "deleted" room's `roomId`/`inviteStatus` from that
 stale blob. Fire-and-forget (`schedulePersistContacts`) is fine for routine,
 non-terminal updates; destructive actions must block on the durable write.
 
-**One room per contact+topic (invariant):** sending a fresh `chat.create` for a
-topic **always supersedes** any prior invite/room for that same
-`contactId + roomTopic` — regardless of its status (`sent`, `received`, or
-`accepted`, including stuck/`connect_failed` rooms). The sender must abandon
-(disconnect + tombstone) the old one first. Skipping `accepted` in this check
-orphans the old room instead of destroying it, leaving two live rooms with
-different `roomId`s for the same contact+topic — the peer that already
-registered for the old room and the peer now expecting the new one disagree on
-which room is current (`Room diagnostics` shows mismatched room ids on each
-side; UI surfaces this as "superseded").
+**Multiple rooms per contact:** a contact MAY have several live rooms at once
+(different `roomId`s, including different `roomTopic` and/or TTL). Sending a
+fresh `chat.create` **does not** automatically abandon prior rooms. The create
+UI MUST confirm when an open room already exists for the same
+`contactId + roomTopic` ("You already have an open room with the same topic…").
+Cancel aborts create; confirm creates alongside the existing room.
+`contact.roomId` MAY point at the latest room as a deep-link hint only — it
+MUST NOT invalidate other open rooms in the UI.
 
-**Resend UX guard:** an accepted room using the L1 relay fallback (not yet
-Holepunch-`connected`) is a *working* session, not a failure. The contact
-detail "Resend invite" action must confirm before triggering the supersede
-above when `inviteStatus === "accepted"` and the room is relay-eligible
-(`isRelayEligibleStatus`) — resending silently ends the peer's current room.
-Copy must not tell the sender to "recover" a session that is already relaying
-messages.
+**Pending invites:** for unaccepted (`received`) creates, the newest invite per
+`contactId + roomTopic` remains the actionable Accept target; older unaccepted
+creates for that pair may be marked expired. This MUST NOT destroy already-
+accepted rooms.
 
 **Leave forever (revoke):** either peer may end a room before `roomTtl` by
 sending `chat.revoke` (`room_revoked`) to the other over L1. Wire fields:
@@ -509,7 +504,8 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 
 1. ECDH: `@noble/curves` + `@noble/hashes` (web-first).
 2. `relationshipId`: `hash(sort([paymentIdFrom, paymentIdTo]))`.
-3. One pending invite per relationship; new create supersedes prior pending.
+3. Multiple rooms per contact allowed; same-topic create requires UI confirm.
+   Newest unaccepted invite per contact+topic is the Accept target.
 
 ---
 

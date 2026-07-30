@@ -792,21 +792,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     const roomTopic = options?.roomTopic ?? "general";
 
-    // A fresh create for this topic always supersedes any prior invite/room for
-    // the same topic — sent, received, AND accepted (stuck/failed rooms too).
-    // Missing "accepted" here previously orphaned the old room, leaving two
-    // live rooms with different roomIds for the same contact+topic.
-    const priorForTopic = get().invites.some(
-      (i) =>
-        i.contactId === contactId &&
-        (i.roomTopic ?? "general") === roomTopic &&
-        (i.status === "sent" ||
-          i.status === "received" ||
-          i.status === "accepted"),
-    );
-    if (priorForTopic || contact.inviteStatus === "failed") {
-      await get().abandonPendingInvite(contactId, { roomTopic });
-    }
+    // Multiple rooms per contact are allowed (including same topic after UI
+    // confirm). Do not auto-abandon prior rooms on create.
+    // @see docs/security/p2pchatprotocol.md
 
     const relationshipId = await deriveRelationshipId(
       contact.paymentIdFrom,
