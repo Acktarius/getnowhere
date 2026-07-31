@@ -12,8 +12,8 @@
 import { ConcealRelationshipAdapter } from "./conceal/ConcealRelationshipAdapter";
 import { ConcealSmartMessageAdapter } from "./conceal/ConcealSmartMessageAdapter";
 import { ConcealWalletService } from "./conceal/ConcealWalletService";
+import { SeedBackupAdapter } from "./conceal/SeedBackupAdapter";
 import { MockLocalSecurityAdapter } from "./mock/MockLocalSecurityAdapter";
-import { MockSeedBackupAdapter } from "./mock/MockSeedBackupAdapter";
 import { HolepunchChatTransport } from "./p2p/HolepunchChatTransport";
 import { P2PEncryptionAdapter } from "./p2p/P2PEncryptionAdapter";
 import { SessionBootstrapAdapter } from "./p2p/sessionBootstrap";
@@ -35,7 +35,7 @@ export const smartMessageProtocol = SmartMessageProtocolAdapter;
 export const sessionBootstrap = SessionBootstrapAdapter;
 export const p2pEncryption = P2PEncryptionAdapter;
 export const localSecurityService = MockLocalSecurityAdapter;
-export const seedBackupService = MockSeedBackupAdapter;
+export const seedBackupService = SeedBackupAdapter;
 
 export {
   ensureWasmReady,

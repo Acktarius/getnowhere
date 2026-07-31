@@ -3,26 +3,30 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const SEED_PHRASE = "abandon ability able about above absent";
-const verify = vi.fn(async (_code: string) => false);
+const SECRETS = {
+  address: "ccx1addr",
+  mnemonic: "abandon ability able about above absent",
+  spendKey: "spendhex",
+  viewKey: "viewhex",
+  viewOnly: false,
+};
+
+const revealSecrets = vi.fn(async (_password: string) => SECRETS);
+const downloadWalletBackup = vi.fn(async (_password: string) => ({
+  filename: "wallet.json",
+  payload: { encrypted: true },
+}));
 const confirmBackup = vi.fn(async () => undefined);
 
 vi.mock("@/services", () => ({
   seedBackupService: {
     confirmBackup: (...args: unknown[]) => confirmBackup(...args),
-    revealSeed: vi.fn(),
+    revealSecrets: (...args: unknown[]) =>
+      revealSecrets(...(args as [string])),
+    downloadWalletBackup: (...args: unknown[]) =>
+      downloadWalletBackup(...(args as [string])),
     isBackedUp: vi.fn(async () => false),
   },
-}));
-
-vi.mock("@/state/authStore", () => ({
-  useAuthStore: (selector: (s: { verify: typeof verify }) => unknown) =>
-    selector({ verify }),
-}));
-
-vi.mock("@/state/contactsStore", () => ({
-  useContactsStore: (selector: (s: { contacts: [] }) => unknown) =>
-    selector({ contacts: [] }),
 }));
 
 vi.mock("@/state/walletStore", () => ({
@@ -31,17 +35,13 @@ vi.mock("@/state/walletStore", () => ({
     address: "addr1",
     seedRef: "ref1",
     network: "testnet",
-    seedPhrase: SEED_PHRASE,
+    seedPhrase: null,
   }),
-}));
-
-vi.mock("@/services/contacts/contactsPersistence", () => ({
-  contactsExportPayload: () => [],
 }));
 
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 
-function passcodeInput(): HTMLInputElement {
+function passwordInput(): HTMLInputElement {
   return document.querySelector("input.input") as HTMLInputElement;
 }
 
@@ -53,55 +53,95 @@ function renderBackup() {
   );
 }
 
-describe("BackupSettingsScreen seed reveal", () => {
+describe("BackupSettingsScreen password-gated secrets", () => {
   beforeEach(() => {
-    verify.mockReset();
     confirmBackup.mockReset();
+    revealSecrets.mockReset();
+    revealSecrets.mockResolvedValue(SECRETS);
+    downloadWalletBackup.mockReset();
+    downloadWalletBackup.mockResolvedValue({
+      filename: "wallet.json",
+      payload: { encrypted: true },
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    HTMLAnchorElement.prototype.click = vi.fn();
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
-  it("stays locked and shows error on incorrect passcode", async () => {
+  it("requires password before reveal", async () => {
     const user = userEvent.setup();
-    verify.mockResolvedValue(false);
     renderBackup();
 
-    await user.type(passcodeInput(), "0000");
-    await user.click(screen.getByRole("button", { name: /Reveal seed/i }));
+    await user.click(
+      screen.getByRole("button", { name: /Reveal seed & keys/i }),
+    );
 
-    expect(await screen.findByText(/Incorrect passcode/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Enter your wallet password/i),
+    ).toBeInTheDocument();
+    expect(revealSecrets).not.toHaveBeenCalled();
+  });
+
+  it("requires password before download", async () => {
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
+
+    expect(
+      await screen.findByText(/Enter your wallet password/i),
+    ).toBeInTheDocument();
+    expect(downloadWalletBackup).not.toHaveBeenCalled();
+  });
+
+  it("shows error on incorrect password for reveal", async () => {
+    const user = userEvent.setup();
+    revealSecrets.mockRejectedValue(new Error("Incorrect password"));
+    renderBackup();
+
+    await user.type(passwordInput(), "wrong");
+    await user.click(
+      screen.getByRole("button", { name: /Reveal seed & keys/i }),
+    );
+
+    expect(await screen.findByText(/Incorrect password/i)).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(confirmBackup).not.toHaveBeenCalled();
   });
 
-  it("opens SeedRevealModal after correct passcode", async () => {
+  it("opens secrets dialog after correct password", async () => {
     const user = userEvent.setup();
-    verify.mockResolvedValue(true);
     renderBackup();
 
-    await user.type(passcodeInput(), "1234");
-    await user.click(screen.getByRole("button", { name: /Reveal seed/i }));
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Reveal seed & keys/i }),
+    );
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("abandon")).toBeInTheDocument();
-    expect(screen.queryByText(/Confirm backup/i)).not.toBeInTheDocument();
+    expect(screen.getByText("spendhex")).toBeInTheDocument();
+    expect(screen.getByText("viewhex")).toBeInTheDocument();
+    expect(revealSecrets).toHaveBeenCalledWith("correct-password");
     expect(confirmBackup).not.toHaveBeenCalled();
   });
 
-  it("closes modal on Got it and clears without confirmBackup", async () => {
+  it("downloads wallet json after correct password", async () => {
     const user = userEvent.setup();
-    verify.mockResolvedValue(true);
     renderBackup();
 
-    await user.type(passcodeInput(), "1234");
-    await user.click(screen.getByRole("button", { name: /Reveal seed/i }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
 
-    await user.click(screen.getByRole("button", { name: /Got it/i }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(confirmBackup).not.toHaveBeenCalled();
-    expect(passcodeInput().value).toBe("");
+    expect(downloadWalletBackup).toHaveBeenCalledWith("correct-password");
+    expect(await screen.findByText(/Downloaded wallet\.json/i)).toBeInTheDocument();
   });
 });

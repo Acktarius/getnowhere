@@ -9,6 +9,7 @@ import { getStorage } from "@/services/storage/StorageAdapter";
 export const WALLET_TIED_KEYS = [
   "wallet",
   "gnh.onboarded",
+  "gnh.appPasscode",
   "gnh.contacts",
   "gnh.invites",
   "gnh.pendingInitiatorKeys",

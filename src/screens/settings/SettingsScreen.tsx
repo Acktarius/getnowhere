@@ -189,8 +189,8 @@ export function SettingsScreen() {
             <LinkRow
               to="/settings/backup"
               icon={KeyRound}
-              title="Backup seed phrase"
-              sub="Reveal and confirm your seed backup"
+              title="Backup"
+              sub="Reveal seed & keys, download encrypted wallet"
             />
           </div>
         </div>

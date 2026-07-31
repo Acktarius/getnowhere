@@ -411,10 +411,26 @@ export type LocalSecurityService = {
   // NOTE: conceptual only. Real device keystore is a React Native concern.
 };
 
-// ---------- Seed backup ----------
+// ---------- Seed / key backup ----------
+
+export type WalletSecretsExport = {
+  address: string;
+  mnemonic: string;
+  spendKey: string;
+  viewKey: string;
+  viewOnly: boolean;
+};
+
+export type WalletBackupDownload = {
+  filename: string;
+  payload: unknown;
+};
 
 export type SeedBackupService = {
-  revealSeed(passcode: string): Promise<string>;
-  confirmBackup(passcode: string): Promise<void>;
+  /** Seed + keys after wallet-password check (biometric may replace later). */
+  revealSecrets(password: string): Promise<WalletSecretsExport>;
+  /** Encrypted wallet .json after wallet-password check. */
+  downloadWalletBackup(password: string): Promise<WalletBackupDownload>;
+  confirmBackup(password: string): Promise<void>;
   isBackedUp(): Promise<boolean>;
 };

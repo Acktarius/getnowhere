@@ -11,31 +11,13 @@ vi.mock("@/services/conceal/sync/runtime", () => ({
 
 import { disconnect } from "@/services/conceal/sync/runtime";
 import {
+  APP_PREF_ADAPTER_KEYS,
+  APP_PREF_LOCAL_SIDE_KEYS,
+  APP_PREF_SESSION_KEYS,
   deleteWalletData,
   resetAppData,
+  WALLET_TIED_KEYS,
 } from "@/services/storage/appDataLifecycle";
-
-const WALLET_TIED_KEYS = [
-  "wallet",
-  "gnh.onboarded",
-  "gnh.contacts",
-  "gnh.invites",
-  "gnh.pendingInitiatorKeys",
-  "gnh.contacts.ready",
-  "gnh.roomCatalog",
-  "gnh.roomSessions",
-  "gnh.revokedRooms",
-] as const;
-
-const APP_PREF_ADAPTER_KEYS = ["gnh.settings"] as const;
-
-const APP_PREF_LOCAL_SIDE_KEYS = [
-  "ccx-preferred-node",
-  "ccx-sync-timing",
-  "ccx-disable-parallel-sync",
-] as const;
-
-const APP_PREF_SESSION_KEYS = ["ccx-auto-node"] as const;
 
 function createMemoryAdapter(): StorageAdapter & {
   store: Map<string, string>;

@@ -6,11 +6,21 @@ const GRACE_MS = 5_000;
 type Props = {
   open: boolean;
   seedPhrase: string;
+  spendKey: string;
+  viewKey: string;
+  viewOnly?: boolean;
   onClose: () => void;
 };
 
-/** Timed seed-reveal dialog: fade-in Need more time, 5s grace auto-close. */
-export function SeedRevealModal({ open, seedPhrase, onClose }: Props) {
+/** Timed secrets dialog: seed + keys; Need more time / auto-close. */
+export function SeedRevealModal({
+  open,
+  seedPhrase,
+  spendKey,
+  viewKey,
+  viewOnly,
+  onClose,
+}: Props) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -28,7 +38,6 @@ export function SeedRevealModal({ open, seedPhrase, onClose }: Props) {
     setNeedMoreEnabled(false);
     setNeedMoreOpacity(0);
 
-    // Kick CSS fade 0→1 over FADE_MS (Approach A restart resets via cycle).
     const kickFade = setTimeout(() => {
       setNeedMoreOpacity(1);
     }, 0);
@@ -51,46 +60,92 @@ export function SeedRevealModal({ open, seedPhrase, onClose }: Props) {
 
   if (!open) return null;
 
-  const words = seedPhrase.split(" ");
+  const words = seedPhrase.split(" ").filter(Boolean);
 
   return (
     <>
       <div className="scrim" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true">
         <div className="modal__panel">
-          <h3 style={{ fontSize: 17, marginBottom: 8 }}>Your seed phrase</h3>
+          <h3 style={{ fontSize: 17, marginBottom: 8 }}>Wallet secrets</h3>
           <p className="muted" style={{ fontSize: 14, lineHeight: 1.5 }}>
-            Here is your seed. Keep it in a safe place — these words are
-            required for wallet restoration.
+            Here is your seed and keys. Keep them in a safe place for wallet
+            restoration. Never share them.
           </p>
-          <div
-            className="wrap"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 8,
-              marginTop: 16,
-            }}
-          >
-            {words.map((w, i) => (
+
+          {viewOnly ? (
+            <p
+              className="muted"
+              style={{ fontSize: 13, marginTop: 12, lineHeight: 1.45 }}
+            >
+              View-only wallet — spend key and mnemonic are not available.
+            </p>
+          ) : (
+            <div
+              className="wrap"
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 8,
+                marginTop: 16,
+              }}
+            >
+              {words.map((w, i) => (
+                <div
+                  key={`${cycle}-${i}`}
+                  className="mono"
+                  style={{
+                    fontSize: 12.5,
+                    padding: "6px 8px",
+                    background: "var(--bg-elev-2)",
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  <span className="faint" style={{ marginRight: 6 }}>
+                    {i + 1}
+                  </span>
+                  {w}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="stack stack--gap-3" style={{ marginTop: 16 }}>
+            <div>
+              <div className="field__label">Spend key</div>
               <div
-                key={`${cycle}-${i}`}
                 className="mono"
                 style={{
-                  fontSize: 12.5,
-                  padding: "6px 8px",
+                  fontSize: 11,
+                  wordBreak: "break-all",
+                  padding: "8px 10px",
                   background: "var(--bg-elev-2)",
                   borderRadius: 8,
                   border: "1px solid var(--border)",
                 }}
               >
-                <span className="faint" style={{ marginRight: 6 }}>
-                  {i + 1}
-                </span>
-                {w}
+                {spendKey || "—"}
               </div>
-            ))}
+            </div>
+            <div>
+              <div className="field__label">View key</div>
+              <div
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  wordBreak: "break-all",
+                  padding: "8px 10px",
+                  background: "var(--bg-elev-2)",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {viewKey || "—"}
+              </div>
+            </div>
           </div>
+
           <div
             className="row-flex"
             style={{ marginTop: 20, gap: 8, flexWrap: "wrap" }}
