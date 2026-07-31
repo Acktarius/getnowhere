@@ -106,11 +106,22 @@ state through the bridge. The UI must not import Hypercore/Hyperswarm primitives
 ```
 holepunch-sidecar/
   package.json
+  config.json           # maxNdjsonLineBytes / reserved maxFileBytes
+  src/config.mjs        # load limits with defaults
   src/swarm.mjs         # one Hyperswarm; multi-topic join + local/remote fan-out
   src/server.mjs        # WebSocket bridge (default ws://127.0.0.1:7901)
   src/parent-death.mjs  # exit when Electron parent dies
   test/
 ```
+
+### NDJSON line cap
+
+Hyperswarm peer streams are split with `createLineReader`. Pending / complete
+lines are capped by `maxNdjsonLineBytes` (default **262144**, from
+`config.json`). On overflow the reader clears its buffer and throws; the
+connection handler logs the peer and calls `conn.destroy()`. Other connections
+and the sidecar process stay up. `maxFileBytes` is reserved for a future media
+path and is not applied to chat NDJSON frames.
 
 ## Packaged desktop bridge (ephemeral port)
 

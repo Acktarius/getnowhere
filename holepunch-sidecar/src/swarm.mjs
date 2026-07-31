@@ -6,6 +6,7 @@
 
 import b4a from "b4a";
 import Hyperswarm from "hyperswarm";
+import { config } from "./config.mjs";
 
 /**
  * @typedef {{
@@ -52,22 +53,46 @@ export function encodeSwarmLine(obj) {
   return b4a.from(`${JSON.stringify(obj)}\n`);
 }
 
+/** Pending NDJSON line exceeded maxNdjsonLineBytes. */
+export class NdjsonLineTooLongError extends Error {
+  /** @param {string} [message] */
+  constructor(message = "NDJSON line too long") {
+    super(message);
+    this.name = "NdjsonLineTooLongError";
+  }
+}
+
 /**
  * Incremental NDJSON splitter for Hyperswarm connection data.
+ * @param {number} [maxBytes] Cap for a pending/complete line (default from config).
  * @returns {{ push: (chunk: Uint8Array | string) => object[] }}
  */
-export function createLineReader() {
+export function createLineReader(maxBytes = config.maxNdjsonLineBytes) {
   let buf = "";
   return {
     push(chunk) {
-      buf += typeof chunk === "string" ? chunk : b4a.toString(chunk);
+      const piece = typeof chunk === "string" ? chunk : b4a.toString(chunk);
       /** @type {object[]} */
       const out = [];
-      let idx;
-      while ((idx = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, idx);
-        buf = buf.slice(idx + 1);
+      let offset = 0;
+      while (offset < piece.length) {
+        const nl = piece.indexOf("\n", offset);
+        if (nl < 0) {
+          const rest = piece.slice(offset);
+          if (buf.length + rest.length > maxBytes) {
+            buf = "";
+            throw new NdjsonLineTooLongError();
+          }
+          buf += rest;
+          break;
+        }
+        const line = buf + piece.slice(offset, nl);
+        buf = "";
+        offset = nl + 1;
         if (!line) continue;
+        if (line.length > maxBytes) {
+          throw new NdjsonLineTooLongError();
+        }
         try {
           out.push(JSON.parse(line));
         } catch {
@@ -268,7 +293,25 @@ export function createSwarmMesh(opts = {}) {
 
     const lines = createLineReader();
     conn.on("data", (data) => {
-      for (const msg of lines.push(data)) {
+      /** @type {object[]} */
+      let msgs;
+      try {
+        msgs = lines.push(data);
+      } catch (err) {
+        if (err instanceof NdjsonLineTooLongError) {
+          console.warn(
+            `[swarm] NDJSON line too long peer=${short(peerId)}; destroying connection`,
+          );
+          try {
+            conn.destroy();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        throw err;
+      }
+      for (const msg of msgs) {
         if (!msg || typeof msg.topicRef !== "string") continue;
 
         // Ignore NDJSON hello — do not adopt or advertise topics over the wire.

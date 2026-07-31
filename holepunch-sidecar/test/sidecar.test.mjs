@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
+import { config } from "../src/config.mjs";
 import {
   createLineReader,
   createSwarmMesh,
@@ -64,11 +65,18 @@ function fakeConn() {
   const dataHandlers = [];
   /** @type {Function | undefined} */
   let closeHandler;
+  let destroyCalls = 0;
   return {
     writes,
+    get destroyCalls() {
+      return destroyCalls;
+    },
     remotePublicKey: Buffer.from("ab".repeat(32), "hex"),
     write(buf) {
       writes.push(buf);
+    },
+    destroy() {
+      destroyCalls += 1;
     },
     on(event, handler) {
       if (event === "data") dataHandlers.push(handler);
@@ -655,5 +663,82 @@ describe("NDJSON swarm framing", () => {
     assert.equal(msgs.length, 1);
     assert.equal(msgs[0].type, "frame");
     assert.equal(msgs[0].payload, "abc");
+  });
+
+  /** JSON object line with exact character length (no trailing newline). */
+  function jsonLineOfLength(n) {
+    const prefix = '{"p":"';
+    const suffix = '"}';
+    const pad = n - prefix.length - suffix.length;
+    assert.ok(pad >= 0, `n=${n} too small for jsonLineOfLength`);
+    return `${prefix}${"a".repeat(pad)}${suffix}`;
+  }
+
+  /** Overflow from createLineReader: message or NdjsonLineTooLong. Task 1.2. */
+  const NDJSON_LINE_TOO_LONG = /too long|NdjsonLineTooLong/i;
+
+  it("createLineReader throws on partial line over max and clears buffer for next valid line", () => {
+    const maxBytes = 32;
+    const reader = createLineReader(maxBytes);
+    // Refuse to append when sum would exceed with no newline (no retained oversize).
+    assert.throws(
+      () => reader.push("x".repeat(maxBytes + 1)),
+      NDJSON_LINE_TOO_LONG,
+    );
+    // Buffer cleared: next valid line must parse (oversized data not retained).
+    const msgs = reader.push('{"type":"ok"}\n');
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0].type, "ok");
+  });
+
+  it("createLineReader throws on oversize tail after a short framed line in one chunk", () => {
+    const maxBytes = 8;
+    const reader = createLineReader(maxBytes);
+    // First line {"a":1} is 7 chars (fits); oversize rest must not be appended to buf.
+    assert.throws(
+      () => reader.push(`{"a":1}\n${"x".repeat(100)}`),
+      NDJSON_LINE_TOO_LONG,
+    );
+    const msgs = reader.push('{"ok":1}\n');
+    assert.equal(msgs.length, 1);
+    assert.equal(msgs[0].ok, 1);
+  });
+
+  it("createLineReader parses a line at exactly maxBytes", () => {
+    const maxBytes = 64;
+    const line = jsonLineOfLength(maxBytes);
+    assert.equal(line.length, maxBytes);
+    const reader = createLineReader(maxBytes);
+    const msgs = reader.push(`${line}\n`);
+    assert.equal(msgs.length, 1);
+    assert.equal(typeof msgs[0].p, "string");
+  });
+
+  it("createLineReader throws when line is one byte over max", () => {
+    const maxBytes = 64;
+    const line = jsonLineOfLength(maxBytes + 1);
+    assert.equal(line.length, maxBytes + 1);
+    const reader = createLineReader(maxBytes);
+    assert.throws(() => reader.push(`${line}\n`), NDJSON_LINE_TOO_LONG);
+  });
+
+  it("destroys connection when inbound NDJSON exceeds max line length", async () => {
+    const swarm = fakeHyperswarm();
+    const mesh = createSwarmMesh({ swarm });
+    const client = fakeClient();
+    const topic = "c0".repeat(32);
+
+    try {
+      await mesh.join(topic, client);
+      const conn = fakeConn();
+      swarm.emitConnection(conn, fakePeerInfo([topic]));
+      assert.equal(conn.destroyCalls, 0);
+
+      conn.emitData("x".repeat(config.maxNdjsonLineBytes + 1));
+
+      assert.equal(conn.destroyCalls, 1);
+    } finally {
+      await mesh.destroy();
+    }
   });
 });

@@ -1,0 +1,83 @@
+<!-- forge-brief-specs-hash:c59b4d79d3c95524 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cap Holepunch NDJSON line size</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+      pre.flow {
+        background: #f8f9fa;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Cap Holepunch NDJSON line size</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      A bad peer can today stream endless data without a newline and balloon
+      Holepunch memory until the whole sidecar dies. After this change, lines
+      over 256 KiB trip a hard stop: that peer connection is dropped; your
+      other rooms keep running.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>Pending reassembly capped at 256 KiB (configurable).</li>
+      <li>Overflow drops only the offending peer connection.</li>
+      <li>A second config knob reserved for future file/media size (not used yet).</li>
+      <li>Finding note updated with the fix.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <pre class="flow">
+Peer sends Hyperswarm data
+        ↓
+Reassemble NDJSON until newline
+        ↓
+If pending buffer &gt; 256 KiB → clear + destroy that connection
+        ↓
+Normal chat lines (tiny) parse as today
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>No UI change for normal sealed chat frames.</li>
+      <li>Limits live in <code>holepunch-sidecar/config.json</code> if you need to retune later.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Anything that truly needs NDJSON lines larger than 256 KiB will need a config bump or a different framing path.</li>
+      <li>Pictures should not ride this text line path — use the reserved file limit when media lands.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Sending/receiving pictures or files.</li>
+      <li>WebSocket message-size limits on the local bridge.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Config + line-reader cap with tests (2 tasks)</li>
+      <li>Destroy connection, docs, finding (1 task)</li>
+    </ul>
+  </body>
+</html>
