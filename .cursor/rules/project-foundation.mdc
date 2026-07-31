@@ -30,7 +30,7 @@ alwaysApply: true
 - Do **not** use React Native for desktop or Nitro as a Hyperswarm stack.
 - Bridge messages must match `HolepunchSidecarClient.ts` / `holepunch-sidecar.md`.
 - Topic only: `sha256Hex(\`gnh-chat-v1||${roomId}||${relationshipId}\`)` via `deriveTopicRef`.
-- Crypto: L1 SmartMessage derive → L2 Hyperswarm Noise → L3 ChaCha E2E; do not drop L3 because Noise exists — `docs/security/encryption.md`.
+- Crypto: L1 SmartMessage derive + session seal → L2 Hyperswarm Noise; L1′ relay when L2 is down; do not drop the L1 session seal because Noise exists — `docs/security/encryption.md`. There is no L3.
 - Post-connect app verification before trusting a peer / enabling composer.
 
 ## Development workflow
@@ -76,4 +76,4 @@ alwaysApply: true
 
 > Get Now Here is developed as a web-first application. Local work happens with `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare. Expo.dev / EAS covers store delivery.
 
-> Vite UI plus Pear-shaped Hyperswarm behind a typed bridge. L1 SmartMessage secret, L2 Noise transport, L3 ChaCha E2E. The UI never joins Hyperswarm.
+> Vite UI plus Pear-shaped Hyperswarm behind a typed bridge. L1 SmartMessage (+ session seal), L2 Noise, L1′ when L2 is down. The UI never joins Hyperswarm.

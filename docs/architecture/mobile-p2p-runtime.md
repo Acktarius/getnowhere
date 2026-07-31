@@ -58,9 +58,9 @@ Cross-platform map:
 4. Topic derivation is only the formula in `docs/architecture/pairing-and-topics.md`
    (and `deriveTopicRef` in code).
 5. App-layer peer verification after transport connect; topic alone is not trust.
-6. Sealed chat frames are opaque to the runtime (ChaCha20-Poly1305 L3 E2E in
-   the app crypto path). Hyperswarm Noise is L2 transport. Dual protection is
-   intentional — see `docs/security/encryption.md`.
+6. Sealed chat frames are opaque to the runtime (ChaCha20-Poly1305 **L1 session
+   seal** — not a separate L3). Hyperswarm Noise is **L2**. See
+   `docs/security/encryption.md`.
 
 ### Mobile implementation sketch
 

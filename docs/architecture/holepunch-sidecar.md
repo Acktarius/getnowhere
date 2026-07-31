@@ -29,7 +29,9 @@ All Hyperswarm lifecycle operations happen in the runtime:
 - join / leave derived `topicRef`
 - accept connections and report peer counts (Hyperswarm-shared topics only —
   invite already carries `topicRef`; do not NDJSON-hello the local topic set)
-- multiplex opaque sealed frames
+- multiplex opaque sealed frames (inbound and outbound both require the
+  connection’s Hyperswarm-shared `connTopics` membership for that `topicRef`;
+  foreign-labeled inbound frames are silently dropped)
 - report state changes to the UI
 
 The React/Vite app only sends commands and renders state.
@@ -42,9 +44,10 @@ The React/Vite app only sends commands and renders state.
 | IPC / pear-bridge | `server.mjs` (WebSocket) | Electron IPC / pear-bridge | Bare IPC |
 | UI | Vite → `HolepunchChatTransport` | Vite in Electron renderer | Expo UI |
 
-App-layer ChaCha20-Poly1305 seals frames in the app crypto path (L3 E2E). The
-sidecar carries **already-sealed** payloads only (no session keys). Hyperswarm
-Noise (L2) protects the DHT hop. See `docs/security/encryption.md`.
+App-layer ChaCha20-Poly1305 seals frames in the app crypto path (**L1 session
+seal**). The sidecar carries **already-sealed** payloads only (no session keys).
+Hyperswarm Noise (**L2**) protects the DHT hop. There is no L3 — see
+`docs/security/encryption.md`.
 
 ## Bridge contract (live — implement this)
 

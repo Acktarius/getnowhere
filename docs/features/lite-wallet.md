@@ -95,5 +95,5 @@ do **not** treat mempool alone as proof of a new relationship. See
 - Deposit / withdraw creation UI.
 - Multi-wallet index / switcher.
 - Next-wallet i18n, Cordova, biometric vault.
-- Holepunch / P2P chat crypto (L1–L3) — see `docs/security/p2pchatprotocol.md`
+- Holepunch / P2P chat crypto (L1 / L1′ / L2) — see `docs/security/p2pchatprotocol.md`
   and `docs/security/encryption.md`.

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RawWalletV1 } from "conceal-wallet-sdk";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readChatRooms } from "@/services/p2p/chatRoomsBlob";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { setActiveStorageAdapter } from "@/services/storage/StorageAdapter";
@@ -31,8 +31,8 @@ import {
   __resetHolepunchTransport,
   __seedRoomMessagesForTests,
   getMessagesForRoom,
-  hydrateChatRoomsFromWallet,
   HolepunchChatTransport,
+  hydrateChatRoomsFromWallet,
   saveChatRoomsToWallet,
 } from "@/services/p2p/HolepunchChatTransport";
 import {

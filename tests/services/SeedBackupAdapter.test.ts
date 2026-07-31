@@ -97,9 +97,9 @@ describe("SeedBackupAdapter", () => {
   });
 
   it("downloadWalletBackup rejects bad password", async () => {
-    await expect(
-      SeedBackupAdapter.downloadWalletBackup("bad"),
-    ).rejects.toThrow(/Incorrect password/);
+    await expect(SeedBackupAdapter.downloadWalletBackup("bad")).rejects.toThrow(
+      /Incorrect password/,
+    );
   });
 
   it("downloadWalletBackup persists and returns encrypted payload", async () => {

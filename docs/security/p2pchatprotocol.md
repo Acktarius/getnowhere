@@ -40,13 +40,16 @@ bidirectional Conceal relationship.
 - Invite **acceptance (`register`) is only the handoff** into peer transport.
   **Live** (`channel: "live"`) messaging is allowed only when the room is
   **Holepunch-connected**.
-- **L1 chat relay** (`channel: "relay"`, wire `execute` / `e`) is an
+- **L1′ chat relay** (`channel: "relay"`, wire `execute` / `e`) is an
   SMS-class fallback after accept when Hyperswarm is not connected — fee +
   ~block latency, grey bubbles. App text inside Conceal MESSAGE (chain ChaCha).
   Never while `pending`. It does **not** replace L2. See §16.
-- App-layer ChaCha20-Poly1305 (L3) seals live frames before the bridge; Hyperswarm
-  Noise (L2) protects the DHT hop. Dual encryption is intentional under the
-  max-security threat model — see `encryption.md`.
+- **L1 session seal** (ChaCha20-Poly1305 with handshake-derived keys) seals live
+  frames before the bridge; Hyperswarm Noise (**L2**) protects the DHT hop.
+  There is **no L3** — live AEAD is an L1 key use, not a third layer. See
+  `encryption.md`.
+- One **room** (`roomId`) may show both L2 live and L1′ relay messages in one
+  thread (timestamp order; `channel` distinguishes source).
 - The Vite UI does **not** join Hyperswarm. The Pear-shaped runtime
   (`holepunch-sidecar/` today; Bare worklet on mobile) owns swarm lifecycle;
   the UI uses the live bridge schema. See
@@ -63,13 +66,13 @@ bidirectional Conceal relationship.
 
 - Relationship model: CCX address + `paymentIdFrom` + `paymentIdTo`.
 - Smart-message create / register / revoke (SDK ACTION_MAP verbs).
-- L1 sealed chat relay (`chat.relay` / wire `execute`) for offline fallback.
+- L1′ chat relay (`chat.relay` / wire `execute`) for offline fallback.
 - Pending rooms, dual TTL (`inviteExpiry` + `roomTtl`), tombstones.
 - Typed `HolepunchBootstrapContract` handoff.
 - Holepunch connect / retry / connected lifecycle.
-- ChaCha20-Poly1305 session frames; content envelopes (text/reaction/edit/delete).
-- Dual-path composer: prefer `live` when connected; allow `relay` when session
-  keys exist and lifecycle is relay-eligible.
+- L1-sealed ChaCha20-Poly1305 live frames; content envelopes (text/reaction/edit/delete).
+- Dual-path composer: prefer `live` when connected; allow L1′ `relay` when
+  lifecycle is relay-eligible.
 
 ### Still evolving
 
@@ -85,9 +88,9 @@ bidirectional Conceal relationship.
 
 ### On-chain delivery (landed)
 
-- Create / register / revoke / **relay** ride `buildMessageTransaction` + daemon
+- Create / register / revoke / **L1′ relay** ride `buildMessageTransaction` + daemon
   broadcast as **mined** smart messages. Contact signaling never sets Conceal
-  `tx_extra` TTL (`0x05` / `ttlUnixSeconds: 0`). Relay is app-layer text inside
+  `tx_extra` TTL (`0x05` / `ttlUnixSeconds: 0`). L1′ is app-layer text inside
   Conceal MESSAGE (chain ChaCha); see §16.
 - Fee shape (atomic units, same as next-wallet mined message):
   - message amount = `100` (`MESSAGE_TX_AMOUNT_ATOMIC`)
@@ -152,14 +155,14 @@ Module: **`contact`**.
 | Accept | `chat.register` | `register` | `r` |
 | Decline | `chat.revoke` | `revoke` | `k` (`user_declined`) |
 | Leave forever | `chat.revoke` | `revoke` | `k` (`room_revoked` + `roomId`) |
-| Sealed chat relay | `chat.relay` | `execute` | `e` |
+| L1′ chat relay | `chat.relay` | `execute` | `e` |
 
 Legacy scaffold verbs `invite` / `accept` / `reject` are **rejected** (no compat shim).
 
 Relationship signaling remains `{trust,link,…}` (unchanged).
 
-`chat.relay` is **not** create / register / revoke. It carries only an L3-sealed
-`ChatContentEnvelopeV1` (no plaintext chat on-chain). See §16.
+`chat.relay` (L1′) is **not** create / register / revoke. It carries plain app
+fields `{contact,e,roomId,ts,text}`; Conceal MESSAGE encrypts on chain. See §16.
 
 ---
 
@@ -214,19 +217,23 @@ Clock skew allowance: ±120 seconds, then fail closed.
 ### Layers (max security across runtimes)
 
 Canonical layering is defined in `docs/security/encryption.md` § Threat model /
-Layering. Summary:
+Layering. Summary — **there is no L3**:
 
-| Layer | What | Owner |
+| Name | What | Owner |
 |---|---|---|
-| **L1** | SmartMessage signaling: ECDH + HKDF → session secret, topic bind, post-connect auth material | App / protocol |
-| **L2** | Hyperswarm **Noise** encrypted peer streams | P2P runtime (sidecar / Electron / Bare) |
-| **L3** | **ChaCha20-Poly1305 (RFC 8439)** content AEAD on chat frames (96-bit nonce). Not XChaCha for `CHACHA20_POLY1305_V1` | App crypto path |
+| **L1** | SmartMessage signaling: ECDH + HKDF → session secret, topic bind, post-connect auth; **and** ChaCha20-Poly1305 seal/open of **live** frames with those keys | App / protocol |
+| **L1′** | `chat.relay` / `{contact,e,…}` when L2 is unavailable (Conceal MESSAGE on chain) | App / Conceal |
+| **L2** | Hyperswarm **Noise** encrypted peer streams (opaque L1-sealed payloads) | P2P runtime (sidecar / Electron / Bare) |
 
-**Why L2 + L3 together:** Noise protects the DHT hop; it ends at the Hyperswarm
+**Why L1 seal over L2:** Noise protects the DHT hop; it ends at the Hyperswarm
 process. Every runtime still has a UI↔runtime bridge. Treating that bridge and
-runtime as untrusted for plaintext requires L3 seal-before-bridge. Dual
-encryption is intentional defense in depth — not accidental overkill. Do not
-drop L3 to “simplify,” and do not add a third ad hoc stream cipher on Noise.
+runtime as untrusted for plaintext requires seal-before-bridge with L1 session
+keys. That seal is an L1 *use*, not a third layer. Do not drop it to “simplify,”
+and do not add a third ad hoc stream cipher on Noise.
+
+**L1′:** compensates L2 failure/absence (SMS-class). Different confidentiality
+(view-key / chain) than live — see §16. Mixing L1′ and live in one `roomId`
+thread is intentional UX.
 
 Library note: `@noble/ciphers` exposes both ChaCha and XChaCha helpers. The
 product cipher suite id `CHACHA20_POLY1305_V1` binds to **ChaCha20-Poly1305
@@ -306,8 +313,8 @@ These steps run in the P2P runtime (sidecar / Bare worklet), not in UI React:
    carries `topicRef`; the sidecar does not advertise local topics via NDJSON
    hello). Noise streams still use NDJSON for opaque `frame` lines.
 3. Retry with exponential backoff + jitter (see §10); respect `roomTtl`.
-4. Seal/open **live** content envelopes when lifecycle is `connected` (app
-   ChaCha20-Poly1305; runtime carries opaque sealed frames over bridge + DHT).
+4. Seal/open **live** content envelopes when lifecycle is `connected` (L1
+   session ChaCha20-Poly1305; runtime carries opaque sealed frames over bridge + DHT).
 5. On disconnect within TTL: return to `connecting` and reconnect without resetting nonce counters.
 6. After transport connect, perform application-layer peer verification
    (relationship / invite identifiers). A shared topic alone does not imply
@@ -329,7 +336,7 @@ UI must never import `hyperswarm` (`docs/prompts/coding-constraints.md`).
 | Room lifecycle | Composer | Preferred channel |
 |---|---|---|
 | `connected` | **Enabled** | `live` |
-| `accepted` / `connecting` / `connect_failed` | **Enabled** | `relay` (L1) |
+| `accepted` / `connecting` / `connect_failed` | **Enabled** | `relay` (L1′) |
 | `pending` / terminal | **Disabled** | — |
 
 ```ts
@@ -341,7 +348,7 @@ canSendMessages(status) =>
 ```
 
 `inviteStatus === accepted` alone does not imply live Holepunch; it does unlock
-L1 relay once the room lifecycle is post-accept.
+L1′ relay once the room lifecycle is post-accept.
 
 **Topic derivation (canonical — only formula):**
 
@@ -421,8 +428,8 @@ Chats at once. Decline of a pending invite still uses `user_declined`
 (inviteId is enough).
 
 **Invalid:** send `live` frames unless `connected`. **Invalid:** send `relay`
-while `pending` (or terminal). L1 relay text rides Conceal MESSAGE encryption
-(ChaCha + DH) — app body is plain smart-message fields, not a second L3 seal.
+while `pending` (or terminal). L1′ text rides Conceal MESSAGE encryption
+(ChaCha + DH) — app body is plain smart-message fields, not a second L1 session seal.
 
 ### ChatStatus (derived)
 
@@ -461,9 +468,9 @@ Persist separately (do not collapse these):
 | Record | Key fields | Note |
 |---|---|---|
 | Invite | `inviteStatus` including `accepted` | Signaling terminal — **not** live |
-| Room | `lifecycleStatus` (`accepted` ≠ `connected`) | Composer: live vs L1 relay |
+| Room | `lifecycleStatus` (`accepted` ≠ `connected`) | Composer: live vs L1′ |
 | Session | `sendCounter` / `recvCounter` + key refs | Live frames only |
-| Chat message | `channel: live \| relay` | Accent vs grey; same thread |
+| Chat message | `channel: live \| relay` | Accent vs grey; same `roomId` thread |
 
 - Contacts → `gnh.contacts` (StorageAdapter) **and** wallet blob
   `addressBook` (encrypted .json export/import).
@@ -483,7 +490,7 @@ Persist separately (do not collapse these):
 - `ConcealSmartMessageAdapter` — SDK encode + delivery channel (incl. relay broadcast/scan)
 - `SessionBootstrapService` — derive session + `buildHolepunchContract`
 - `P2PEncryptionService` — X25519/HKDF/AEAD
-- `HolepunchChatTransport` — connect/retry/send/subscribe; dual-path seal → live frame **or** L1 relay
+- `HolepunchChatTransport` — connect/retry/send/subscribe; dual-path L1 seal → live frame **or** L1′ relay
 
 Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 
@@ -494,10 +501,10 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 `ChatContentEnvelopeV1`: `schemaVersion`, `messageId`, `clientId`, `sentAt`,
 `kind: text|reaction|edit|delete`, optional `text` / `targetMessageId` / `reaction`.
 
-- **Live path:** sealed L3 → Holepunch bridge frame (`channel: "live"`).
-- **Relay path:** plain `{contact,e,roomId,ts,text}` on L1 (`channel: "relay"`).
-  Conceal MESSAGE encryption covers the chain; no second app-layer seal.
-- Reaction / edit / delete remain **live-only**. Relay is text only (§16).
+- **Live path:** L1 session seal → Holepunch bridge frame (`channel: "live"`).
+- **L1′ path:** plain `{contact,e,roomId,ts,text}` (`channel: "relay"`).
+  Conceal MESSAGE encryption covers the chain; no second session-key seal.
+- Reaction / edit / delete remain **live-only**. L1′ is text only (§16).
 
 ---
 
@@ -510,16 +517,16 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 
 ---
 
-## 16. L1 chat relay (`chat.relay`)
+## 16. L1′ chat relay (`chat.relay`)
 
-**Purpose:** SMS-class fallback when Hyperswarm is not `connected`, **after**
-invite accept. Prefer live whenever `lifecycleStatus === "connected"`. Relay
-must not replace L2. **Never** while `pending` (invitee must not be spam-messaged
-before Accept).
+**Purpose:** SMS-class **L1′** fallback when Hyperswarm (L2) is not `connected`,
+**after** invite accept. Prefer live whenever `lifecycleStatus === "connected"`.
+L1′ must not replace L2. **Never** while `pending` (invitee must not be
+spam-messaged before Accept).
 
 **UI:** `channel: "live"` → accent bubbles; `channel: "relay"` → grey bubbles.
-Same thread mixes both, ordered by timestamp. Subtle “via chain” when sending
-relay.
+Same **room** (`roomId`) mixes both sources, ordered by timestamp. Subtle “via
+chain” when sending relay. Merging sources is intentional — not a crypto flaw.
 
 ### Wire
 
@@ -531,11 +538,11 @@ Module `contact`, action `execute` (`e`):
 
 App-layer text (no `,` `{` `}` — SDK smart-message delimiter rules). Conceal
 MESSAGE already encrypts the body with ChaCha + DH to sender/receiver view keys
-— chain observers without the view key cannot read it. No second L3 seal.
+— chain observers without the view key cannot read it. No second L1 session seal.
 
 | Field | Meaning |
 |---|---|
-| `roomId` | Target chat room |
+| `roomId` | Target chat room (same object as live) |
 | `sentAt` | Unix seconds (thread order) |
 | `text` | Message body (≤ ~200 chars / `MAX_MESSAGE_BODY_BYTES`) |
 
@@ -550,8 +557,8 @@ Same fee shape as other mined contact smart messages (§2). Fee + ~block latency
 
 ### Send
 
-1. If `connected` → live Holepunch frame (L3).
-2. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay`.
+1. If `connected` → live Holepunch frame (L1 session seal over L2).
+2. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay` (L1′).
 3. Else (`pending` / terminal) → composer blocked.
 
 @see `docs/features/chat-relay.md`, `docs/prompts/coding-constraints.md`

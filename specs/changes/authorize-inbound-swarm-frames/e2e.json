@@ -1,0 +1,12 @@
+{
+  "change": "authorize-inbound-swarm-frames",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar mesh: inbound frame connTopics gate",
+      "cmd": "node --test holepunch-sidecar/test/sidecar.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

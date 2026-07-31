@@ -21,8 +21,7 @@ const confirmBackup = vi.fn(async () => undefined);
 vi.mock("@/services", () => ({
   seedBackupService: {
     confirmBackup: (...args: unknown[]) => confirmBackup(...args),
-    revealSecrets: (...args: unknown[]) =>
-      revealSecrets(...(args as [string])),
+    revealSecrets: (...args: unknown[]) => revealSecrets(...(args as [string])),
     downloadWalletBackup: (...args: unknown[]) =>
       downloadWalletBackup(...(args as [string])),
     isBackedUp: vi.fn(async () => false),
@@ -142,6 +141,8 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     );
 
     expect(downloadWalletBackup).toHaveBeenCalledWith("correct-password");
-    expect(await screen.findByText(/Downloaded wallet\.json/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Downloaded wallet\.json/i),
+    ).toBeInTheDocument();
   });
 });

@@ -276,6 +276,8 @@ export function createSwarmMesh(opts = {}) {
 
         if (msg.type === "frame" && typeof msg.payload === "string") {
           const frameTopic = msg.topicRef.toLowerCase();
+          const joined = connTopics.get(conn);
+          if (!joined?.has(frameTopic)) continue;
           const state = topics.get(frameTopic);
           if (!state) continue;
           for (const client of state.localClients) {

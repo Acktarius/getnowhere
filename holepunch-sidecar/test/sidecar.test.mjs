@@ -467,6 +467,89 @@ describe("cross-topic hello isolation", () => {
   });
 });
 
+describe("inbound frame authorization", () => {
+  it("does not deliver remote frame for B on an A-only connection", async () => {
+    const swarm = fakeHyperswarm();
+    const mesh = createSwarmMesh({ swarm });
+    const client = fakeClient();
+    const topicA = "91".repeat(32);
+    const topicB = "92".repeat(32);
+
+    try {
+      await mesh.join(topicA, client);
+      await mesh.join(topicB, client);
+
+      const conn = fakeConn();
+      swarm.emitConnection(conn, fakePeerInfo([topicA]));
+      assert.equal(mesh.peerCount(topicA), 1);
+      assert.equal(mesh.peerCount(topicB), 0);
+
+      conn.emitData(
+        encodeSwarmLine({
+          type: "frame",
+          topicRef: topicB,
+          roomId: "room-inject",
+          payload: "aW5qZWN0",
+        }),
+      );
+
+      assert.ok(
+        !client.inbox.some(
+          (m) =>
+            m.type === "frame" &&
+            m.topicRef === topicB &&
+            m.payload === "aW5qZWN0",
+        ),
+      );
+    } finally {
+      await mesh.destroy();
+    }
+  });
+
+  it("delivers remote frame for B after Hyperswarm associates B", async () => {
+    const swarm = fakeHyperswarm();
+    const mesh = createSwarmMesh({ swarm });
+    const client = fakeClient();
+    const topicA = "93".repeat(32);
+    const topicB = "94".repeat(32);
+
+    try {
+      await mesh.join(topicA, client);
+      await mesh.join(topicB, client);
+
+      const conn = fakeConn();
+      const info = fakePeerInfo([topicA]);
+      swarm.emitConnection(conn, info);
+      assert.equal(mesh.peerCount(topicA), 1);
+      assert.equal(mesh.peerCount(topicB), 0);
+
+      info.emitTopic(topicB);
+      assert.equal(mesh.peerCount(topicB), 1);
+
+      conn.emitData(
+        encodeSwarmLine({
+          type: "frame",
+          topicRef: topicB,
+          roomId: "room-ok",
+          payload: "ZGVsaXZlcmVk",
+        }),
+      );
+
+      assert.ok(
+        client.inbox.some(
+          (m) =>
+            m.type === "frame" &&
+            m.topicRef === topicB &&
+            m.payload === "ZGVsaXZlcmVk" &&
+            m.roomId === "room-ok",
+        ),
+      );
+    } finally {
+      await mesh.destroy();
+    }
+  });
+});
+
 describe("NDJSON swarm framing", () => {
   it("encodeSwarmLine ends with newline", () => {
     const line = encodeSwarmLine({ type: "hello", topicRef: "aa".repeat(32) });

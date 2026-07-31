@@ -94,7 +94,7 @@ Hyperswarm in the renderer. Details: `docs/builds/github-pages-and-desktop.md`.
 
 | Put it in… | When |
 |---|---|
-| `src/` | Product UX, domain logic, wallet, protocol, bridge client, encryption L1/L3 |
+| `src/` | Product UX, domain logic, wallet, protocol, bridge client, L1 crypto |
 | `holepunch-sidecar/` | Web-dev Hyperswarm host + WS bridge server |
 | `desktop-electron/` | Electron window lifecycle, Alice/Bob partitions, sidecar child ownership |
 | `native-wrapper/` | Expo/EAS packaging, Bare worklet host, store metadata |
@@ -108,8 +108,8 @@ Hyperswarm stays **out of the Vite / UI bundle**.
   (MVP) or main / Pear-end later — `electron-desktop.md`
 - **Mobile:** Expo UI ↔ same bridge ↔ Bare worklet — `mobile-p2p-runtime.md`
 
-Crypto (max security): L1 SmartMessage derive → L2 Hyperswarm Noise → L3
-ChaCha20-Poly1305 E2E before the bridge — `docs/security/encryption.md`.
+Crypto (max security): L1 SmartMessage derive + session seal → L2 Hyperswarm
+Noise; L1′ relay when L2 is down — `docs/security/encryption.md`. No L3.
 
 Further detail:
 
@@ -168,7 +168,7 @@ Prefer:
 - “Vite UI plus a Pear-shaped Node Hyperswarm sidecar (web-dev).”
 - “Desktop: Electron shell; shared localhost sidecar for Alice/Bob testing.”
 - “Mobile: Expo UI plus a Bare Hyperswarm worklet behind the same bridge.”
-- “L1 SmartMessage secret → L2 Noise transport → L3 ChaCha E2E on frames.”
+- “L1 SmartMessage secret (+ session seal) → L2 Noise; L1′ when L2 is down.”
 - “Topics come only from `deriveTopicRef`.”
 
 Avoid:
@@ -176,6 +176,7 @@ Avoid:
 - Referring to a top-level `web/` folder (use `src/`)
 - “The UI / WebView / renderer joins Hyperswarm”
 - “Noise alone is enough for chat plaintext across the bridge”
+- Naming a separate “L3” layer (live AEAD is an L1 key use)
 - “React Native desktop” / “Nitro Hyperswarm”
 - Public room names as topics; trusting peers from topic join alone
 - Alternate `topicRef` formulas unless protocol + `ids.ts` change together

@@ -150,7 +150,11 @@ export function SeedRevealModal({
             className="row-flex"
             style={{ marginTop: 20, gap: 8, flexWrap: "wrap" }}
           >
-            <button type="button" className="btn btn--primary" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={onClose}
+            >
               Got it
             </button>
             <button

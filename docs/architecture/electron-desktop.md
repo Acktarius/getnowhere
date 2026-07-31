@@ -50,7 +50,7 @@ Goal: two Electron windows, two Conceal wallets, Hyperswarm via sidecar child(re
 | Mode | Ports | Behavior | Use when |
 |---|---|---|---|
 | `shared` (default) | both use `:7901` | First binder **owns** the child; second **attaches**. Closing the owner drops the bridge for the attacher. Local WS fan-out only — **not** two independent Hyperswarm peers. | Quick UI / fan-out tests |
-| `isolated` | alice `:7901`, bob `:7902` (defaults) | Each window **owns** its own sidecar. Peers meet via real DHT + Noise. | Verifying end-to-end Hyperswarm + L3 crypto |
+| `isolated` | alice `:7901`, bob `:7902` (defaults) | Each window **owns** its own sidecar. Peers meet via real DHT + Noise. | Verifying end-to-end Hyperswarm + L1 session seal |
 
 Window title tags: `[shared:owner]`, `[shared:attach]`, or `[isolated]`.
 

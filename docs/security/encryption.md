@@ -11,8 +11,8 @@ scattering cryptographic decisions across UI and feature code.
 
 This document defines:
 
-- the threat model and layering (why we use Hyperswarm **and** app AEAD)
-- the default encryption primitive
+- the threat model and layering (L1 / L1′ / L2 — there is **no L3**)
+- the default encryption primitive for L1 session seals
 - key handling expectations
 - nonce rules
 - associated data rules
@@ -34,17 +34,17 @@ Get Now Here runs the same product crypto across different hosts:
 for chat plaintext**. Session keys and seal/open stay with the app identity
 path (near the wallet / UI services), not inside Hyperswarm code.
 
-### What each layer defeats
+### What each piece defeats
 
 | Adversary | Mitigated by |
 |---|---|
-| DHT / bootstrap / relay observers | Hyperswarm **Noise** streams (transport) |
+| DHT / bootstrap / path observers | Hyperswarm **Noise** (L2) |
 | Random peer who only knows or guesses a topic | Narrow derived `topicRef` + **post-connect proof** of L1 session secret |
-| Curious or compromised sidecar / Bare / Electron main | App **ChaCha20-Poly1305** E2E (runtime sees opaque frames only) |
-| Local process sniffing localhost WS / IPC | Same app AEAD (plaintext never on the bridge) |
-| On-chain signaling observers | Conceal view-key privacy + compact SmartMessage bodies |
+| Curious or compromised sidecar / Bare / Electron main | **L1 session seal** (ChaCha20-Poly1305) — runtime sees opaque frames only |
+| Local process sniffing localhost WS / IPC | Same L1 session seal (plaintext never on the bridge) |
+| On-chain observers (signaling + L1′) | Conceal view-key privacy + compact SmartMessage bodies |
 
-### Decision: dual wire protection is intentional
+### Decision: L1 seal over L2 is intentional
 
 Hyperswarm Noise alone is **not** enough for “maximum security no matter the
 runtime,” because Noise ends at the Hyperswarm process — not at the wallet/UI.
@@ -52,43 +52,58 @@ In every shipping shape we use a bridge.
 
 So:
 
-- **Do not drop** app-layer AEAD on live chat frames to “simplify.”
-- **Do not add** a third ad hoc stream cipher on top of Noise.
-- **Do** leverage Noise fully for transport; **do** keep ChaCha20-Poly1305 for
-  application E2E content.
+- **Do not drop** L1 session AEAD on live chat frames to “simplify.”
+- **Do not** invent a third network layer or a third ad hoc stream cipher on Noise.
+- **Do** leverage Noise fully for transport (L2); **do** seal live content with
+  L1-derived session keys before the bridge.
 
-Double encryption (Noise + ChaCha) is defense in depth under this threat model,
-not accidental overkill.
+Noise + L1 session seal is defense in depth under this threat model, not a
+separate “L3.”
 
 ## Layering (canonical)
 
+There are **two layers** and one **L1 fallback** when L2 fails:
+
 ```text
-L1  SmartMessage signaling
-    → exchange handshake material, ECDH + HKDF → session secret
-    → derive topicRef, bind relationship / invite
+L1   SmartMessage family (app-owned)
+     → create/register/revoke: handshake, ECDH + HKDF → session secret
+     → derive topicRef, bind relationship / invite
+     → seal/open live content envelopes with those session keys
+       (before bridge send / after bridge receive)
+     → post-connect proof of session possession
 
-L2  Hyperswarm Noise (runtime-owned)
-    → encrypted peer streams on the DHT path
+L1′  Availability fallback when L2 is down (still SmartMessage / Conceal)
+     → chat.relay / wire {contact,e,roomId,ts,text}
+     → post-accept only; does not replace L2
+     → Conceal MESSAGE ChaCha + DH to view keys (no second session-key seal)
 
-L3  ChaCha20-Poly1305 content AEAD (app-owned)
-    → seal before bridge send; open after bridge receive
+L2   Hyperswarm Noise (runtime-owned)
+     → encrypted peer streams on the DHT path
+     → carries opaque L1-sealed live frames only
 ```
 
-### L1 — derived secret via SmartMessage
+**There is no L3.** Older docs that said “L3 ChaCha E2E” meant the L1 session
+seal on live frames — same material, different *use* of L1, not a new layer.
 
-- Create/register ride Conceal smart messages (view-key privacy on the signaling
-  channel). Bodies stay compact.
-- **Chat relay** (`chat.relay` / wire `execute`) may also ride L1 as app-layer
-  text inside Conceal MESSAGE (ChaCha + DH to view keys). SMS-class fallback
-  after accept when Hyperswarm is not connected; does not replace L2. See
-  `p2pchatprotocol.md` §16. No second app-layer seal on relay.
+### L1 — SmartMessage + session-key uses
+
+- Create/register ride Conceal smart messages (view-key privacy). Bodies stay
+  compact.
 - Create/register carry ephemeral X25519 material (and salts / ids).
 - Both sides derive the same session OKM (see Key schedule below).
-- From that material: directional send/recv keys, `topicRef` inputs, and a
-  **post-connect auth** capability (prove the remote is the invite counterpart,
-  not a random topic joiner).
-- SmartMessage is bootstrap + optional L1 relay — **not** a live chat
-  transport substitute for Holepunch.
+- From that material: directional send/recv keys, `topicRef` inputs, and
+  **post-connect auth** (prove the remote is the invite counterpart).
+- **Live content:** seal envelopes in the app crypto path with those session
+  keys before `frame` hits the bridge. Runtime multiplexes opaque payloads only.
+- SmartMessage signaling is bootstrap — **not** a live substitute for Holepunch.
+
+### L1′ — compensate L2 failure
+
+- SMS-class text when Hyperswarm is not `connected`, after invite accept.
+- Wire: `{contact,e,<roomId>,<sentAtUnix>,<text>}` — see `p2pchatprotocol.md` §16.
+- App body is plain smart-message fields; Conceal MESSAGE encrypts on chain.
+- **Never** while `pending`. Does **not** replace L2. Prefer live whenever
+  `lifecycleStatus === "connected"`.
 
 ### L2 — Hyperswarm Noise
 
@@ -98,11 +113,16 @@ L3  ChaCha20-Poly1305 content AEAD (app-owned)
   Bob).
 - UI must never import `hyperswarm`.
 
-### L3 — application E2E (ChaCha20-Poly1305)
+### One room, two sources
 
-- Seal content envelopes in the app crypto path before `frame` hits the bridge.
-- Runtime multiplexes **opaque** payloads only (no session keys on the bridge).
-- Required so chat stays confidential even if the runtime or bridge is observed.
+The user sees one **room** keyed by `roomId`. Messages may arrive from:
+
+- **L2** — live Holepunch frames (L1-sealed), or
+- **L1′** — `{contact,execute,…}` relay
+
+Merge by `roomId` + timestamp into one thread (`channel: live | relay`). That
+merge is intentional UX. It is **not** a confidentiality bug; each channel
+keeps its own on-wire protection (L1 session seal over L2 vs Conceal MESSAGE).
 
 ### Post-connect verification (required)
 
@@ -114,16 +134,16 @@ keys. Outcomes: AEAD failure → `crypto_mismatch` (session wiped, rekey);
 no reply within the window → `timeout` (retryable, session kept). Topic + Noise
 alone is not trust.
 
-## Default primitive (L3)
+## Default primitive (L1 session seal)
 
 Use **ChaCha20-Poly1305** as the default authenticated encryption primitive for
-peer message payloads.
+**live** peer message payloads (L1 session keys).
 
 Reasons:
 
 - authenticated encryption in one construction
 - well standardized; strong software fit
-- keeps E2E confidentiality when the Hyperswarm host is a separate process
+- keeps content confidential when the Hyperswarm host is a separate process
 
 Do not design a custom encryption scheme when a standard AEAD already fits.
 
@@ -131,13 +151,14 @@ Do not design a custom encryption scheme when a standard AEAD already fits.
 
 This document applies to:
 
-- encrypted payloads exchanged in peer chat (Holepunch / Hyperswarm frames) — L3
-- invitation bootstrap / session derive via SmartMessage — L1
+- L1-sealed payloads on Holepunch / Hyperswarm frames (live)
+- invitation bootstrap / session derive via SmartMessage (L1)
+- L1′ relay bodies (Conceal MESSAGE; no second session seal)
 - locally persisted encrypted message material
 - stored session secrets and related metadata
 
 This document does not redefine Hyperswarm/Noise internals (L2). Live chat must
-assume L2 on the DHT hop and still seal with L3 for the bridge.
+assume L2 on the DHT hop and still apply the L1 session seal before the bridge.
 
 ### Key categories for chat
 
@@ -148,9 +169,8 @@ assume L2 on the DHT hop and still seal with L3 for the bridge.
 | Ephemeral X25519 private keys | Memory only during handshake | Immediately after derive |
 
 Session keys must not encrypt **live** Holepunch frames until room lifecycle is
-`connected`. L1 relay does not use session keys — Conceal MESSAGE encryption
-covers the chain (`p2pchatprotocol.md` §16). Invite acceptance unlocks relay;
-pending never does.
+`connected`. L1′ does not use session keys — Conceal MESSAGE covers the chain
+(`p2pchatprotocol.md` §16). Invite acceptance unlocks L1′; pending never does.
 
 ## Core rules
 
@@ -279,7 +299,8 @@ Rules:
 | Concern | Where |
 |---|---|
 | L1 derive / SmartMessage handshake | Protocol + session bootstrap services |
-| L3 seal/open | `P2PEncryptionService` / adapter only |
+| L1 session seal/open (live) | `P2PEncryptionService` / adapter only |
+| L1′ relay compose / scan | Protocol + Conceal adapters |
 | L2 Hyperswarm / Noise | Runtime only (`holepunch-sidecar`, Electron host, Bare) |
 | Bridge | Opaque `frame` payloads; no session keys |
 
@@ -291,7 +312,8 @@ Before changing crypto behavior:
 
 1. Update this file and `docs/security/p2pchatprotocol.md` in the same branch.
 2. State which threat the change addresses or weakens.
-3. Do not remove L3 “because Noise exists” without an explicit trust-boundary
-   redesign approved in these docs.
+3. Do not remove the L1 session seal “because Noise exists” without an explicit
+   trust-boundary redesign approved in these docs.
 4. Do not add redundant stream encryption on top of Noise without a documented
    product reason.
+5. Do not reintroduce “L3” as a layer name — use L1 / L1′ / L2.

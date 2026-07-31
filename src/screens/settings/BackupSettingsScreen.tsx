@@ -1,7 +1,7 @@
 import { Download, Eye, Lock } from "lucide-react";
 import { useState } from "react";
-import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { SecureInput } from "@/components/SecureInput";
+import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { seedBackupService } from "@/services";
 import { useWalletStore } from "@/state/walletStore";

@@ -1,5 +1,5 @@
-import type { LocalSecurityService } from "@/types/services";
 import { getStorage } from "@/services/storage/StorageAdapter";
+import type { LocalSecurityService } from "@/types/services";
 
 const PASSCODE_KEY = "gnh.appPasscode";
 

@@ -1,10 +1,16 @@
 /**
- * HolepunchChatTransport — L2 live frames (L3 seal) + plain L1 chat.relay fallback.
+ * HolepunchChatTransport — L2 live frames (L1 session seal) + L1′ chat.relay fallback.
  * @see docs/security/encryption.md
  * @see docs/security/p2pchatprotocol.md §16
  */
 
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
+import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
+import {
+  readChatRooms,
+  saveActiveMessages,
+  tombstoneChatRoom,
+} from "@/services/p2p/chatRoomsBlob";
 import {
   __setHolepunchSidecarBackend,
   getHolepunchSidecarBackend,
@@ -20,15 +26,9 @@ import {
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
 import {
-  readChatRooms,
-  saveActiveMessages,
-  tombstoneChatRoom,
-} from "@/services/p2p/chatRoomsBlob";
-import {
   isRoomRevoked,
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
-import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import {
   listCatalogRooms,
   loadCatalogRoom,

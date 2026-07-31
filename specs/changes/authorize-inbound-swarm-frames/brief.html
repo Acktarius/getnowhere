@@ -1,0 +1,90 @@
+<!-- forge-brief-specs-hash:6dcc5567f5ade5e1 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize inbound Holepunch frames by shared topic</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      code { background: #f1f3f4; padding: 0.1rem 0.3rem; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+      pre.flow {
+        background: #f8f9fa;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Authorize inbound Holepunch frames by shared topic</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      Outbound chat frames already go only to peers Hyperswarm says share that
+      room. Inbound frames still trusted a peer’s self-labeled room id as long
+      as you had that room open. After this change, inbound frames get the same
+      check — foreign-labeled frames are silently dropped.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>A peer connected only on room A cannot push frames into room B on your sidecar.</li>
+      <li>Same allowlist for send and receive on the swarm wire.</li>
+      <li>Finding note updated to match the post-hello-fix threat and remediation.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      Each Hyperswarm connection tracks which topics it actually shares. When a
+      sealed frame arrives, the sidecar delivers it to your UI only if that
+      connection is listed for that topic. Otherwise it ignores the line — no
+      disconnect, no error noise.
+    </p>
+    <pre class="flow">
+Peer on connection sharing only A
+        ↓
+Sends frame labeled as room B
+        ↓
+Sidecar: B not on this connection → drop
+        ↓
+UI for room B never sees it
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>No new UI or commands.</li>
+      <li>Normal Alice/Bob chat when both rooms are truly shared still works once Hyperswarm associates the second topic.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Very brief drop window if a second shared topic is reported slightly after the first frames — same as today’s outbound filter.</li>
+      <li>Someone who already knows room B’s secret can still join B via the DHT; this only stops mis-labeling frames on an A-only link.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Reintroducing app-level hello.</li>
+      <li>UI, encryption, or invite flows.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Regression tests for A-only vs shared B (1 task)</li>
+      <li>Silent-drop gate in the sidecar mesh (1 task)</li>
+      <li>Docs + finding rewrite + product-loop check (1 task)</li>
+    </ul>
+  </body>
+</html>

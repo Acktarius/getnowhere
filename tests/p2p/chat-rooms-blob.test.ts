@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { RawWalletV1 } from "conceal-wallet-sdk";
+import { describe, expect, it } from "vitest";
 import {
   isChatRoomRevokedInBlob,
   readChatRooms,

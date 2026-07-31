@@ -42,6 +42,7 @@ import { useSettingsStore } from "@/state/settingsStore";
 import { toastError } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
 import { version } from "../../../package.json";
+
 type WipeConfirm = "delete" | "reset";
 
 export function SettingsScreen() {
