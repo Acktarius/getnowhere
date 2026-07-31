@@ -1,0 +1,15 @@
+{
+  "change": "authorize-ws-frame-join",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "WS/bridge frames require prior topic join",
+      "library": "holepunch-sidecar/src/swarm.mjs sendFrame; holepunch-sidecar/src/server.mjs frame handler",
+      "runtimeOwner": "holepunch-sidecar WebSocket bridge (npm run holepunch / Electron sidecar child)",
+      "writes": "local fan-out + writeSwarm only when sender ∈ localClients; WS error otherwise",
+      "reads": "state.localClients; per-socket joined Set",
+      "uiConsumer": "HolepunchSidecarClient frame send after join",
+      "evidence": "holepunch-sidecar/test/sidecar.test.mjs sendFrame join regressions; forge e2e run"
+    }
+  ]
+}

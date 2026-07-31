@@ -467,6 +467,75 @@ describe("cross-topic hello isolation", () => {
   });
 });
 
+describe("sendFrame join authorization", () => {
+  it("does not fan out or write swarm when sender never joined", async () => {
+    const swarm = fakeHyperswarm();
+    const mesh = createSwarmMesh({ swarm });
+    const a = fakeClient();
+    const b = fakeClient();
+    const topic = "b0".repeat(32);
+
+    try {
+      await mesh.join(topic, a);
+
+      const conn = fakeConn();
+      swarm.emitConnection(conn, fakePeerInfo([topic]));
+      assert.equal(mesh.peerCount(topic), 1);
+
+      conn.writes.length = 0;
+
+      mesh.sendFrame(b, {
+        topicRef: topic,
+        roomId: "room-inject",
+        payload: "aW5qZWN0",
+      });
+
+      assert.ok(
+        !a.inbox.some(
+          (m) =>
+            m.type === "frame" &&
+            m.payload === "aW5qZWN0" &&
+            m.roomId === "room-inject",
+        ),
+      );
+
+      const frames = conn.parsedWrites().filter((m) => m.type === "frame");
+      assert.equal(frames.length, 0);
+    } finally {
+      await mesh.destroy();
+    }
+  });
+
+  it("still fans out when sender has joined", async () => {
+    const mesh = createSwarmMesh({ disableDiscovery: true });
+    const a = fakeClient();
+    const b = fakeClient();
+    const topic = "b1".repeat(32);
+
+    try {
+      await mesh.join(topic, a);
+      await mesh.join(topic, b);
+
+      mesh.sendFrame(a, {
+        topicRef: topic,
+        roomId: "room-ok",
+        payload: "c2VhbGVk",
+      });
+
+      assert.ok(
+        b.inbox.some(
+          (m) =>
+            m.type === "frame" &&
+            m.payload === "c2VhbGVk" &&
+            m.roomId === "room-ok",
+        ),
+      );
+    } finally {
+      await mesh.destroy();
+    }
+  });
+});
+
 describe("inbound frame authorization", () => {
   it("does not deliver remote frame for B on an A-only connection", async () => {
     const swarm = fakeHyperswarm();

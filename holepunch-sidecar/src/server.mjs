@@ -83,8 +83,9 @@ wss.on("connection", (ws, req) => {
           });
           return;
         }
-        await mesh.join(msg.topicRef, client);
-        joined.add(msg.topicRef);
+        const topicRef = msg.topicRef.toLowerCase();
+        await mesh.join(topicRef, client);
+        joined.add(topicRef);
         return;
       }
 
@@ -93,8 +94,9 @@ wss.on("connection", (ws, req) => {
           send(ws, { type: "error", message: "leave requires topicRef" });
           return;
         }
-        await mesh.leave(msg.topicRef, client);
-        joined.delete(msg.topicRef);
+        const topicRef = msg.topicRef.toLowerCase();
+        await mesh.leave(topicRef, client);
+        joined.delete(topicRef);
         return;
       }
 
@@ -109,8 +111,16 @@ wss.on("connection", (ws, req) => {
           });
           return;
         }
+        const topicRef = msg.topicRef.toLowerCase();
+        if (!joined.has(topicRef)) {
+          send(ws, {
+            type: "error",
+            message: "frame requires join for topicRef",
+          });
+          return;
+        }
         mesh.sendFrame(client, {
-          topicRef: msg.topicRef,
+          topicRef,
           roomId: msg.roomId,
           payload: msg.payload,
         });

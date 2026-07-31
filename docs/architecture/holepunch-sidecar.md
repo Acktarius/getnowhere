@@ -67,6 +67,9 @@ type SidecarCommand =
 
 - `topicRef`: 64 hex chars (32-byte topic).
 - `payload`: opaque sealed frame (base64 string today).
+- `frame` is accepted only after this socket has `join`ed that `topicRef`
+  (mesh also requires the sender in `localClients`). Otherwise the bridge
+  replies `{ type: "error", message: "frame requires join for topicRef" }`.
 
 ### Runtime → client (events)
 

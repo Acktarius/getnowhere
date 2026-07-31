@@ -392,6 +392,7 @@ export function createSwarmMesh(opts = {}) {
       const { roomId, payload } = frame;
       const state = topics.get(topicRef);
       if (!state) return;
+      if (!state.localClients.has(client)) return;
 
       for (const other of state.localClients) {
         if (other === client) continue;
