@@ -19,11 +19,19 @@ blob (sealed with the wallet password), not as a plaintext StorageAdapter key.
 On wallet unlock / room open, the system SHALL hydrate in-memory messages from
 that blob when present.
 
-#### Scenario: Exit preserves conversation
+#### Scenario: Exit preserves conversation when retention is on
 - GIVEN an unlocked wallet with messages in an open room
+- AND Settings privacy `localMessageRetention` is on
 - WHEN the user confirms nav Exit (disconnect)
 - THEN those messages are written into the wallet blob before keys leave memory
 - AND after re-opening the wallet the room shows the persisted messages
+
+#### Scenario: Exit skips message flush when retention is off
+- GIVEN an unlocked wallet with messages in an open room
+- AND Settings privacy `localMessageRetention` is off
+- WHEN the user confirms nav Exit (disconnect)
+- THEN chat message bodies are not written into the wallet blob on that Exit
+- AND the wallet blob is still persisted for non-chat wallet state (e.g. contacts)
 
 #### Scenario: Revoked room has no message payload
 - GIVEN a room that has been revoked or left forever

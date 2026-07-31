@@ -41,7 +41,7 @@ import {
 import { useSettingsStore } from "@/state/settingsStore";
 import { toastError } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
-
+import { version } from "../../../package.json";
 type WipeConfirm = "delete" | "reset";
 
 export function SettingsScreen() {
@@ -155,7 +155,7 @@ export function SettingsScreen() {
             <hr className="divider divider--flush" />
             <PrivacySettingItem
               title="Local message retention"
-              description="Keep a local-only cache of recent P2P messages."
+              description="On Exit, save chat messages into the encrypted wallet. Off = do not save chat text."
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
@@ -353,7 +353,7 @@ export function SettingsScreen() {
             <Trash2 size={15} /> Reset app data
           </button>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 8 }}>
-            Get Now Here · v0.1.0 · getnowhere.im
+            Get Now Here · v{version} · getnowhere.im
           </p>
         </div>
       </div>

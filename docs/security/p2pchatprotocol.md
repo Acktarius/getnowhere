@@ -376,10 +376,11 @@ any → `expired`/`destroyed`/`closed` via TTL or teardown.
 **Room list durability:** the Chats room list is persisted (`gnh.roomCatalog`).
 A room **disappears from the list only when**:
 
-1. the user **leaves forever** — local destroy **immediately**, plus **L1
+1. the user **leaves forever** (`leaveRoom`) — local destroy **immediately**, plus **L1
    `chat.revoke` with `reasonCode=room_revoked`** fired in the background (do
    **not** wait for broadcast/confirm before destroying); peer destroys when
-   the revoke is scanned, or
+   the revoke is scanned. Wallet blob keeps `{ roomId, revoked: true }` only
+   so the same `roomId` cannot be re-seeded, or
 2. the invite was **never accepted** and `inviteExpiry` has passed, or
 3. `roomTtl` has expired.
 

@@ -1,0 +1,84 @@
+<!-- forge-brief-specs-hash:2f7f05983626a01c -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reveal seed in a dialog</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Reveal seed in a dialog</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    In Backup settings, after you enter your passcode and tap Reveal, the seed
+    appears in a dialog so you can copy it somewhere safe for wallet restore.
+    The dialog closes itself unless you ask for more time.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Passcode → <strong>Reveal seed</strong> → dialog with warning text and the words.</li>
+    <li>One primary action: <strong>Got it</strong> (closes immediately).</li>
+    <li><strong>Need more time</strong> slowly appears beside Got it over 30 seconds, then becomes tappable.</li>
+    <li>If you ignore Need more time for 5 seconds after it unlocks, the dialog closes.</li>
+    <li>Tapping Need more time restarts the 30-second fade cycle.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Same passcode check as today. On success we open a dedicated seed dialog
+    instead of replacing the page with the old backup checklist panel.
+    Closing does not mark the seed as “backed up” yet — that decision is deferred.
+  </p>
+  <pre class="mermaid">
+sequenceDiagram
+  participant You
+  participant Backup as Backup settings
+  participant Dialog as Seed dialog
+  You->>Backup: Passcode + Reveal
+  Backup->>Dialog: Show seed
+  Note over Dialog: Need more time fades in over 30s
+  alt Got it or 5s after unlock unused
+    Dialog-->>Backup: Close
+  else Need more time
+    Dialog->>Dialog: Restart 30s fade
+  end
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Seed reveal on Backup settings is a popup, not a full-page second reveal.</li>
+    <li>You will not see the “I stored my seed offline / Confirm backup” checklist on this path.</li>
+    <li>Creating a new wallet (onboarding) still uses the existing seed backup panel.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>The seed stays on screen until you dismiss or the timer closes it — keep the device private while open.</li>
+    <li>We are not recording “backup confirmed” from this dialog yet (to reassess later).</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Changing onboarding seed backup.</li>
+    <li>Exporting the seed in the metadata JSON download.</li>
+    <li>Marking backup complete from Got it.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Seed reveal modal + timer (2 tasks)</li>
+    <li>Backup settings wiring (2 tasks)</li>
+    <li>Product-loop evidence (1 task)</li>
+  </ul>
+</body>
+</html>

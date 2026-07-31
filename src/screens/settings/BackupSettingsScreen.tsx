@@ -2,9 +2,8 @@ import { Download, Eye, Lock } from "lucide-react";
 import { useState } from "react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { SecureInput } from "@/components/SecureInput";
-import { SeedBackupPanel } from "@/components/SeedBackupPanel";
+import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { seedBackupService } from "@/services";
 import { contactsExportPayload } from "@/services/contacts/contactsPersistence";
 import { useAuthStore } from "@/state/authStore";
 import { useContactsStore } from "@/state/contactsStore";
@@ -24,9 +23,9 @@ export function BackupSettingsScreen() {
   const wallet = useWalletStore();
   const contacts = useContactsStore((s) => s.contacts);
   const verify = useAuthStore((s) => s.verify);
-  const [step, setStep] = useState<"locked" | "revealed">("locked");
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [revealOpen, setRevealOpen] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exportData, setExportData] = useState("");
 
@@ -37,7 +36,13 @@ export function BackupSettingsScreen() {
       setError("Incorrect passcode.");
       return;
     }
-    setStep("revealed");
+    // TO BE RE_ASSESS: do not call confirmBackup on reveal / Got it yet.
+    setRevealOpen(true);
+  }
+
+  function closeReveal() {
+    setRevealOpen(false);
+    setPasscode("");
   }
 
   function buildExport() {
@@ -85,46 +90,31 @@ export function BackupSettingsScreen() {
         className="screen-scroll stack stack--gap-4"
         style={{ padding: "16px 16px 32px" }}
       >
-        {step === "locked" && (
-          <div className="stack stack--gap-3 fade-in-up">
-            <div
-              className="card card--pad-md"
-              style={{ background: "var(--bg-elev-2)" }}
-            >
-              <div className="row-flex" style={{ gap: 10 }}>
-                <Lock size={16} style={{ color: "var(--text-faint)" }} />
-                <span className="muted" style={{ fontSize: 13.5 }}>
-                  Enter your passcode to reveal your seed phrase. The seed is
-                  shown once and never leaves the device.
-                </span>
-              </div>
+        <div className="stack stack--gap-3 fade-in-up">
+          <div
+            className="card card--pad-md"
+            style={{ background: "var(--bg-elev-2)" }}
+          >
+            <div className="row-flex" style={{ gap: 10 }}>
+              <Lock size={16} style={{ color: "var(--text-faint)" }} />
+              <span className="muted" style={{ fontSize: 13.5 }}>
+                Enter your passcode to reveal your seed phrase. The seed is
+                shown once and never leaves the device.
+              </span>
             </div>
-            <SecureInput
-              label="Passcode"
-              value={passcode}
-              onChange={setPasscode}
-              inputMode="numeric"
-              revealable
-            />
-            {error && <div className="field__error">{error}</div>}
-            <button className="btn btn--block btn--primary" onClick={reveal}>
-              <Eye size={15} /> Reveal seed
-            </button>
           </div>
-        )}
-
-        {step === "revealed" && wallet.seedPhrase && (
-          <div className="fade-in-up">
-            <SeedBackupPanel
-              seedPhrase={wallet.seedPhrase}
-              onConfirm={async () => {
-                await seedBackupService.confirmBackup(passcode);
-                setStep("locked");
-                setPasscode("");
-              }}
-            />
-          </div>
-        )}
+          <SecureInput
+            label="Passcode"
+            value={passcode}
+            onChange={setPasscode}
+            inputMode="numeric"
+            revealable
+          />
+          {error && <div className="field__error">{error}</div>}
+          <button className="btn btn--block btn--primary" onClick={reveal}>
+            <Eye size={15} /> Reveal seed
+          </button>
+        </div>
 
         <hr className="divider" />
         <div className="card">
@@ -148,6 +138,12 @@ export function BackupSettingsScreen() {
           </button>
         </div>
       </div>
+
+      <SeedRevealModal
+        open={revealOpen && Boolean(wallet.seedPhrase)}
+        seedPhrase={wallet.seedPhrase ?? ""}
+        onClose={closeReveal}
+      />
 
       <ConfirmModal
         open={showExport}

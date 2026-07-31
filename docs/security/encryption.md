@@ -268,6 +268,11 @@ Rules:
   `p2pchatprotocol.md`.
 - Prefer the active `StorageAdapter`; do not scatter secrets into ad hoc
   `localStorage` calls.
+- **Room transcripts (optional):** when Settings privacy `localMessageRetention`
+  is on, Exit **saves** in-memory chat messages into the encrypted wallet blob
+  field `chatRooms` (wallet password). Off = do not save chat text on Exit.
+  Leave-forever / revoke replaces a room entry with `{ roomId, revoked: true }`
+  only (no message bodies). Hydrate from the blob after unlock.
 
 ## Implementation boundaries
 

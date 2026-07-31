@@ -1,16 +1,19 @@
 /**
- * Wallet session Exit: persist blob, soft-leave swarm, clear RAM keys, welcome.
- * Transcript flush into chatRooms is deferred (task 3.2).
+ * Wallet session Exit: save wallet (optional chat), soft-leave swarm, clear RAM, welcome.
  * @see specs/changes/nav-exit-leave-room/design.md
  */
 import { chatTransport, walletService } from "@/services";
 import { persistContacts } from "@/services/contacts/contactsPersistence";
+import { saveChatRoomsToWallet } from "@/services/p2p/HolepunchChatTransport";
 import { useAuthStore } from "@/state/authStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 export type WalletSessionExitDeps = {
   persistContacts: () => Promise<void>;
+  /** When set, save room messages into the encrypted wallet blob before soft-leave. */
+  saveChatRooms?: () => Promise<void>;
   softLeaveAll: () => Promise<void>;
   lockWallet: () => Promise<void>;
   clearSession: () => void;
@@ -22,6 +25,9 @@ export async function walletSessionExit(
   deps: WalletSessionExitDeps,
 ): Promise<void> {
   await deps.persistContacts();
+  if (deps.saveChatRooms) {
+    await deps.saveChatRooms();
+  }
   await deps.softLeaveAll();
   await deps.lockWallet();
   deps.clearSession();
@@ -32,10 +38,13 @@ export async function walletSessionExit(
 export async function runWalletSessionExit(
   navigate: (path: string) => void,
 ): Promise<void> {
+  const retentionOn =
+    useSettingsStore.getState().privacy.localMessageRetention === true;
   await walletSessionExit({
     persistContacts: async () => {
       await persistContacts(useContactsStore.getState().contacts);
     },
+    saveChatRooms: retentionOn ? () => saveChatRoomsToWallet() : undefined,
     softLeaveAll: () => chatTransport.softLeaveAll(),
     lockWallet: () => walletService.lockWallet(),
     clearSession: () => {

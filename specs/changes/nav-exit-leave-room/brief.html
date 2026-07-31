@@ -1,4 +1,4 @@
-<!-- forge-brief-specs-hash:785c805973c0ca1a -->
+<!-- forge-brief-specs-hash:319d9eaf244380d3 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,16 +29,18 @@
   <ul>
     <li>Bottom nav order: Chats → Contacts → Wallet → Settings → Exit (door).</li>
     <li>Exit asks <strong>Confirm disconnect</strong>; cancel does nothing.</li>
-    <li>After Exit, reopen wallet from welcome; conversations still there (encrypted with wallet password).</li>
+    <li>After Exit, reopen wallet from welcome; conversations still there when <strong>Local message retention</strong> was on (encrypted with wallet password).</li>
     <li>One shared confirm dialog for Exit, delete wallet, and reset app data.</li>
     <li>Revoked rooms keep only <code>{ roomId, revoked: true }</code> — no leftover messages.</li>
   </ul>
 
   <h2>How it works</h2>
   <p>
-    While you are unlocked, messages live in memory. On Exit we write them into
-    the same encrypted wallet store that already holds contacts, then clear keys
-    from memory. Leave-forever still destroys the live room and sends revoke;
+    While you are unlocked, messages live in memory. On Exit, if
+    <strong>Local message retention</strong> is on, we write them into the same
+    encrypted wallet store that already holds contacts, then clear keys from
+    memory. If that setting is off, Exit still locks the wallet but does not
+    save chat text. Leave-forever still destroys the live room and sends revoke;
     the blob keeps a revoked stub so the same id cannot be recreated.
   </p>
   <pre class="mermaid">

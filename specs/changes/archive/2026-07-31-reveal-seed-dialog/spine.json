@@ -1,0 +1,15 @@
+{
+  "change": "reveal-seed-dialog",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Passcode-gated seed reveal dialog on Backup settings",
+      "library": "src/components/SeedRevealModal.tsx; src/screens/settings/BackupSettingsScreen.tsx",
+      "runtimeOwner": "BackupSettingsScreen Reveal seed → verify → SeedRevealModal; Got it / timer / Need more time → onClose",
+      "writes": "none (in-memory seed display only; no confirmBackup)",
+      "reads": "authStore.verify; walletStore.seedPhrase",
+      "uiConsumer": "Backup settings (/settings/backup)",
+      "evidence": "tests/components/SeedRevealModal.test.tsx; tests/screens/BackupSettingsScreen.test.tsx; forge e2e run"
+    }
+  ]
+}

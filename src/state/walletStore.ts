@@ -145,6 +145,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await useContactsStore.getState().hydrate();
+      const { hydrateChatRoomsFromWallet } = await import(
+        "@/services/p2p/HolepunchChatTransport"
+      );
+      hydrateChatRoomsFromWallet();
       // Enter app immediately; live sync + resync catch tip in background.
       void get().resync();
     } catch (e) {
@@ -161,6 +165,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     await walletService.unlockWallet("");
     set({ locked: false });
     await useContactsStore.getState().hydrate();
+    const { hydrateChatRoomsFromWallet } = await import(
+      "@/services/p2p/HolepunchChatTransport"
+    );
+    hydrateChatRoomsFromWallet();
   },
 
   async refreshBalance() {

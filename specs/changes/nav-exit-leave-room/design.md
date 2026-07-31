@@ -21,14 +21,16 @@
 | Exit confirm | Shared `ConfirmModal` | `window.confirm` |
 | Confirm component path | `src/components/ConfirmModal.tsx` | Keep inside `Sheet.tsx` |
 | Soft-leave on Exit | Leave Hyperswarm topics without catalog destroy | Call `leaveRoom` (would revoke) |
+| Message save gate | `privacy.localMessageRetention` (default on) | Always save; separate new setting |
 
 ## Exit sequence
 
 ```text
 Confirm disconnect
-  → flush contacts + chatRooms into rt.raw → persistRuntime
+  → persist contacts; if localMessageRetention: save chat messages into raw.chatRooms
+  → persistRuntime (encrypt wallet blob)
   → soft-leave all joined topics (backend leave; keep catalog/sessions)
-  → wallet disconnect / lock (clear RAM keys)
+  → wallet disconnect / lock (forget RAM keys)
   → clear app session (initialized false) → navigate /welcome
 ```
 
@@ -48,8 +50,10 @@ type ChatRoomBlobEntry =
 ```
 
 Hydrate on unlock / open room: if entry is revoked, treat as blocked; else seed
-`messagesByRoom`. Flush on Exit (and optionally when leaving a room screen —
-Exit is the mandatory flush).
+`messagesByRoom`. **Save** messages on Exit **only when** Settings privacy
+`localMessageRetention` is on (default on). When off, Exit still persists the
+wallet blob for contacts/etc. but does **not** write chat message bodies into
+`chatRooms`.
 
 ## Risks
 

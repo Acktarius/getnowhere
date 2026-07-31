@@ -47,12 +47,17 @@ child. See `docs/architecture/electron-desktop.md`.
 
 Settings exposes two wipe actions, both implemented in
 `src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
-`removeItem` (not a full storage clear):
+`removeItem` (not a full storage clear). Confirms use shared `ConfirmModal`
+(not `window.confirm`).
 
 | Action | Clears | Keeps |
 |---|---|---|
 | **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |
 | **Reset app data** | Wallet-tied keys **plus** prefs and side channels (`ccx-*`) | Nothing local for this identity |
+
+**Nav Exit** (bottom bar) is **not** a wipe: it saves the wallet blob (and chat
+text when Local message retention is on), soft-leaves Holepunch, locks keys out
+of memory, and returns to welcome/open. Use `leaveRoom` for leave-forever.
 
 All hosts use the same UI path. Electron isolation is partition-scoped
 `localStorage` (Alice/Bob / packaged `persist:gnh`) — this change does not add

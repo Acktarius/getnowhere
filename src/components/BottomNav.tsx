@@ -59,7 +59,7 @@ export function BottomNav({ unread = false }: { unread?: boolean }) {
         open={exitOpen}
         onClose={() => setExitOpen(false)}
         title="Confirm disconnect"
-        body="Your wallet stays on this device. Keys leave memory until you reopen from welcome. Conversations stay encrypted with the wallet."
+        body="Your wallet stays on this device. Keys leave memory until you reopen from welcome. If Local message retention is on, chat text is saved encrypted with the wallet."
         confirmLabel="Confirm"
         busyLabel="Disconnecting…"
         onConfirm={async () => {

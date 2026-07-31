@@ -19,7 +19,16 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
-import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
+import {
+  readChatRooms,
+  saveActiveMessages,
+  tombstoneChatRoom,
+} from "@/services/p2p/chatRoomsBlob";
+import {
+  isRoomRevoked,
+  rememberRevokedRoom,
+} from "@/services/p2p/revokedRoomsStore";
+import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import {
   listCatalogRooms,
   loadCatalogRoom,
@@ -810,6 +819,8 @@ export const HolepunchChatTransport: ChatTransport = {
       // Still honor leave-forever when only the durable catalog remains.
       removeCatalogRoom(roomId);
       removeRoomSession(roomId);
+      rememberRevokedRoom(roomId);
+      await persistChatRoomTombstone(roomId);
       return;
     }
     const proofResolver = proofResolvers.get(roomId);
@@ -839,6 +850,8 @@ export const HolepunchChatTransport: ChatTransport = {
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
     removeCatalogRoom(roomId);
+    rememberRevokedRoom(roomId, state.room.inviteId);
+    await persistChatRoomTombstone(roomId);
   },
 
   /** Leave swarm for all rooms; keep catalog, sessions, and in-memory rooms. */
@@ -1041,6 +1054,50 @@ export function getMessagesForRoom(roomId: string): ChatMessage[] {
   return [...(messagesByRoom.get(roomId) ?? [])];
 }
 
+/** Save in-memory room messages into the encrypted wallet blob. */
+export async function saveChatRoomsToWallet(): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  const bag: Record<string, ChatMessage[]> = {};
+  for (const [roomId, list] of messagesByRoom.entries()) {
+    bag[roomId] = [...list];
+  }
+  rt.raw = saveActiveMessages(rt.raw, bag);
+  await persistRuntime(rt);
+}
+
+/**
+ * Load non-revoked transcripts from the wallet blob into memory.
+ * Revoked stubs sync into gnh.revokedRooms.
+ */
+export function hydrateChatRoomsFromWallet(): void {
+  const rt = getRuntime();
+  if (!rt) return;
+  const roomsMap = readChatRooms(rt.raw);
+  for (const [roomId, entry] of Object.entries(roomsMap)) {
+    if (entry.revoked === true) {
+      rememberRevokedRoom(roomId);
+      messagesByRoom.delete(roomId);
+      continue;
+    }
+    if (isRoomRevoked(roomId)) continue;
+    const existing = messagesByRoom.get(roomId) ?? [];
+    if (existing.length > 0) continue;
+    messagesByRoom.set(roomId, [...entry.messages]);
+  }
+}
+
+async function persistChatRoomTombstone(roomId: string): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  rt.raw = tombstoneChatRoom(rt.raw, roomId);
+  try {
+    await persistRuntime(rt);
+  } catch {
+    /* local revoke still recorded */
+  }
+}
+
 export function getLastSidecarDetail(): string | undefined {
   return lastSidecarDetail;
 }
@@ -1074,6 +1131,14 @@ export function __resetHolepunchTransport(): void {
   inFlightConnects.clear();
   nextAutoRetryAt.clear();
   __setHolepunchSidecarBackend(null);
+}
+
+/** Test helper: seed in-memory transcript for a room. */
+export function __seedRoomMessagesForTests(
+  roomId: string,
+  msgs: ChatMessage[],
+): void {
+  messagesByRoom.set(roomId, [...msgs]);
 }
 
 /** @deprecated use __setHolepunchSidecarBackend from HolepunchSidecarClient */

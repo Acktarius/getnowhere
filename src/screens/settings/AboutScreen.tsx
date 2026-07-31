@@ -1,5 +1,6 @@
 import { BrandMark, Wordmark } from "@/components/Brand";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { version } from "../../../package.json";
 
 export function AboutScreen() {
   return (
@@ -13,7 +14,7 @@ export function AboutScreen() {
           <BrandMark size={64} />
           <Wordmark large />
           <span className="faint" style={{ fontSize: 12 }}>
-            v0.1.0 · getnowhere.im
+            v{version} · getnowhere.im
           </span>
         </div>
 
