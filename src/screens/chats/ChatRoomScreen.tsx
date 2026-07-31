@@ -460,7 +460,15 @@ export function ChatRoomScreen() {
   const offline = room.peerStatus === "offline";
 
   return (
-    <div className="screen" style={{ paddingBottom: 0 }}>
+    <div
+      className="screen"
+      style={{
+        paddingBottom: 0,
+        height: "100dvh",
+        maxHeight: "100dvh",
+        overflow: "hidden",
+      }}
+    >
       <ChatRoomHeader
         contact={contact}
         peerStatus={room.peerStatus}
@@ -477,6 +485,7 @@ export function ChatRoomScreen() {
           gap: 8,
           alignItems: "center",
           borderBottom: "1px solid var(--border)",
+          flexShrink: 0,
         }}
       >
         <RoomLifecyclePill status={room.lifecycleStatus} />
@@ -517,6 +526,7 @@ export function ChatRoomScreen() {
         ref={scrollerRef}
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           padding: "16px 14px 8px",
           display: "flex",
@@ -632,6 +642,8 @@ export function ChatRoomScreen() {
           display: "flex",
           gap: 8,
           alignItems: "flex-end",
+          flexShrink: 0,
+          background: "var(--bg)",
         }}
       >
         <textarea
