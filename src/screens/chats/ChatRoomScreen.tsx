@@ -2,9 +2,9 @@ import { RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
-import { ConfirmModal } from "@/components/ConfirmModal";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import {

@@ -11,6 +11,12 @@ vi.mock("@/services/storage/appDataLifecycle", () => ({
   resetAppData: () => resetAppData(),
 }));
 
+/** BottomNav Exit imports this; stub so wipe tests never load `@/services`. */
+vi.mock("@/services/storage/walletSessionExit", () => ({
+  runWalletSessionExit: vi.fn(async () => undefined),
+  walletSessionExit: vi.fn(async () => undefined),
+}));
+
 vi.mock("@/lib/network/auto-node", () => ({
   refreshAutoNode: vi.fn(async () => undefined),
 }));

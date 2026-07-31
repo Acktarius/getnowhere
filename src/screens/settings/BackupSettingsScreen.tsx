@@ -1,8 +1,8 @@
 import { Download, Eye, Lock } from "lucide-react";
 import { useState } from "react";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { SecureInput } from "@/components/SecureInput";
 import { SeedBackupPanel } from "@/components/SeedBackupPanel";
-import { ConfirmModal } from "@/components/ConfirmModal";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { seedBackupService } from "@/services";
 import { contactsExportPayload } from "@/services/contacts/contactsPersistence";

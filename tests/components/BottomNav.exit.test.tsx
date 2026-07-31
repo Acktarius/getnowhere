@@ -7,7 +7,9 @@ const runWalletSessionExit = vi.fn(async () => undefined);
 
 vi.mock("@/services/storage/walletSessionExit", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@/services/storage/walletSessionExit")>();
+    await importOriginal<
+      typeof import("@/services/storage/walletSessionExit")
+    >();
   return {
     ...actual,
     runWalletSessionExit: (...args: unknown[]) => runWalletSessionExit(...args),
@@ -44,13 +46,9 @@ describe("BottomNav Exit", () => {
     expect(labels).toEqual(["Chats", "Contacts", "Wallet", "Settings"]);
     expect(exit).toBeTruthy();
     const items = Array.from(nav.querySelectorAll(".bottom-nav__item"));
-    expect(items.map((el) => el.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-      "Chats",
-      "Contacts",
-      "Wallet",
-      "Settings",
-      "Exit",
-    ]);
+    expect(
+      items.map((el) => el.textContent?.replace(/\s+/g, " ").trim()),
+    ).toEqual(["Chats", "Contacts", "Wallet", "Settings", "Exit"]);
   });
 
   it("opens Confirm disconnect and cancel is a no-op", async () => {

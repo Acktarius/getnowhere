@@ -1,6 +1,6 @@
 import {
-  type LucideIcon,
   LogOut,
+  type LucideIcon,
   MessageSquare,
   Settings,
   Users,

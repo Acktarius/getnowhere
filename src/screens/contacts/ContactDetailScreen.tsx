@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
 import { RoomTopicIcon } from "@/components/RoomTopicIcon";
-import { ConfirmModal } from "@/components/ConfirmModal";
 import { Sheet } from "@/components/Sheet";
 import {
   ChatStatusPill,
