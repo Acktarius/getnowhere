@@ -19,7 +19,8 @@ import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
 import { RoomTopicIcon } from "@/components/RoomTopicIcon";
-import { ConfirmModal, Sheet } from "@/components/Sheet";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { Sheet } from "@/components/Sheet";
 import {
   ChatStatusPill,
   InviteStatusPill,

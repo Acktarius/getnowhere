@@ -248,7 +248,10 @@ export type ChatTransport = {
   joinRoom(roomId: string): Promise<ChatRoom>;
   /** Join topic and establish peer channel from bootstrap contract. */
   connect(contract: HolepunchBootstrapContract): Promise<ChatRoom>;
-  disconnect(roomId: string): Promise<void>;
+  /** Leave forever: catalog/session removal (not temporary offline). */
+  leaveRoom(roomId: string): Promise<void>;
+  /** Leave all Hyperswarm topics without revoking catalog/sessions (Exit). */
+  softLeaveAll(): Promise<void>;
   /** Retry after connect_failed. */
   retryConnect(roomId: string): Promise<ChatRoom>;
   sendMessage(roomId: string, text: string): Promise<ChatMessage>;

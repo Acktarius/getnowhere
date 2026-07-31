@@ -243,7 +243,7 @@ async function applyRoomDestroyLocally(
   await persistContactsDurably(get);
 
   try {
-    await chatTransport.disconnect(roomId);
+    await chatTransport.leaveRoom(roomId);
   } catch {
     /* already gone */
   }
@@ -1093,7 +1093,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       await persistContactsDurably(get);
       const room = await chatTransport.getRoom(inv.roomId);
       if (room) {
-        await chatTransport.disconnect(inv.roomId);
+        await chatTransport.leaveRoom(inv.roomId);
       }
     }
   },
@@ -1153,7 +1153,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       pendingPrivateKeys.delete(inv.inviteId);
       removePendingInitiatorKey(inv.inviteId);
       try {
-        await chatTransport.disconnect(inv.roomId);
+        await chatTransport.leaveRoom(inv.roomId);
       } catch {
         /* ignore */
       }

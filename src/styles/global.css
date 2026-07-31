@@ -307,7 +307,7 @@ button {
   -webkit-backdrop-filter: saturate(140%) blur(20px);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   z-index: 20;
 }
 @media (min-width: 768px) {
@@ -327,6 +327,11 @@ button {
   letter-spacing: 0.02em;
   transition: color var(--dur) var(--ease);
   position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
 .bottom-nav__item svg {
   width: 22px;

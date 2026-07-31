@@ -804,7 +804,7 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async disconnect(roomId) {
+  async leaveRoom(roomId) {
     const state = rooms.get(roomId);
     if (!state) {
       // Still honor leave-forever when only the durable catalog remains.
@@ -831,7 +831,7 @@ export const HolepunchChatTransport: ChatTransport = {
       set?.delete(roomId);
       if (set && set.size === 0) topicRooms.delete(topicRef);
     }
-    // disconnect = leave forever (product rule). Temporary offline never calls this.
+    // leaveRoom = leave forever (product rule). Temporary offline never calls this.
     rooms.delete(roomId);
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
@@ -839,6 +839,36 @@ export const HolepunchChatTransport: ChatTransport = {
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
     removeCatalogRoom(roomId);
+  },
+
+  /** Leave swarm for all rooms; keep catalog, sessions, and in-memory rooms. */
+  async softLeaveAll() {
+    const joined = [...topicRooms.entries()].flatMap(([topicRef, roomIds]) =>
+      [...roomIds].map((roomId) => ({ topicRef, roomId })),
+    );
+    for (const { topicRef, roomId } of joined) {
+      try {
+        await backend().leave(topicRef, roomId);
+      } catch {
+        /* ignore */
+      }
+      const state = rooms.get(roomId);
+      if (state) {
+        state.topicRef = undefined;
+        if (
+          state.room.lifecycleStatus === "connected" ||
+          state.room.lifecycleStatus === "connecting"
+        ) {
+          state.room = {
+            ...state.room,
+            peerStatus: "offline",
+            lifecycleStatus: "accepted",
+          };
+        }
+        rooms.set(roomId, state);
+      }
+    }
+    topicRooms.clear();
   },
 
   async retryConnect(roomId) {

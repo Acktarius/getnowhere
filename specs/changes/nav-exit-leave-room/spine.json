@@ -1,0 +1,24 @@
+{
+  "change": "nav-exit-leave-room",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "ConfirmModal + Settings confirms + nav Exit disconnect",
+      "library": "src/components/ConfirmModal.tsx; src/components/BottomNav.tsx; src/screens/settings/SettingsScreen.tsx; src/services/storage/appDataLifecycle.ts",
+      "runtimeOwner": "BottomNav Exit → confirm → persist + soft-leave + wallet disconnect → /welcome; Settings wipe confirms",
+      "writes": "encrypted wallet blob persist on Exit; StorageAdapter wipe keys only on delete/reset",
+      "reads": "wallet initialized/locked; room catalog for soft-leave",
+      "uiConsumer": "Bottom nav; Settings; ConfirmModal",
+      "evidence": "focused vitest; forge e2e run"
+    },
+    {
+      "capability": "leaveRoom + wallet-blob transcripts + revoke tombstone",
+      "library": "src/services/p2p/HolepunchChatTransport.ts; src/services/p2p/revokedRoomsStore.ts; wallet raw chatRooms field; contactsStore leave call sites",
+      "runtimeOwner": "HolepunchChatTransport leaveRoom / flush / hydrate; Exit flush; revoke path",
+      "writes": "raw.chatRooms in encrypted wallet blob; gnh.revokedRooms tombstone sync",
+      "reads": "messagesByRoom; room sessions; revoked stubs",
+      "uiConsumer": "Chat room leave; Bottom nav Exit; Chats list hydrate",
+      "evidence": "focused vitest persistence/transport tests; forge e2e run"
+    }
+  ]
+}

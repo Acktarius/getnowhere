@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { NodeSelector } from "@/components/NodeSelector";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
@@ -38,7 +39,10 @@ import {
   resetAppData,
 } from "@/services/storage/appDataLifecycle";
 import { useSettingsStore } from "@/state/settingsStore";
+import { toastError } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
+
+type WipeConfirm = "delete" | "reset";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
@@ -51,7 +55,7 @@ export function SettingsScreen() {
   const [syncSpeed, setSyncSpeed] = useState<SyncSpeed>(DEFAULT_SYNC_SPEED);
   const [readMinerTx, setReadMinerTx] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
-  const [wipeBusy, setWipeBusy] = useState(false);
+  const [wipeConfirm, setWipeConfirm] = useState<WipeConfirm | null>(null);
 
   useEffect(() => {
     void refreshAutoNode();
@@ -95,33 +99,18 @@ export function SettingsScreen() {
     }
   }
 
-  async function onDeleteWallet() {
-    const ok = window.confirm(
-      "Delete wallet? This removes your wallet, contacts, and rooms. Theme and other preferences are kept. The app will reload.",
-    );
-    if (!ok) return;
-    setWipeBusy(true);
+  async function runWipe(kind: WipeConfirm) {
     try {
-      await deleteWalletData();
+      if (kind === "delete") await deleteWalletData();
+      else await resetAppData();
     } catch (err) {
-      setWipeBusy(false);
       const message = err instanceof Error ? err.message : String(err);
-      window.alert(`Could not delete wallet: ${message}`);
-    }
-  }
-
-  async function onResetAppData() {
-    const ok = window.confirm(
-      "Reset all app data? This removes your wallet, contacts, rooms, theme, and preferences. The app will reload.",
-    );
-    if (!ok) return;
-    setWipeBusy(true);
-    try {
-      await resetAppData();
-    } catch (err) {
-      setWipeBusy(false);
-      const message = err instanceof Error ? err.message : String(err);
-      window.alert(`Could not reset app data: ${message}`);
+      toastError(
+        kind === "delete"
+          ? `Could not delete wallet: ${message}`
+          : `Could not reset app data: ${message}`,
+      );
+      throw err;
     }
   }
 
@@ -352,16 +341,14 @@ export function SettingsScreen() {
           <button
             type="button"
             className="btn btn--block btn--danger"
-            disabled={wipeBusy}
-            onClick={() => void onDeleteWallet()}
+            onClick={() => setWipeConfirm("delete")}
           >
             <Trash2 size={15} /> Delete wallet
           </button>
           <button
             type="button"
             className="btn btn--block btn--danger"
-            disabled={wipeBusy}
-            onClick={() => void onResetAppData()}
+            onClick={() => setWipeConfirm("reset")}
           >
             <Trash2 size={15} /> Reset app data
           </button>
@@ -371,6 +358,27 @@ export function SettingsScreen() {
         </div>
       </div>
       <BottomNav />
+
+      <ConfirmModal
+        open={wipeConfirm === "delete"}
+        title="Delete wallet?"
+        body="This removes your wallet, contacts, and rooms. Theme and other preferences are kept. The app will reload."
+        confirmLabel="Delete wallet"
+        destructive
+        busyLabel="Deleting…"
+        onConfirm={() => runWipe("delete")}
+        onClose={() => setWipeConfirm(null)}
+      />
+      <ConfirmModal
+        open={wipeConfirm === "reset"}
+        title="Reset all app data?"
+        body="This removes your wallet, contacts, rooms, theme, and preferences. The app will reload."
+        confirmLabel="Reset app data"
+        destructive
+        busyLabel="Resetting…"
+        onConfirm={() => runWipe("reset")}
+        onClose={() => setWipeConfirm(null)}
+      />
 
       {showNodeSheet && (
         <div

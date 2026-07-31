@@ -80,11 +80,23 @@ export const MockChatTransport: ChatTransport = {
     return room;
   },
 
-  async disconnect(roomId) {
+  async leaveRoom(roomId) {
     const room = rooms.get(roomId);
     if (room) {
       room.lifecycleStatus = "closed";
       room.peerStatus = "offline";
+    }
+  },
+
+  async softLeaveAll() {
+    for (const room of rooms.values()) {
+      if (
+        room.lifecycleStatus === "connected" ||
+        room.lifecycleStatus === "connecting"
+      ) {
+        room.peerStatus = "offline";
+        room.lifecycleStatus = "accepted";
+      }
     }
   },
 

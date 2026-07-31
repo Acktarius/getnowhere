@@ -1,0 +1,18 @@
+{
+  "change": "nav-exit-leave-room",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "App data lifecycle confirms and wipe contracts",
+      "cmd": "npx vitest run tests/storage/app-data-lifecycle.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Chat transport leaveRoom and transcript persistence",
+      "cmd": "npx vitest run tests/p2p/holepunch-chat-transport.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

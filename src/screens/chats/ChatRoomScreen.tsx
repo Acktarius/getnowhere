@@ -4,7 +4,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
-import { ConfirmModal, Sheet } from "@/components/Sheet";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import {
   getLastSidecarDetail,
@@ -52,6 +53,8 @@ function LeaveRoomModal({
       confirmLabel="LEAVE ROOM"
       cancelLabel="Cancel"
       destructive
+      busyLabel="Leaving…"
+      busyStatus="Destroying room…"
       onConfirm={onConfirm}
       onClose={() => {
         if (!revoking) onClose();
