@@ -24,7 +24,8 @@ Hyperswarm.
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1 sealed chat fallback (grey bubbles)
-14. `prompts/coding-constraints.md`
+14. `decisions/001-skip-dust-on-spend.md` — ordinary spends skip dust inputs
+15. `prompts/coding-constraints.md`
 
 ## Rules
 
@@ -40,6 +41,7 @@ Hyperswarm.
 
 - `architecture/` — repo boundaries and system shape
 - `builds/` — native wrapper and App Store delivery
+- `decisions/` — accepted ADRs (spend policy, etc.)
 - `features/` — product behavior and user-facing flows
 - `security/` — encryption, key handling, and protocol details
 - `prompts/` — durable coding constraints for AI / codegen tools

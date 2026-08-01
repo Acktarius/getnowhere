@@ -65,6 +65,9 @@ background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync c
 
 - **Receive** — address + QR.
 - **Send** — real `buildTransaction` + `sendRawTransaction` via the sync runtime.
+  Ordinary spends use `selectSpendInputs` with `DUST_THRESHOLD` so mixable dust
+  (amount below 10 atomic) is not chosen as inputs — same policy as next-wallet /
+  Desktop (`docs/decisions/001-skip-dust-on-spend.md`).
 - **History** — kinds: transfer, miner, deposit, withdrawal, fusion (display only).
 - **Spend failures** (no funds, unmixable denominations, build/broadcast errors) surface
   as an in-app toast and inline error — invite create must not spin forever on deep sync.
