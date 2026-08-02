@@ -39,4 +39,10 @@ desktop-electron/resources/ui/
 desktop-electron/resources/gnh-defaults.json
 
 # Local security-review notes (not for commit)
-.findings/
+.repo-kit/findings/*
+.repo-kit/scripts/*
+
+# AI files
+.continue/
+.repo-kit/
+.forge/
