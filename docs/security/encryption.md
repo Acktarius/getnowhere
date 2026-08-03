@@ -12,6 +12,7 @@ scattering cryptographic decisions across UI and feature code.
 This document defines:
 
 - the threat model and layering (L1 / L1′ / L2 — there is **no L3**)
+- **metadata privacy** per channel (on-chain vs network — see § Threat model)
 - the default encryption primitive for L1 session seals
 - key handling expectations
 - nonce rules
@@ -43,6 +44,79 @@ path (near the wallet / UI services), not inside Hyperswarm code.
 | Curious or compromised sidecar / Bare / Electron main | **L1 session seal** (ChaCha20-Poly1305) — runtime sees opaque frames only |
 | Local process sniffing localhost WS / IPC | Same L1 session seal (plaintext never on the bridge) |
 | On-chain observers (signaling + L1′) | Conceal view-key privacy + compact SmartMessage bodies |
+| Counterparty learning your **IP** via chat transport | **Not L1/L1′** — only **L2 live** (direct hole punch); see § Network metadata |
+| DHT / ISP traffic analysis (timing, sizes) on live path | L1 session seal hides **content**; does not hide **metadata** on L2 |
+
+Content confidentiality and metadata privacy are **different** problems. L1/L1′
+and L2 are documented separately below.
+
+### On-chain metadata privacy (L1 / L1′)
+
+L1 signaling (`create` / `register` / `revoke`) and L1′ relay (`chat.relay`) use
+**async Conceal transactions** — not a direct network session between Alice and
+Bob. Bob learns an invite or relay by **scanning the chain** with view keys and
+matching `paymentId`; he does **not** learn Alice's IP or geolocation from this
+path.
+
+**Delivery shape:** wallet builds `buildMessageTransaction` with ring mixin +
+decoys, stealth recipient outputs, change back to sender, encrypted payment ID,
+and Conceal MESSAGE encryption for the smart-message body
+(`src/services/conceal/sync/spend.ts`; fees in `p2pchatprotocol.md` §2).
+
+| Property | L1 / L1′ on-chain |
+|---|---|
+| Message body to outsiders without view keys | **Not readable** |
+| Transparent sender→recipient payment graph | **No** — ring sigs + stealth outputs |
+| Counterparty learns your IP | **No** |
+| Counterparty learns message (with view key) | **Yes** — by design |
+| Residual public metadata | Tx **existence**, rough **timing/size** (like any Conceal spend) |
+| Remote daemon at **broadcast** | Sees raw tx blob + sender **network** IP — **not Bob** |
+
+Do **not** describe L1/L1′ like a public-ledger chat receipt. Conceal privacy
+mechanics apply; the product still records encrypted smart messages on-chain.
+
+@see `p2pchatprotocol.md` §1–2, §16; `docs/features/chat-relay.md`
+
+### Network metadata privacy (L2 live)
+
+**L2 live** (Hyperswarm hole punch + Noise) is a **direct peer path**. For
+connectivity, each side learns the other's **IP address and port** (and ISPs /
+DHT bootstrap nodes see activity on the derived `topicRef`). Rough **geolocation
+from IP** is possible. This is **independent** of L1/L1′ — switching to chain
+signaling or L1′ relay avoids peer IP disclosure at the cost of latency/fees.
+
+| Property | L2 live |
+|---|---|
+| Message content to path observers | **Not readable** (L2 Noise + L1 seal) |
+| Counterparty learns your IP | **Yes** (direct punch) |
+| Private LAN IP (same subnet) | **Possible** — LAN shortcut; `@see` `holepunch-sidecar.md` |
+| DHT/bootstrap observers | Topic announce/lookup + reflexive IP hints |
+| MAC address to remote peer | **No** — local link layer only; not carried on WAN |
+
+**VPN:** full-tunnel VPN can hide home IP from the peer (peer sees VPN egress).
+**Split tunnel** is risky: `holepunch-sidecar` UDP may bypass a browser-only or
+split VPN — sidecar traffic follows OS routing, not the Vite tab.
+
+**Not implemented (future):** relay-only L2 (`relayThrough`), VPN leak preflight
+before join, Tor transport. Do not document these as shipped behavior.
+
+### Observer matrix (minimize who knows)
+
+Who learns what when Alice and Bob chat (summary):
+
+| Observer | L1 / L1′ | L2 live |
+|---|---|---|
+| **Bob (counterparty)** | Message with view key; **no Alice IP** | Message + **Alice IP** |
+| **Alice** | Symmetric | Symmetric |
+| **Chain / mempool / indexers** | Encrypted tx activity; **not** plaintext graph | N/A (off-chain) |
+| **Remote daemon (broadcast)** | Sender IP at submit; encrypted body | N/A |
+| **DHT / bootstrap** | N/A | Topic + IP hints |
+| **ISP (each side)** | Client → daemon/node | **Peer↔peer** UDP/TCP |
+
+**Privacy-first implication:** L1/L1′ minimize **network** exposure to the
+counterparty; L2 minimizes **latency**. Prefer live for UX; prefer L1′ when
+hiding IP from the peer matters more than instant delivery (product toggle —
+future work).
 
 ### Decision: L1 seal over L2 is intentional
 
