@@ -97,6 +97,14 @@ signaling or L1′ relay avoids peer IP disclosure at the cost of latency/fees.
 **Split tunnel** is risky: `holepunch-sidecar` UDP may bypass a browser-only or
 split VPN — sidecar traffic follows OS routing, not the Vite tab.
 
+> Then L2 IP disclosure is like Signal knowing server path metadata vs direct
+> P2P — except here it's peer↔peer, and if Bob is not hostile, Wireshark
+> geolocation is a non-issue.
+>
+> Live chat (L2) exposes IP to your invited peer — by design for direct P2P. We
+> don't add proxy/VPN settings because invited contacts already know who you are;
+> chain relay (L1′) avoids IP if you need that tradeoff.
+
 **Not implemented (future):** relay-only L2 (`relayThrough`), VPN leak preflight
 before join, Tor transport. Do not document these as shipped behavior.
 
