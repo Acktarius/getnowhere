@@ -22,67 +22,69 @@ import { defineConfig } from "vite";
 // `crossorigin` attributes on the entry script/CSS are removed at runtime by
 // the `stripCrossOrigin` plugin below: under file:// the crossorigin attribute
 // triggers a CORS check on an opaque origin, which fails and blocks the entry.
-export default defineConfig(function (_a) {
-    var command = _a.command;
-    return ({
-        // `base: "./"` only for the production build — relative asset paths so the
-        // static output loads from a bundled file:// path inside a WebView. In dev,
-        // the Vite dev server needs an absolute base ("/") for module resolution.
-        base: command === "build" ? "./" : "/",
-        plugins: [react(), stripCrossOrigin()],
-        resolve: {
-            alias: {
-                "@": fileURLToPath(new URL("./src", import.meta.url)),
-                crypto: fileURLToPath(new URL("./src/shims/crypto.ts", import.meta.url)),
-            },
+export default defineConfig((_a) => {
+  var command = _a.command;
+  return {
+    // `base: "./"` only for the production build — relative asset paths so the
+    // static output loads from a bundled file:// path inside a WebView. In dev,
+    // the Vite dev server needs an absolute base ("/") for module resolution.
+    base: command === "build" ? "./" : "/",
+    plugins: [react(), stripCrossOrigin()],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+        crypto: fileURLToPath(
+          new URL("./src/shims/crypto.ts", import.meta.url),
+        ),
+      },
+    },
+    server: {
+      host: true,
+      port: 5173,
+      // Browser wallets cannot call most public daemons directly (CORS). In dev,
+      // same-origin proxies forward to Conceal's CORS-friendly public nodes.
+      proxy: {
+        "/ccx-daemon": {
+          target: "https://explorer.conceal.network",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/ccx-daemon/, "/daemon"),
         },
-        server: {
-            host: true,
-            port: 5173,
-            // Browser wallets cannot call most public daemons directly (CORS). In dev,
-            // same-origin proxies forward to Conceal's CORS-friendly public nodes.
-            proxy: {
-                "/ccx-daemon": {
-                    target: "https://explorer.conceal.network",
-                    changeOrigin: true,
-                    secure: true,
-                    rewrite: function (path) { return path.replace(/^\/ccx-daemon/, "/daemon"); },
-                },
-                "/ccx-daemon-alt": {
-                    target: "https://ccxapi.conceal.network",
-                    changeOrigin: true,
-                    secure: true,
-                    rewrite: function (path) { return path.replace(/^\/ccx-daemon-alt/, "/daemon"); },
-                },
-            },
+        "/ccx-daemon-alt": {
+          target: "https://ccxapi.conceal.network",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path) => path.replace(/^\/ccx-daemon-alt/, "/daemon"),
         },
-        build: {
-            assetsDir: "assets",
-            // Main bundle + scan worker exceed 500 kB by design (codeSplitting: false, inlined WASM).
-            chunkSizeWarningLimit: 2000,
-            // Inline all assets (including the SDK's WASM) as base64 data URLs so the
-            // build is self-contained: no fetch() needed at runtime, which is required
-            // for file:// loading inside a WebView. 4MB covers the ~228KB wasm modules
-            // with headroom; raise only if a new binary asset exceeds this.
-            assetsInlineLimit: 4000000,
-            rolldownOptions: {
-                output: {
-                    // Force a single JS bundle — no dynamic-import chunks. Chunked
-                    // loading uses dynamic import(), which is blocked under file://.
-                    codeSplitting: false,
-                },
-            },
+      },
+    },
+    build: {
+      assetsDir: "assets",
+      // Main bundle + scan worker exceed 500 kB by design (codeSplitting: false, inlined WASM).
+      chunkSizeWarningLimit: 2000,
+      // Inline all assets (including the SDK's WASM) as base64 data URLs so the
+      // build is self-contained: no fetch() needed at runtime, which is required
+      // for file:// loading inside a WebView. 4MB covers the ~228KB wasm modules
+      // with headroom; raise only if a new binary asset exceeds this.
+      assetsInlineLimit: 4000000,
+      rolldownOptions: {
+        output: {
+          // Force a single JS bundle — no dynamic-import chunks. Chunked
+          // loading uses dynamic import(), which is blocked under file://.
+          codeSplitting: false,
         },
-        // Module workers (`new Worker(..., { type: "module" }` in scan-pool). Default
-        // worker.format "iife" conflicts with inlineDynamicImports (Rollup rejects
-        // IIFE/UMD for code-splitting builds). ES matches the Worker type.
-        worker: {
-            format: "es",
-        },
-        optimizeDeps: {
-            exclude: ["conceal-wallet-sdk", "conceal-lib-js"],
-        },
-    });
+      },
+    },
+    // Module workers (`new Worker(..., { type: "module" }` in scan-pool). Default
+    // worker.format "iife" conflicts with inlineDynamicImports (Rollup rejects
+    // IIFE/UMD for code-splitting builds). ES matches the Worker type.
+    worker: {
+      format: "es",
+    },
+    optimizeDeps: {
+      exclude: ["conceal-wallet-sdk", "conceal-lib-js"],
+    },
+  };
 });
 /**
  * Vite injects `crossorigin` onto the entry `<script type="module">` and CSS
@@ -93,13 +95,12 @@ export default defineConfig(function (_a) {
  * normal https origin the attributes are unnecessary for same-origin assets.
  */
 function stripCrossOrigin() {
-    return {
-        name: "strip-crossorigin-for-file-protocol",
-        apply: "build",
-        transformIndexHtml: function (html) {
-            return html
-                .replace(/ crossorigin(?=["'\s/>])/gi, "")
-                .replace(/\s+crossorigin=/gi, "");
-        },
-    };
+  return {
+    name: "strip-crossorigin-for-file-protocol",
+    apply: "build",
+    transformIndexHtml: (html) =>
+      html
+        .replace(/ crossorigin(?=["'\s/>])/gi, "")
+        .replace(/\s+crossorigin=/gi, ""),
+  };
 }
