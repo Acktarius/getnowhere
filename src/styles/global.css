@@ -1188,8 +1188,9 @@ button {
   margin: 0;
   padding: 10px 36px 10px 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg-press);
-  border: 1px solid var(--border-strong);
+  background: var(--bubble-fence-bg, var(--bg-hover));
+  color: var(--bubble-fence-fg, inherit);
+  border: 1px solid var(--bubble-fence-border, var(--border-strong));
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 13px;
@@ -1203,6 +1204,7 @@ button {
 .md-fence code {
   font-family: inherit;
   font-size: inherit;
+  color: inherit;
 }
 
 /* Reduced motion */

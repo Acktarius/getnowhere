@@ -40,7 +40,7 @@ export function WelcomeScreen() {
       markOnboarded();
       setOpenSheet(false);
       setPassword("");
-      navigate("/contacts");
+      navigate("/chats");
     } catch (e) {
       setError((e as Error).message);
     }

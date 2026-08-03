@@ -172,6 +172,20 @@ export function MessageBubble({
             userSelect: "text",
             WebkitUserSelect: "text",
             outline: "none",
+            ...(out && !relay
+              ? ({
+                  "--bubble-fence-bg":
+                    "color-mix(in srgb, var(--primary) 78%, black)",
+                  "--bubble-fence-fg": "var(--primary-fg)",
+                  "--bubble-fence-border":
+                    "color-mix(in srgb, var(--primary-fg) 22%, transparent)",
+                } as React.CSSProperties)
+              : ({
+                  "--bubble-fence-bg":
+                    "color-mix(in srgb, var(--bg-elev-2) 82%, black)",
+                  "--bubble-fence-fg": "var(--text)",
+                  "--bubble-fence-border": "var(--border-strong)",
+                } as React.CSSProperties)),
           }}
         >
           {editing ? (
