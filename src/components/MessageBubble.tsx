@@ -11,8 +11,33 @@ import type { ChatMessage } from "@/types/models";
 import { formatTime } from "@/utils/format";
 import { renderMarkdownLite } from "@/utils/markdownLite";
 
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀"];
+/** Wire token for the Conceal mark quick reaction. */
+export const CCX_REACTION = ":ccx:";
+const CONCEAL_MARK_SRC = `${import.meta.env.BASE_URL}brand/conceal-mark.png`;
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", CCX_REACTION];
 const LONG_PRESS_MS = 450;
+
+function ReactionGlyph({
+  reaction,
+  size = 18,
+}: {
+  reaction: string;
+  size?: number;
+}) {
+  if (reaction === CCX_REACTION) {
+    return (
+      <img
+        src={CONCEAL_MARK_SRC}
+        alt=""
+        width={size}
+        height={size}
+        aria-hidden
+        style={{ display: "block", objectFit: "contain" }}
+      />
+    );
+  }
+  return <>{reaction}</>;
+}
 
 export type BubbleReaction = {
   emoji: string;
@@ -233,7 +258,9 @@ export function MessageBubble({
             }}
           >
             {badgeEmojis.map((emoji) => (
-              <span key={emoji}>{emoji}</span>
+              <span key={emoji}>
+                <ReactionGlyph reaction={emoji} size={14} />
+              </span>
             ))}
           </div>
         )}
@@ -265,6 +292,7 @@ export function MessageBubble({
                   type="button"
                   role="menuitem"
                   className="btn btn--sm btn--ghost"
+                  aria-label={emoji === CCX_REACTION ? "Conceal" : emoji}
                   style={{
                     padding: "4px 8px",
                     minHeight: 0,
@@ -276,7 +304,7 @@ export function MessageBubble({
                     setPickerOpen(false);
                   }}
                 >
-                  {emoji}
+                  <ReactionGlyph reaction={emoji} />
                 </button>
               ))}
             {onEdit && (
