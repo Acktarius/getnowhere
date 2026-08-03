@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { chatTransport, smartMessageService } from "@/services";
+import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
 import {
   getMessagesForRoom,
   ingestChatRelay,
@@ -318,14 +319,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       text,
     });
     set((s) => {
-      const list = (s.messagesByRoom[roomId] ?? []).map((m) =>
-        m.id === targetMessageId ? { ...m, text, editedAt: msg.createdAt } : m,
-      );
-      // Edit envelope itself arrives via subscribe; only patch the target text here.
+      const prev = s.messagesByRoom[roomId] ?? [];
+      const editEnvelope: ChatMessage = {
+        id: msg.id,
+        roomId,
+        direction: "out",
+        text,
+        createdAt: msg.createdAt,
+        status: "delivered",
+        kind: "edit",
+        targetMessageId,
+        editedAt: msg.createdAt,
+      };
       return {
         messagesByRoom: {
           ...s.messagesByRoom,
-          [roomId]: list,
+          [roomId]: mergeContentMessage(prev, editEnvelope),
         },
       };
     });
@@ -349,20 +358,22 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       targetMessageId,
     });
     set((s) => {
-      const list = (s.messagesByRoom[roomId] ?? []).map((m) =>
-        m.id === targetMessageId
-          ? {
-              ...m,
-              text: "",
-              deletedAt: msg.createdAt,
-              kind: "delete" as const,
-            }
-          : m,
-      );
+      const prev = s.messagesByRoom[roomId] ?? [];
+      const deleteEnvelope: ChatMessage = {
+        id: msg.id,
+        roomId,
+        direction: "out",
+        text: "",
+        createdAt: msg.createdAt,
+        status: "delivered",
+        kind: "delete",
+        targetMessageId,
+        deletedAt: msg.createdAt,
+      };
       return {
         messagesByRoom: {
           ...s.messagesByRoom,
-          [roomId]: list,
+          [roomId]: mergeContentMessage(prev, deleteEnvelope),
         },
       };
     });
@@ -372,13 +383,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const unsub = chatTransport.subscribe(roomId, (msg) => {
       set((s) => {
         const prev = s.messagesByRoom[roomId] ?? [];
-        const idx = prev.findIndex((m) => m.id === msg.id);
-        const list =
-          idx >= 0 ? prev.map((m, i) => (i === idx ? msg : m)) : [...prev, msg];
         return {
           messagesByRoom: {
             ...s.messagesByRoom,
-            [roomId]: list,
+            [roomId]: mergeContentMessage(prev, msg),
           },
         };
       });

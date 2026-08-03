@@ -1,7 +1,42 @@
 import { createElement, Fragment, type ReactNode } from "react";
+import { MarkdownFencedCode } from "@/components/MarkdownFencedCode";
 
 const BULLET_PREFIX = "  * ";
-const HARD_BREAK_SUFFIX = "  ";
+const FENCE_RE = /```(?:[^\n`]*\n)?([\s\S]*?)```/g;
+
+type MarkdownSegment =
+  | { kind: "text"; value: string }
+  | { kind: "fencedCode"; value: string };
+
+/** Inline `  ` → `\n`; preserve the `  ` inside `  * ` bullet markers. */
+function expandInlineHardBreaks(text: string): string {
+  return text.replace(/ {2}(?!\* )/g, "\n").replace(/\n{2,}/g, "\n");
+}
+
+function trimFenceBody(body: string): string {
+  return body.replace(/^\n/, "").replace(/\n$/, "");
+}
+
+export function splitFencedCode(text: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  let last = 0;
+  FENCE_RE.lastIndex = 0;
+  for (const match of text.matchAll(FENCE_RE)) {
+    const index = match.index ?? 0;
+    if (index > last) {
+      segments.push({ kind: "text", value: text.slice(last, index) });
+    }
+    segments.push({
+      kind: "fencedCode",
+      value: trimFenceBody(match[1] ?? ""),
+    });
+    last = index + match[0].length;
+  }
+  if (last < text.length) {
+    segments.push({ kind: "text", value: text.slice(last) });
+  }
+  return segments.length > 0 ? segments : [{ kind: "text", value: text }];
+}
 
 /** Escape HTML metacharacters in user text. */
 export function escapeHtml(text: string): string {
@@ -93,31 +128,53 @@ type BlockLine =
   | { kind: "text"; segment: string; hardBreak: boolean }
   | { kind: "bullet"; segment: string };
 
+function isBulletLine(line: string): boolean {
+  if (!line) return false;
+  return line.startsWith(BULLET_PREFIX) || line.split(BULLET_PREFIX)[0] === "";
+}
+
 function parseBlockLines(text: string): BlockLine[] {
-  const rawLines = text.split("\n");
+  const rawLines = expandInlineHardBreaks(text).split("\n");
   const lines: BlockLine[] = [];
+
   for (let i = 0; i < rawLines.length; i++) {
-    let line = rawLines[i] ?? "";
-    const hardBreak = line.endsWith(HARD_BREAK_SUFFIX);
-    if (hardBreak) line = line.slice(0, -HARD_BREAK_SUFFIX.length);
-    if (line.startsWith(BULLET_PREFIX)) {
-      lines.push({
-        kind: "bullet",
-        segment: line.slice(BULLET_PREFIX.length),
-      });
-    } else {
+    const line = rawLines[i] ?? "";
+
+    const segments = line.split(BULLET_PREFIX);
+    if (segments.length === 1) {
+      if (line.length === 0 && i === rawLines.length - 1) continue;
       lines.push({
         kind: "text",
         segment: line,
-        hardBreak: hardBreak || i < rawLines.length - 1,
+        hardBreak: i < rawLines.length - 1,
       });
+      continue;
+    }
+
+    const lead = segments[0] ?? "";
+    if (lead.length > 0) {
+      lines.push({ kind: "text", segment: lead, hardBreak: true });
+    }
+    for (let j = 1; j < segments.length; j++) {
+      lines.push({ kind: "bullet", segment: segments[j] ?? "" });
+    }
+
+    if (i < rawLines.length - 1) {
+      const next = rawLines[i + 1] ?? "";
+      if (!isBulletLine(next) && lines.at(-1)?.kind === "bullet") {
+        lines.push({ kind: "text", segment: "", hardBreak: true });
+      }
     }
   }
+
   return lines;
 }
 
-/** Same structure as render path; stable for unit tests. */
-export function markdownLiteToHtml(text: string): string {
+function fencedCodeToHtml(code: string): string {
+  return `<pre class="md-fence"><code>${escapeHtml(code)}</code></pre>`;
+}
+
+function textMarkdownToHtml(text: string): string {
   const lines = parseBlockLines(text);
   let out = "";
   let bulletBuf: string[] = [];
@@ -141,12 +198,22 @@ export function markdownLiteToHtml(text: string): string {
   return out;
 }
 
-/** L2 live chat subset: bold, italic, strike, code, line breaks, bullets. */
-export function renderMarkdownLite(text: string): ReactNode {
+/** Same structure as render path; stable for unit tests. */
+export function markdownLiteToHtml(text: string): string {
+  return splitFencedCode(text)
+    .map((seg) =>
+      seg.kind === "fencedCode"
+        ? fencedCodeToHtml(seg.value)
+        : textMarkdownToHtml(seg.value),
+    )
+    .join("");
+}
+
+function textMarkdownToReact(text: string, keySeed: number): ReactNode[] {
   const lines = parseBlockLines(text);
   const nodes: ReactNode[] = [];
   let bulletBuf: ReactNode[] = [];
-  let key = 0;
+  let key = keySeed;
 
   function flushBullets() {
     if (bulletBuf.length === 0) return;
@@ -178,6 +245,28 @@ export function renderMarkdownLite(text: string): ReactNode {
     }
   }
   flushBullets();
+  return nodes;
+}
+
+/** L2 live chat subset: bold, italic, strike, code, line breaks, bullets, fences. */
+export function renderMarkdownLite(text: string): ReactNode {
+  const segments = splitFencedCode(text);
+  const nodes: ReactNode[] = [];
+  let key = 0;
+
+  for (const seg of segments) {
+    if (seg.kind === "fencedCode") {
+      nodes.push(
+        createElement(MarkdownFencedCode, {
+          key: `fence-${key++}`,
+          code: seg.value,
+        }),
+      );
+      continue;
+    }
+    nodes.push(...textMarkdownToReact(seg.value, key));
+    key += 100;
+  }
 
   if (nodes.length === 1) return nodes[0] as ReactNode;
   return createElement(Fragment, null, ...nodes);

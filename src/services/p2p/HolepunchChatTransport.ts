@@ -6,6 +6,7 @@
 
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
 import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
+import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
 import {
   readChatRooms,
   saveActiveMessages,
@@ -254,10 +255,8 @@ async function waitForProof(
 
 function notify(roomId: string, msg: ChatMessage): void {
   const list = messagesByRoom.get(roomId) ?? [];
-  const idx = list.findIndex((m) => m.id === msg.id);
-  if (idx >= 0) list[idx] = msg;
-  else list.push(msg);
-  messagesByRoom.set(roomId, list);
+  const next = mergeContentMessage(list, msg);
+  messagesByRoom.set(roomId, next);
   for (const h of subscribers.get(roomId) ?? []) h(msg);
 }
 

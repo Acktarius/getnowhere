@@ -24,6 +24,12 @@ describe("markdownLiteToHtml", () => {
     );
   });
 
+  it("renders inline hard break from two spaces", () => {
+    expect(markdownLiteToHtml("line one  line two")).toBe(
+      "line one<br />line two",
+    );
+  });
+
   it("renders bullet line", () => {
     expect(markdownLiteToHtml("  * item")).toBe("<ul><li>item</li></ul>");
   });
@@ -59,6 +65,30 @@ describe("markdownLiteToHtml", () => {
   it("separates bullet block from plain line", () => {
     expect(markdownLiteToHtml("plain\n  * bullet")).toBe(
       "plain<br /><ul><li>bullet</li></ul>",
+    );
+  });
+
+  it("renders inline bullet after text on same line", () => {
+    expect(markdownLiteToHtml("if I do  * line")).toBe(
+      "if I do<br /><ul><li>line</li></ul>",
+    );
+  });
+
+  it("renders fenced code block", () => {
+    expect(markdownLiteToHtml("```hello```")).toBe(
+      '<pre class="md-fence"><code>hello</code></pre>',
+    );
+  });
+
+  it("renders multiline fenced code without markdown inside", () => {
+    expect(markdownLiteToHtml("```\n**bold**\nline two\n```")).toBe(
+      '<pre class="md-fence"><code>**bold**\nline two</code></pre>',
+    );
+  });
+
+  it("does not markdown-format inside fenced code", () => {
+    expect(markdownLiteToHtml("before ```*nope*``` after")).toBe(
+      'before <pre class="md-fence"><code>*nope*</code></pre> after',
     );
   });
 });

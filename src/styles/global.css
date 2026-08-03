@@ -1162,6 +1162,49 @@ button {
   animation-delay: 240ms;
 }
 
+/* Markdown-lite fenced code (L2 chat bubbles) */
+.md-fence-wrap {
+  position: relative;
+  margin: 6px 0 4px;
+  max-width: 100%;
+}
+
+.md-fence-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  min-height: 0;
+  padding: 4px 6px;
+  opacity: 0.75;
+}
+
+.md-fence-wrap:hover .md-fence-copy,
+.md-fence-copy:focus-visible {
+  opacity: 1;
+}
+
+.md-fence {
+  margin: 0;
+  padding: 10px 36px 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-press);
+  border: 1px solid var(--border-strong);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.md-fence code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,

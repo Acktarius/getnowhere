@@ -301,7 +301,7 @@ export function ChatRoomScreen() {
   }, [messages]);
 
   const visibleMessages = useMemo(
-    () => messages.filter((m) => m.kind !== "reaction"),
+    () => messages.filter((m) => m.kind !== "reaction" && m.kind !== "edit"),
     [messages],
   );
 

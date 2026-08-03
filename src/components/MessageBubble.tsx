@@ -16,6 +16,14 @@ export const CCX_REACTION = ":ccx:";
 const CONCEAL_MARK_SRC = `${import.meta.env.BASE_URL}brand/conceal-mark.png`;
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", CCX_REACTION];
 const LONG_PRESS_MS = 450;
+/** PNG reads smaller than emoji at the same px — tune display only. */
+const CCX_REACTION_SIZE_SCALE = 1.45;
+
+function reactionDisplaySize(reaction: string, emojiSize: number): number {
+  return reaction === CCX_REACTION
+    ? Math.round(emojiSize * CCX_REACTION_SIZE_SCALE)
+    : emojiSize;
+}
 
 function ReactionGlyph({
   reaction,
@@ -25,14 +33,15 @@ function ReactionGlyph({
   size?: number;
 }) {
   if (reaction === CCX_REACTION) {
+    const px = reactionDisplaySize(reaction, size);
     return (
       <img
         src={CONCEAL_MARK_SRC}
         alt=""
-        width={size}
-        height={size}
+        width={px}
+        height={px}
         aria-hidden
-        style={{ display: "block", objectFit: "contain" }}
+        style={{ display: "block", objectFit: "contain", flexShrink: 0 }}
       />
     );
   }
@@ -135,14 +144,15 @@ export function MessageBubble({
       {!out && <div style={{ width: 28, flexShrink: 0 }} />}
       <div style={{ position: "relative", maxWidth: "76%" }}>
         <div
-          role={canAct ? "button" : undefined}
-          tabIndex={canAct ? 0 : undefined}
+          role={canAct && !editing ? "button" : undefined}
+          tabIndex={canAct && !editing ? 0 : undefined}
           onClick={onBubbleClick}
           onPointerDown={onBubblePointerDown}
           onPointerUp={clearLongPress}
           onPointerLeave={clearLongPress}
           onPointerCancel={clearLongPress}
           onKeyDown={(e) => {
+            if (editing) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               openPicker();
@@ -170,7 +180,9 @@ export function MessageBubble({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 style={{ fontSize: 14 }}
+                autoFocus
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
               />
               <div className="row-flex" style={{ gap: 6 }}>
                 <button
@@ -245,6 +257,7 @@ export function MessageBubble({
               // Sender (out): top-left · Receiver (in): top-right
               [out ? "left" : "right"]: 6,
               display: "flex",
+              alignItems: "center",
               gap: 2,
               padding: "1px 5px",
               borderRadius: 999,
@@ -259,7 +272,7 @@ export function MessageBubble({
           >
             {badgeEmojis.map((emoji) => (
               <span key={emoji}>
-                <ReactionGlyph reaction={emoji} size={14} />
+                <ReactionGlyph reaction={emoji} size={13} />
               </span>
             ))}
           </div>
