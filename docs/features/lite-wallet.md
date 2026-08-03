@@ -65,6 +65,9 @@ background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync c
 
 - **Receive** — address + QR.
 - **Send** — real `buildTransaction` + `sendRawTransaction` via the sync runtime.
+  Contact picker (when eligible contacts exist) autofills recipient address and
+  `paymentIdTo` (PidTo) when present; rows show a round letter mark (multi-word
+  initials, or single-word ≤3 letters).
 - **History** — kinds: transfer, miner, deposit, withdrawal, fusion (display only).
 - **Spend failures** (no funds, unmixable denominations, build/broadcast errors) surface
   as an in-app toast and inline error — invite create must not spin forever on deep sync.

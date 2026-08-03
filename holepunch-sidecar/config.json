@@ -1,4 +1,6 @@
 {
   "maxNdjsonLineBytes": 262144,
-  "maxFileBytes": 5242880
+  "maxFileBytes": 5242880,
+  "maxWsMessageBytes": 270336,
+  "maxFramePayloadBytes": 262144
 }

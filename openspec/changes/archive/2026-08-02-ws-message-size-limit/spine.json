@@ -1,0 +1,24 @@
+{
+  "change": "ws-message-size-limit",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "WS bridge messages are size-bounded",
+      "library": "holepunch-sidecar/src/server.mjs message handler; holepunch-sidecar/src/config.mjs",
+      "runtimeOwner": "holepunch-sidecar process (npm run holepunch / Electron sidecar child) via WebSocketServer connection handler",
+      "writes": "send typed error; close abusive WS (1009); refuse parse/fan-out of oversize messages",
+      "reads": "config.maxWsMessageBytes; config.maxFramePayloadBytes; raw message byte length; frame.payload UTF-8 length",
+      "uiConsumer": "N/A (sidecar wire); UI sealed frames remain under defaults",
+      "evidence": "holepunch-sidecar/test/ws-message-size.test.mjs WS size regressions; forge e2e run"
+    },
+    {
+      "capability": "Bridge errors carry a stable code",
+      "library": "holepunch-sidecar/src/errors.mjs (or equivalent map); holepunch-sidecar/src/server.mjs; src/services/p2p/HolepunchSidecarClient.ts",
+      "runtimeOwner": "holepunch-sidecar process WS error send paths; UI HolepunchSidecarClient error handler",
+      "writes": "error events with code+message; docs/architecture/holepunch-bridge-errors.md",
+      "reads": "bridge error map keys",
+      "uiConsumer": "HolepunchSidecarClient (discriminate on code)",
+      "evidence": "ws-message-size + coded-error tests; forge e2e run"
+    }
+  ]
+}

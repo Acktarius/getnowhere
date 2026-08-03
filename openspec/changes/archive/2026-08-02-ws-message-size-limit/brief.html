@@ -1,0 +1,95 @@
+<!-- forge-brief-specs-hash:b30e2913c187abf1 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cap WebSocket bridge message size</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      code { background: #f1f3f4; padding: 0.1rem 0.3rem; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+      pre.mermaid {
+        background: #f8f9fa;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Cap WebSocket bridge message size</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      Today a local client can shove an enormous WebSocket frame at Holepunch
+      and force a heavy parse and peer fan-out. After this change, oversized
+      messages get a coded error and the socket is closed — and every bridge
+      error carries a stable <code>code</code> documented under
+      <code>docs/</code>. Normal chat sizes keep working unchanged.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>Whole inbound WS messages capped (default ~264 KiB with wrapper room).</li>
+      <li>Chat <code>frame</code> payloads capped at 256 KiB (same sealed-frame budget as peer NDJSON).</li>
+      <li>Two separate config knobs so you can retune wrapper vs payload independently.</li>
+      <li>Abusive clients get one coded error, then disconnect (close code 1009).</li>
+      <li>A documented bridge error map (<code>docs/architecture/holepunch-bridge-errors.md</code>) covering size and existing protocol errors.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <pre class="mermaid">
+flowchart TD
+  A[WS client sends message] --> B{Raw bytes over max?}
+  B -->|yes| E["error code message_too_large then close"]
+  B -->|no| C[Parse JSON]
+  C --> D{frame payload over max?}
+  D -->|yes| F["error code payload_too_large then close"]
+  D -->|no| G[Handle / fan-out as today]
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>No UI change for normal sealed chat frames.</li>
+      <li>Limits live in Holepunch <code>config.json</code> if you need to retune later.</li>
+      <li>Clients should switch on error <code>code</code>; human <code>message</code> remains for logs.</li>
+      <li>A buggy client that exceeds the limit will see the bridge drop and may need to reconnect.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Anything that truly needs payloads larger than 256 KiB will need a config bump or a different media path.</li>
+      <li>The WebSocket library may hit the size ceiling before our handler — we still emit a coded error on the close path when possible.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>UI reconnect polish after a forced close.</li>
+      <li>Bridge auth token work and peer hello hardening (separate findings).</li>
+      <li>Changing the existing Hyperswarm NDJSON line cap.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Config + WS size gates with tests (2 tasks — done)</li>
+      <li>Bridge error code map + client types + tests (1 task)</li>
+      <li>Docs (dedicated error-map page), finding note, product-loop e2e (1 task)</li>
+    </ul>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({ startOnLoad: true });
+    </script>
+  </body>
+</html>

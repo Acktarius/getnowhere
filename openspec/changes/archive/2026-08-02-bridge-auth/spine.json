@@ -1,0 +1,24 @@
+{
+  "change": "bridge-auth",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Non-loopback bind requires sidecar token",
+      "library": "holepunch-sidecar/src/auth.mjs (isLoopbackHost); holepunch-sidecar/src/server.mjs startup guard",
+      "runtimeOwner": "holepunch-sidecar process (npm run holepunch / Electron sidecar child) before WebSocketServer listen",
+      "writes": "process exit non-zero when non-loopback + empty GNH_SIDECAR_TOKEN; otherwise WSS listen as today",
+      "reads": "HOLEPUNCH_HOST; GNH_SIDECAR_TOKEN",
+      "uiConsumer": "N/A (sidecar process boundary; UI unchanged)",
+      "evidence": "holepunch-sidecar/test/bridge-auth.test.mjs (or server-lifecycle sibling) spawn cases; forge e2e run"
+    },
+    {
+      "capability": "Sidecar token comparison is timing-safe",
+      "library": "holepunch-sidecar/src/auth.mjs (tokensEqual); holepunch-sidecar/src/server.mjs connection handler",
+      "runtimeOwner": "holepunch-sidecar process WS upgrade / connection handler",
+      "writes": "close 4001 on mismatch; accept matching ?token= when GNH_SIDECAR_TOKEN set",
+      "reads": "GNH_SIDECAR_TOKEN; URL query token",
+      "uiConsumer": "N/A (existing HolepunchSidecarClient ?token= assembly unchanged)",
+      "evidence": "holepunch-sidecar/test/auth.test.mjs; bridge-auth WS auth cases; forge e2e run"
+    }
+  ]
+}

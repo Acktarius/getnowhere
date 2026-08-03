@@ -69,7 +69,7 @@ type SidecarCommand =
 - `payload`: opaque sealed frame (base64 string today).
 - `frame` is accepted only after this socket has `join`ed that `topicRef`
   (mesh also requires the sender in `localClients`). Otherwise the bridge
-  replies `{ type: "error", message: "frame requires join for topicRef" }`.
+  replies `{ type: "error", code: "frame_requires_join", message: "…" }`.
 
 ### Runtime → client (events)
 
@@ -79,8 +79,12 @@ type SidecarEvent =
   | { type: "ready"; topicRef: string }
   | { type: "peers"; topicRef: string; count: number }
   | { type: "frame"; topicRef: string; roomId?: string; payload: string }
-  | { type: "error"; message: string };
+  | { type: "error"; code: string; message: string };
 ```
+
+Every `error` includes a stable `code`. Canonical table and client guidance:
+`docs/architecture/holepunch-bridge-errors.md` (codes live in
+`holepunch-sidecar/src/errors.mjs`).
 
 `connected` for a room is an **app-layer** decision when `peers.count >= 1`
 (see `HolepunchChatTransport`), not a separate bridge event.
@@ -106,13 +110,24 @@ state through the bridge. The UI must not import Hypercore/Hyperswarm primitives
 ```
 holepunch-sidecar/
   package.json
-  config.json           # maxNdjsonLineBytes / reserved maxFileBytes
+  config.json           # maxNdjsonLineBytes / maxWsMessageBytes /
+                        # maxFramePayloadBytes / reserved maxFileBytes
   src/config.mjs        # load limits with defaults
+  src/errors.mjs        # BRIDGE_ERRORS map + bridgeError()
   src/swarm.mjs         # one Hyperswarm; multi-topic join + local/remote fan-out
   src/server.mjs        # WebSocket bridge (default ws://127.0.0.1:7901)
   src/parent-death.mjs  # exit when Electron parent dies
   test/
 ```
+
+### WS size bounds
+
+Inbound bridge messages are bounded by `maxWsMessageBytes` (default **270336**)
+before `JSON.parse`; `frame.payload` UTF-8 length by `maxFramePayloadBytes`
+(default **262144**). The WebSocket server also sets
+`maxPayload: maxWsMessageBytes`. Oversize → coded error then close **1009**.
+Full code map and close-hook notes:
+`docs/architecture/holepunch-bridge-errors.md`.
 
 ### NDJSON line cap
 
@@ -354,11 +369,17 @@ Transport peer count ≥ 1 is necessary but not sufficient. The UI marks
 `connected` only after the **post-connect L1 proof** (sealed `kind: "proof"`
 frame) succeeds — see `docs/security/encryption.md`.
 
-## Sidecar WS auth (optional)
+## Sidecar WS auth
 
-When `GNH_SIDECAR_TOKEN` is set, clients must connect with `?token=<value>` or
-the upgrade is closed (`4001`). Unset for web-dev (`npm run holepunch`).
-Electron main always sets a per-launch token — `docs/architecture/electron-desktop.md`.
+Non-loopback bind (`HOLEPUNCH_HOST` not in `127.0.0.1` / `::1` / `localhost`)
+requires `GNH_SIDECAR_TOKEN` at **startup** — the process exits before listen if
+the token is missing. Loopback without a token remains the explicit web-dev
+exception (`npm run holepunch`).
+
+When a token is set, clients must connect with `?token=<value>` or the upgrade
+is closed (`4001`). Comparison is timing-safe (`crypto.timingSafeEqual` on
+equal-length buffers). Electron main always sets a per-launch token
+(packaged builds use a fresh UUID) — `docs/architecture/electron-desktop.md`.
 
 ## Env
 
@@ -367,7 +388,7 @@ Electron main always sets a per-launch token — `docs/architecture/electron-des
 | `VITE_HOLEPUNCH_WS_URL` | `ws://127.0.0.1:7901` | Vite web app |
 | `HOLEPUNCH_HOST` | `127.0.0.1` | sidecar |
 | `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar |
-| `GNH_SIDECAR_TOKEN` | (unset) | sidecar — required when set |
+| `GNH_SIDECAR_TOKEN` | (unset) | sidecar — required when set **or** when host is non-loopback |
 | `GNH_PARENT_POLL_MS` | `1000` | sidecar parent-death poll |
 | `GNH_DISABLE_DISCOVERY` | unset | test-only: skip Hyperswarm DHT |
 

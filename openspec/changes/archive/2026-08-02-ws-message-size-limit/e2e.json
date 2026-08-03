@@ -1,0 +1,12 @@
+{
+  "change": "ws-message-size-limit",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar WS: message and payload size limits",
+      "cmd": "node --test holepunch-sidecar/test/ws-message-size.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

@@ -3,12 +3,24 @@
  * Opaque sealed frames only — no session keys on the wire to the sidecar.
  */
 
+/** Stable bridge error codes from holepunch-sidecar/src/errors.mjs */
+export type SidecarBridgeErrorCode =
+  | "message_too_large"
+  | "payload_too_large"
+  | "invalid_json"
+  | "join_requires_fields"
+  | "leave_requires_topic"
+  | "frame_requires_fields"
+  | "frame_requires_join"
+  | "unknown_type"
+  | "sidecar_error";
+
 export type SidecarServerMessage =
   | { type: "ready"; topicRef: string }
   | { type: "peers"; topicRef: string; count: number }
   | { type: "frame"; topicRef: string; roomId?: string; payload: string }
   | { type: "pong" }
-  | { type: "error"; message: string };
+  | { type: "error"; code: SidecarBridgeErrorCode | string; message: string };
 
 export type SidecarClientMessage =
   | { type: "join"; topicRef: string; roomId: string }
@@ -134,7 +146,10 @@ export function createWebSocketSidecarBackend(
         });
       }
     } else if (msg.type === "error") {
-      emitStatus("offline", msg.message || "sidecar error");
+      const detail = msg.code
+        ? `${msg.code}: ${msg.message || "sidecar error"}`
+        : msg.message || "sidecar error";
+      emitStatus("offline", detail);
     }
   }
 
