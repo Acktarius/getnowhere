@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/types/models";
 import { formatTime } from "@/utils/format";
+import { renderMarkdownLite } from "@/utils/markdownLite";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀"];
 const LONG_PRESS_MS = 450;
@@ -179,7 +180,11 @@ export function MessageBubble({
                 fontStyle: deleted ? "italic" : undefined,
               }}
             >
-              {deleted ? "Message deleted" : message.text}
+              {deleted
+                ? "Message deleted"
+                : relay
+                  ? message.text
+                  : renderMarkdownLite(message.text)}
             </span>
           )}
           <div
