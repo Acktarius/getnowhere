@@ -81,6 +81,16 @@ function resolveUiTarget() {
   return { kind: "url", value: "http://127.0.0.1:5173" };
 }
 
+/** Packaged sidecar Node binary (node.exe on Windows). */
+function bundledNodeBin() {
+  const base = join(process.resourcesPath, "runtime", "node");
+  if (process.platform === "win32") {
+    const withExe = `${base}.exe`;
+    return existsSync(withExe) ? withExe : base;
+  }
+  return base;
+}
+
 /**
  * Dev: repo holepunch-sidecar + system node.
  * Packaged: resources/sidecar + resources/runtime/node.
@@ -91,9 +101,7 @@ function sidecarLaunch() {
     return {
       entry: join(root, "src", "server.mjs"),
       cwd: root,
-      nodeBin:
-        process.env.GNH_NODE_BIN ??
-        join(process.resourcesPath, "runtime", "node"),
+      nodeBin: process.env.GNH_NODE_BIN ?? bundledNodeBin(),
     };
   }
   return {

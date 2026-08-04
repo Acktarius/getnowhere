@@ -15,6 +15,7 @@
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "package": "npm run prepare:sidecar && electron-forge package --platform=linux --arch=x64",
     "make": "npm run prepare:sidecar && electron-forge make --platform=linux --arch=x64",
+    "make:win": "npm run prepare:sidecar && electron-forge make --platform=win32 --arch=x64",
     "install:app": "npm install"
   },
   "devDependencies": {

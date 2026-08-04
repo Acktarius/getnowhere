@@ -1,7 +1,7 @@
 {
   "name": "getnowhere",
   "private": true,
-  "version": "0.1.20",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,7 @@
     "desktop:bob:isolated": "npm --prefix desktop-electron run start:bob:isolated",
     "desktop:prepare": "npm --prefix desktop-electron run prepare:sidecar",
     "desktop:make": "npm --prefix desktop-electron run make",
+    "desktop:make:win": "npm --prefix desktop-electron run make:win",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "format": "biome format .",

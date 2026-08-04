@@ -1,18 +1,19 @@
 /**
- * Electron Forge: Linux package with sidecar + Node + embedded Vite UI.
+ * Electron Forge: Linux + Windows packages with sidecar + Node + embedded Vite UI.
  * @see docs/builds/github-pages-and-desktop.md
  */
 
 const path = require("node:path");
 
-const iconPng = path.join(__dirname, "icons", "icon.png");
+const iconBase = path.join(__dirname, "icons", "icon");
+const iconPng = `${iconBase}.png`;
 
 /** @type {import('@electron-forge/shared-types').ForgeConfig} */
 module.exports = {
   packagerConfig: {
     name: "GetNowHere",
     executableName: "getnowhere",
-    icon: iconPng,
+    icon: iconBase,
     asar: true,
     extraResource: [
       path.join(__dirname, "resources", "sidecar"),
@@ -31,7 +32,7 @@ module.exports = {
   makers: [
     {
       name: "@electron-forge/maker-zip",
-      platforms: ["linux"],
+      platforms: ["linux", "win32"],
     },
     {
       name: "@electron-forge/maker-deb",
