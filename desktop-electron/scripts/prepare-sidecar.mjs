@@ -31,8 +31,13 @@ function log(...args) {
   console.log("[prepare-sidecar]", ...args);
 }
 
-function npmExecutable() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+/** Windows: npm is a .cmd shim — execFileSync needs shell to run it. */
+function runNpm(args, cwd) {
+  execFileSync("npm", args, {
+    cwd,
+    stdio: "inherit",
+    shell: true,
+  });
 }
 
 function stageSidecar() {
@@ -43,10 +48,7 @@ function stageSidecar() {
     cpSync(join(src, name), join(sidecarOut, name), { recursive: true });
   }
   log("npm ci --omit=dev in resources/sidecar");
-  execFileSync(npmExecutable(), ["ci", "--omit=dev"], {
-    cwd: sidecarOut,
-    stdio: "inherit",
-  });
+  runNpm(["ci", "--omit=dev"], sidecarOut);
 }
 
 /** Copy repo-root Vite `dist/` into resources/ui (required for packaged loadFile). */
