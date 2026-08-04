@@ -306,11 +306,16 @@ async function spawnSidecar() {
   );
 
   const stdio = USES_EPHEMERAL_PORT
-    ? /** @type {const} */ (["ignore", "inherit", "inherit", "ipc"])
+    ? /** @type {const} */ (
+        app.isPackaged
+          ? ["ignore", "ignore", "ignore", "ipc"]
+          : ["ignore", "inherit", "inherit", "ipc"]
+      )
     : "inherit";
 
   swarmChild = spawn(nodeBin, [entry], {
     stdio,
+    windowsHide: true,
     env: {
       ...process.env,
       HOLEPUNCH_HOST: SWARM_HOST,
