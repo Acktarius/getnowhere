@@ -31,6 +31,10 @@ function log(...args) {
   console.log("[prepare-sidecar]", ...args);
 }
 
+function npmExecutable() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
 function stageSidecar() {
   rmSync(sidecarOut, { recursive: true, force: true });
   mkdirSync(sidecarOut, { recursive: true });
@@ -39,7 +43,7 @@ function stageSidecar() {
     cpSync(join(src, name), join(sidecarOut, name), { recursive: true });
   }
   log("npm ci --omit=dev in resources/sidecar");
-  execFileSync("npm", ["ci", "--omit=dev"], {
+  execFileSync(npmExecutable(), ["ci", "--omit=dev"], {
     cwd: sidecarOut,
     stdio: "inherit",
   });
