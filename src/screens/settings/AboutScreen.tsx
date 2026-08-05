@@ -20,7 +20,7 @@ export function AboutScreen() {
 
         <div className="card fade-in-up">
           <p style={{ fontSize: 14, lineHeight: 1.6 }}>
-            Get Now Here is a privacy-first messenger that pairs a lightweight
+            Get NowHere is a privacy-first messenger that pairs a lightweight
             Conceal wallet with anonymous peer-to-peer chat. Two people
             establish a private relationship using Conceal wallet identities and
             exchanged payment IDs, then escalate into an encrypted, no-server

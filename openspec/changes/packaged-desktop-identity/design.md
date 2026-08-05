@@ -31,7 +31,7 @@ the Electron parent dies.
 | `appName` | `getnowhere` | `getnowhere-desktop-alice` |
 | `userDataDirName` | `getnowhere` | `getnowhere-desktop-alice` |
 | `partition` | `persist:gnh` | `persist:gnh-alice` |
-| `titleBase` | `Get Now Here` | `Get Now Here — Alice` |
+| `titleBase` | `Get NowHere` | `Get NowHere — Alice` |
 | `showsModeTag` | `false` | `true` |
 | `swarmMode` | `isolated` | `env.GNH_SWARM_MODE`, default `shared` |
 | `host` | `env.HOLEPUNCH_HOST` or `127.0.0.1` | same |

@@ -1,6 +1,6 @@
 # Pairing and Topic Derivation
 
-Get Now Here is not a public chat room model. It is a relationship-based,
+Get NowHere is not a public chat room model. It is a relationship-based,
 invite-led, one-to-one connection model.
 
 Wire-level invite and handshake details live in

@@ -1,6 +1,6 @@
 # Encryption
 
-This document defines the current encryption rules for Get Now Here. It is a
+This document defines the current encryption rules for Get NowHere. It is a
 practical implementation guide for developers and a boundary document for
 Cursor, so security-sensitive changes stay consistent across the codebase.
 
@@ -23,7 +23,7 @@ This document defines:
 
 ## Threat model (max security across runtimes)
 
-Get Now Here runs the same product crypto across different hosts:
+Get NowHere runs the same product crypto across different hosts:
 
 | Runtime | UI | Hyperswarm host | Bridge |
 |---|---|---|---|

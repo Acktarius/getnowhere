@@ -1,7 +1,7 @@
 ---
 alwaysApply: true
 ---
-# Get Now Here project rules
+# Get NowHere project rules
 
 ## Product and repo model
 
@@ -74,6 +74,6 @@ alwaysApply: true
 
 ## Preferred wording
 
-> Get Now Here is developed as a web-first application. Local work happens with `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare. Expo.dev / EAS covers store delivery.
+> Get NowHere is developed as a web-first application. Local work happens with `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare. Expo.dev / EAS covers store delivery.
 
 > Vite UI plus Pear-shaped Hyperswarm behind a typed bridge. L1 SmartMessage (+ session seal), L2 Noise, L1′ when L2 is down. The UI never joins Hyperswarm.

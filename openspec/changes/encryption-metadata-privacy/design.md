@@ -2,7 +2,7 @@
 
 ## Context
 
-Get Now Here uses three delivery channels with different metadata properties:
+Get NowHere uses three delivery channels with different metadata properties:
 
 - **L1** — Conceal smart messages (`create` / `register` / `revoke`): async,
   store-and-forward via chain; `buildMessageTransaction` with mixin, decoys,

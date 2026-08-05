@@ -1,4 +1,4 @@
-# Get Now Here — P2P Chat Protocol
+# Get NowHere — P2P Chat Protocol
 
 **Status:** Living specification. This document is the source of truth.
 
@@ -11,7 +11,7 @@ browser-only Hyperswarm.
 
 ## 1. Purpose
 
-Get Now Here is a Conceal-native messenger: wallet identity is the relationship
+Get NowHere is a Conceal-native messenger: wallet identity is the relationship
 anchor, and private chat is established between two parties who have proven a
 bidirectional Conceal relationship.
 

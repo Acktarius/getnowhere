@@ -1,7 +1,10 @@
-# Get Now Here Docs
+# Get NowHere Docs
 
 This `/docs` directory is the source of truth for project structure, workflow,
 protocol, security, and release decisions.
+
+**Branding:** user-facing name is **Get NowHere** (dual-read: *now here* / *nowhere*).
+Technical identifiers stay `getnowhere` / `im.getnowhere.app`.
 
 Architecture one-liner: **Vite UI + Hyperswarm behind a typed bridge.** Web-dev:
 Node sidecar. Desktop: Electron (+ localhost sidecar MVP). Mobile: Bare worklet.
@@ -20,8 +23,9 @@ No L3. UI never joins Hyperswarm.
 7. `architecture/pairing-and-topics.md` — sole `topicRef` formula
 8. `security/encryption.md` — threat model + L1 / L1′ / L2
 9. `security/p2pchatprotocol.md`
-10. `builds/expo-eas-ios-build.md`
-10b. `builds/github-pages-and-desktop.md` — Pages (browser) + Linux Electron with embedded UI
+10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)
+10b. `builds/expo-eas-ios-build.md`
+10c. `builds/github-pages-and-desktop.md` — Pages (browser) + Linux Electron with embedded UI
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1′ fallback when L2 is down (grey bubbles)

@@ -15,7 +15,7 @@ packaged, and packaged builds SHALL NOT adopt the Alice/Bob development role.
 - AND the log prefix is `[desktop]`
 - AND the app name and `userData` directory name are `getnowhere`
 - AND the session partition is `persist:gnh`
-- AND the window title is `Get Now Here` with no role or mode tag
+- AND the window title is `Get NowHere` with no role or mode tag
 
 #### Scenario: Packaged launch ignores harness environment variables
 

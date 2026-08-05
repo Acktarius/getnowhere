@@ -10,7 +10,7 @@ test("import screen lands users toward wallet, not a password-change phase", asy
 }) => {
   await page.goto("/#/welcome");
   await expect(
-    page.getByText(/Get Now Here|getnowhere|Welcome/i).first(),
+    page.getByText(/Get NowHere|getnowhere|Welcome/i).first(),
   ).toBeVisible({
     timeout: 30_000,
   });

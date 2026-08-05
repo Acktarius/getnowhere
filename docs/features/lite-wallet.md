@@ -2,7 +2,7 @@
 
 **Status:** Implemented for web app. Sync engine matches conceal-next-wallet.
 
-Get Now Here ships a **lite Conceal wallet**: send, receive, and transaction history.
+Get NowHere ships a **lite Conceal wallet**: send, receive, and transaction history.
 Deposit and withdraw transactions may **appear in history** after sync, but the app does
 **not** offer UI to create deposits or withdrawals.
 

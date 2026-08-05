@@ -1,4 +1,4 @@
-// ===== Domain models for Get Now Here =====
+// ===== Domain models for Get NowHere =====
 // Wallet identity = relationship anchor.
 // Contacts are bound by CCX address + exchanged payment IDs.
 

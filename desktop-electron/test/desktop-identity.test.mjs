@@ -9,7 +9,7 @@ test("packaged defaults: no role, getnowhere paths, ephemeral port, single-insta
   assert.equal(id.appName, "getnowhere");
   assert.equal(id.userDataDirName, "getnowhere");
   assert.equal(id.partition, "persist:gnh");
-  assert.equal(id.titleBase, "Get Now Here");
+  assert.equal(id.titleBase, "Get NowHere");
   assert.equal(id.showsModeTag, false);
   assert.equal(id.swarmMode, "isolated");
   assert.equal(id.host, "127.0.0.1");
@@ -53,7 +53,7 @@ test("dev defaults reproduce alice shared 7901", () => {
   assert.equal(id.appName, "getnowhere-desktop-alice");
   assert.equal(id.userDataDirName, "getnowhere-desktop-alice");
   assert.equal(id.partition, "persist:gnh-alice");
-  assert.equal(id.titleBase, "Get Now Here — Alice");
+  assert.equal(id.titleBase, "Get NowHere — Alice");
   assert.equal(id.showsModeTag, true);
   assert.equal(id.swarmMode, "shared");
   assert.equal(id.port, 7901);
@@ -70,7 +70,7 @@ test("dev bob isolated uses 7902", () => {
   assert.equal(id.role, "bob");
   assert.equal(id.partition, "persist:gnh-bob");
   assert.equal(id.appName, "getnowhere-desktop-bob");
-  assert.equal(id.titleBase, "Get Now Here — Bob");
+  assert.equal(id.titleBase, "Get NowHere — Bob");
   assert.equal(id.swarmMode, "isolated");
   assert.equal(id.port, 7902);
   assert.equal(id.usesTokenLock, false);

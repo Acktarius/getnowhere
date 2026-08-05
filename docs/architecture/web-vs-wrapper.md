@@ -139,15 +139,19 @@ npm run desktop:alice
 npm run desktop:bob
 ```
 
-Mobile wrapper:
+Mobile wrapper (Android first — see `docs/builds/expo-eas-android-build.md`):
 
 ```bash
+npm run mobile:install
+npm run mobile:android          # sync dist + expo run:android (local debug APK)
+
 cd native-wrapper
-npm install
-npx eas build:configure
+npx eas build --platform android --profile preview   # cloud APK
 npx eas build --platform ios --profile production
 npx eas submit --platform ios
 ```
+
+Cordova and Capacitor are not used. Rejected paths: `docs/architecture/mobile-p2p-runtime.md`.
 
 ## Documentation rule
 
@@ -157,7 +161,7 @@ Any change that moves responsibility across `src/`, `holepunch-sidecar/`,
 
 ## Project wording
 
-> Get Now Here is developed as a web-first application. Local work happens with
+> Get NowHere is developed as a web-first application. Local work happens with
 > `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare.
 > Expo.dev / EAS covers store delivery.
 

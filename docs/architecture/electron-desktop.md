@@ -23,7 +23,7 @@ Identity is resolved by `desktop-electron/desktop-identity.mjs` from
 | Log prefix | `[desktop]` | `[desktop:alice]` |
 | `userData` | `~/.config/getnowhere` | `~/.config/getnowhere-desktop-<role>` |
 | Partition | `persist:gnh` | `persist:gnh-<role>` |
-| Window title | `Get Now Here` | `Get Now Here — Alice [shared:owner]` |
+| Window title | `Get NowHere` | `Get NowHere — Alice [shared:owner]` |
 | Swarm | always own sidecar; never attach | shared attach or isolated |
 | Port | ephemeral (`HOLEPUNCH_PORT=0`) unless overridden | `7901` / bob isolated `7902` |
 | Port handoff | Node IPC `{ type: "listening", port }` | `waitForPort` |

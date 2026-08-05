@@ -1,6 +1,6 @@
 # Invitations Feature
 
-This document defines **relationship** invitations for Get Now Here — how one
+This document defines **relationship** invitations for Get NowHere — how one
 user initiates contact with another and establishes a bidirectional Conceal
 relationship (`paymentIdFrom` / `paymentIdTo`).
 

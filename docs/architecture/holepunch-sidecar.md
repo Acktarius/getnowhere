@@ -4,7 +4,7 @@
 bridge contract (`docs/architecture/electron-desktop.md`). Mobile uses a Bare
 worklet (`docs/architecture/mobile-p2p-runtime.md`).
 
-Get Now Here is a **static Vite UI plus Pear-shaped P2P runtime** for web-dev:
+Get NowHere is a **static Vite UI plus Pear-shaped P2P runtime** for web-dev:
 the React/Vite layer is UI only; Hyperswarm lives in `holepunch-sidecar/`
 (Node). The UI never imports `hyperswarm`.
 

@@ -95,14 +95,13 @@ npm run desktop:alice:isolated
 npm run desktop:bob:isolated
 ```
 
-### 5. Web as stand-in while building mobile
+### 5. Mobile wrapper (WebView UI on device)
 
-There is no runnable `native-wrapper/` Expo app in-repo yet. Until Bare lands:
+Expo shell in `native-wrapper/` loads the Vite `dist/` bundle. First APK path:
+`npm run mobile:android` — see `docs/builds/expo-eas-android-build.md`.
 
-- Develop product UI and protocol in **scenario 1–2** (Vite + sidecar).
-- Keep Hyperswarm out of the Vite bundle; bridge schema stays the contract for
-  a future Bare IPC host — `docs/architecture/mobile-p2p-runtime.md`.
-- Production `dist/` is tuned for WebView / `file://` embedding (see below).
+P2P on device waits for the Bare worklet (`docs/architecture/mobile-p2p-runtime.md`).
+Until then, use **scenario 1–2** for chat/P2P dev in browser or Electron.
 
 ### 6. Automated checks
 
@@ -121,7 +120,8 @@ npm run build && npm run preview
 | Bridge + L1-sealed frames in browser | 2 | shared Node sidecar |
 | Electron shells, fast dual-wallet | 3 | shared `:7901` |
 | Prove DHT / Noise / proof handshake | 4 | two sidecars |
-| Mobile product work today | 5 → use 1–2 | same as web-dev |
+| Mobile UI on Android device | 5 | none (Bare worklet pending) |
+| Mobile P2P dev today | 1–2 | same as web-dev |
 | CI / regression | 6 | mocks / e2e |
 
 ## Native delivery notes

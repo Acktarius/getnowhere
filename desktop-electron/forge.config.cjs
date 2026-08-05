@@ -40,13 +40,13 @@ module.exports = {
       config: {
         options: {
           name: "getnowhere",
-          productName: "Get Now Here",
+          productName: "Get NowHere",
           bin: "getnowhere",
           icon: iconPng,
           maintainer: "Acktarius",
           homepage: "https://github.com/acktarius/getnowhere",
           description:
-            "Get Now Here desktop shell (Electron + local Hyperswarm sidecar; embedded UI)",
+            "Get NowHere desktop shell (Electron + local Hyperswarm sidecar; embedded UI)",
         },
       },
     },

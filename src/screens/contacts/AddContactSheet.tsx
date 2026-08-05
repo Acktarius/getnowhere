@@ -109,7 +109,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
   function handlePairScan(raw: string) {
     const parsed = parsePairQrPayload(raw);
     if (!parsed) {
-      setScanError("Not a Get Now Here pair QR. Try again.");
+      setScanError("Not a Get NowHere pair QR. Try again.");
       return;
     }
     setScanError(null);

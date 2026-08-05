@@ -148,13 +148,13 @@ export function CreateWalletScreen() {
             <div className="card card--pad-md">
               <div className="card__title">Biometric unlock (optional)</div>
               <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
-                When available on device, Get Now Here can use Face ID or
+                When available on device, Get NowHere can use Face ID or
                 fingerprint to unlock. This is a placeholder for now — you can
                 enable it later in Settings.
               </p>
             </div>
             <button className="btn btn--block btn--primary" onClick={finish}>
-              Enter Get Now Here
+              Enter Get NowHere
             </button>
             <button className="btn btn--block btn--ghost" onClick={finish}>
               Skip for now

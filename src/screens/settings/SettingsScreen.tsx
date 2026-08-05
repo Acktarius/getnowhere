@@ -332,7 +332,7 @@ export function SettingsScreen() {
             <LinkRow
               to="/settings/about"
               icon={Info}
-              title="About Get Now Here"
+              title="About Get NowHere"
               sub="Version, story, and licenses"
             />
           </div>
@@ -354,7 +354,7 @@ export function SettingsScreen() {
             <Trash2 size={15} /> Reset app data
           </button>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 8 }}>
-            Get Now Here · v{version} · getnowhere.im
+            Get NowHere · v{version} · getnowhere.im
           </p>
         </div>
       </div>

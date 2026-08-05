@@ -1,6 +1,6 @@
 # Expo EAS iOS Build
 
-This document explains how Get Now Here uses Expo.dev / EAS for the iOS build and App Store delivery path. The project is developed locally as a web-first app, while EAS Build is used to create the iOS binary and EAS Submit is used to upload it to Apple.
+This document explains how Get NowHere uses Expo.dev / EAS for the iOS build and App Store delivery path. The project is developed locally as a web-first app, while EAS Build is used to create the iOS binary and EAS Submit is used to upload it to Apple.
 
 ## Scope
 
@@ -61,8 +61,8 @@ Example:
 ```json
 {
   "expo": {
-    "name": "Get Now Here",
-    "slug": "get-now-here-wrapper",
+    "name": "Get NowHere",
+    "slug": "get-nowhere-wrapper",
     "ios": {
       "bundleIdentifier": "im.getnowhere.app"
     }
@@ -173,4 +173,4 @@ If EAS Submit is unavailable, Expo notes that a manual App Store Connect upload 
 
 Use this wording in project documentation:
 
-> Get Now Here is developed as a web-first application. Local work happens with `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS builds, signing, TestFlight, and App Store delivery. Desktop packaging uses Electron (`desktop-electron/`).
+> Get NowHere is developed as a web-first application. Local work happens with `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS builds, signing, TestFlight, and App Store delivery. Desktop packaging uses Electron (`desktop-electron/`).

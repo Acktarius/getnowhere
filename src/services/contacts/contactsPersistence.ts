@@ -1,5 +1,5 @@
 /**
- * Persist Get Now Here contacts:
+ * Persist Get NowHere contacts:
  * 1. App local storage (`gnh.contacts`) — survives refresh / lock.
  * 2. Wallet blob `addressBook` — rides encrypted wallet .json export/import.
  */

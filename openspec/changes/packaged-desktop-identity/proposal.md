@@ -14,7 +14,7 @@ launch falls through to the `alice` default. `desktop-electron/preload.cjs`
 repeats the same fallback independently.
 
 The same leak governs swarm posture, and there it collides with the product goal.
-Get Now Here exists to give two people a private 1-to-1 space, so the app should
+Get NowHere exists to give two people a private 1-to-1 space, so the app should
 not leave predictable local artifacts. Today a packaged install advertises a
 fixed bridge on `127.0.0.1:7901`, authenticates it with the constant token
 `gnh-desktop-shared`, publishes that token to a predictable tmp lockfile, and

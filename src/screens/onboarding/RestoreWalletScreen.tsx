@@ -75,7 +75,7 @@ export function RestoreWalletScreen() {
               <div className="row-flex" style={{ gap: 8 }}>
                 <AlertCircle size={16} style={{ color: "var(--danger)" }} />
                 <span style={{ fontSize: 13, color: "var(--danger)" }}>
-                  Only enter your seed on a device you control. Get Now Here
+                  Only enter your seed on a device you control. Get NowHere
                   never sends it anywhere.
                 </span>
               </div>

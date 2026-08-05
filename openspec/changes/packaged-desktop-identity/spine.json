@@ -6,7 +6,7 @@
       "capability": "packaged builds carry no dev role (identity, storage, title, log)",
       "library": "desktop-electron/desktop-identity.mjs resolveDesktopIdentity",
       "runtimeOwner": "desktop-electron/main.mjs module init (app.setName / app.setPath userData) and createWindow",
-      "writes": "app name getnowhere, userData ~/.config/getnowhere, session partition persist:gnh, window title Get Now Here, log prefix [desktop]",
+      "writes": "app name getnowhere, userData ~/.config/getnowhere, session partition persist:gnh, window title Get NowHere, log prefix [desktop]",
       "reads": "app.isPackaged and process.env (HOLEPUNCH_HOST/PORT honored; GNH_ROLE/GNH_SWARM_MODE/GNH_SIDECAR_TOKEN ignored when packaged)",
       "uiConsumer": "desktop window chrome and the renderer's partition-scoped localStorage (wallet, contacts, room sessions)",
       "evidence": "desktop-electron/test/desktop-identity.test.mjs; manual packaged acceptance task 5.2"

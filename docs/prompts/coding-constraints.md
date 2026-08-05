@@ -1,11 +1,11 @@
 # Coding Constraints (AI / codegen)
 
-Paste or cite this when generating Get Now Here code so tools stop emitting
+Paste or cite this when generating Get NowHere code so tools stop emitting
 browser Hyperswarm usage or inventing alternate bridge/topic shapes.
 
 ## Coding constraints
 
-When generating code for Get Now Here, follow these rules strictly:
+When generating code for Get NowHere, follow these rules strictly:
 
 - Use **TypeScript, React, and Vite** for the web UI (`src/`).
 - Treat the Vite app as a **static UI bundle** — not a Hyperswarm host.

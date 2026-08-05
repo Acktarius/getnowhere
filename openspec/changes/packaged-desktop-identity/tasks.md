@@ -112,7 +112,7 @@
   `npm --prefix desktop-electron test`, `npm run types`, and `npm run build`.
 - [ ] 5.2 Packaged acceptance (manual, needs a display): build with
   `npm run desktop:make`, install, run `getnowhere` from a terminal, and confirm
-  the log prefix is `[desktop]`, the title is `Get Now Here`, the sidecar port is
+  the log prefix is `[desktop]`, the title is `Get NowHere`, the sidecar port is
   ephemeral, storage lands in `~/.config/getnowhere`, no `gnh-sidecar-*.token`
   appears, and a second launch focuses the first window. Also confirm
   `window.gnhDesktop` is defined (sandbox preload self-contained — 3.4.3).
