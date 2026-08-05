@@ -7,6 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0a0b0f",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0b0f"
+    },
     "assetBundlePatterns": ["assets/ui/**/*"],
     "ios": {
       "supportsTablet": true,
@@ -17,7 +22,7 @@
       "label": "Get NowHere",
       "permissions": ["INTERNET", "CAMERA"],
       "adaptiveIcon": {
-        "backgroundColor": "#0a0b0f",
+        "backgroundColor": "#161922",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -26,6 +31,19 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0a0b0f",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "dark": {
+            "backgroundColor": "#0a0b0f"
+          }
+        }
+      ]
+    ]
   }
 }

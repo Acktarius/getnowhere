@@ -27,6 +27,20 @@ include the Bare Hyperswarm worklet yet:
 - Wallet UI and onboarding can be exercised; secrets still use WebView
   `localStorage` until a native `StorageAdapter` is wired.
 
+## Follow-ups (first APK test, 2026-08)
+
+Tracked after successful local `npm run mobile:android` sideload. UI is fluid;
+details below are post-MVP polish and native integration.
+
+| # | Area | Work |
+|---|------|------|
+| 1 | **Biometrics & unlock** | Wire fingerprint / device passcode / optional 2FA — replace onboarding and Settings placeholders (`CreateWalletScreen` biometric step, Settings → Passcode & biometrics). Native bridge + tests on physical device. |
+| 2 | **Settings backup row icon** | Settings → **Backup** row still uses `KeyRound`; use a **download** icon (e.g. Lucide `Download`) to match “download encrypted wallet” (`SettingsScreen.tsx` → `/settings/backup`). |
+| 3 | **Launcher app icon** | `npm run generate:icons` in `native-wrapper/` → PNGs + `expo prebuild` refreshes `mipmap-*`. Then reinstall APK. |
+
+Bare worklet P2P and native secure storage remain separate phase-2 items
+(`mobile-p2p-runtime.md`).
+
 ## Prerequisites
 
 ### Machine (Ubuntu + Android Studio)
@@ -36,6 +50,37 @@ include the Bare Hyperswarm worklet yet:
 - `ANDROID_HOME` set (typically `~/Android/Sdk`).
 - SDK licenses accepted: `sdkmanager --licenses`.
 - Physical device (USB debugging) or an AVD emulator.
+
+#### Ubuntu USB device setup
+
+Per [Run apps on a hardware device](https://developer.android.com/studio/run/device),
+Linux needs two things beyond Android Studio itself:
+
+1. Your user in the **`plugdev`** group (groups apply after re-login):
+
+```bash
+sudo usermod -aG plugdev $LOGNAME
+# log out and back in, then:
+id | grep plugdev
+```
+
+2. Default **udev rules** for Android devices via the distro package (often
+   missing on a fresh Ubuntu install — causes `adb devices` → `no permissions`):
+
+```bash
+sudo apt-get install android-sdk-platform-tools-common
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+adb kill-server && adb start-server
+```
+
+On the phone: enable **USB debugging**, unlock, tap **Allow** when prompted.
+Verify:
+
+```bash
+adb devices
+# 49251JEKB07643    device
+```
 
 ### Accounts
 
@@ -159,6 +204,8 @@ project includes a fresh UI bundle.
 
 | Symptom | Check |
 |---------|-------|
+| `adb`: **no permissions** | `plugdev` group + `android-sdk-platform-tools-common`; replug USB |
+| `adb`: **unauthorized** | Unlock phone; accept USB debugging prompt |
 | Blank WebView | Ran `mobile:sync-ui`? `assets/ui/index.html` exists? |
 | Gradle fails | **JDK 17+** required (Gradle 9 rejects JVM 8); set `JAVA_HOME` |
 | `ANDROID_HOME` errors | SDK path, Studio install, shell env |

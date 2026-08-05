@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "sync-ui": "node scripts/sync-ui-dist.mjs",
+    "generate:icons": "bash scripts/generate-brand-icons.sh && node scripts/refresh-android-launcher.mjs",
     "prepare:android-assets": "node scripts/prepare-android-assets.mjs",
     "prebuild:android": "expo prebuild --platform android --clean",
     "android": "node scripts/prepare-android-assets.mjs && expo run:android",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "expo": "~57.0.8",
+    "expo-splash-screen": "~57.0.5",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.0",

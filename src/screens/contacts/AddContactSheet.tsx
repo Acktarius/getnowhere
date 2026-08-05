@@ -1,4 +1,10 @@
-import { AlertCircle, ArrowLeft, ArrowLeftRight, Camera, QrCode } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowLeftRight,
+  Camera,
+  QrCode,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
@@ -32,7 +38,9 @@ const scanBtnInline: React.CSSProperties = {
 
 export function AddContactSheet({ open, onClose, onCreated }: Props) {
   const walletAddress = useWalletStore((s) => s.address);
-  const walletReady = useWalletStore((s) => s.initialized && Boolean(s.address));
+  const walletReady = useWalletStore(
+    (s) => s.initialized && Boolean(s.address),
+  );
   const addContact = useContactsStore((s) => s.addContact);
   const updateContact = useContactsStore((s) => s.updateContact);
   const savePaymentIdTo = useContactsStore((s) => s.savePaymentIdTo);
@@ -285,12 +293,19 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                 <button
                   type="button"
                   className="card card--pad-md row-flex row-flex--between"
-                  style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
+                  style={{
+                    textAlign: "left",
+                    width: "100%",
+                    cursor: "pointer",
+                  }}
                   disabled={!walletReady || busy}
                   onClick={() => void startPathA()}
                 >
                   <div>
-                    <div className="row-flex" style={{ gap: 8, marginBottom: 4 }}>
+                    <div
+                      className="row-flex"
+                      style={{ gap: 8, marginBottom: 4 }}
+                    >
                       <QrCode size={18} />
                       <strong>Pair QR</strong>
                     </div>
@@ -302,7 +317,11 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                 <button
                   type="button"
                   className="card card--pad-md row-flex row-flex--between"
-                  style={{ textAlign: "left", width: "100%", cursor: "pointer" }}
+                  style={{
+                    textAlign: "left",
+                    width: "100%",
+                    cursor: "pointer",
+                  }}
                   disabled={!walletReady || busy}
                   onClick={() => {
                     setScanError(null);
@@ -310,7 +329,10 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                   }}
                 >
                   <div>
-                    <div className="row-flex" style={{ gap: 8, marginBottom: 4 }}>
+                    <div
+                      className="row-flex"
+                      style={{ gap: 8, marginBottom: 4 }}
+                    >
                       <Camera size={18} />
                       <strong>Scan pair QR</strong>
                     </div>
@@ -546,7 +568,11 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
             </div>
             <div className="field">
               <span className="field__label">paymentIdTo (from their QR)</span>
-              <input className="input input--mono" value={theirPidTo} readOnly />
+              <input
+                className="input input--mono"
+                value={theirPidTo}
+                readOnly
+              />
             </div>
             <div className="field">
               <span className="field__label">Your paymentIdFrom</span>

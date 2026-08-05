@@ -2,16 +2,28 @@
  * Expo shell: loads bundled Vite UI from android_asset. P2P host is Bare (future).
  * @see docs/builds/expo-eas-android-build.md
  */
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
-import { useState } from "react";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Bundled dist synced to android/app/src/main/assets/ui/ before run. */
 const ANDROID_UI_URI = "file:///android_asset/ui/index.html";
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+
+  const onWebViewReady = useCallback(() => {
+    setLoading(false);
+    void SplashScreen.hideAsync();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") void SplashScreen.hideAsync();
+  }, []);
 
   if (Platform.OS !== "android") {
     return (
@@ -38,10 +50,10 @@ export default function App() {
         allowUniversalAccessFromFileURLs
         javaScriptEnabled
         domStorageEnabled
-        onLoadEnd={() => setLoading(false)}
+        onLoadEnd={onWebViewReady}
         onError={(e) => {
           console.error("WebView error", e.nativeEvent);
-          setLoading(false);
+          onWebViewReady();
         }}
       />
       {/* Future: inject native StorageAdapter before React mounts in WebView */}

@@ -29,3 +29,9 @@ rmSync(androidAssets, { recursive: true, force: true });
 mkdirSync(androidAssets, { recursive: true });
 cpSync(uiSrc, androidAssets, { recursive: true });
 console.log(`Staged WebView bundle → ${androidAssets}`);
+
+// Launcher icons live in mipmap-* (Gradle), not assets/ — refresh when PNGs change.
+execSync("node scripts/refresh-android-launcher.mjs", {
+  cwd: root,
+  stdio: "inherit",
+});

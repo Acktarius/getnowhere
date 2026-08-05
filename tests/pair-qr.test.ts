@@ -4,10 +4,7 @@ vi.mock("@/services/conceal/ConcealWalletAdapter", () => ({
   validateCcxAddress: (address: string) => address.trim().startsWith("ccx7"),
 }));
 
-import {
-  encodePairQrPayload,
-  parsePairQrPayload,
-} from "@/lib/pair-qr";
+import { encodePairQrPayload, parsePairQrPayload } from "@/lib/pair-qr";
 
 const ADDR = "ccx7testpairaddress";
 const PID = "0123456789abcdef";

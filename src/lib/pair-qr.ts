@@ -38,8 +38,7 @@ export function parsePairQrPayload(raw: string): PairQrPayload | null {
     const parsed = JSON.parse(trimmed) as Partial<PairQrPayload>;
     if (parsed.v !== 1 || parsed.t !== "gnh-pair") return null;
     const a = typeof parsed.a === "string" ? parsed.a.trim() : "";
-    const p =
-      typeof parsed.p === "string" ? parsed.p.trim().toLowerCase() : "";
+    const p = typeof parsed.p === "string" ? parsed.p.trim().toLowerCase() : "";
     if (!validateCcxAddress(a) || !paymentIdIsValid(p)) return null;
     return { v: 1, t: "gnh-pair", a, p };
   } catch {
