@@ -42,6 +42,14 @@ desktop-electron/resources/gnh-defaults.json
 .repo-kit/findings/*
 .repo-kit/scripts/*
 
+# Expo native wrapper (generated / local build)
+native-wrapper/node_modules/
+native-wrapper/.expo/
+native-wrapper/android/
+native-wrapper/ios/
+native-wrapper/assets/ui/*
+!native-wrapper/assets/ui/.gitkeep
+
 # AI files
 .continue/
 .repo-kit/

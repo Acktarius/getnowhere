@@ -160,8 +160,8 @@ project includes a fresh UI bundle.
 | Symptom | Check |
 |---------|-------|
 | Blank WebView | Ran `mobile:sync-ui`? `assets/ui/index.html` exists? |
+| Gradle fails | **JDK 17+** required (Gradle 9 rejects JVM 8); set `JAVA_HOME` |
 | `ANDROID_HOME` errors | SDK path, Studio install, shell env |
-| Gradle fails | JDK 17, SDK Platform 34+, accept licenses |
 | `file://` blocked | WebView props: `allowFileAccess`, asset copy script ran |
 | Missing dist | Root `npm run build` before sync |
 
