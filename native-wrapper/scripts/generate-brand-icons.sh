@@ -38,6 +38,7 @@ convert -background none "$MARK_SRC" -resize 260x260 \
   -gravity center -extent 432x432 "$OUT/android-icon-monochrome.png"
 
 convert -background none "$SRC" -resize 48x48 "$OUT/favicon.png"
-convert -background none "$MARK_SRC" -resize 200x200 \
+# Splash: full rounded tile (--bg-elev-2) on native bg #0a0b0f — matches Welcome BrandMark
+convert -background none "$SRC" -resize 200x200 \
   -gravity center -extent 288x288 "$OUT/splash-icon.png"
 echo "Wrote brand icons in $OUT from $SRC (adaptive foreground at ${ADAPTIVE_SAFE_PX}px safe zone)"

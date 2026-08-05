@@ -19,8 +19,11 @@ cd native-wrapper && npm run generate:icons   # PNGs + refresh mipmap-* if andro
 npm run mobile:android
 ```
 
+**Splash:** full brand tile (`#161922` / `--bg-elev-2`) on page background
+`#0a0b0f` (`--bg`) — matches WelcomeScreen `BrandMark`.
+
 Cordova/Capacitor are not used. Bare Hyperswarm worklet is phase 2.
 
-**Follow-ups after first APK test:** see
+**Follow-ups:** see
 [`docs/builds/expo-eas-android-build.md`](../docs/builds/expo-eas-android-build.md)
-§ Follow-ups (biometrics, Settings backup icon, launcher icon).
+§ Follow-ups (biometrics, Settings backup icon).

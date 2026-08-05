@@ -20,8 +20,13 @@ const mipmapProbe = join(
   root,
   "android/app/src/main/res/mipmap-mdpi/ic_launcher.webp",
 );
+const splashSrc = join(root, "assets", "splash-icon.png");
+const splashProbe = join(
+  root,
+  "android/app/src/main/res/drawable-mdpi/splashscreen_logo.png",
+);
 const colorsXml = join(root, "android/app/src/main/res/values/colors.xml");
-const SPLASH_BG = "#0a0b0f";
+const PAGE_BG = "#0a0b0f";
 
 if (!existsSync(iconSrc)) {
   console.error("Missing assets/icon.png — run npm run generate:icons first.");
@@ -37,10 +42,15 @@ const iconsNewer =
   !existsSync(mipmapProbe) ||
   statSync(iconSrc).mtimeMs > statSync(mipmapProbe).mtimeMs;
 
+const splashNewer =
+  existsSync(splashSrc) &&
+  (!existsSync(splashProbe) ||
+    statSync(splashSrc).mtimeMs > statSync(splashProbe).mtimeMs);
+
 let splashStale = false;
 if (existsSync(colorsXml)) {
   const colors = readFileSync(colorsXml, "utf8");
-  splashStale = !colors.includes(`splashscreen_background">${SPLASH_BG}`);
+  splashStale = !colors.includes(`splashscreen_background">${PAGE_BG}`);
 } else {
   splashStale = true;
 }
@@ -50,7 +60,7 @@ const appJsonNewer =
   existsSync(colorsXml) &&
   statSync(appJson).mtimeMs > statSync(colorsXml).mtimeMs;
 
-if (!iconsNewer && !splashStale && !appJsonNewer) {
+if (!iconsNewer && !splashNewer && !splashStale && !appJsonNewer) {
   console.log("Android launcher + splash resources up to date.");
   process.exit(0);
 }
