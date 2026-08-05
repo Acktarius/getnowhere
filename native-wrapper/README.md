@@ -24,6 +24,6 @@ npm run mobile:android
 
 Cordova/Capacitor are not used. Bare Hyperswarm worklet is phase 2.
 
-**Follow-ups:** see
+**Follow-ups:** biometrics & unlock only — see
 [`docs/builds/expo-eas-android-build.md`](../docs/builds/expo-eas-android-build.md)
-§ Follow-ups (biometrics, Settings backup icon).
+§ Follow-ups.

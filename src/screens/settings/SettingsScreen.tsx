@@ -2,6 +2,7 @@ import {
   Bug,
   ChevronRight,
   Database,
+  Download,
   Fingerprint,
   Gauge,
   Info,
@@ -189,7 +190,7 @@ export function SettingsScreen() {
             />
             <LinkRow
               to="/settings/backup"
-              icon={KeyRound}
+              icon={Download}
               title="Backup"
               sub="Reveal seed & keys, download encrypted wallet"
             />

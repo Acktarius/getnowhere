@@ -33,6 +33,7 @@
 [data-theme="dark"] {
   --bg: #0a0b0f;
   --bg-elev: #11131a;
+  --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #161922;
   --bg-card: #14161d;
   --bg-hover: #1b1e28;
@@ -68,6 +69,7 @@
 [data-theme="light"] {
   --bg: #f6f7f9;
   --bg-elev: #ffffff;
+  --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #f0f2f6;
   --bg-card: #ffffff;
   --bg-hover: #f0f2f6;

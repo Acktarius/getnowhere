@@ -29,14 +29,20 @@ include the Bare Hyperswarm worklet yet:
 
 ## Follow-ups (first APK test, 2026-08)
 
-Tracked after successful local `npm run mobile:android` sideload. UI is fluid;
-details below are post-MVP polish and native integration.
+Tracked after successful local `npm run mobile:android` sideload.
+
+### Done
+
+| # | Area | Notes |
+|---|------|-------|
+| 2 | **Settings backup row icon** | `Download` icon on Settings → **Backup** (`SettingsScreen.tsx`). |
+| 3 | **Launcher + splash** | `npm run generate:icons` — adaptive safe-zone launcher, splash tile on `#0a0b0f`. See `native-wrapper/README.md`. |
+
+### Remaining
 
 | # | Area | Work |
 |---|------|------|
 | 1 | **Biometrics & unlock** | Wire fingerprint / device passcode / optional 2FA — replace onboarding and Settings placeholders (`CreateWalletScreen` biometric step, Settings → Passcode & biometrics). Native bridge + tests on physical device. |
-| 2 | **Settings backup row icon** | Settings → **Backup** row still uses `KeyRound`; use a **download** icon (e.g. Lucide `Download`) to match “download encrypted wallet” (`SettingsScreen.tsx` → `/settings/backup`). |
-| 3 | **Launcher app icon** | `npm run generate:icons` in `native-wrapper/` → PNGs + `expo prebuild` refreshes `mipmap-*`. Then reinstall APK. |
 
 Bare worklet P2P and native secure storage remain separate phase-2 items
 (`mobile-p2p-runtime.md`).
