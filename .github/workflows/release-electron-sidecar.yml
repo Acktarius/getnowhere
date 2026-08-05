@@ -214,7 +214,7 @@ jobs:
             release-assets/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body: |
-            **Get Now Here — desktop (Electron + sidecar)**
+            **Get NowHere — desktop (Electron + sidecar)**
 
             - **Linux:** `.deb` + `.zip`
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
