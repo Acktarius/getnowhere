@@ -17,7 +17,11 @@ export function ContactCard({ contact, to }: Props) {
       <div className="row__avatar">{initials(contact.alias)}</div>
       <div className="row__main">
         <div className="row__title">{contact.alias}</div>
-        <div className="row__sub">{shortAddress(contact.ccxAddress)}</div>
+        <div className="row__sub">
+          {contact.ccxAddress
+            ? shortAddress(contact.ccxAddress)
+            : "Finish pairing…"}
+        </div>
       </div>
       <div className="row__meta">
         <RelationshipStatusBadge status={contact.relationshipStatus} />

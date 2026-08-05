@@ -74,6 +74,25 @@ A relationship can unlock:
 - ability to open or bootstrap a chat session
 - future P2P session negotiation
 
+### Pair QR (in-person)
+
+Primary UX for establishing a relationship when two people meet: **Add contact**
+in the Vite app (`AddContactSheet`). Not the same as a **chat invite**
+(`chat.create` on-chain).
+
+Wire payload (`src/lib/pair-qr.ts`):
+
+```json
+{ "v": 1, "t": "gnh-pair", "a": "<ccxAddress>", "p": "<paymentIdFrom>" }
+```
+
+Each side generates one `paymentIdFrom` (shown in the manual field and encoded
+in their pair QR). The scanner stores `p` as `paymentIdTo`. After both sides
+exchange, the contact is **eligible** for chat signaling.
+
+**Single PID rule:** the QR must encode the same `paymentIdFrom` as the manual
+field and the saved contact — never a separately generated ID for QR only.
+
 ### Chat readiness
 
 Chat readiness is a derived state, not a manual toggle.

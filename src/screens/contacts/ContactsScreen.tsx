@@ -106,7 +106,7 @@ export function ContactsScreen() {
               <EmptyState
                 icon={Users}
                 title="No contacts yet"
-                body="Add a counterpart by their Conceal address and exchange payment IDs to establish a private relationship."
+                body="Pair in person with QR codes from Add contact, or enter their Conceal address and payment IDs manually."
                 action={
                   <button
                     className="btn btn--primary btn--sm"
