@@ -1,11 +1,13 @@
 {
   "name": "gnh-native-wrapper",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
+    "start": "node scripts/pack-bare.mjs && expo start",
     "sync-ui": "node scripts/sync-ui-dist.mjs",
+    "pack-bare": "node scripts/pack-bare.mjs",
+    "test:bare": "node scripts/run-bare-tests.mjs",
     "generate:icons": "bash scripts/generate-brand-icons.sh && node scripts/refresh-android-launcher.mjs",
     "prepare:android-assets": "node scripts/prepare-android-assets.mjs",
     "prebuild:android": "expo prebuild --platform android --clean",
@@ -14,15 +16,24 @@
     "web": "expo start --web"
   },
   "dependencies": {
-    "expo": "~57.0.8",
-    "expo-splash-screen": "~57.0.5",
-    "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
-    "react-native": "0.86.0",
-    "react-native-webview": "13.16.1"
+    "expo": "~55.0.23",
+    "expo-asset": "~55.0.18",
+    "expo-build-properties": "~55.0.16",
+    "expo-file-system": "~55.0.24",
+    "expo-splash-screen": "~55.0.23",
+    "expo-status-bar": "~55.0.6",
+    "react": "19.2.0",
+    "react-native": "0.83.10",
+    "react-native-bare-kit": "^0.13.3",
+    "react-native-webview": "13.16.0"
   },
   "devDependencies": {
-    "@types/react": "~19.2.2",
-    "typescript": "~6.0.3"
+    "@types/react": "~19.2.10",
+    "bare-pack": "2.2.1",
+    "bare-link": "3.0.1",
+    "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "uuid": "13.0.1"
   }
 }

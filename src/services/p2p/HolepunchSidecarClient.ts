@@ -110,6 +110,129 @@ type FrameHandler = (msg: {
 }) => void;
 type StatusHandler = (status: "online" | "offline", detail?: string) => void;
 
+function getGnhMobileBridge(): GnhMobileBridge | null {
+  try {
+    if (typeof window !== "undefined" && window.gnhMobile?.bridgeToken) {
+      return window.gnhMobile;
+    }
+  } catch {
+    /* non-dom */
+  }
+  return null;
+}
+
+/** Mobile WebView postMessage backend (Bare worklet via Expo shell). */
+export function createMobilePostMessageSidecarBackend(): HolepunchSidecarBackend {
+  const maybeBridge = getGnhMobileBridge();
+  if (!maybeBridge) {
+    throw new Error("gnhMobile bridge missing");
+  }
+  const bridge: GnhMobileBridge = maybeBridge;
+
+  const peerCounts = new Map<string, number>();
+  const peerHandlers = new Set<PeerHandler>();
+  const frameHandlers = new Set<FrameHandler>();
+  const statusHandlers = new Set<StatusHandler>();
+  const joined = new Map<string, string>();
+  let online = false;
+
+  function emitStatus(status: "online" | "offline", detail?: string): void {
+    online = status === "online";
+    for (const h of statusHandlers) h(status, detail);
+  }
+
+  function handleEvent(msg: SidecarServerMessage): void {
+    if (msg.type === "peers") {
+      peerCounts.set(msg.topicRef, msg.count);
+      for (const h of peerHandlers) h(msg.topicRef, msg.count);
+    } else if (msg.type === "frame" && msg.roomId && msg.payload) {
+      for (const h of frameHandlers) {
+        h({
+          topicRef: msg.topicRef,
+          roomId: msg.roomId,
+          payload: msg.payload,
+        });
+      }
+    } else if (msg.type === "pong" && !online) {
+      emitStatus("online");
+    } else if (msg.type === "error") {
+      const detail = msg.code
+        ? `${msg.code}: ${msg.message || "sidecar error"}`
+        : msg.message || "sidecar error";
+      emitStatus("offline", detail);
+    }
+  }
+
+  const offBridge = bridge.onBridgeEvent((raw) => {
+    handleEvent(raw as SidecarServerMessage);
+  });
+
+  function send(msg: SidecarClientMessage): void {
+    bridge.sendCommand(msg);
+  }
+
+  return {
+    async ensureConnected() {
+      if (online) return;
+      emitStatus("online");
+      send({ type: "ping" });
+    },
+
+    async join(topicRef, roomId) {
+      await this.ensureConnected();
+      joined.set(topicRef, roomId);
+      send({ type: "join", topicRef, roomId });
+    },
+
+    async leave(topicRef, roomId) {
+      joined.delete(topicRef);
+      peerCounts.delete(topicRef);
+      if (!online) return;
+      try {
+        send({ type: "leave", topicRef, roomId });
+      } catch {
+        /* ignore */
+      }
+    },
+
+    sendFrame(topicRef, roomId, payload) {
+      send({ type: "frame", topicRef, roomId, payload });
+    },
+
+    getPeerCount(topicRef) {
+      return peerCounts.get(topicRef) ?? 0;
+    },
+
+    onPeers(handler) {
+      peerHandlers.add(handler);
+      return () => {
+        peerHandlers.delete(handler);
+      };
+    },
+
+    onFrame(handler) {
+      frameHandlers.add(handler);
+      return () => {
+        frameHandlers.delete(handler);
+      };
+    },
+
+    onConnectionStatus(handler) {
+      statusHandlers.add(handler);
+      return () => {
+        statusHandlers.delete(handler);
+      };
+    },
+
+    close() {
+      offBridge();
+      joined.clear();
+      peerCounts.clear();
+      online = false;
+    },
+  };
+}
+
 /** Production WebSocket backend. */
 export function createWebSocketSidecarBackend(
   url: string = getHolepunchWsUrl(),
@@ -565,7 +688,9 @@ export function __setHolepunchSidecarBackend(
 export function getHolepunchSidecarBackend(): HolepunchSidecarBackend {
   if (injectedBackend) return injectedBackend;
   if (!defaultBackend) {
-    defaultBackend = createWebSocketSidecarBackend();
+    defaultBackend = getGnhMobileBridge()
+      ? createMobilePostMessageSidecarBackend()
+      : createWebSocketSidecarBackend();
   }
   return defaultBackend;
 }

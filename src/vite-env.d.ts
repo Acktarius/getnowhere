@@ -22,6 +22,29 @@ interface GnhDesktopBridge {
   ufwState?: "active" | "inactive" | "unknown";
 }
 
+/** Mobile Expo WebView bridge (Bare worklet behind postMessage). */
+interface GnhMobileBridge {
+  bridgeToken: string;
+  sendCommand(cmd: {
+    type: string;
+    topicRef?: string;
+    roomId?: string;
+    payload?: string;
+  }): void;
+  onBridgeEvent(
+    handler: (msg: {
+      type: string;
+      topicRef?: string;
+      roomId?: string;
+      payload?: string;
+      count?: number;
+      code?: string;
+      message?: string;
+    }) => void,
+  ): () => void;
+}
+
 interface Window {
   gnhDesktop?: GnhDesktopBridge;
+  gnhMobile?: GnhMobileBridge;
 }

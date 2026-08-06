@@ -1,0 +1,18 @@
+{
+  "name": "gnh-bare-worklet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bare Hyperswarm worklet for Get NowHere mobile",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "pack": "bare-pack entry.mjs -o ../assets/bare/app.bundle.mjs --linked --host android-arm64 --host android-arm"
+  },
+  "dependencies": {
+    "b4a": "^1.6.7",
+    "hyperswarm": "^4.17.0"
+  },
+  "devDependencies": {
+    "bare-pack": "2.2.1"
+  }
+}

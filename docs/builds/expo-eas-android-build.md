@@ -10,24 +10,96 @@ See also: [`expo-eas-ios-build.md`](expo-eas-ios-build.md),
 ## Scope
 
 `native-wrapper` only. Cordova and Capacitor are **not** used — mobile delivery
-is Expo + Bare worklet (Bare is phase 2; phase 1 is WebView UI shell only).
+is Expo SDK **55** + Bare worklet (`react-native-bare-kit`, same stack as
+[holepunchto/bare-expo](https://github.com/holepunchto/bare-expo)). Autolinking via Expo
+prebuild — do **not** use npm `bare-expo@0.0.0` (empty stub on the registry).
 
 ## Why Android first
 
 - Sideload an APK from Ubuntu with Android Studio installed.
 - iOS builds still use EAS cloud from Linux (no local Mac required).
-- Validates WebView loading of the Vite `dist/` bundle before Bare P2P lands.
+- Phase B adds on-device Hyperswarm via a Bare worklet behind `window.gnhMobile`.
 
-## Phase 1 limits
+## Phase 1 (UI shell) — done
 
-The current wrapper loads the bundled Vite UI in a WebView. It does **not**
-include the Bare Hyperswarm worklet yet:
+WebView loads bundled Vite `dist/`. Launcher, splash, and branding polish landed
+in 2026-08 (see session handoff in `.chat/sessions/`).
 
-- No on-device P2P / chat transport (sidecar bridge unavailable on phone).
-- Wallet UI and onboarding can be exercised; secrets still use WebView
-  `localStorage` until a native `StorageAdapter` is wired.
+## Phase 2 (Bare P2P) — Android MVP
 
-## Follow-ups (first APK test, 2026-08)
+**Status (2026-08):** Verified on Pixel 8a — packed worklet loads, DHT bootstrap,
+topic announce, and outbound Hyperswarm connection to Electron desktop peer on the
+same room `topicRef`. Full L2 chat + sustained session across NAT still under test.
+
+The wrapper:
+
+- Packs `native-wrapper/bare/` → `assets/bare/app.bundle.mjs` (`bare-pack` 2.2.1)
+- Starts a Bare `Worklet` in `App.tsx` before the WebView loads
+- Injects `window.gnhMobile` with a per-launch `bridgeToken`
+- Routes the same bridge schema as `holepunch-sidecar/` (see
+  `docs/architecture/mobile-p2p-runtime.md`)
+
+- Android **minSdk 29** required by `react-native-bare-kit` (Expo default is 24).
+
+```bash
+npm run holepunch:install    # hyperswarm deps for bare/swarm (symlinked at pack time)
+npm run mobile:install       # installs react-native-bare-kit, bare-pack
+npm run mobile:test-bare     # swarm security tests (no-hello, connTopics)
+```
+
+Rebuild with P2P bundle:
+
+```bash
+npm run mobile:sync-ui && npm run mobile:android
+```
+
+`prepare-android-assets.mjs` runs `pack-bare` and copies both `ui/` and
+`bare/app.bundle.mjs` into `android/app/src/main/assets/`.
+
+After adding `react-native-bare-kit`, or changing Expo SDK / `newArchEnabled` in
+`app.json`, run once:
+
+```bash
+cd native-wrapper && npx expo prebuild --platform android --clean
+```
+
+Keep Metro running when opening a debug build (`npx expo start --clear` in
+`native-wrapper/`). A black screen after splash with no `ReactNativeJS` logcat
+lines usually means the dev client cannot reach Metro on your LAN.
+
+(`react-native-bare-kit` autolinks via Expo; npm `bare-expo@0.0.0` is a registry
+stub — not used.)
+
+### Device P2P test matrix (two Android phones)
+
+Manual verification required on physical hardware:
+
+1. Install the same build on **two** Android devices (USB sideload or internal APK).
+2. Create/accept the **same room** on both (matching `topicRef` — compare Room
+   diagnostics → **Topic** on both peers).
+3. Open the room on both; wait for transport `connecting` → `connected` after
+   **L1 post-connect proof** (not peer count alone).
+4. Send chat both directions over **L2** (live channel).
+5. Optional: confirm **L1′ relay** still works if L2 drops (existing app logic).
+
+NAT / mobile CGNAT: ordinary users must not edit firewalls. If L2 fails across
+internet NAT, check `[swarm]` lines via `adb logcat` (see
+`docs/architecture/mobile-p2p-runtime.md` § Bare worklet packaging). Same-LAN lab
+notes in `holepunch-sidecar.md` apply to developers only.
+
+### Cross-platform test (Android mobile + Electron desktop)
+
+1. Mobile: `npm run mobile:sync-ui && npm run mobile:android` (Metro for debug builds).
+2. Desktop invitee: `npm run holepunch` + `npm run dev`, or `npm run desktop:alice`.
+3. Complete invite/accept; open the room on both sides.
+4. Compare **Topic** in room diagnostics — `topicRef` must match.
+5. Mobile logcat: `[swarm] topic … announced`, then `connection open peer=…`.
+6. UI must reach transport **connected** (L1 post-connect proof), not peer count alone.
+
+Still **not** in scope: native secure storage, biometrics unlock, iOS device P2P
+sign-off.
+
+## Follow-ups
 
 Tracked after successful local `npm run mobile:android` sideload.
 
@@ -37,15 +109,18 @@ Tracked after successful local `npm run mobile:android` sideload.
 |---|------|-------|
 | 2 | **Settings backup row icon** | `Download` icon on Settings → **Backup** (`SettingsScreen.tsx`). |
 | 3 | **Launcher + splash** | `npm run generate:icons` — adaptive safe-zone launcher, splash tile on `#0a0b0f`. See `native-wrapper/README.md`. |
+| 4 | **Bare worklet P2P (Android bootstrap)** | Packed bundle + Hyperswarm on device; cross-platform topic join with Electron verified 2026-08. See `mobile-p2p-runtime.md`. |
 
 ### Remaining
 
 | # | Area | Work |
 |---|------|------|
-| 1 | **Biometrics & unlock** | Wire fingerprint / device passcode / optional 2FA — replace onboarding and Settings placeholders (`CreateWalletScreen` biometric step, Settings → Passcode & biometrics). Native bridge + tests on physical device. |
+| 1 | **Biometrics & unlock** | Wire fingerprint / device passcode / optional 2FA — replace onboarding and Settings placeholders. Native bridge + tests on physical device. |
+| 5 | **Mobile ↔ desktop L2 session** | Swarm transport opens then `connection reset by peer` — trace L1 post-connect proof / session stability. |
+| 6 | **iOS Bare P2P** | Same bundle + `expo prebuild --platform ios`; EAS device test when Android L2 is stable. |
 
-Bare worklet P2P and native secure storage remain separate phase-2 items
-(`mobile-p2p-runtime.md`).
+Bare worklet packaging details and Android constraints live in
+`docs/architecture/mobile-p2p-runtime.md` § Bare worklet packaging.
 
 ## Prerequisites
 

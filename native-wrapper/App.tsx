@@ -1,28 +1,86 @@
 /**
- * Expo shell: loads bundled Vite UI from android_asset. P2P host is Bare (future).
+ * Expo shell: bundled Vite UI + Bare Hyperswarm worklet behind gnhMobile bridge.
  * @see docs/builds/expo-eas-android-build.md
  */
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import type { WebViewMessageEvent } from "react-native-webview";
 import { WebView } from "react-native-webview";
+import type { GnhMobileBridge } from "./src/GnhMobileBridge";
+import {
+  buildBridgeEventDispatchScript,
+  buildMobileBridgeInjection,
+} from "./src/injectMobileBridge";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-/** Bundled dist synced to android/app/src/main/assets/ui/ before run. */
 const ANDROID_UI_URI = "file:///android_asset/ui/index.html";
+
+function createBridgeToken(): string {
+  return (
+    globalThis.crypto?.randomUUID?.() ??
+    `gnh-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
+}
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const bridgeRef = useRef<GnhMobileBridge | null>(null);
+  const bridgeStartingRef = useRef(false);
+  const webViewRef = useRef<WebView>(null);
+  const bridgeToken = useMemo(() => createBridgeToken(), []);
+
+  const injectedBeforeLoad = useMemo(
+    () => buildMobileBridgeInjection(bridgeToken),
+    [bridgeToken],
+  );
 
   const onWebViewReady = useCallback(() => {
     setLoading(false);
     void SplashScreen.hideAsync();
-  }, []);
+
+    if (
+      Platform.OS !== "android" ||
+      bridgeRef.current ||
+      bridgeStartingRef.current
+    ) {
+      return;
+    }
+    bridgeStartingRef.current = true;
+
+    void (async () => {
+      try {
+        const { GnhMobileBridge } = await import("./src/GnhMobileBridge");
+        const bridge = new GnhMobileBridge(bridgeToken);
+        bridgeRef.current = bridge;
+        await bridge.ensureStarted();
+        bridge.onEvent((evt) => {
+          webViewRef.current?.injectJavaScript(
+            buildBridgeEventDispatchScript(evt),
+          );
+        });
+      } catch (err) {
+        bridgeStartingRef.current = false;
+        console.error("[gnh-mobile] Bare worklet start failed", err);
+      }
+    })();
+  }, [bridgeToken]);
 
   useEffect(() => {
-    if (Platform.OS !== "android") void SplashScreen.hideAsync();
+    if (Platform.OS !== "android") {
+      void SplashScreen.hideAsync();
+    }
+    return () => {
+      bridgeRef.current?.destroy();
+      bridgeRef.current = null;
+      bridgeStartingRef.current = false;
+    };
+  }, []);
+
+  const onWebViewMessage = useCallback((event: WebViewMessageEvent) => {
+    bridgeRef.current?.handleWebViewMessage(event.nativeEvent.data);
   }, []);
 
   if (Platform.OS !== "android") {
@@ -42,6 +100,7 @@ export default function App() {
         </View>
       ) : null}
       <WebView
+        ref={webViewRef}
         source={{ uri: ANDROID_UI_URI }}
         style={styles.webview}
         originWhitelist={["*"]}
@@ -50,13 +109,14 @@ export default function App() {
         allowUniversalAccessFromFileURLs
         javaScriptEnabled
         domStorageEnabled
+        injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
         onLoadEnd={onWebViewReady}
+        onMessage={onWebViewMessage}
         onError={(e) => {
           console.error("WebView error", e.nativeEvent);
           onWebViewReady();
         }}
       />
-      {/* Future: inject native StorageAdapter before React mounts in WebView */}
     </View>
   );
 }
@@ -77,7 +137,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#0a0b0f",
   },
   loader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#0a0b0f",

@@ -83,8 +83,108 @@ References:
 
 | Phase | Scope | Networking host |
 |---|---|---|
-| A — now | Vite UI + sidecar | Node Hyperswarm |
-| B — mobile MVP | Expo UI + Bare worklet + same bridge | Bare Hyperswarm |
+| A — web-dev | Vite UI + sidecar | Node Hyperswarm |
+| B — mobile MVP (Android) | Expo WebView + Bare worklet + `window.gnhMobile` | Bare Hyperswarm |
+
+Phase B is implemented in `native-wrapper/` (see **Implementation layout** below).
+Android device verification (2026-08): packed Bare worklet boots, DHT announces room
+topics, and opens Hyperswarm connections to desktop peers. iOS uses the same Bare
+bundle; device P2P sign-off on iOS is deferred.
+
+## Bare worklet packaging (Android)
+
+End-to-end path from repo to on-device Hyperswarm:
+
+```text
+bare/entry.mjs + deps
+  → bare-pack --linked (--host android-arm64, android-arm)
+  → assets/bare/app.bundle.mjs (+ extracted app.bundle)
+  → prepare-android-assets.mjs copies into android/app/src/main/assets/bare/
+  → bare-link copies sodium-native / udx-native .so → android/app/src/main/addons/
+  → GnhMobileBridge loads bytes via expo-asset; Worklet.start("/app.bundle", …)
+```
+
+Commands (repo root):
+
+```bash
+npm run holepunch:install    # bare/node_modules symlink to sidecar deps
+npm run mobile:sync-ui && npm run mobile:android
+```
+
+Optional: `BARE_ENTRY=other.mjs node native-wrapper/scripts/pack-bare.mjs` for
+alternate pack entry points (default `entry.mjs`).
+
+### Implementation constraints (Bare mobile)
+
+These are required for a stable Android worklet — not optional Nitro/CMake steps:
+
+| Constraint | Why |
+|---|---|
+| `import * as swarm from "./swarm.mjs"` | bare-pack linked bundles fail on named imports from local `.mjs` (`createSwarmMesh` SyntaxError). |
+| No `process.on("SIGTERM")` / `process.exit` in worklet | Node sidecar pattern aborts RN (`SIGABRT` on `mqt_v_js`). Teardown: `worklet.terminate()` from `GnhMobileBridge.destroy()`. |
+| Single worklet start (`bridgeStartingRef` in `App.tsx`) | `onLoadEnd` + `onError` both fire `onWebViewReady`; guard before `ensureStarted()`. |
+| `BARE_INLINE_SMOKE` removed | Packed `.bundle` path is the only production start path. |
+
+Native addons (`libsodium-native`, `libudx-native`, …) are **prebuilt** by
+`bare-link` into `jniLibs` — not compiled via app CMake (unlike Nitro modules).
+
+### Device verification (logcat)
+
+```bash
+adb logcat | grep -E 'swarm|gnh-mobile|SIGABRT|FATAL'
+```
+
+Healthy swarm activity when opening a room:
+
+- `[swarm] DHT bootstrap ok`
+- `[swarm] topic … announced (flushed)`
+- `[swarm] connection open peer=…`
+
+Cross-platform lab (Android + Electron desktop): same `topicRef` in room
+diagnostics; desktop runs sidecar (`npm run holepunch` + `npm run dev` or
+`npm run desktop:alice`). Symmetric NAT on mobile Wi‑Fi may log firewalled
+warnings; relay paths can still connect. Post-transport **connection reset**
+indicates app/session layer (L1 proof), not bundle mount — check both hosts.
+
+## Implementation layout (phase B)
+
+```text
+native-wrapper/
+  App.tsx                      # starts Worklet, wires WebView postMessage
+  src/GnhMobileBridge.ts       # per-launch bridgeToken + Worklet IPC
+  src/injectMobileBridge.ts    # window.gnhMobile injection script
+  bare/
+    entry.mjs                  # BareKit.IPC + swarm mesh
+    bridge.mjs                 # same SidecarCommand/Event as holepunch-sidecar
+    swarm.mjs                  # ported from holepunch-sidecar (no-hello policy)
+    test/swarm-security.test.mjs
+  assets/bare/app.bundle.mjs   # bare-pack output (gitignored)
+  scripts/pack-bare.mjs
+```
+
+UI bridge selection (`src/services/p2p/HolepunchSidecarClient.ts`):
+
+1. Test injection
+2. `window.gnhMobile` → `createMobilePostMessageSidecarBackend()`
+3. `window.gnhDesktop` → WebSocket (Electron)
+4. Default WebSocket (browser dev)
+
+### Security parity (mobile)
+
+Mobile uses in-process Bare IPC + WebView `postMessage` (no localhost WebSocket).
+Controls match packaged desktop / sidecar where applicable:
+
+| Control | Mobile |
+|---|---|
+| No NDJSON `hello` / Hyperswarm-only topic adoption | `bare/swarm.mjs` (same as sidecar) |
+| `connTopics` frame gating | `bare/swarm.mjs` |
+| `frame_requires_join`, size limits, error codes | `bare/bridge.mjs` |
+| Opaque L1-sealed frames | Unchanged app crypto path |
+| Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
+| Ephemeral loopback port | N/A — bridge is in-process only |
+| Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
+
+`desktop-electron/` is unchanged by the mobile track.
 
 Desktop Electron is a **parallel** track (`electron-desktop.md`), not a
 replacement for this mobile plan.

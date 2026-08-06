@@ -1,7 +1,7 @@
 {
   "name": "getnowhere",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,6 +18,7 @@
     "desktop:make:win": "npm --prefix desktop-electron run make:win",
     "mobile:install": "npm --prefix native-wrapper install",
     "mobile:sync-ui": "npm run build && node native-wrapper/scripts/sync-ui-dist.mjs",
+    "mobile:test-bare": "npm --prefix native-wrapper run test:bare",
     "mobile:android": "npm run mobile:sync-ui && npm --prefix native-wrapper run android",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
@@ -30,7 +31,7 @@
     "types": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preflight": "tsc -b && vitest run && biome check ."
+    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format --write ."
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
