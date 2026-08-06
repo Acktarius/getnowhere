@@ -41,6 +41,10 @@ export const BRIDGE_ERRORS = Object.freeze({
     code: "sidecar_error",
     message: "sidecar error",
   },
+  rate_limited: {
+    code: "rate_limited",
+    message: "rate limited",
+  },
 });
 
 /**

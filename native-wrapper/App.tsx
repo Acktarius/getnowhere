@@ -18,16 +18,19 @@ import {
   isAllowedWebViewNavigationUrl,
   WEBVIEW_ORIGIN_WHITELIST,
 } from "./src/webviewNavigation";
+import { createBridgeToken } from "./src/bridgeToken";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const ANDROID_UI_URI = `${ANDROID_UI_ASSET_PREFIX}index.html`;
 
-function createBridgeToken(): string {
-  return (
-    globalThis.crypto?.randomUUID?.() ??
-    `gnh-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  );
+function resolveBridgeToken(): string | null {
+  try {
+    return createBridgeToken();
+  } catch (err) {
+    console.error("[gnh-mobile] bridge token generation failed", err);
+    return null;
+  }
 }
 
 export default function App() {
@@ -35,10 +38,10 @@ export default function App() {
   const bridgeRef = useRef<GnhMobileBridge | null>(null);
   const bridgeStartingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
-  const bridgeToken = useMemo(() => createBridgeToken(), []);
+  const bridgeToken = useMemo(() => resolveBridgeToken(), []);
 
   const injectedBeforeLoad = useMemo(
-    () => buildMobileBridgeInjection(bridgeToken),
+    () => (bridgeToken ? buildMobileBridgeInjection(bridgeToken) : ""),
     [bridgeToken],
   );
 
@@ -48,6 +51,7 @@ export default function App() {
 
     if (
       Platform.OS !== "android" ||
+      !bridgeToken ||
       bridgeRef.current ||
       bridgeStartingRef.current
     ) {
@@ -89,6 +93,14 @@ export default function App() {
   }, []);
 
   if (Platform.OS !== "android") {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color="#c9a227" />
+      </View>
+    );
+  }
+
+  if (!bridgeToken) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color="#c9a227" />

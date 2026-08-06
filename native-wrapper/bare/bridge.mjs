@@ -7,6 +7,7 @@ import b4a from "b4a";
 import { tokensEqual } from "./auth.mjs";
 import { config } from "./config.mjs";
 import { BRIDGE_ERRORS, bridgeError } from "./errors.mjs";
+import { consumeRateLimit, createBridgeRateLimiters } from "./rateLimit.mjs";
 
 /**
  * @param {import('./swarm.mjs').createSwarmMesh extends (...args: any) => infer R ? R : never} mesh
@@ -30,6 +31,7 @@ export function createBridgeSession(mesh, opts) {
 
   /** @type {Set<string>} */
   const joined = new Set();
+  const rateBuckets = createBridgeRateLimiters();
 
   /**
    * @param {object} msg
@@ -42,10 +44,24 @@ export function createBridgeSession(mesh, opts) {
    * @param {object} msg
    */
   function assertAuthorized(msg) {
-    if (!requiredToken) return true;
+    if (!requiredToken) {
+      sendError(BRIDGE_ERRORS.sidecar_error.code, "unauthorized");
+      return false;
+    }
     const token = typeof msg.token === "string" ? msg.token : "";
     if (!tokensEqual(token, requiredToken)) {
       sendError(BRIDGE_ERRORS.sidecar_error.code, "unauthorized");
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * @param {string} type
+   */
+  function checkRateLimit(type) {
+    if (!consumeRateLimit(rateBuckets, type)) {
+      sendError(BRIDGE_ERRORS.rate_limited.code);
       return false;
     }
     return true;
@@ -68,6 +84,15 @@ export function createBridgeSession(mesh, opts) {
       }
 
       if (!assertAuthorized(msg)) return;
+
+      const rateLimitedTypes = ["join", "leave", "frame", "ping"];
+      if (
+        typeof msg.type === "string" &&
+        rateLimitedTypes.includes(msg.type) &&
+        !checkRateLimit(msg.type)
+      ) {
+        return;
+      }
 
       try {
         if (msg.type === "ping") {

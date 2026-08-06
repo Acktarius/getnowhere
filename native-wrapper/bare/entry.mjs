@@ -9,31 +9,37 @@ import { config } from "./config.mjs";
 import * as swarm from "./swarm.mjs"; // namespace import — bare-pack named imports fail @see mobile-p2p-runtime.md
 
 /** @type {{ IPC?: { on: Function, write: Function }, argv?: string[] }} */
-const kit = globalThis.BareKit ?? globalThis;
+const BareKit = globalThis.BareKit;
 
-if (!kit?.IPC) {
+if (!BareKit?.IPC) {
   console.error("[gnh-bare] BareKit.IPC missing");
   throw new Error("BareKit.IPC missing");
 }
 
-const requiredToken = kit.argv?.[0] ?? "";
+/** worklet.start(..., [token]) → Bare.argv[0] on mobile; BareKit.argv is not set. */
+const requiredToken =
+  globalThis.Bare?.argv?.[0] ?? BareKit.argv?.[0] ?? "";
+if (!requiredToken) {
+  console.error("[gnh-bare] bridge token missing in argv");
+  throw new Error("bridge token required");
+}
 const mesh = swarm.createSwarmMesh();
 const session = createBridgeSession(mesh, {
   requiredToken,
   send(msg) {
-    kit.IPC.write(b4a.from(`${JSON.stringify(msg)}\n`));
+    BareKit.IPC.write(b4a.from(`${JSON.stringify(msg)}\n`));
   },
 });
 
 const reader = swarm.createLineReader(config.maxWsMessageBytes);
 
-kit.IPC.on("data", (data) => {
+BareKit.IPC.on("data", (data) => {
   /** @type {object[]} */
   let lines;
   try {
     lines = reader.push(data);
   } catch {
-    kit.IPC.write(
+    BareKit.IPC.write(
       b4a.from(
         `${JSON.stringify({ type: "error", code: "message_too_large", message: "message too large" })}\n`,
       ),

@@ -187,13 +187,15 @@ Controls match packaged desktop / sidecar where applicable:
 | RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
 | WebView navigation restricted to `file:///android_asset/ui/` | `App.tsx` → `webviewNavigation.ts` |
 | Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
+| CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
+| `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
+| Bridge command rate limits (`rate_limited`) | `bare/bridge.mjs` + `bare/rateLimit.mjs` |
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
-**Pending hardening (2026-08 review):** findings 08–09 (RN IPC cap, WebView
-token/navigation) — fixed; `.findings/10-mobile-bridge-token-entropy.md` …
-`.findings/15-mobile-bridge-auth-tests.md` remain; tracked in OpenSpec
-`openspec/changes/mobile-bridge-hardening/`.
+**Pending hardening (2026-08 review):** findings 08–15 addressed in code/docs;
+manual Android smoke (task 6.2) and Hermes `crypto.randomUUID` device check remain.
+OpenSpec `openspec/changes/mobile-bridge-hardening/`.
 
 ### WebView trust model
 
@@ -206,6 +208,18 @@ still attaches the token in postMessage payloads validated by RN), but cannot re
 the secret for exfiltration by untrusted scripts that lack postMessage access.
 `allowUniversalAccessFromFileURLs` is disabled; same-directory asset loads use
 `allowFileAccessFromFileURLs` for the packaged bundle only.
+
+Bridge tokens are UUID v4 from CSPRNG. On Hermes/RN, `expo-crypto` provides native
+`randomUUID`; Web Crypto is used when present (tests/browser). No `Math.random`
+fallback. The
+worklet enforces per-type token-bucket rate limits on `join`, `leave`, `frame`,
+and `ping` (default burst: 8 join/leave, 40 frame/s sustained); excess commands
+return `{ type: "error", code: "rate_limited" }`.
+
+Bridge tokens are UUID v4 (`crypto.randomUUID`) — fixed 36-character length. The
+constant-time compare may short-circuit on length mismatch; this is acceptable
+because token format is fixed (finding 14). Revisit if variable-length tokens are
+introduced.
 
 `desktop-electron/` is unchanged by the mobile track.
 

@@ -5,6 +5,10 @@
  */
 
 import { loadWorkletBundleBytes } from "./loadWorkletBundle";
+import {
+  assertNonEmptyBridgeToken,
+  createBridgeToken,
+} from "./bridgeToken";
 import { IpcLineProcessor } from "./ipcLineProcessor";
 import { tokensEqual } from "./tokensEqual";
 
@@ -31,10 +35,9 @@ export class GnhMobileBridge {
   private eventHandlers = new Set<(msg: SidecarWireMessage) => void>();
 
   constructor(bridgeToken?: string) {
-    this.bridgeToken =
-      bridgeToken ??
-      globalThis.crypto?.randomUUID?.() ??
-      `gnh-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    this.bridgeToken = bridgeToken
+      ? assertNonEmptyBridgeToken(bridgeToken)
+      : createBridgeToken();
   }
 
   private async loadBareKit(): Promise<BareKitModule> {
@@ -75,6 +78,7 @@ export class GnhMobileBridge {
   }
 
   private async doStart(): Promise<void> {
+    assertNonEmptyBridgeToken(this.bridgeToken);
     const { Worklet } = await this.loadBareKit();
     const w = new Worklet();
     this.ipcProcessor = new IpcLineProcessor(

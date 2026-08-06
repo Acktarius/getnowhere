@@ -12,7 +12,13 @@
 
 # follow-up
 
-- [ ] Add `bare/test/bridge-auth.test.mjs` (wrong / missing / empty token)
-- [ ] Add RN-side IPC line-cap test for `GnhMobileBridge`
-- [ ] Wire tests into `npm run test:bare` / CI
-- [ ] Mirror sidecar `holepunch-sidecar/test/bridge-auth.test.mjs` coverage where applicable
+- [x] Add `bare/test/bridge-auth.test.mjs` (wrong / missing / empty token)
+- [x] Add RN-side IPC line-cap test for `GnhMobileBridge`
+- [x] Wire tests into `npm run test:bare` / CI
+- [ ] Mirror sidecar `holepunch-sidecar/test/bridge-auth.test.mjs` coverage where applicable (spawn/WS cases N/A for mobile IPC)
+
+# remediation (2026-08-06)
+
+- `native-wrapper/bare/test/bridge-auth.test.mjs` covers auth + rate limits.
+- `tests/native-wrapper/gnh-mobile-bridge-ipc.test.ts`, `bridge-token.test.ts` cover RN side.
+- `run-bare-tests.mjs` runs both swarm and bridge-auth suites.

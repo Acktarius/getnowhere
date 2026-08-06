@@ -12,8 +12,14 @@
 
 # follow-up
 
-- [ ] Define per-command rate limits (join / leave / frame / ping)
-- [ ] Enforce at RN ingress and/or `bare/bridge.mjs`
-- [ ] Add stable `rate_limited` error code to bridge error map
-- [ ] Add regression test for burst rejection
-- [ ] Document limits in `mobile-p2p-runtime.md`
+- [x] Define per-command rate limits (join / leave / frame / ping)
+- [x] Enforce at RN ingress and/or `bare/bridge.mjs`
+- [x] Add stable `rate_limited` error code to bridge error map
+- [x] Add regression test for burst rejection
+- [x] Document limits in `mobile-p2p-runtime.md`
+
+# remediation (2026-08-06)
+
+- `bare/rateLimit.mjs`: token-bucket limits (join/leave burst 8 + 2/s, frame 40/s, ping 10/s).
+- `bare/bridge.mjs`: authoritative enforcement; `bare/errors.mjs` adds `rate_limited`.
+- Regression: `native-wrapper/bare/test/bridge-auth.test.mjs` (burst join test).

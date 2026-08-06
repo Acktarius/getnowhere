@@ -12,7 +12,14 @@
 
 # follow-up
 
-- [ ] Refuse to start worklet when `bridgeToken` is empty (`GnhMobileBridge`, `bare/entry.mjs`)
-- [ ] Remove `if (!requiredToken) return true` fail-open in `bare/bridge.mjs`
-- [ ] Add regression test: empty argv token rejects commands
-- [ ] Align docs with sidecar fail-closed policy (`mobile-p2p-runtime.md`)
+- [x] Refuse to start worklet when `bridgeToken` is empty (`GnhMobileBridge`, `bare/entry.mjs`)
+- [x] Remove `if (!requiredToken) return true` fail-open in `bare/bridge.mjs`
+- [x] Add regression test: empty argv token rejects commands
+- [x] Align docs with sidecar fail-closed policy (`mobile-p2p-runtime.md`)
+
+# remediation (2026-08-06)
+
+- `GnhMobileBridge.doStart()` + constructor validate non-empty token via `assertNonEmptyBridgeToken`.
+- `bare/entry.mjs` throws when `argv[0]` token is empty.
+- `bare/bridge.mjs`: empty `requiredToken` → unauthorized error (fail-closed).
+- Regression: `native-wrapper/bare/test/bridge-auth.test.mjs`.

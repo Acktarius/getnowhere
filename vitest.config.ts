@@ -10,6 +10,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.join(root, "src"),
+      "expo-crypto": path.join(
+        root,
+        "native-wrapper/node_modules/expo-crypto/build/Crypto.js",
+      ),
     },
   },
   test: {

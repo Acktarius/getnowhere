@@ -29,6 +29,7 @@ Bridge command/event schema: `docs/architecture/holepunch-sidecar.md`.
 | `frame_requires_join` | `frame requires join for topicRef` | `frame` for a `topicRef` this socket has not `join`ed. No fan-out. |
 | `unknown_type` | `unknown type` | JSON object with unrecognized `type` (message may include the type). |
 | `sidecar_error` | `sidecar error` | Unexpected exception while handling a command (message may be the exception text). |
+| `rate_limited` | `rate limited` | Per-command token bucket exceeded (`join`, `leave`, `frame`, `ping`). Mobile Bare bridge; sidecar may adopt later. |
 
 ## Size rejection and close 1009
 

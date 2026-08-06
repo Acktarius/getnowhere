@@ -12,6 +12,10 @@
 
 # follow-up
 
-- [ ] Document that bridge tokens are fixed-length UUID v4 (no variable-length tokens)
+- [x] Document that bridge tokens are fixed-length UUID v4 (no variable-length tokens)
 - [ ] Optional: align with sidecar `timingSafeEqual` if a shared helper is introduced
 - [ ] Revisit only if token format changes from UUID
+
+# remediation (2026-08-06)
+
+- Documented UUID-only fixed-length policy in `docs/architecture/mobile-p2p-runtime.md` § WebView trust model.

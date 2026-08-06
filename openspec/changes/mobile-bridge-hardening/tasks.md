@@ -14,14 +14,14 @@ Tracked findings: `.findings/08` … `.findings/15`. OpenSpec change:
   `.findings/08-mobile-rn-ipc-line-cap.md`.
 
 ## 2. Fail-closed bridge token — findings 10, 11 (TDD)
-- [ ] 2.1 Add `bare/test/bridge-auth.test.mjs`: wrong token, missing token, empty
+- [x] 2.1 Add `bare/test/bridge-auth.test.mjs`: wrong token, missing token, empty
   argv token (expect reject). Expect fail before fix.
-- [ ] 2.2 Remove `Math.random` fallback in `App.tsx` / `GnhMobileBridge`; fail
+- [x] 2.2 Remove `Math.random` fallback in `App.tsx` / `GnhMobileBridge`; fail
   closed or use `expo-crypto` when CSPRNG missing.
-- [ ] 2.3 Require non-empty token in `GnhMobileBridge.doStart()` and
+- [x] 2.3 Require non-empty token in `GnhMobileBridge.doStart()` and
   `bare/entry.mjs`; remove `if (!requiredToken) return true` in
   `bare/bridge.mjs`. Make 2.1 pass.
-- [ ] 2.4 Update `.findings/10-mobile-bridge-token-entropy.md` and
+- [x] 2.4 Update `.findings/10-mobile-bridge-token-entropy.md` and
   `.findings/11-mobile-empty-bridge-token-fail-open.md`.
 
 ## 3. WebView hardening — findings 09, 12
@@ -34,19 +34,19 @@ Tracked findings: `.findings/08` … `.findings/15`. OpenSpec change:
   and findings 09 / 12 follow-ups.
 
 ## 4. Rate limiting — finding 13 (TDD)
-- [ ] 4.1 Add `rate_limited` to `bare/errors.mjs` and bridge error map docs.
-- [ ] 4.2 Implement token-bucket (or sliding window) in `bare/bridge.mjs`; optional
+- [x] 4.1 Add `rate_limited` to `bare/errors.mjs` and bridge error map docs.
+- [x] 4.2 Implement token-bucket (or sliding window) in `bare/bridge.mjs`; optional
   early reject in `handleWebViewMessage`. Add burst regression test.
-- [ ] 4.3 Update `.findings/13-mobile-bridge-rate-limit.md` and
+- [x] 4.3 Update `.findings/13-mobile-bridge-rate-limit.md` and
   `mobile-p2p-runtime.md`.
 
 ## 5. Tests and low-priority — findings 14, 15
-- [ ] 5.1 Ensure `npm run test:bare` runs `bridge-auth.test.mjs` and swarm tests.
-- [ ] 5.2 Document UUID-only fixed-length bridge tokens (finding 14); no code change
+- [x] 5.1 Ensure `npm run test:bare` runs `bridge-auth.test.mjs` and swarm tests.
+- [x] 5.2 Document UUID-only fixed-length bridge tokens (finding 14); no code change
   unless format changes.
-- [ ] 5.3 Mark `.findings/14` and `.findings/15` follow-ups complete when done.
+- [x] 5.3 Mark `.findings/14` and `.findings/15` follow-ups complete when done.
 
 ## 6. Verify
-- [ ] 6.1 Run `npm run test:bare` from `native-wrapper/`.
+- [x] 6.1 Run `npm run test:bare` from `native-wrapper/`.
 - [ ] 6.2 Manual smoke: Android APK, open room, join topic, send frame.
 - [ ] 6.3 Run `forge e2e run` if mobile steps are added to e2e.json.
