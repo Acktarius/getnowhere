@@ -1,7 +1,4 @@
-import {
-  createLineReader,
-  NdjsonLineTooLongError,
-} from "./createLineReader";
+import { createLineReader, NdjsonLineTooLongError } from "./createLineReader";
 
 type WireMessage = Record<string, unknown> & { type: string };
 

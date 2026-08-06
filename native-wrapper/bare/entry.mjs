@@ -7,6 +7,7 @@ import b4a from "b4a";
 import { createBridgeSession } from "./bridge.mjs";
 import { config } from "./config.mjs";
 import * as swarm from "./swarm.mjs"; // namespace import — bare-pack named imports fail @see mobile-p2p-runtime.md
+import { requireBridgeTokenFromArgv } from "./workletEnv.mjs";
 
 /** @type {{ IPC?: { on: Function, write: Function }, argv?: string[] }} */
 const BareKit = globalThis.BareKit;
@@ -16,13 +17,7 @@ if (!BareKit?.IPC) {
   throw new Error("BareKit.IPC missing");
 }
 
-/** worklet.start(..., [token]) → Bare.argv[0] on mobile; BareKit.argv is not set. */
-const requiredToken =
-  globalThis.Bare?.argv?.[0] ?? BareKit.argv?.[0] ?? "";
-if (!requiredToken) {
-  console.error("[gnh-bare] bridge token missing in argv");
-  throw new Error("bridge token required");
-}
+const requiredToken = requireBridgeTokenFromArgv(globalThis);
 const mesh = swarm.createSwarmMesh();
 const session = createBridgeSession(mesh, {
   requiredToken,

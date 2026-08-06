@@ -25,7 +25,9 @@ describe("isAllowedWebViewNavigationUrl", () => {
   it("blocks external and non-UI file schemes", () => {
     expect(isAllowedWebViewNavigationUrl("https://evil.example/")).toBe(false);
     expect(isAllowedWebViewNavigationUrl("http://evil.example/")).toBe(false);
-    expect(isAllowedWebViewNavigationUrl("intent://pay#Intent;end")).toBe(false);
+    expect(isAllowedWebViewNavigationUrl("intent://pay#Intent;end")).toBe(
+      false,
+    );
     expect(
       isAllowedWebViewNavigationUrl("file:///android_asset/other/index.html"),
     ).toBe(false);
@@ -39,8 +41,6 @@ describe("isAllowedWebViewNavigationUrl", () => {
 
 describe("WEBVIEW_ORIGIN_WHITELIST", () => {
   it("scopes origins to the packaged UI prefix", () => {
-    expect(WEBVIEW_ORIGIN_WHITELIST).toEqual([
-      "file:///android_asset/ui/*",
-    ]);
+    expect(WEBVIEW_ORIGIN_WHITELIST).toEqual(["file:///android_asset/ui/*"]);
   });
 });

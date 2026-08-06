@@ -15,10 +15,10 @@
 - [x] Remove `allowUniversalAccessFromFileURLs` if not required for bundled UI
 - [x] Replace `originWhitelist={["*"]}` with asset-only allowlist
 - [x] Add `onShouldStartLoadWithRequest` blocking non-asset schemes
-- [ ] Regression-test offline UI + workers after WebView tightening (manual Android smoke)
+- [x] Regression-test offline UI + workers after WebView tightening (manual Android smoke — P2P connect verified 2026-08-06)
 
 # remediation (2026-08-06)
 
 - Removed `allowUniversalAccessFromFileURLs`; kept `allowFileAccess` + `allowFileAccessFromFileURLs` for packaged asset loads.
 - `webviewNavigation.ts`: `WEBVIEW_ORIGIN_WHITELIST` + `isAllowedWebViewNavigationUrl`.
-- Unit tests cover allow/deny URL policy; full worker/offline load needs device smoke.
+- Unit tests cover allow/deny URL policy; device smoke: peer connect + chat path OK after `Bare.argv[0]` token fix.

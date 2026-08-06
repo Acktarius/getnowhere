@@ -15,10 +15,11 @@
 - [x] Remove `Math.random` / `Date.now` bridge-token fallback
 - [x] Fail closed at startup when CSPRNG is unavailable (or use `expo-crypto`)
 - [x] Add unit test asserting token generation rejects missing CSPRNG
-- [ ] Verify production Hermes builds expose `crypto.randomUUID`
+- [x] Verify production Hermes builds expose `crypto.randomUUID` (expo-crypto is primary on RN; Web Crypto optional)
 
 # remediation (2026-08-06)
 
-- `bridgeToken.ts`: `createBridgeToken()` uses `crypto.randomUUID` or UUID v4 from `getRandomValues` (conceal-lib-js uses the same primitive); throws if Web Crypto is missing.
+- `bridgeToken.ts`: `createBridgeToken()` uses Web Crypto when present, else **`expo-crypto`** `randomUUID()`; throws if both unavailable.
 - `App.tsx`: skips bridge/worklet when token generation fails.
 - Regression: `tests/native-wrapper/bridge-token.test.ts`.
+- Hermes on device lacks `crypto.randomUUID`; native `expo-crypto` path verified in production dev build.

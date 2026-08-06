@@ -1,3 +1,4 @@
+/// <reference path="../../src/vite-env.d.ts" />
 import { describe, expect, it, vi } from "vitest";
 import { buildMobileBridgeInjection } from "../../native-wrapper/src/injectMobileBridge";
 
@@ -12,17 +13,16 @@ describe("buildMobileBridgeInjection", () => {
       configurable: true,
     });
 
-    // eslint-disable-next-line no-eval -- injected script is the unit under test
-    eval(script);
+    // WebView runs injectedJavaScript as a string; Function is the jsdom equivalent.
+    new Function(script)();
 
     expect(window.gnhMobile).toBeDefined();
-    expect(window.gnhMobile?.sendCommand).toBeTypeOf("function");
-    expect(window.gnhMobile?.onBridgeEvent).toBeTypeOf("function");
-    expect(
-      (window.gnhMobile as { bridgeToken?: string }).bridgeToken,
-    ).toBeUndefined();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    expect(bridge.sendCommand).toBeTypeOf("function");
+    expect(bridge.onBridgeEvent).toBeTypeOf("function");
+    expect("bridgeToken" in bridge).toBe(false);
 
-    window.gnhMobile?.sendCommand({ type: "ping" });
+    bridge.sendCommand({ type: "ping" });
     expect(postMessage).toHaveBeenCalledOnce();
     const payload = JSON.parse(postMessage.mock.calls[0][0] as string);
     expect(payload.token).toBe("super-secret-token");

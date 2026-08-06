@@ -111,6 +111,10 @@ npm run holepunch:install    # bare/node_modules symlink to sidecar deps
 npm run mobile:sync-ui && npm run mobile:android
 ```
 
+`sync-ui-dist.mjs` strips remote Google Fonts links from the copied `index.html`
+and runs a bundled-UI audit (no external scripts; local module entry only).
+See `native-wrapper/scripts/bundled-ui-audit.mjs`.
+
 Optional: `BARE_ENTRY=other.mjs node native-wrapper/scripts/pack-bare.mjs` for
 alternate pack entry points (default `entry.mjs`).
 

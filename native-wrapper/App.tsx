@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import type { WebViewMessageEvent } from "react-native-webview";
 import { WebView } from "react-native-webview";
+import { createBridgeToken } from "./src/bridgeToken";
 import type { GnhMobileBridge } from "./src/GnhMobileBridge";
 import {
   buildBridgeEventDispatchScript,
@@ -18,7 +19,6 @@ import {
   isAllowedWebViewNavigationUrl,
   WEBVIEW_ORIGIN_WHITELIST,
 } from "./src/webviewNavigation";
-import { createBridgeToken } from "./src/bridgeToken";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 

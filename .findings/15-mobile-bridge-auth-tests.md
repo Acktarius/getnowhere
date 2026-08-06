@@ -15,7 +15,7 @@
 - [x] Add `bare/test/bridge-auth.test.mjs` (wrong / missing / empty token)
 - [x] Add RN-side IPC line-cap test for `GnhMobileBridge`
 - [x] Wire tests into `npm run test:bare` / CI
-- [ ] Mirror sidecar `holepunch-sidecar/test/bridge-auth.test.mjs` coverage where applicable (spawn/WS cases N/A for mobile IPC)
+- [x] Mirror sidecar `holepunch-sidecar/test/bridge-auth.test.mjs` coverage where applicable (spawn/WS cases N/A for mobile IPC; worklet argv covered in `worklet-env.test.mjs`)
 
 # remediation (2026-08-06)
 

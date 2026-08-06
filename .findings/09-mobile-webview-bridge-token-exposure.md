@@ -15,7 +15,7 @@
 - [x] Stop publishing readable `bridgeToken` on `window.gnhMobile` (RN-only secret channel)
 - [x] Add `onShouldStartLoadWithRequest` allowlisting `file:///android_asset/ui/`
 - [x] Tighten `originWhitelist` and drop unnecessary universal file access flags
-- [ ] Audit bundled UI (`assets/ui/`) for XSS / external script loads
+- [x] Audit bundled UI (`assets/ui/`) for XSS / external script loads
 - [x] Document WebView trust model in `docs/architecture/mobile-p2p-runtime.md`
 
 # remediation (2026-08-06)
@@ -24,3 +24,10 @@
 - `HolepunchSidecarClient.ts`: detects mobile bridge via API surface, not `bridgeToken`.
 - `App.tsx` + `webviewNavigation.ts`: asset-only `originWhitelist`, `onShouldStartLoadWithRequest`, removed `allowUniversalAccessFromFileURLs`.
 - Regression: `tests/native-wrapper/inject-mobile-bridge.test.ts`, `webview-navigation.test.ts`.
+
+# remediation (2026-08-06, audit)
+
+- `src/` grep: no `innerHTML`, `dangerouslySetInnerHTML`, or `eval` sinks.
+- Bundled `assets/ui/index.html`: single local `./assets/index-*.js` module; no external scripts.
+- `sync-ui-dist.mjs` + `bundled-ui-audit.mjs`: strip Google Fonts CDN links on mobile sync; fail if external script URLs appear.
+- Regression: `tests/native-wrapper/bundled-ui-audit.test.ts`.

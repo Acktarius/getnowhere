@@ -4,12 +4,9 @@
  * @see docs/architecture/mobile-p2p-runtime.md
  */
 
-import { loadWorkletBundleBytes } from "./loadWorkletBundle";
-import {
-  assertNonEmptyBridgeToken,
-  createBridgeToken,
-} from "./bridgeToken";
+import { assertNonEmptyBridgeToken, createBridgeToken } from "./bridgeToken";
 import { IpcLineProcessor } from "./ipcLineProcessor";
+import { loadWorkletBundleBytes } from "./loadWorkletBundle";
 import { tokensEqual } from "./tokensEqual";
 
 export type SidecarWireMessage = Record<string, unknown> & { type: string };

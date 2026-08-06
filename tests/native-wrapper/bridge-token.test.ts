@@ -18,9 +18,7 @@ describe("createBridgeToken", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     randomUUIDMock.mockReset();
-    randomUUIDMock.mockReturnValue(
-      "expo-11111111-2222-4333-8444-555555555555",
-    );
+    randomUUIDMock.mockReturnValue("expo-11111111-2222-4333-8444-555555555555");
   });
 
   it("returns crypto.randomUUID when available", () => {

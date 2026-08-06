@@ -20,6 +20,7 @@
 # remediation (2026-08-06)
 
 - `GnhMobileBridge.doStart()` + constructor validate non-empty token via `assertNonEmptyBridgeToken`.
-- `bare/entry.mjs` throws when `argv[0]` token is empty.
+- `bare/entry.mjs` throws when argv token is empty.
+- `bare/workletEnv.mjs`: reads `Bare.argv[0]` first (mobile worklet.start), then `BareKit.argv[0]`.
 - `bare/bridge.mjs`: empty `requiredToken` → unauthorized error (fail-closed).
-- Regression: `native-wrapper/bare/test/bridge-auth.test.mjs`.
+- Regression: `native-wrapper/bare/test/bridge-auth.test.mjs`, `worklet-env.test.mjs`.

@@ -19,6 +19,12 @@
       "cmd": "npx vitest run tests/native-wrapper/inject-mobile-bridge.test.ts tests/native-wrapper/webview-navigation.test.ts tests/native-wrapper/bridge-token.test.ts",
       "expect": "passed",
       "timeoutMs": 60000
+    },
+    {
+      "name": "Bundled mobile UI XSS audit (vitest)",
+      "cmd": "npx vitest run tests/native-wrapper/bundled-ui-audit.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
     }
   ]
 }

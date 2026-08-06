@@ -30,10 +30,7 @@ describe("IpcLineProcessor (GnhMobileBridge.onIpcData path)", () => {
   it("calls onOverflow on partial mega-line and stops accepting IPC", () => {
     const onOverflow = vi.fn();
     const events: unknown[] = [];
-    const proc = new IpcLineProcessor(
-      (msg) => events.push(msg),
-      onOverflow,
-    );
+    const proc = new IpcLineProcessor((msg) => events.push(msg), onOverflow);
 
     proc.push(enc.encode("x".repeat(MAX_NDJSON_LINE_BYTES + 1)));
     proc.push(enc.encode('{"type":"late"}\n'));
@@ -46,10 +43,7 @@ describe("IpcLineProcessor (GnhMobileBridge.onIpcData path)", () => {
   it("dispatches valid events under the cap", () => {
     const onOverflow = vi.fn();
     const events: unknown[] = [];
-    const proc = new IpcLineProcessor(
-      (msg) => events.push(msg),
-      onOverflow,
-    );
+    const proc = new IpcLineProcessor((msg) => events.push(msg), onOverflow);
 
     proc.push(enc.encode('{"type":"ready"}\n'));
 

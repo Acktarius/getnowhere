@@ -19,7 +19,9 @@ if (!existsSync(bareModules)) {
   symlinkSync(sidecarModules, bareModules, "dir");
 }
 
-execSync("node --test test/swarm-security.test.mjs test/bridge-auth.test.mjs", {
+execSync(
+  "node --test test/swarm-security.test.mjs test/bridge-auth.test.mjs test/worklet-env.test.mjs",
+  {
   cwd: bareDir,
   stdio: "inherit",
 });

@@ -48,5 +48,5 @@ Tracked findings: `.findings/08` … `.findings/15`. OpenSpec change:
 
 ## 6. Verify
 - [x] 6.1 Run `npm run test:bare` from `native-wrapper/`.
-- [ ] 6.2 Manual smoke: Android APK, open room, join topic, send frame.
-- [ ] 6.3 Run `forge e2e run` if mobile steps are added to e2e.json.
+- [x] 6.2 Manual smoke: Android APK, open room, join topic, send frame (peer connect verified; re-run after bare bundle changes).
+- [x] 6.3 Run `forge e2e run --change mobile-bridge-hardening` (includes bundled UI audit vitest).
