@@ -12,8 +12,15 @@
 
 # follow-up
 
-- [ ] Stop publishing readable `bridgeToken` on `window.gnhMobile` (RN-only secret channel)
-- [ ] Add `onShouldStartLoadWithRequest` allowlisting `file:///android_asset/ui/`
-- [ ] Tighten `originWhitelist` and drop unnecessary universal file access flags
+- [x] Stop publishing readable `bridgeToken` on `window.gnhMobile` (RN-only secret channel)
+- [x] Add `onShouldStartLoadWithRequest` allowlisting `file:///android_asset/ui/`
+- [x] Tighten `originWhitelist` and drop unnecessary universal file access flags
 - [ ] Audit bundled UI (`assets/ui/`) for XSS / external script loads
-- [ ] Document WebView trust model in `docs/architecture/mobile-p2p-runtime.md`
+- [x] Document WebView trust model in `docs/architecture/mobile-p2p-runtime.md`
+
+# remediation (2026-08-06)
+
+- `injectMobileBridge.ts`: token held in closure; `window.gnhMobile` exposes only `sendCommand` / `onBridgeEvent`.
+- `HolepunchSidecarClient.ts`: detects mobile bridge via API surface, not `bridgeToken`.
+- `App.tsx` + `webviewNavigation.ts`: asset-only `originWhitelist`, `onShouldStartLoadWithRequest`, removed `allowUniversalAccessFromFileURLs`.
+- Regression: `tests/native-wrapper/inject-mobile-bridge.test.ts`, `webview-navigation.test.ts`.

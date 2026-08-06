@@ -3,7 +3,7 @@
  * @see docs/architecture/mobile-p2p-runtime.md
  */
 
-/** Build injected JS that exposes gnhMobile with per-launch bridgeToken. */
+/** Build injected JS: gnhMobile API with bridge token held in closure (not on window). */
 export function buildMobileBridgeInjection(bridgeToken: string): string {
   const tokenJson = JSON.stringify(bridgeToken);
   return `(function(){
@@ -11,7 +11,6 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
   var token = ${tokenJson};
   var handlers = [];
   window.gnhMobile = {
-    bridgeToken: token,
     sendCommand: function(cmd) {
       if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
       var msg = { channel: 'gnh-bridge', direction: 'command', token: token, type: cmd.type };

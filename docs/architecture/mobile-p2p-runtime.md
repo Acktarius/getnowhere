@@ -155,6 +155,7 @@ native-wrapper/
   src/ipcLineProcessor.ts      # bounded NDJSON reassembly (maxNdjsonLineBytes)
   src/createLineReader.ts      # incremental splitter (parity with bare/swarm.mjs)
   src/injectMobileBridge.ts    # window.gnhMobile injection script
+  src/webviewNavigation.ts     # asset-only navigation allowlist
   bare/
     entry.mjs                  # BareKit.IPC + swarm mesh
     bridge.mjs                 # same SidecarCommand/Event as holepunch-sidecar
@@ -184,13 +185,27 @@ Controls match packaged desktop / sidecar where applicable:
 | Opaque L1-sealed frames | Unchanged app crypto path |
 | Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
 | RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
+| WebView navigation restricted to `file:///android_asset/ui/` | `App.tsx` → `webviewNavigation.ts` |
+| Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
-**Pending hardening (2026-08 review):** finding 08 (RN IPC line cap) — fixed;
-`.findings/09-mobile-webview-bridge-token-exposure.md` …
+**Pending hardening (2026-08 review):** findings 08–09 (RN IPC cap, WebView
+token/navigation) — fixed; `.findings/10-mobile-bridge-token-entropy.md` …
 `.findings/15-mobile-bridge-auth-tests.md` remain; tracked in OpenSpec
 `openspec/changes/mobile-bridge-hardening/`.
+
+### WebView trust model
+
+The bundled Vite UI runs inside an Android WebView loading only
+`file:///android_asset/ui/`. Top-level navigation to `http(s)://`, `intent://`,
+or other asset paths is blocked via `onShouldStartLoadWithRequest`. The per-launch
+bridge token lives in the RN host and in the injected script closure — it is **not**
+published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
+still attaches the token in postMessage payloads validated by RN), but cannot read
+the secret for exfiltration by untrusted scripts that lack postMessage access.
+`allowUniversalAccessFromFileURLs` is disabled; same-directory asset loads use
+`allowFileAccessFromFileURLs` for the packaged bundle only.
 
 `desktop-electron/` is unchanged by the mobile track.
 

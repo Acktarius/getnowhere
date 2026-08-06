@@ -35,7 +35,7 @@ The wrapper:
 
 - Packs `native-wrapper/bare/` → `assets/bare/app.bundle.mjs` (`bare-pack` 2.2.1)
 - Starts a Bare `Worklet` in `App.tsx` before the WebView loads
-- Injects `window.gnhMobile` with a per-launch `bridgeToken`
+- Injects `window.gnhMobile` with `sendCommand` / `onBridgeEvent` (token in closure, not on `window`)
 - Routes the same bridge schema as `holepunch-sidecar/` (see
   `docs/architecture/mobile-p2p-runtime.md`)
 

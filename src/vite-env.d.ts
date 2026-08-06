@@ -22,9 +22,8 @@ interface GnhDesktopBridge {
   ufwState?: "active" | "inactive" | "unknown";
 }
 
-/** Mobile Expo WebView bridge (Bare worklet behind postMessage). */
+/** Mobile Expo WebView bridge (Bare worklet behind postMessage). Token is RN-only. */
 interface GnhMobileBridge {
-  bridgeToken: string;
   sendCommand(cmd: {
     type: string;
     topicRef?: string;

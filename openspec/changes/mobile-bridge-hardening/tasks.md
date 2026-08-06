@@ -25,12 +25,12 @@ Tracked findings: `.findings/08` … `.findings/15`. OpenSpec change:
   `.findings/11-mobile-empty-bridge-token-fail-open.md`.
 
 ## 3. WebView hardening — findings 09, 12
-- [ ] 3.1 Remove readable `bridgeToken` from injected `window.gnhMobile`; keep
+- [x] 3.1 Remove readable `bridgeToken` from injected `window.gnhMobile`; keep
   token in closure. Update `HolepunchSidecarClient` mobile path if it reads
   `bridgeToken`.
-- [ ] 3.2 Add `onShouldStartLoadWithRequest` allowlisting asset UI; tighten
+- [x] 3.2 Add `onShouldStartLoadWithRequest` allowlisting asset UI; tighten
   `originWhitelist`; remove `allowUniversalAccessFromFileURLs` if tests pass.
-- [ ] 3.3 Regression-test bundled UI load (offline assets, workers). Update docs
+- [x] 3.3 Regression-test bundled UI load (offline assets, workers). Update docs
   and findings 09 / 12 follow-ups.
 
 ## 4. Rate limiting — finding 13 (TDD)

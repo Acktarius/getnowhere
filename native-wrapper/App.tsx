@@ -13,10 +13,15 @@ import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
 } from "./src/injectMobileBridge";
+import {
+  ANDROID_UI_ASSET_PREFIX,
+  isAllowedWebViewNavigationUrl,
+  WEBVIEW_ORIGIN_WHITELIST,
+} from "./src/webviewNavigation";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const ANDROID_UI_URI = "file:///android_asset/ui/index.html";
+const ANDROID_UI_URI = `${ANDROID_UI_ASSET_PREFIX}index.html`;
 
 function createBridgeToken(): string {
   return (
@@ -103,13 +108,15 @@ export default function App() {
         ref={webViewRef}
         source={{ uri: ANDROID_UI_URI }}
         style={styles.webview}
-        originWhitelist={["*"]}
+        originWhitelist={WEBVIEW_ORIGIN_WHITELIST}
         allowFileAccess
         allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
         javaScriptEnabled
         domStorageEnabled
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
+        onShouldStartLoadWithRequest={(event) =>
+          isAllowedWebViewNavigationUrl(event.url)
+        }
         onLoadEnd={onWebViewReady}
         onMessage={onWebViewMessage}
         onError={(e) => {

@@ -112,8 +112,14 @@ type StatusHandler = (status: "online" | "offline", detail?: string) => void;
 
 function getGnhMobileBridge(): GnhMobileBridge | null {
   try {
-    if (typeof window !== "undefined" && window.gnhMobile?.bridgeToken) {
-      return window.gnhMobile;
+    const bridge = window.gnhMobile;
+    if (
+      typeof window !== "undefined" &&
+      bridge &&
+      typeof bridge.sendCommand === "function" &&
+      typeof bridge.onBridgeEvent === "function"
+    ) {
+      return bridge;
     }
   } catch {
     /* non-dom */
