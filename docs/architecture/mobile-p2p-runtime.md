@@ -184,6 +184,10 @@ Controls match packaged desktop / sidecar where applicable:
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
+**Pending hardening (2026-08 review):** `.findings/08-mobile-rn-ipc-line-cap.md` …
+`.findings/15-mobile-bridge-auth-tests.md`; tracked in OpenSpec
+`openspec/changes/mobile-bridge-hardening/`.
+
 `desktop-electron/` is unchanged by the mobile track.
 
 Desktop Electron is a **parallel** track (`electron-desktop.md`), not a

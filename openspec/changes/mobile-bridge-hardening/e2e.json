@@ -1,0 +1,18 @@
+{
+  "change": "mobile-bridge-hardening",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Bare worklet: swarm security regressions",
+      "cmd": "node native-wrapper/scripts/run-bare-tests.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Bare worklet: bridge auth regressions",
+      "cmd": "node --test native-wrapper/bare/test/bridge-auth.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

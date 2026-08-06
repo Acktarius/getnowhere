@@ -1,0 +1,42 @@
+{
+  "change": "mobile-bridge-hardening",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Mobile RN IPC line cap",
+      "library": "native-wrapper/src/GnhMobileBridge.ts",
+      "runtimeOwner": "Expo RN host (GnhMobileBridge) on BareKit IPC data events",
+      "writes": "clear line buffer; terminate worklet on NDJSON overflow",
+      "reads": "bare/config.mjs maxNdjsonLineBytes parity",
+      "uiConsumer": "WebView bridge events via injectJavaScript",
+      "evidence": "native-wrapper bare/bridge tests + GnhMobileBridge IPC cap test; finding 08"
+    },
+    {
+      "capability": "Mobile bridge token fail-closed + CSPRNG",
+      "library": "native-wrapper/App.tsx; native-wrapper/bare/bridge.mjs; bare/entry.mjs",
+      "runtimeOwner": "Expo shell at worklet start; Bare worklet per-command auth",
+      "writes": "refuse empty token startup; reject unauthorized IPC",
+      "reads": "bridgeToken argv; per-command token field",
+      "uiConsumer": "window.gnhMobile sendCommand (token in closure, not on window)",
+      "evidence": "native-wrapper/bare/test/bridge-auth.test.mjs; findings 10–11"
+    },
+    {
+      "capability": "WebView navigation restriction + hidden bridge secret",
+      "library": "native-wrapper/App.tsx; native-wrapper/src/injectMobileBridge.ts",
+      "runtimeOwner": "Expo WebView onShouldStartLoadWithRequest",
+      "writes": "block non-asset navigation",
+      "reads": "file:///android_asset/ui/ allowlist",
+      "uiConsumer": "Bundled Vite UI in WebView",
+      "evidence": "manual Android smoke; findings 09, 12"
+    },
+    {
+      "capability": "Mobile bridge command rate limits",
+      "library": "native-wrapper/bare/bridge.mjs",
+      "runtimeOwner": "Bare worklet bridge session handleCommand",
+      "writes": "rate_limited error events",
+      "reads": "per-client command timestamps / bucket state",
+      "uiConsumer": "HolepunchSidecarClient mobile backend error handling",
+      "evidence": "bridge-auth / rate-limit regression tests; finding 13"
+    }
+  ]
+}
