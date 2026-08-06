@@ -9,6 +9,15 @@ import { tokensEqual } from "./tokensEqual";
 
 export type SidecarWireMessage = Record<string, unknown> & { type: string };
 
+/** Normalize BareKit IPC `data` (typed unknown in bare-events) to bytes. */
+function ipcBytes(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  throw new TypeError("BareKit IPC data must be a byte view");
+}
+
 type BareKitModule = typeof import("react-native-bare-kit");
 type BareWorklet = InstanceType<BareKitModule["Worklet"]>;
 
@@ -67,8 +76,8 @@ export class GnhMobileBridge {
   private async doStart(): Promise<void> {
     const { Worklet } = await this.loadBareKit();
     const w = new Worklet();
-    w.IPC.on("data", (data: Uint8Array) => {
-      this.onIpcData(data);
+    w.IPC.on("data", (data: unknown) => {
+      this.onIpcData(ipcBytes(data));
     });
     const bytes = await loadWorkletBundleBytes();
     w.start("/app.bundle", bytes, [this.bridgeToken]);
