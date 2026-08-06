@@ -9,9 +9,9 @@
       "timeoutMs": 60000
     },
     {
-      "name": "Bare worklet: bridge auth regressions",
-      "cmd": "node --test native-wrapper/bare/test/bridge-auth.test.mjs",
-      "expect": "fail 0",
+      "name": "RN IPC line cap regression (vitest)",
+      "cmd": "npx vitest run tests/native-wrapper/gnh-mobile-bridge-ipc.test.ts",
+      "expect": "passed",
       "timeoutMs": 60000
     }
   ]

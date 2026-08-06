@@ -14,7 +14,10 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "tests/**/*.{test,spec}.{ts,tsx}",
+      "native-wrapper/src/**/*.test.ts",
+    ],
     setupFiles: ["./tests/setup.ts"],
     pool: "threads",
   },

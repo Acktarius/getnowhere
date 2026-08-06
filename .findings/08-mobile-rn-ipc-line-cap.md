@@ -12,7 +12,13 @@
 
 # follow-up
 
-- [ ] Cap RN-side IPC line reassembly in `GnhMobileBridge.onIpcData` (match `bare/config.mjs` limits)
-- [ ] On overflow: clear buffer, terminate worklet, reject further IPC
-- [ ] Add regression test for oversize partial line / single mega-line
-- [ ] Document limit in `docs/architecture/mobile-p2p-runtime.md`
+- [x] Cap RN-side IPC line reassembly in `GnhMobileBridge.onIpcData` (match `bare/config.mjs` limits)
+- [x] On overflow: clear buffer, terminate worklet, reject further IPC
+- [x] Add regression test for oversize partial line / single mega-line
+- [x] Document limit in `docs/architecture/mobile-p2p-runtime.md`
+
+# remediation (2026-08-06)
+
+- `native-wrapper/src/createLineReader.ts` + `ipcLineProcessor.ts` cap pending NDJSON at `MAX_NDJSON_LINE_BYTES` (262144, parity with `bare/config.mjs`).
+- On overflow: `IpcLineProcessor` clears buffer, `GnhMobileBridge.handleIpcOverflow()` terminates worklet and stops accepting IPC until restart.
+- Regression: `tests/native-wrapper/gnh-mobile-bridge-ipc.test.ts`.

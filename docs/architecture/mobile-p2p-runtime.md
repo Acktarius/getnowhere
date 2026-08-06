@@ -152,6 +152,8 @@ indicates app/session layer (L1 proof), not bundle mount — check both hosts.
 native-wrapper/
   App.tsx                      # starts Worklet, wires WebView postMessage
   src/GnhMobileBridge.ts       # per-launch bridgeToken + Worklet IPC
+  src/ipcLineProcessor.ts      # bounded NDJSON reassembly (maxNdjsonLineBytes)
+  src/createLineReader.ts      # incremental splitter (parity with bare/swarm.mjs)
   src/injectMobileBridge.ts    # window.gnhMobile injection script
   bare/
     entry.mjs                  # BareKit.IPC + swarm mesh
@@ -181,11 +183,13 @@ Controls match packaged desktop / sidecar where applicable:
 | `frame_requires_join`, size limits, error codes | `bare/bridge.mjs` |
 | Opaque L1-sealed frames | Unchanged app crypto path |
 | Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
+| RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
-**Pending hardening (2026-08 review):** `.findings/08-mobile-rn-ipc-line-cap.md` …
-`.findings/15-mobile-bridge-auth-tests.md`; tracked in OpenSpec
+**Pending hardening (2026-08 review):** finding 08 (RN IPC line cap) — fixed;
+`.findings/09-mobile-webview-bridge-token-exposure.md` …
+`.findings/15-mobile-bridge-auth-tests.md` remain; tracked in OpenSpec
 `openspec/changes/mobile-bridge-hardening/`.
 
 `desktop-electron/` is unchanged by the mobile track.

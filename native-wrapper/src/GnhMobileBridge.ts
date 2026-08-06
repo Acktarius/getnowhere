@@ -5,6 +5,7 @@
  */
 
 import { loadWorkletBundleBytes } from "./loadWorkletBundle";
+import { IpcLineProcessor } from "./ipcLineProcessor";
 import { tokensEqual } from "./tokensEqual";
 
 export type SidecarWireMessage = Record<string, unknown> & { type: string };
@@ -26,7 +27,7 @@ export class GnhMobileBridge {
   private worklet: BareWorklet | null = null;
   private bareKit: BareKitModule | null = null;
   private startPromise: Promise<void> | null = null;
-  private lineBuf = "";
+  private ipcProcessor: IpcLineProcessor | null = null;
   private eventHandlers = new Set<(msg: SidecarWireMessage) => void>();
 
   constructor(bridgeToken?: string) {
@@ -76,6 +77,10 @@ export class GnhMobileBridge {
   private async doStart(): Promise<void> {
     const { Worklet } = await this.loadBareKit();
     const w = new Worklet();
+    this.ipcProcessor = new IpcLineProcessor(
+      (msg) => this.emitEvent(msg),
+      () => this.handleIpcOverflow(),
+    );
     w.IPC.on("data", (data: unknown) => {
       this.onIpcData(ipcBytes(data));
     });
@@ -85,20 +90,17 @@ export class GnhMobileBridge {
   }
 
   private onIpcData(data: Uint8Array): void {
-    this.lineBuf += new TextDecoder().decode(data);
-    let nl = this.lineBuf.indexOf("\n");
-    while (nl >= 0) {
-      const line = this.lineBuf.slice(0, nl);
-      this.lineBuf = this.lineBuf.slice(nl + 1);
-      if (line.trim()) {
-        try {
-          const msg = JSON.parse(line) as SidecarWireMessage;
-          this.emitEvent(msg);
-        } catch {
-          /* ignore malformed */
-        }
-      }
-      nl = this.lineBuf.indexOf("\n");
+    this.ipcProcessor?.push(data);
+  }
+
+  private handleIpcOverflow(): void {
+    const w = this.worklet;
+    this.worklet = null;
+    this.startPromise = null;
+    try {
+      w?.terminate();
+    } catch {
+      /* ignore */
     }
   }
 
@@ -146,7 +148,8 @@ export class GnhMobileBridge {
     this.worklet = null;
     this.bareKit = null;
     this.startPromise = null;
-    this.lineBuf = "";
+    this.ipcProcessor?.reset();
+    this.ipcProcessor = null;
     this.eventHandlers.clear();
   }
 }

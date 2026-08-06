@@ -4,13 +4,13 @@ Tracked findings: `.findings/08` … `.findings/15`. OpenSpec change:
 `mobile-bridge-hardening`.
 
 ## 1. RN IPC line cap — finding 08 (TDD)
-- [ ] 1.1 Add test (TS or integration) for `GnhMobileBridge.onIpcData`: partial
+- [x] 1.1 Add test (TS or integration) for `GnhMobileBridge.onIpcData`: partial
   line over max clears buffer and terminates worklet; valid line under cap still
   parses. Expect fail before fix.
-- [ ] 1.2 Implement line cap in `GnhMobileBridge` (shared limit constant matching
+- [x] 1.2 Implement line cap in `GnhMobileBridge` (shared limit constant matching
   `bare/config.mjs`). On overflow: clear `lineBuf`, terminate worklet. Make 1.1
   pass.
-- [ ] 1.3 Update `docs/architecture/mobile-p2p-runtime.md` and mark follow-up in
+- [x] 1.3 Update `docs/architecture/mobile-p2p-runtime.md` and mark follow-up in
   `.findings/08-mobile-rn-ipc-line-cap.md`.
 
 ## 2. Fail-closed bridge token — findings 10, 11 (TDD)
