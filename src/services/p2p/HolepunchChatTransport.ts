@@ -46,6 +46,7 @@ import {
 import {
   assertCanSendLive,
   assertCanSendMessages,
+  assertRoomInteractive,
 } from "@/services/protocol/composerGate";
 import {
   isRelayEligibleStatus,
@@ -667,6 +668,8 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
         inviteExpiry: bootstrap.inviteExpiry ?? existing.room.inviteExpiry,
         roomTtl: bootstrap.roomTtl ?? existing.room.roomTtl,
         roomKeyRef: bootstrap.roomKeyRef ?? existing.room.roomKeyRef,
+        awaitingChainSync:
+          bootstrap.awaitingChainSync ?? existing.room.awaitingChainSync,
       };
       upsertCatalogRoom(existing.room);
     }
@@ -690,6 +693,8 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     inviteId: bootstrap?.inviteId ?? catalog?.inviteId,
     inviteExpiry: bootstrap?.inviteExpiry ?? catalog?.inviteExpiry,
     roomTtl: bootstrap?.roomTtl ?? catalog?.roomTtl,
+    awaitingChainSync:
+      bootstrap?.awaitingChainSync ?? catalog?.awaitingChainSync,
     connectAttempts: 0,
     lastConnectError: catalog?.lastConnectError,
     createdAt: catalog?.createdAt ?? new Date().toISOString(),
@@ -767,6 +772,11 @@ export const HolepunchChatTransport: ChatTransport = {
 
   async connect(contract) {
     return runConnectSingleFlight(contract.roomId, async () => {
+      const existing = rooms.get(contract.roomId)?.room;
+      assertRoomInteractive(
+        existing?.lifecycleStatus ?? "accepted",
+        existing?.awaitingChainSync,
+      );
       contractsByRoom.set(contract.roomId, contract);
       let state = rooms.get(contract.roomId);
       if (!state) {
@@ -886,6 +896,10 @@ export const HolepunchChatTransport: ChatTransport = {
   async retryConnect(roomId) {
     const state = rooms.get(roomId);
     if (!state?.contract) throw new Error("Nothing to retry.");
+    assertRoomInteractive(
+      state.room.lifecycleStatus,
+      state.room.awaitingChainSync,
+    );
     return runConnectSingleFlight(roomId, async () => {
       const attempt = state.room.connectAttempts ?? 1;
       await sleep(holepunchBackoffMs(attempt));
@@ -896,6 +910,10 @@ export const HolepunchChatTransport: ChatTransport = {
   async sendMessage(roomId, text) {
     const state = rooms.get(roomId) ?? ensureRoomForRelay(roomId);
     if (!state) throw new Error("Room not found.");
+    assertRoomInteractive(
+      state.room.lifecycleStatus,
+      state.room.awaitingChainSync,
+    );
     assertCanSendMessages(state.room.lifecycleStatus);
     if (state.room.roomTtl && isRoomExpired(state.room.roomTtl, nowUnix())) {
       state.room.lifecycleStatus = "expired";
@@ -1012,6 +1030,7 @@ export const HolepunchChatTransport: ChatTransport = {
       inviteExpiry: catalog.inviteExpiry,
       roomTtl: catalog.roomTtl,
       roomTopic: catalog.roomTopic,
+      awaitingChainSync: catalog.awaitingChainSync,
     }).room;
   },
 
@@ -1036,6 +1055,7 @@ export const HolepunchChatTransport: ChatTransport = {
           inviteExpiry: entry.inviteExpiry,
           roomTtl: entry.roomTtl,
           roomTopic: entry.roomTopic,
+          awaitingChainSync: entry.awaitingChainSync,
         });
       }
     }

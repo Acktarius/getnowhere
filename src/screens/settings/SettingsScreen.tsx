@@ -8,6 +8,8 @@ import {
   Info,
   KeyRound,
   Network,
+  Pickaxe,
+  RefreshCw,
   Shield,
   Trash2,
 } from "lucide-react";
@@ -44,12 +46,19 @@ import { toastError } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
 import { version } from "../../../package.json";
 
-type WipeConfirm = "delete" | "reset";
+type WipeConfirm = "delete" | "reset" | "delete-resync";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
   const setNode = useWalletStore((w) => w.setNode);
   const resync = useWalletStore((w) => w.resync);
+  const resyncFromCreationHeight = useWalletStore(
+    (w) => w.resyncFromCreationHeight,
+  );
+  const resetAndRescanFromCreationHeight = useWalletStore(
+    (w) => w.resetAndRescanFromCreationHeight,
+  );
+  const syncStatus = useWalletStore((w) => w.syncStatus);
   const [showNodeSheet, setShowNodeSheet] = useState(false);
   const [customUrl, setCustomUrl] = useState("");
   const [showCustom, setShowCustom] = useState(false);
@@ -57,6 +66,8 @@ export function SettingsScreen() {
   const [syncSpeed, setSyncSpeed] = useState<SyncSpeed>(DEFAULT_SYNC_SPEED);
   const [readMinerTx, setReadMinerTx] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [resyncBusy, setResyncBusy] = useState(false);
+  const [creationHeight, setCreationHeight] = useState<number | null>(null);
   const [wipeConfirm, setWipeConfirm] = useState<WipeConfirm | null>(null);
 
   useEffect(() => {
@@ -68,6 +79,7 @@ export function SettingsScreen() {
       );
       setReadMinerTx(Boolean(rt.raw.options.checkMinerTx));
       setCurrentNode(getInternalWalletNodeUrl());
+      setCreationHeight(Math.max(0, Number(rt.raw.creationHeight ?? 0) || 0));
     }
   }, []);
 
@@ -98,6 +110,29 @@ export function SettingsScreen() {
       await updateWalletSyncSettings({ checkMinerTx: on });
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  async function runResyncFromCreation() {
+    setResyncBusy(true);
+    try {
+      await resyncFromCreationHeight();
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Resync failed.");
+    } finally {
+      setResyncBusy(false);
+    }
+  }
+
+  async function runDeleteAndResync() {
+    setResyncBusy(true);
+    try {
+      await resetAndRescanFromCreationHeight();
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Delete and resync failed.");
+      throw err;
+    } finally {
+      setResyncBusy(false);
     }
   }
 
@@ -239,11 +274,58 @@ export function SettingsScreen() {
             </div>
             <hr className="divider divider--flush" />
             <PrivacySettingItem
+              icon={Pickaxe}
               title="Read miner transactions"
               description="Include coinbase outputs when syncing — needed for solo mining."
               on={readMinerTx}
               onToggle={(v) => void applyMinerTx(v)}
             />
+            <hr className="divider divider--flush" />
+            <div
+              className="row"
+              style={{
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 10,
+              }}
+            >
+              <div className="row-flex" style={{ gap: 10 }}>
+                <RowLead icon={RefreshCw} />
+                <div className="row__main">
+                  <div className="row__title">Blockchain rescan</div>
+                  <div className="row__sub" style={{ fontSize: 12.5 }}>
+                    {creationHeight !== null
+                      ? `Creation height: ${creationHeight}. Resync rewinds the scan cursor; delete and resync clears stored transactions first.`
+                      : "Resync from wallet creation height (unlock wallet first)."}
+                  </div>
+                </div>
+              </div>
+              <div
+                className="row-flex"
+                style={{ flexWrap: "wrap", gap: 6, paddingLeft: 46 }}
+              >
+                <button
+                  type="button"
+                  disabled={
+                    resyncBusy || settingsBusy || syncStatus === "syncing"
+                  }
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void runResyncFromCreation()}
+                >
+                  {resyncBusy ? "Resyncing…" : "Resync"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    resyncBusy || settingsBusy || syncStatus === "syncing"
+                  }
+                  className="btn btn--sm btn--danger"
+                  onClick={() => setWipeConfirm("delete-resync")}
+                >
+                  Delete and resync
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -369,6 +451,16 @@ export function SettingsScreen() {
         destructive
         busyLabel="Deleting…"
         onConfirm={() => runWipe("delete")}
+        onClose={() => setWipeConfirm(null)}
+      />
+      <ConfirmModal
+        open={wipeConfirm === "delete-resync"}
+        title="Delete and resync?"
+        body="This clears all stored wallet transactions and received smart messages, then rescans from your wallet creation height. Balances will rebuild as blocks are scanned."
+        confirmLabel="Delete and resync"
+        destructive
+        busyLabel="Rescanning…"
+        onConfirm={() => runDeleteAndResync()}
         onClose={() => setWipeConfirm(null)}
       />
       <ConfirmModal

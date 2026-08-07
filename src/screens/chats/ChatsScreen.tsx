@@ -78,11 +78,13 @@ export function ChatsScreen() {
                             </span>
                           </div>
                           <div className="row__sub">
-                            {room.lifecycleStatus !== "connected"
-                              ? `Status: ${room.lifecycleStatus}`
-                              : last
-                                ? last.text.slice(0, 36)
-                                : "Connected — say hello"}
+                            {room.awaitingChainSync
+                              ? "Syncing wallet — room will enable near chain tip"
+                              : room.lifecycleStatus !== "connected"
+                                ? `Status: ${room.lifecycleStatus}`
+                                : last
+                                  ? last.text.slice(0, 36)
+                                  : "Connected — say hello"}
                           </div>
                         </div>
                         <div className="row__meta">

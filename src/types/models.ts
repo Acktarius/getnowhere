@@ -85,6 +85,8 @@ export type ChatRoom = {
   roomTtl?: number;
   connectAttempts?: number;
   lastConnectError?: string;
+  /** Rescan lag gate — room visible but connect/send blocked until near chain tip. */
+  awaitingChainSync?: boolean;
   createdAt: string;
   lastMessageAt?: string;
 };

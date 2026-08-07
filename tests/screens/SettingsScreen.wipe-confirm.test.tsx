@@ -39,11 +39,17 @@ vi.mock("@/state/walletStore", () => ({
     selector: (s: {
       setNode: () => void;
       resync: () => Promise<void>;
+      resyncFromCreationHeight: () => Promise<void>;
+      resetAndRescanFromCreationHeight: () => Promise<void>;
+      syncStatus: "idle" | "syncing" | "synced" | "error";
     }) => unknown,
   ) =>
     selector({
       setNode: vi.fn(),
       resync: vi.fn(async () => undefined),
+      resyncFromCreationHeight: vi.fn(async () => undefined),
+      resetAndRescanFromCreationHeight: vi.fn(async () => undefined),
+      syncStatus: "synced",
     }),
 }));
 
@@ -85,6 +91,20 @@ describe("SettingsScreen wipe confirms", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(deleteWalletData).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens ConfirmModal for Delete and resync", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(
+      screen.getByRole("button", { name: /Delete and resync/i }),
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByText(/clears all stored wallet transactions/i),
+    ).toBeInTheDocument();
   });
 
   it("opens ConfirmModal for Reset app data; confirm runs resetAppData", async () => {

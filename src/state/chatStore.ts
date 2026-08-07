@@ -63,11 +63,26 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { isRoomRevoked, isInviteRevoked } = await import(
       "@/services/p2p/revokedRoomsStore"
     );
+    const {
+      applyRestoredRoomCatalog,
+      planRoomRestores,
+      pruneRoomsForMissingContacts,
+    } = await import("@/services/p2p/roomChainRestore");
+    const { isWalletNearTip } = await import(
+      "@/services/conceal/walletSyncTip"
+    );
     // Seed catalog from persisted invites / contact.roomId (first run after upgrade).
     try {
       const { useContactsStore } = await import("@/state/contactsStore");
       const { contacts, invites } = useContactsStore.getState();
-      for (const inv of invites) {
+      pruneRoomsForMissingContacts(contacts);
+      const restoredPlans = await planRoomRestores(contacts);
+      applyRestoredRoomCatalog(restoredPlans);
+      const nearTip = await isWalletNearTip(1);
+      const restoredByRoom = new Map(
+        restoredPlans.map((p) => [p.roomId, p] as const),
+      );
+      for (const inv of [...invites, ...restoredPlans.map((p) => p.invite)]) {
         if (
           inv.status !== "sent" &&
           inv.status !== "received" &&
@@ -78,6 +93,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
           continue;
         }
+        const restored = restoredByRoom.get(inv.roomId);
+        const enabled = nearTip && !(restored?.awaitingChainSync ?? false);
         try {
           await chatTransport.createRoom({
             contactId: inv.contactId,
@@ -86,11 +103,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               roomKeyRef: `key:${inv.roomId}`,
               bootstrapSource: "conceal-smart-message",
               lifecycleStatus:
-                inv.status === "accepted" ? "accepted" : "pending",
+                inv.status === "accepted" && enabled ? "accepted" : "pending",
               inviteId: inv.inviteId,
               inviteExpiry: inv.inviteExpiry,
               roomTtl: inv.roomTtl,
               roomTopic: inv.roomTopic,
+              awaitingChainSync: !enabled && inv.status === "accepted",
             },
           });
         } catch {
@@ -101,6 +119,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!c.roomId) continue;
         if (isRoomRevoked(c.roomId)) continue;
         const inv = invites.find((i) => i.roomId === c.roomId);
+        const restored = restoredByRoom.get(c.roomId);
+        const enabled = nearTip && !(restored?.awaitingChainSync ?? false);
         try {
           await chatTransport.createRoom({
             contactId: c.id,
@@ -108,11 +128,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
               roomId: c.roomId,
               roomKeyRef: `key:${c.roomId}`,
               bootstrapSource: "conceal-smart-message",
-              lifecycleStatus: "pending",
+              lifecycleStatus:
+                c.inviteStatus === "accepted" && enabled
+                  ? "accepted"
+                  : "pending",
               inviteId: inv?.inviteId,
               inviteExpiry: inv?.inviteExpiry,
               roomTtl: inv?.roomTtl,
               roomTopic: inv?.roomTopic,
+              awaitingChainSync: !enabled && c.inviteStatus === "accepted",
             },
           });
         } catch {

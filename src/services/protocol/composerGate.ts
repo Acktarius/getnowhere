@@ -67,7 +67,11 @@ export function connectFailureHint(code: string | undefined): string | null {
 export function composerDisabledReason(
   status: RoomLifecycleStatus,
   lastConnectError?: string,
+  awaitingChainSync?: boolean,
 ): string | null {
+  if (awaitingChainSync) {
+    return "Wallet syncing — room will enable when near chain tip.";
+  }
   if (canComposeMessages(status)) return null;
   if (status === "connected") return null;
   if (status === "connect_failed") {
@@ -94,6 +98,15 @@ export function assertCanSendMessages(status: RoomLifecycleStatus): void {
       composerDisabledReason(status) ??
         "Cannot send until invite accepted (pending blocks relay).",
     );
+  }
+}
+
+export function assertRoomInteractive(
+  status: RoomLifecycleStatus,
+  awaitingChainSync?: boolean,
+): void {
+  if (awaitingChainSync) {
+    throw new Error(composerDisabledReason(status, undefined, true)!);
   }
 }
 

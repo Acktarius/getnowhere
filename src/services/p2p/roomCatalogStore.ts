@@ -31,6 +31,7 @@ export type CatalogRoom = Pick<
   | "createdAt"
   | "lastMessageAt"
   | "lastConnectError"
+  | "awaitingChainSync"
 >;
 
 function readAll(): Record<string, CatalogRoom> {
@@ -109,6 +110,7 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
     createdAt: room.createdAt || prev?.createdAt || new Date().toISOString(),
     lastMessageAt: room.lastMessageAt ?? prev?.lastMessageAt,
     lastConnectError: room.lastConnectError ?? prev?.lastConnectError,
+    awaitingChainSync: room.awaitingChainSync ?? prev?.awaitingChainSync,
   };
   all[room.id] = next;
   writeAll(all);

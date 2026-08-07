@@ -27,6 +27,8 @@ export {
   persistRuntime,
   pollMempoolRuntime,
   requireRuntime,
+  resetAndRescanFromCreationHeight,
+  resyncFromCreationHeight,
   type SdkRuntime,
   sync,
   syncRuntime,

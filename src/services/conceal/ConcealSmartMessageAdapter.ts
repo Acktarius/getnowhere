@@ -5,7 +5,10 @@
  */
 
 import { messages } from "conceal-wallet-sdk";
-import { readReceivedRecords } from "@/services/conceal/sync/messages-store";
+import {
+  readReceivedRecords,
+  readSentRecords,
+} from "@/services/conceal/sync/messages-store";
 import {
   pollMempoolRuntime,
   requireRuntime,
@@ -139,6 +142,26 @@ function matchContactByPaymentId(
   return contactBinder
     .list()
     .find((c) => c.paymentIdFrom.trim().toLowerCase() === needle);
+}
+
+function matchContactForSentRecord(
+  record: import("@/services/conceal/sync/messages-store").SdkMessageRecord,
+): SmartMessageContactDelivery | undefined {
+  if (!contactBinder) return undefined;
+  const pidTo = record.paymentIdTo?.trim().toLowerCase();
+  if (pidTo) {
+    const byPid = contactBinder
+      .list()
+      .find((c) => c.paymentIdTo?.trim().toLowerCase() === pidTo);
+    if (byPid) return byPid;
+  }
+  const addr = (record.sentTo ?? record.counterpartyAddress)
+    ?.trim()
+    .toLowerCase();
+  if (!addr) return undefined;
+  return contactBinder
+    .list()
+    .find((c) => c.address.trim().toLowerCase() === addr);
 }
 
 async function inviteFromCreateBody(
@@ -388,6 +411,23 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
             ...invite,
             zeroConf: record.blockHeight === 0,
           });
+        }
+      }
+      for (const record of readSentRecords(rt.raw)) {
+        if (!messages.isSmartMessage(record.body)) continue;
+        const contact = matchContactForSentRecord(record);
+        if (!contact) continue;
+        const invite = await inviteFromCreateBody(record.body, {
+          contactId: contact.contactId,
+          status: "sent",
+          txHash: record.id,
+          createdAt: record.timestamp,
+          senderAlias: contact.alias,
+          paymentIdFrom: contact.paymentIdFrom,
+          paymentIdTo: contact.paymentIdTo,
+        });
+        if (invite && !out.some((i) => i.inviteId === invite.inviteId)) {
+          out.push(invite);
         }
       }
       // Keep any local sent copies that aren't on the received list.

@@ -29,6 +29,8 @@ type WalletStore = WalletState & {
     paymentId?: string;
   }) => Promise<void>;
   resync: () => Promise<void>;
+  resyncFromCreationHeight: () => Promise<void>;
+  resetAndRescanFromCreationHeight: () => Promise<void>;
   setNetwork: (n: WalletState["network"]) => void;
   setNode: (url: string) => void;
   getNode: () => string;
@@ -151,6 +153,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       hydrateChatRoomsFromWallet();
       // Enter app immediately; live sync + resync catch tip in background.
       void get().resync();
+      void useContactsStore.getState().refreshInvites();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -169,6 +172,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       "@/services/p2p/HolepunchChatTransport"
     );
     hydrateChatRoomsFromWallet();
+    void useContactsStore.getState().refreshInvites();
   },
 
   async refreshBalance() {
@@ -204,6 +208,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         lastSyncError: undefined,
       });
       await get().refreshBalance();
+      void useContactsStore.getState().refreshInvites();
     } catch (error) {
       // Daemon unreachable or sync error — don't block the wallet flow.
       // Surface the message so the user can diagnose (CORS, node down, etc).
@@ -212,6 +217,58 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0,
         lastSyncError: (error as Error)?.message ?? String(error),
       });
+    }
+  },
+
+  async resyncFromCreationHeight() {
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
+    try {
+      await walletService.resyncFromCreationHeight();
+      set({
+        syncStatus: "synced",
+        syncProgress: 1,
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
+      });
+      await get().refreshBalance();
+      void useContactsStore.getState().refreshInvites();
+    } catch (error) {
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
+      throw error;
+    }
+  },
+
+  async resetAndRescanFromCreationHeight() {
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
+    try {
+      await walletService.resetAndRescanFromCreationHeight();
+      set({
+        syncStatus: "synced",
+        syncProgress: 1,
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
+      });
+      await get().refreshBalance();
+      void useContactsStore.getState().refreshInvites();
+    } catch (error) {
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
+      throw error;
     }
   },
 

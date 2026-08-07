@@ -103,6 +103,10 @@ export type WalletService = {
   }): Promise<{ address: string; viewKey: string }>;
   generatePaymentId(): string;
   resync(): Promise<void>;
+  /** Rewind scan to creation height and sync (keeps folded outputs/txs). */
+  resyncFromCreationHeight(): Promise<void>;
+  /** Wipe scanned history and re-sync from creation height. */
+  resetAndRescanFromCreationHeight(): Promise<void>;
   // TODO(conceal-wallet-sdk): wire the real engine methods through here.
   // Until then, ConcealWalletService simulates timing + balances.
 };
@@ -238,6 +242,7 @@ export type RoomBootstrap = {
   inviteExpiry?: number;
   roomTtl?: number;
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
+  awaitingChainSync?: boolean;
 };
 
 export type ChatTransport = {

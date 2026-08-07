@@ -13,6 +13,7 @@ import {
   getHandshakeForInvite,
   rememberHandshake,
 } from "@/services/conceal/ConcealSmartMessageAdapter";
+import { isWalletNearTip } from "@/services/conceal/walletSyncTip";
 import {
   hydrateContacts,
   loadPendingInitiatorKeys,
@@ -27,8 +28,18 @@ import {
   isRoomRevoked,
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
+import {
+  listCatalogRooms,
+  patchCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
+import {
+  applyRestoredRoomCatalog,
+  planRoomRestores,
+  pruneRoomsForMissingContacts,
+} from "@/services/p2p/roomChainRestore";
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
+import { isPostAcceptStatus } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
@@ -622,8 +633,25 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 
   removeContact(id) {
+    const doomedRoomIds = new Set<string>();
+    for (const inv of get().invites.filter((i) => i.contactId === id)) {
+      doomedRoomIds.add(inv.roomId);
+    }
+    const contact = get().contacts.find((c) => c.id === id);
+    if (contact?.roomId) doomedRoomIds.add(contact.roomId);
     set((s) => ({ contacts: s.contacts.filter((c) => c.id !== id) }));
     schedulePersistContacts(get);
+    void (async () => {
+      for (const roomId of doomedRoomIds) {
+        if (isRoomRevoked(roomId)) continue;
+        try {
+          await applyRoomDestroyLocally(get, set, roomId);
+        } catch {
+          /* best-effort */
+        }
+      }
+      pruneRoomsForMissingContacts(get().contacts);
+    })();
   },
   archiveContact(id) {
     set((s) => ({
@@ -683,8 +711,17 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       }
     }
 
+    pruneRoomsForMissingContacts(get().contacts);
+
+    const restoredPlans = await planRoomRestores(get().contacts);
+    applyRestoredRoomCatalog(restoredPlans);
+    const restoredInvites = restoredPlans.map((p) => p.invite);
+
     const list = await smartMessageService.fetchIncomingMessages();
-    const eligibleOnly = mergeInviteLists(get().invites, list).filter((inv) => {
+    const eligibleOnly = mergeInviteLists(
+      mergeInviteLists(get().invites, restoredInvites),
+      list,
+    ).filter((inv) => {
       if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
         return false;
       }
@@ -717,6 +754,75 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     set({ invites: pruned });
     schedulePersistInvites(get);
+
+    const nearTip = await isWalletNearTip(1);
+    if (nearTip) {
+      for (const entry of listCatalogRooms()) {
+        if (!entry.awaitingChainSync) continue;
+        patchCatalogRoom(entry.id, {
+          awaitingChainSync: false,
+          lifecycleStatus: isPostAcceptStatus(entry.lifecycleStatus)
+            ? entry.lifecycleStatus
+            : "accepted",
+        });
+        try {
+          await chatTransport.createRoom({
+            contactId: entry.contactId,
+            bootstrap: {
+              roomId: entry.id,
+              roomKeyRef: entry.roomKeyRef,
+              bootstrapSource: entry.bootstrapSource,
+              lifecycleStatus: "accepted",
+              inviteId: entry.inviteId,
+              inviteExpiry: entry.inviteExpiry,
+              roomTtl: entry.roomTtl,
+              roomTopic: entry.roomTopic,
+              awaitingChainSync: false,
+            },
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    for (const plan of restoredPlans) {
+      if (isRoomRevoked(plan.roomId) || isInviteRevoked(plan.inviteId)) {
+        continue;
+      }
+      const contact = get().contacts.find((c) => c.id === plan.contactId);
+      if (!contact) continue;
+      const enabled = nearTip && !plan.awaitingChainSync;
+      try {
+        await chatTransport.createRoom({
+          contactId: plan.contactId,
+          bootstrap: {
+            roomId: plan.roomId,
+            roomKeyRef: `key:${plan.roomId}`,
+            bootstrapSource: "conceal-smart-message",
+            lifecycleStatus: enabled ? "accepted" : "pending",
+            inviteId: plan.inviteId,
+            inviteExpiry: plan.handshake.inviteExpiry,
+            roomTtl: plan.handshake.roomTtl,
+            roomTopic: plan.handshake.roomTopic,
+            awaitingChainSync: !enabled,
+          },
+        });
+      } catch {
+        /* revoked / invalid */
+      }
+      if (enabled) {
+        patchCatalogRoom(plan.roomId, {
+          lifecycleStatus: "accepted",
+          awaitingChainSync: false,
+        });
+      }
+      get().updateContact(plan.contactId, {
+        inviteStatus: "accepted",
+        roomId: plan.roomId,
+        chatStatus: enabled ? "connecting" : "invited",
+      });
+    }
 
     for (const inv of newestReceived.values()) {
       if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) continue;

@@ -23,6 +23,8 @@ import {
   hasStoredWallet,
   lock as lockRuntime,
   nodeUrlFromRaw,
+  resetAndRescanFromCreationHeight as runtimeResetAndRescanFromCreationHeight,
+  resyncFromCreationHeight as runtimeResyncFromCreationHeight,
   sendCcx,
   sync,
   unlock,
@@ -396,6 +398,58 @@ export const ConcealWalletService: WalletService = {
         throw new Error("Wallet is not open. Import or unlock first.");
       }
       const networkHeight = await sync();
+      refreshSnapshotFromRuntime();
+      const scanned = getRuntime()?.state.scannedHeight ?? 0;
+      const total = Math.max(networkHeight, 1);
+      snapshot.syncProgress = Math.min(1, scanned / total);
+      snapshot.syncStatus = "synced";
+      snapshot.lastSyncedAt = new Date().toISOString();
+    } catch (error) {
+      const msg = (error as Error)?.message ?? String(error);
+      snapshot.syncStatus = "error";
+      snapshot.syncProgress = 0;
+      snapshot.lastSyncError = msg;
+      throw error;
+    }
+  },
+
+  async resyncFromCreationHeight(): Promise<void> {
+    if (!snapshot) return;
+    snapshot.syncStatus = "syncing";
+    snapshot.syncProgress = 0.05;
+    snapshot.lastSyncError = undefined;
+    try {
+      await ensureWasmReady();
+      if (!getRuntime()) {
+        throw new Error("Wallet is not open. Import or unlock first.");
+      }
+      const networkHeight = await runtimeResyncFromCreationHeight();
+      refreshSnapshotFromRuntime();
+      const scanned = getRuntime()?.state.scannedHeight ?? 0;
+      const total = Math.max(networkHeight, 1);
+      snapshot.syncProgress = Math.min(1, scanned / total);
+      snapshot.syncStatus = "synced";
+      snapshot.lastSyncedAt = new Date().toISOString();
+    } catch (error) {
+      const msg = (error as Error)?.message ?? String(error);
+      snapshot.syncStatus = "error";
+      snapshot.syncProgress = 0;
+      snapshot.lastSyncError = msg;
+      throw error;
+    }
+  },
+
+  async resetAndRescanFromCreationHeight(): Promise<void> {
+    if (!snapshot) return;
+    snapshot.syncStatus = "syncing";
+    snapshot.syncProgress = 0.05;
+    snapshot.lastSyncError = undefined;
+    try {
+      await ensureWasmReady();
+      if (!getRuntime()) {
+        throw new Error("Wallet is not open. Import or unlock first.");
+      }
+      const networkHeight = await runtimeResetAndRescanFromCreationHeight();
       refreshSnapshotFromRuntime();
       const scanned = getRuntime()?.state.scannedHeight ?? 0;
       const total = Math.max(networkHeight, 1);

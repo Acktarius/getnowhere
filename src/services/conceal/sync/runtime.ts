@@ -88,6 +88,7 @@ import {
 import { seedStateFromLegacyBlob } from "@/services/conceal/sync/legacy-state-seed";
 import {
   applyInboundScanToReceived,
+  clearReceivedRecords,
   dropExpiredTtl,
   minedHeightsFromState,
   patchSentMessageBlockHeights,
@@ -574,6 +575,42 @@ export async function adopt(input: {
  */
 export async function sync(): Promise<number> {
   return syncRuntime(requireRuntime());
+}
+
+function creationHeightFromRaw(raw: RawWalletV1): number {
+  return Math.max(0, Number(raw.creationHeight ?? 0) || 0);
+}
+
+/**
+ * Rewind scan cursor to `creationHeight` and sync without wiping folded state.
+ * Folding is idempotent on re-scan. @see RESCAN_LAG_BLOCKS
+ */
+export async function resyncFromCreationHeight(
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const creationHeight = creationHeightFromRaw(rt.raw);
+  rt.state = { ...rt.state, scannedHeight: creationHeight };
+  await persistRuntime(rt);
+  return syncRuntime(rt);
+}
+
+/** Wipe scanned wallet history and re-sync from `creationHeight`. */
+export async function resetAndRescanFromCreationHeight(
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const creationHeight = creationHeightFromRaw(rt.raw);
+  rt.state = {
+    ...rt.state,
+    scannedHeight: creationHeight,
+    outputs: [],
+    spentKeyImages: [],
+    transactions: [],
+    deposits: [],
+    spentDepositRefs: [],
+  };
+  rt.raw = clearReceivedRecords(rt.raw);
+  await persistRuntime(rt);
+  return syncRuntime(rt);
 }
 
 /** Warn once per runtime when mempool RPC is unavailable (#109). */
