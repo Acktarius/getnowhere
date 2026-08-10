@@ -89,12 +89,39 @@ notes in `holepunch-sidecar.md` apply to developers only.
 
 ### Cross-platform test (Android mobile + Electron desktop)
 
-1. Mobile: `npm run mobile:sync-ui && npm run mobile:android` (Metro for debug builds).
-2. Desktop invitee: `npm run holepunch` + `npm run dev`, or `npm run desktop:alice`.
-3. Complete invite/accept; open the room on both sides.
-4. Compare **Topic** in room diagnostics — `topicRef` must match.
-5. Mobile logcat: `[swarm] topic … announced`, then `connection open peer=…`.
-6. UI must reach transport **connected** (L1 post-connect proof), not peer count alone.
+**Mobile** (phone plugged in, USB debugging on, `adb devices` → `device`)
+
+1. **Build and install**:
+
+```bash
+npm run mobile:android
+# or
+npm run mobile:android --no-install
+adb install -r im.getnowhere.app
+```
+
+Writes `native-wrapper/android/app/build/outputs/apk/debug/app-debug.apk` and installs
+on the connected phone. Package: `im.getnowhere.app`.
+
+2. **Optional — Metro debug** (debug APK only; skip for EAS `preview` APKs):
+
+```bash
+cd native-wrapper && npx expo start --clear
+```
+
+Then open the app on the phone. Black screen after splash → Metro is not reachable on your LAN.
+
+Reinstall an **already-built** APK (second phone, no rebuild):
+
+```bash
+adb install -r native-wrapper/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+**Desktop invitee** — `npm run holepunch` + `npm run dev`, or `npm run desktop:alice`.
+
+Then: invite/accept, open the room on both sides, compare **Topic** (`topicRef` must match),
+check logcat for `[swarm] topic … announced` → `connection open peer=…`, and confirm transport
+**connected** (L1 post-connect proof).
 
 Still **not** in scope: native secure storage, biometrics unlock, iOS device P2P
 sign-off.
