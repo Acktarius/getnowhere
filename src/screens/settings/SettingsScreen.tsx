@@ -1,5 +1,4 @@
 import {
-  Bug,
   ChevronRight,
   Database,
   Download,
@@ -196,13 +195,6 @@ export function SettingsScreen() {
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
-            <hr className="divider divider--flush" />
-            <PrivacySettingItem
-              title="Advanced debug logging"
-              description="Off by default. Enables diagnostics capture for troubleshooting."
-              on={s.privacy.advancedDebugLogging}
-              onToggle={(v) => s.setPrivacy({ advancedDebugLogging: v })}
-            />
           </div>
         </div>
 
@@ -249,10 +241,7 @@ export function SettingsScreen() {
                 <RowLead icon={Gauge} />
                 <div className="row__main">
                   <div className="row__title">Sync speed</div>
-                  <div className="row__sub" style={{ fontSize: 12.5 }}>
-                    Same profiles as Conceal Next Wallet (workers, batch,
-                    sources).
-                  </div>
+                  <span className="field__hint">Profiles</span>
                 </div>
               </div>
               <div
@@ -293,11 +282,11 @@ export function SettingsScreen() {
                 <RowLead icon={RefreshCw} />
                 <div className="row__main">
                   <div className="row__title">Blockchain rescan</div>
-                  <div className="row__sub" style={{ fontSize: 12.5 }}>
+                  <span className="field__hint">
                     {creationHeight !== null
                       ? `Creation height: ${creationHeight}. Resync rewinds the scan cursor; delete and resync clears stored transactions first.`
                       : "Resync from wallet creation height (unlock wallet first)."}
-                  </div>
+                  </span>
                 </div>
               </div>
               <div
@@ -388,20 +377,6 @@ export function SettingsScreen() {
                     }}
                   />
                 </button>
-              }
-            />
-            <hr className="divider divider--flush" />
-            <Row
-              icon={Bug}
-              title="Diagnostics"
-              sub="View logs and adapter state"
-              trailing={
-                <Link
-                  className="btn btn--sm btn--secondary"
-                  to="/settings/about"
-                >
-                  Open
-                </Link>
               }
             />
           </div>

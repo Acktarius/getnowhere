@@ -31,7 +31,7 @@
     "types": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format --write ."
+    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format ."
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",

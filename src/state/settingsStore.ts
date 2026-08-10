@@ -13,7 +13,6 @@ const DEFAULT_SETTINGS: AppSettings = {
     blurInAppSwitcher: false,
     autoLockTimeoutSec: 300,
     clearClipboardWarnings: true,
-    advancedDebugLogging: false,
   },
 };
 

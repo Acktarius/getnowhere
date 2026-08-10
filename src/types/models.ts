@@ -220,7 +220,6 @@ export type PrivacySettings = {
   blurInAppSwitcher: boolean;
   autoLockTimeoutSec: number;
   clearClipboardWarnings: boolean;
-  advancedDebugLogging: boolean;
 };
 
 export type AppSettings = {
@@ -229,12 +228,4 @@ export type AppSettings = {
   privacy: PrivacySettings;
   network: "mainnet" | "testnet" | "devnet";
   biometricEnabled: boolean;
-};
-
-export type DiagnosticsEntry = {
-  id: string;
-  level: "info" | "warn" | "error";
-  source: string;
-  message: string;
-  timestamp: string;
 };
