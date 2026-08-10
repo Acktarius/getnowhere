@@ -1,6 +1,6 @@
 /**
- * Rebuild accepted chat rooms from on-chain smart messages during wallet rescan.
- * @see docs/security/p2pchatprotocol.md
+ * Replay chat rooms from wallet file backup messages (sent + received).
+ * @see openspec/changes/repair-room-restoration/design.md
  */
 import { messages } from "conceal-wallet-sdk";
 import {
@@ -10,15 +10,21 @@ import {
 } from "@/services/conceal/sync/messages-store";
 import { getRuntime } from "@/services/conceal/sync/runtime";
 import { isWalletNearTip } from "@/services/conceal/walletSyncTip";
-import { readChatRooms } from "@/services/p2p/chatRoomsBlob";
-import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
+import {
+  isRoomRevoked,
+  rememberRevokedRoom,
+} from "@/services/p2p/revokedRoomsStore";
 import {
   listCatalogRooms,
   removeCatalogRoom,
   upsertCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import { deriveRelationshipId } from "@/services/protocol/ids";
-import { isRoomExpired, nowUnix } from "@/services/protocol/roomLifecycle";
+import {
+  isInviteExpired,
+  isRoomExpired,
+  nowUnix,
+} from "@/services/protocol/roomLifecycle";
 import {
   hydrateCreateHandshake,
   parseChatSmartBody,
@@ -30,7 +36,6 @@ import type {
   ChatRegisterPayload,
   ChatRevokePayload,
 } from "@/types/protocol";
-import { CHAT_PROTOCOL_VERSION } from "@/types/protocol";
 
 export type RestoredRoomPlan = {
   roomId: string;
@@ -38,8 +43,13 @@ export type RestoredRoomPlan = {
   contactId: string;
   handshake: ChatInviteHandshake;
   invite: SmartMessageInvite;
-  /** Block connect/composer until wallet is near chain tip. */
+  kind: "accepted" | "pending";
+  /** Accepted rooms only — block open/connect until near chain tip. */
   awaitingChainSync: boolean;
+};
+
+export type PlanRoomRestoresOptions = {
+  restoreFromFileImport: boolean;
 };
 
 function normalizeInviteId(inviteId: string): string {
@@ -73,7 +83,7 @@ function matchContactForSent(
   return contacts.find((c) => c.ccxAddress.trim().toLowerCase() === addr);
 }
 
-function allMessageRecords(): SdkMessageRecord[] {
+function blobMessageRecords(): SdkMessageRecord[] {
   const rt = getRuntime();
   if (!rt) return [];
   return [...readSentRecords(rt.raw), ...readReceivedRecords(rt.raw)];
@@ -88,7 +98,10 @@ async function inviteFromCreateRecord(
   handshake: ChatInviteHandshake;
 } | null> {
   if (!messages.isSmartMessage(record.body)) return null;
-  const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
+  const parsed = parseChatSmartBody(record.body, {
+    allowSeenReplay: true,
+    allowExpiredInvite: true,
+  });
   if (parsed?.action !== "create") return null;
   let hs = parsed.payload.handshake;
   if (!hs.relationshipId || !hs.salt) {
@@ -122,7 +135,7 @@ async function inviteFromCreateRecord(
 
 function scanRegisters(): Map<string, ChatRegisterPayload> {
   const out = new Map<string, ChatRegisterPayload>();
-  for (const record of allMessageRecords()) {
+  for (const record of blobMessageRecords()) {
     if (!messages.isSmartMessage(record.body)) continue;
     const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
     if (parsed?.action !== "register") continue;
@@ -137,7 +150,7 @@ function scanRevokes(): {
 } {
   const inviteIds = new Set<string>();
   const roomIds = new Set<string>();
-  for (const record of allMessageRecords()) {
+  for (const record of blobMessageRecords()) {
     if (!messages.isSmartMessage(record.body)) continue;
     const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
     if (parsed?.action !== "revoke") continue;
@@ -148,17 +161,7 @@ function scanRevokes(): {
   return { inviteIds, roomIds };
 }
 
-function hasCounterpartValidation(
-  registers: Map<string, ChatRegisterPayload>,
-  inviteId: string,
-  walletHasInbound: boolean,
-): boolean {
-  if (registers.has(normalizeInviteId(inviteId))) return true;
-  if (walletHasInbound) return true;
-  return false;
-}
-
-/** Drop catalog / wallet room rows whose contact no longer exists. */
+/** Drop catalog rows whose contact no longer exists. */
 export function pruneRoomsForMissingContacts(contacts: Contact[]): string[] {
   const contactIds = new Set(contacts.map((c) => c.id));
   const removed: string[] = [];
@@ -171,22 +174,25 @@ export function pruneRoomsForMissingContacts(contacts: Contact[]): string[] {
 }
 
 /**
- * Scan chain + wallet blob for accepted rooms that should reappear after
- * import / rescan / new device unlock.
+ * Replay rooms from encrypted wallet file backup only.
+ * Seed/key/QR/resync must pass `restoreFromFileImport: false`.
  */
 export async function planRoomRestores(
   contacts: Contact[],
+  options: PlanRoomRestoresOptions,
 ): Promise<RestoredRoomPlan[]> {
+  if (!options.restoreFromFileImport) return [];
+
   const rt = getRuntime();
   if (!rt || contacts.length === 0) return [];
 
+  const now = nowUnix();
   const nearTip = await isWalletNearTip(1);
   const registers = scanRegisters();
   const revokes = scanRevokes();
-  const walletRooms = readChatRooms(rt.raw);
   const plans = new Map<string, RestoredRoomPlan>();
 
-  for (const record of allMessageRecords()) {
+  for (const record of blobMessageRecords()) {
     if (!messages.isSmartMessage(record.body)) continue;
     const contact =
       record.direction === "received"
@@ -207,93 +213,46 @@ export async function planRoomRestores(
     if (revokes.roomIds.has(roomId) || revokes.inviteIds.has(inviteKey)) {
       continue;
     }
-    if (handshake.roomTtl && isRoomExpired(handshake.roomTtl, nowUnix())) {
+
+    // Case 1: room lifetime elapsed.
+    if (handshake.roomTtl && isRoomExpired(handshake.roomTtl, now)) {
       continue;
     }
 
-    const walletEntry = walletRooms[roomId];
-    if (walletEntry?.revoked === true) continue;
+    const hasAccept = registers.has(inviteKey);
 
-    const walletHasInbound =
-      walletEntry &&
-      !walletEntry.revoked &&
-      walletEntry.messages.some((m) => m.direction === "in");
-
+    // Case 2: invite window closed without accept — tombstone, silent skip.
     if (
-      !hasCounterpartValidation(registers, invite.inviteId, walletHasInbound)
+      !hasAccept &&
+      handshake.inviteExpiry &&
+      isInviteExpired(handshake.inviteExpiry, now)
     ) {
+      rememberRevokedRoom(roomId, invite.inviteId);
       continue;
     }
 
-    const awaitingChainSync = !nearTip;
-    const acceptedInvite: SmartMessageInvite = {
-      ...invite,
-      status: "accepted",
-    };
+    // Case 3: pending invite still within window.
+    if (!hasAccept) {
+      plans.set(roomId, {
+        roomId,
+        inviteId: invite.inviteId,
+        contactId: contact.id,
+        handshake,
+        invite,
+        kind: "pending",
+        awaitingChainSync: false,
+      });
+      continue;
+    }
+
+    // Case 4: accepted — enable only after near-tip revoke scan.
     plans.set(roomId, {
       roomId,
       inviteId: invite.inviteId,
       contactId: contact.id,
       handshake,
-      invite: acceptedInvite,
-      awaitingChainSync,
-    });
-  }
-
-  // Wallet transcript + addressBook when create/register rows are not scanned yet.
-  for (const contact of contacts) {
-    if (!contact.roomId) continue;
-    if (isRoomRevoked(contact.roomId)) continue;
-    if (plans.has(contact.roomId)) continue;
-    if (revokes.roomIds.has(contact.roomId)) continue;
-
-    const entry = walletRooms[contact.roomId];
-    if (entry?.revoked === true) continue;
-
-    const walletHasInbound =
-      entry &&
-      !entry.revoked &&
-      entry.messages.some((m) => m.direction === "in");
-    const acceptedOnContact = contact.inviteStatus === "accepted";
-
-    if (!walletHasInbound && !acceptedOnContact) continue;
-
-    plans.set(contact.roomId, {
-      roomId: contact.roomId,
-      inviteId: contact.roomId,
-      contactId: contact.id,
-      handshake: {
-        protocolVersion: CHAT_PROTOCOL_VERSION,
-        inviteId: contact.roomId,
-        roomId: contact.roomId,
-        replayId: "",
-        nonceSeed: "",
-        inviteExpiry: nowUnix() + 86400,
-        roomTtl: nowUnix() + 86400 * 7,
-        roomTopic: "general",
-        senderEphemeralPublicKey: "",
-        relationshipId: "",
-        salt: "",
-        cipherSuite: "CHACHA20_POLY1305_V1",
-        kdf: "HKDF_SHA256_V1",
-        nonceStrategy: "counter_from_seed",
-      },
-      invite: {
-        id: `contact:${contact.roomId}`,
-        contactId: contact.id,
-        roomId: contact.roomId,
-        inviteId: contact.roomId,
-        replayId: "",
-        nonce: "",
-        expiry: new Date().toISOString(),
-        inviteExpiry: nowUnix() + 86400,
-        roomTtl: nowUnix() + 86400 * 7,
-        senderAlias: contact.alias,
-        capabilities: [],
-        bootstrapEncrypted: "",
-        status: "accepted",
-        createdAt: contact.createdAt,
-      },
+      invite: { ...invite, status: "accepted" },
+      kind: "accepted",
       awaitingChainSync: !nearTip,
     });
   }
@@ -301,22 +260,27 @@ export async function planRoomRestores(
   return [...plans.values()];
 }
 
-/** Upsert catalog rows for restored rooms (does not connect). */
+/** Upsert catalog rows for file-replayed rooms (does not connect). */
 export function applyRestoredRoomCatalog(plans: RestoredRoomPlan[]): void {
   for (const plan of plans) {
     if (isRoomRevoked(plan.roomId)) continue;
+    const lifecycleStatus =
+      plan.kind === "accepted" && !plan.awaitingChainSync
+        ? "accepted"
+        : "pending";
     upsertCatalogRoom({
       id: plan.roomId,
       contactId: plan.contactId,
       bootstrapSource: "conceal-smart-message",
       roomKeyRef: `key:${plan.roomId}`,
-      lifecycleStatus: plan.awaitingChainSync ? "pending" : "accepted",
+      lifecycleStatus,
       inviteId: plan.inviteId,
       inviteExpiry: plan.handshake.inviteExpiry,
       roomTtl: plan.handshake.roomTtl,
       roomTopic: plan.handshake.roomTopic,
       createdAt: plan.invite.createdAt,
-      awaitingChainSync: plan.awaitingChainSync,
+      awaitingChainSync:
+        plan.kind === "accepted" ? plan.awaitingChainSync : false,
     });
   }
 }

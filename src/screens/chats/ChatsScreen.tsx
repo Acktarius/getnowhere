@@ -59,13 +59,8 @@ export function ChatsScreen() {
                   {visibleRooms.map((room) => {
                     const c = contacts.find((x) => x.id === room.contactId);
                     const last = (messagesByRoom[room.id] ?? []).at(-1);
-                    return (
-                      <Link
-                        key={room.id}
-                        to={`/chats/${room.id}`}
-                        className="row row--clickable"
-                        style={{ textDecoration: "none" }}
-                      >
+                    const rowInner = (
+                      <>
                         <div className="row__avatar">
                           <RoomTopicIcon topicId={room.roomTopic} size={18} />
                         </div>
@@ -95,6 +90,28 @@ export function ChatsScreen() {
                             </span>
                           )}
                         </div>
+                      </>
+                    );
+                    if (room.awaitingChainSync) {
+                      return (
+                        <div
+                          key={room.id}
+                          className="row row--clickable"
+                          style={{ opacity: 0.65, cursor: "not-allowed" }}
+                          aria-disabled
+                        >
+                          {rowInner}
+                        </div>
+                      );
+                    }
+                    return (
+                      <Link
+                        key={room.id}
+                        to={`/chats/${room.id}`}
+                        className="row row--clickable"
+                        style={{ textDecoration: "none" }}
+                      >
+                        {rowInner}
                       </Link>
                     );
                   })}

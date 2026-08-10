@@ -475,7 +475,7 @@ export function encodeRelaySmartBody(payload: ChatRelayPayload): string {
 
 export function parseChatSmartBody(
   smartBody: string,
-  opts?: { allowSeenReplay?: boolean },
+  opts?: { allowSeenReplay?: boolean; allowExpiredInvite?: boolean },
 ):
   | { action: "create"; payload: ChatCreatePayload }
   | { action: "register"; payload: ChatRegisterPayload }
@@ -514,7 +514,9 @@ export function parseChatSmartBody(
     if (!opts?.allowSeenReplay && hasSeenReplayId(handshake.replayId)) {
       return null;
     }
-    if (isInviteExpired(handshake.inviteExpiry)) return null;
+    if (!opts?.allowExpiredInvite && isInviteExpired(handshake.inviteExpiry)) {
+      return null;
+    }
     const senderAlias = wireKind === "verbose" ? (data[13] ?? "") : "";
     const capabilities =
       wireKind === "verbose"

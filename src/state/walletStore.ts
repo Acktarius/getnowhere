@@ -13,6 +13,10 @@ type WalletStore = WalletState & {
   seedPhrase: string | null; // held only in-memory, never persisted to disk
   initializing: boolean;
   error: string | null;
+  /** Set on encrypted file import; consumed once for room replay. */
+  pendingFileImportRoomRestore: boolean;
+  /** Returns true once after file import, then clears the flag. */
+  takeFileImportRoomRestore: () => boolean;
   createWallet: () => Promise<{ seedPhrase: string }>;
   restoreWallet: (seed: string) => Promise<void>;
   importWallet: (input: ImportWalletInput) => Promise<void>;
@@ -55,6 +59,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   seedPhrase: null,
   initializing: false,
   error: null,
+  pendingFileImportRoomRestore: false,
+
+  takeFileImportRoomRestore() {
+    const pending = get().pendingFileImportRoomRestore;
+    if (pending) set({ pendingFileImportRoomRestore: false });
+    return pending;
+  },
 
   async createWallet() {
     set({ initializing: true, error: null });
@@ -119,8 +130,14 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0.05,
         initializing: false,
       });
+      if (input.method === "file") {
+        set({ pendingFileImportRoomRestore: true });
+      }
       await useContactsStore.getState().hydrate();
       void get().resync();
+      if (input.method === "file") {
+        void useContactsStore.getState().refreshInvites();
+      }
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;

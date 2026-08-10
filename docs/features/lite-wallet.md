@@ -48,6 +48,11 @@ screen). App unlock passcode can be set later under Settings → Passcode.
 **Open / import / restore:** decrypt and enter the app immediately. Tip catch-up runs in the
 background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync continues.
 
+**Chat room replay:** only **file backup** import restores rooms (from exported
+`sentMessages` / `receivedMessages`). Seed, keys, and QR restore the wallet and
+show smart-message **transactions** in history (fee dot) but do **not** recreate
+chat rooms. Settings **Resync** re-scans txs for balance integrity only.
+
 ## Settings
 
 - **Sync speed** — DOOM-labeled profiles; persisted as `options.readSpeed`.

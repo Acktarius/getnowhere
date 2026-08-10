@@ -713,7 +713,13 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     pruneRoomsForMissingContacts(get().contacts);
 
-    const restoredPlans = await planRoomRestores(get().contacts);
+    const { useWalletStore } = await import("@/state/walletStore");
+    const restoreFromFileImport = useWalletStore
+      .getState()
+      .takeFileImportRoomRestore();
+    const restoredPlans = restoreFromFileImport
+      ? await planRoomRestores(get().contacts, { restoreFromFileImport: true })
+      : [];
     applyRestoredRoomCatalog(restoredPlans);
     const restoredInvites = restoredPlans.map((p) => p.invite);
 
@@ -792,7 +798,8 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       }
       const contact = get().contacts.find((c) => c.id === plan.contactId);
       if (!contact) continue;
-      const enabled = nearTip && !plan.awaitingChainSync;
+      const enabled =
+        plan.kind === "accepted" && nearTip && !plan.awaitingChainSync;
       try {
         await chatTransport.createRoom({
           contactId: plan.contactId,
@@ -805,7 +812,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             inviteExpiry: plan.handshake.inviteExpiry,
             roomTtl: plan.handshake.roomTtl,
             roomTopic: plan.handshake.roomTopic,
-            awaitingChainSync: !enabled,
+            awaitingChainSync: plan.kind === "accepted" && !enabled,
           },
         });
       } catch {
@@ -816,12 +823,12 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           lifecycleStatus: "accepted",
           awaitingChainSync: false,
         });
+        get().updateContact(plan.contactId, {
+          inviteStatus: "accepted",
+          roomId: plan.roomId,
+          chatStatus: "connecting",
+        });
       }
-      get().updateContact(plan.contactId, {
-        inviteStatus: "accepted",
-        roomId: plan.roomId,
-        chatStatus: enabled ? "connecting" : "invited",
-      });
     }
 
     for (const inv of newestReceived.values()) {
