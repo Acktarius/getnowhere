@@ -1,0 +1,68 @@
+<!-- forge-brief-specs-hash:c43bf63e5921aef6 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fix QR wallet import — operator brief</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #171513; }
+    h1 { font-size: 1.35rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+    ul { padding-left: 1.25rem; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</head>
+<body>
+  <h1>Fix QR wallet import</h1>
+  <p><em>Awaiting your approval before any implementation.</em></p>
+
+  <h2>TL;DR</h2>
+  <p>Scanning a wallet backup QR currently fails because we treat it like an encrypted JSON file. We will decode the standard Conceal wallet QR format, ask for a new local wallet password (with confirmation), and never show or log the scanned secrets — only “Scan successful” after a good scan.</p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>QR import works for spend keys, seed words, or view-only keys in the QR.</li>
+    <li>QR, seed, and keys: set a new wallet password (twice, with strength hints).</li>
+    <li>File import: unchanged — password that encrypted the backup file.</li>
+    <li>After a good QR scan: <strong>“Scan successful”</strong> — no address/key preview.</li>
+    <li>No logging of addresses, keys, mnemonics, or QR payloads during import.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>Wallet QRs encode a text URI (<code>conceal.ccx7…?spend_key=…</code>), not JSON. We parse it silently, build the wallet, and encrypt locally with your chosen password.</p>
+  <pre class="mermaid">
+flowchart LR
+  scan[Scan QR] --> ok[Scan successful]
+  ok --> pwd[Set new wallet password]
+  pwd --> encrypt[Encrypt locally]
+  file[JSON backup] --> decrypt[Backup password]
+  decrypt --> encrypt
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Import → QR: new wallet password flow; scan success message only.</li>
+    <li>Import → file: same backup password as today.</li>
+  </ul>
+
+    <li>Keys “Preview address”: first 5 + last 5 chars only (e.g. <code>ccx7a…xyz12</code>).</li>
+  <ul>
+    <li>Non-standard QRs that are encrypted JSON will still fail (matches conceal-next-wallet).</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Changing wallet export QR format.</li>
+    <li>Chat room restore on QR import.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>QR decoder + service fix (small)</li>
+    <li>Password UX on import screen (small)</li>
+    <li>Scan privacy + “Scan successful” (small)</li>
+    <li>Tests, verify, Forge review</li>
+  </ul>
+</body>
+</html>

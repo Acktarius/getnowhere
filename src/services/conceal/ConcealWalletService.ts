@@ -37,6 +37,7 @@ import {
   buildViewOnly,
   mnemonicFromSpendKey,
 } from "@/services/conceal/walletBuild";
+import { decodeWalletQr } from "@/services/conceal/walletQr";
 import type { Transaction, WalletState } from "@/types/models";
 import type {
   CreateWalletResult,
@@ -217,24 +218,18 @@ export const ConcealWalletService: WalletService = {
   },
 
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {
-    if (input.method === "file" || input.method === "qr") {
+    if (input.method === "file") {
       try {
-        const text = (input.method === "file" ? input.file : input.qr)
-          .replace(/^\uFEFF/, "")
-          .trim();
+        const text = input.file.replace(/^\uFEFF/, "").trim();
         let envelope: unknown;
         try {
           envelope = JSON.parse(text);
         } catch {
-          throw new Error(
-            input.method === "file"
-              ? "The selected file is not valid JSON."
-              : "The QR code does not contain valid wallet data.",
-          );
+          throw new Error("The selected file is not valid JSON.");
         }
         const opened = openEncryptedWalletFile(envelope, input.password);
         if (opened === null) {
-          throw new Error("Invalid wallet data or password.");
+          throw new Error("Invalid wallet file or password.");
         }
         const mnemonic =
           opened.keys.priv.spend !== ""
@@ -283,6 +278,24 @@ export const ConcealWalletService: WalletService = {
                 input.scanHeight ?? 0,
               );
           break;
+        case "qr": {
+          const decoded = decodeWalletQr(input.qr);
+          const height = decoded.height ?? 0;
+          if (decoded.mnemonicSeed) {
+            built = buildFromMnemonic(decoded.mnemonicSeed, height);
+          } else if (decoded.spendKey) {
+            built = buildFromSpendKey(
+              decoded.spendKey,
+              decoded.viewKey ?? "",
+              height,
+            );
+          } else if (decoded.viewKey && decoded.address) {
+            built = buildViewOnly(decoded.address, decoded.viewKey, height);
+          } else {
+            throw new Error("Unsupported QR wallet payload.");
+          }
+          break;
+        }
         default:
           throw new Error("This import method is not supported.");
       }

@@ -65,8 +65,9 @@ export type ImportWalletInput =
     }
   | {
       method: "qr";
-      /** Wallet envelope JSON decoded from a QR code. */
+      /** Wallet URI payload from a QR scan (`conceal.ccx7…?spend_key=…`). */
       qr: string;
+      /** Local encryption password for the imported wallet. */
       password: string;
       label?: string;
     };

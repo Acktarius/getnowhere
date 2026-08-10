@@ -19,6 +19,7 @@ import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter
 import { markOnboarded } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { ImportWalletInput } from "@/types/services";
+import { shortAddress } from "@/utils/format";
 import {
   describePasswordFailure,
   WALLET_PASSWORD_HINTS,
@@ -40,7 +41,9 @@ export function ImportWalletScreen() {
   const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
 
   const passwordStrength = walletPasswordStrength(walletPassword);
-  const isFileLike = method === "file" || method === "qr";
+  const needsBackupPassword = method === "file";
+  const needsNewWalletPassword =
+    method === "qr" || method === "mnemonic" || method === "keys";
 
   // qr
   const [qrText, setQrText] = useState("");
@@ -309,12 +312,11 @@ export function ImportWalletScreen() {
 
   async function handleImport() {
     setError(null);
-    if (isFileLike) {
+    if (needsBackupPassword) {
       if (!walletPassword) {
         return setError("Enter the password used to encrypt this backup.");
       }
-    } else {
-      // seed / keys — new wallet password must meet strength rules
+    } else if (needsNewWalletPassword) {
       const pwError = describePasswordFailure(walletPassword);
       if (pwError) return setError(pwError);
       if (walletPassword !== walletPasswordConfirm) {
@@ -503,7 +505,7 @@ export function ImportWalletScreen() {
                               color: "var(--primary)",
                             }}
                           >
-                            {previewedAddress}
+                            {shortAddress(previewedAddress, 5, 5)}
                           </div>
                         </div>
                       )}
@@ -579,12 +581,12 @@ export function ImportWalletScreen() {
           )}
 
           {method === "qr" && (
-            <SecureInput
-              label="Backup password"
-              value={walletPassword}
-              onChange={setWalletPassword}
-              placeholder="Password used when exporting"
-              revealable
+            <PasswordSection
+              password={walletPassword}
+              setPassword={setWalletPassword}
+              confirmPassword={walletPasswordConfirm}
+              setConfirmPassword={setWalletPasswordConfirm}
+              strength={passwordStrength}
             />
           )}
 
@@ -705,15 +707,8 @@ function QrPrimaryView({
             style={{ alignItems: "center", gap: 12, padding: 24 }}
           >
             <QrCode size={48} style={{ color: "var(--success)" }} />
-            <div style={{ fontSize: 14, fontWeight: 600 }}>
-              QR code captured
-            </div>
-            <div
-              className="mono faint"
-              style={{ fontSize: 11, wordBreak: "break-all", maxWidth: 280 }}
-            >
-              {qrText.slice(0, 80)}
-              {qrText.length > 80 ? "…" : ""}
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--success)" }}>
+              Scan successful
             </div>
             <button
               type="button"
