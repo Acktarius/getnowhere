@@ -57,7 +57,10 @@ export function WalletScreen() {
   }
 
   return (
-    <div className="screen">
+    <div
+      className="screen"
+      style={{ height: "100dvh", maxHeight: "100dvh", overflow: "hidden" }}
+    >
       <TopBar
         title="Wallet"
         subtitle={wallet.network}
@@ -76,113 +79,135 @@ export function WalletScreen() {
         bordered
       />
       <div
-        className="screen-scroll stack stack--gap-4"
-        style={{ padding: "16px 16px 32px" }}
+        className="stack stack--gap-4"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+          padding: "16px 16px 0",
+        }}
       >
-        {wallet.syncStatus === "error" && wallet.lastSyncError && (
-          <div
-            className="card"
-            style={{
-              borderColor: "var(--danger)",
-              background: "var(--danger-soft)",
-              padding: "12px 14px",
-            }}
-          >
+        <div className="stack stack--gap-4" style={{ flexShrink: 0 }}>
+          {wallet.syncStatus === "error" && wallet.lastSyncError && (
             <div
-              className="row"
-              style={{ padding: 0, alignItems: "flex-start", gap: 10 }}
+              className="card"
+              style={{
+                borderColor: "var(--danger)",
+                background: "var(--danger-soft)",
+                padding: "12px 14px",
+              }}
             >
-              <RefreshCw
-                size={16}
-                style={{ color: "var(--danger)", marginTop: 1, flexShrink: 0 }}
-              />
-              <div className="grow stack" style={{ gap: 4 }}>
-                <div
+              <div
+                className="row"
+                style={{ padding: 0, alignItems: "flex-start", gap: 10 }}
+              >
+                <RefreshCw
+                  size={16}
                   style={{
-                    fontWeight: 600,
-                    fontSize: 13.5,
                     color: "var(--danger)",
+                    marginTop: 1,
+                    flexShrink: 0,
                   }}
-                >
-                  Sync failed
+                />
+                <div className="grow stack" style={{ gap: 4 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 13.5,
+                      color: "var(--danger)",
+                    }}
+                  >
+                    Sync failed
+                  </div>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11.5,
+                      color: "var(--text-muted)",
+                      wordBreak: "break-word",
+                    }}
+                  >
+                    {wallet.lastSyncError}
+                  </div>
                 </div>
-                <div
-                  className="mono"
-                  style={{
-                    fontSize: 11.5,
-                    color: "var(--text-muted)",
-                    wordBreak: "break-word",
-                  }}
+                <button
+                  className="btn btn--sm btn--ghost"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => wallet.resync()}
                 >
-                  {wallet.lastSyncError}
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="fade-in-up">
+            <WalletBalanceCard
+              wallet={wallet}
+              hideByDefault={hideBalances}
+              onResync={() => wallet.resync()}
+              onToggleLock={() => wallet.lock()}
+            />
+          </div>
+
+          <div className="row-flex" style={{ gap: 10 }}>
+            <button
+              className="btn btn--secondary grow"
+              onClick={() => setReceiveOpen(true)}
+            >
+              <ArrowDownToLine size={16} /> Receive
+            </button>
+            <button
+              className="btn btn--primary grow"
+              onClick={() => setSendOpen(true)}
+              disabled={wallet.locked}
+            >
+              <ArrowUpFromLine size={16} /> Send
+            </button>
+          </div>
+
+          <div className="card card--flush fade-in-up">
+            <div className="row" style={{ paddingBottom: 8 }}>
+              <div className="row__main">
+                <div className="card__title" style={{ margin: 0 }}>
+                  Your address
                 </div>
               </div>
               <button
                 className="btn btn--sm btn--ghost"
-                style={{ flexShrink: 0 }}
-                onClick={() => wallet.resync()}
+                onClick={() => copy(wallet.address)}
               >
-                Retry
+                {copied ? "Copied" : "Copy"}
               </button>
             </div>
-          </div>
-        )}
-        <div className="fade-in-up">
-          <WalletBalanceCard
-            wallet={wallet}
-            hideByDefault={hideBalances}
-            onResync={() => wallet.resync()}
-            onToggleLock={() => wallet.lock()}
-          />
-        </div>
-
-        <div className="row-flex" style={{ gap: 10 }}>
-          <button
-            className="btn btn--secondary grow"
-            onClick={() => setReceiveOpen(true)}
-          >
-            <ArrowDownToLine size={16} /> Receive
-          </button>
-          <button
-            className="btn btn--primary grow"
-            onClick={() => setSendOpen(true)}
-            disabled={wallet.locked}
-          >
-            <ArrowUpFromLine size={16} /> Send
-          </button>
-        </div>
-
-        <div className="card card--flush fade-in-up">
-          <div className="row" style={{ paddingBottom: 8 }}>
-            <div className="row__main">
-              <div className="card__title" style={{ margin: 0 }}>
-                Your address
-              </div>
-            </div>
-            <button
-              className="btn btn--sm btn--ghost"
-              onClick={() => copy(wallet.address)}
+            <div
+              className="mono"
+              style={{
+                fontSize: 12,
+                padding: "0 16px 16px",
+                wordBreak: "break-all",
+                color: "var(--text-muted)",
+              }}
             >
-              {copied ? "Copied" : "Copy"}
-            </button>
+              {wallet.address}
+            </div>
           </div>
-          <div
-            className="mono"
-            style={{
-              fontSize: 12,
-              padding: "0 16px 16px",
-              wordBreak: "break-all",
-              color: "var(--text-muted)",
-            }}
-          >
-            {wallet.address}
+
+          <div className="section" style={{ padding: 0 }}>
+            <div className="section__head" style={{ padding: 0 }}>
+              <span className="section__title">History</span>
+            </div>
           </div>
         </div>
 
-        <div className="section" style={{ padding: 0 }}>
-          <div className="section__head" style={{ padding: 0 }}>
-            <span className="section__title">History</span>
-          </div>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            paddingBottom: 32,
+          }}
+        >
           {loadingTx ? (
             <div className="card card--flush">
               {[0, 1, 2].map((i) => (

@@ -23,6 +23,13 @@ interface GnhDesktopBridge {
 }
 
 /** Mobile Expo WebView bridge (Bare worklet behind postMessage). Token is RN-only. */
+interface GnhMobileSaveTextFileResult {
+  requestId: string;
+  ok: boolean;
+  message?: string;
+}
+
+/** Mobile Expo WebView bridge API surface injected before Vite UI loads. */
 interface GnhMobileBridge {
   sendCommand(cmd: {
     type: string;
@@ -41,6 +48,16 @@ interface GnhMobileBridge {
       message?: string;
     }) => void,
   ): () => void;
+  saveTextFile?(opts: {
+    filename: string;
+    content: string;
+    requestId: string;
+  }): void;
+  _onSaveTextFile?(
+    handler: (result: GnhMobileSaveTextFileResult) => void,
+  ): () => void;
+  _resolveSaveTextFile?(result: GnhMobileSaveTextFileResult): void;
+  _dispatchBridgeEvent?(msg: Record<string, unknown>): void;
 }
 
 interface Window {

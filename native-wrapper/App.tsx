@@ -15,6 +15,10 @@ import {
   buildMobileBridgeInjection,
 } from "./src/injectMobileBridge";
 import {
+  buildSaveTextFileResolveScript,
+  handleSaveTextFileWebViewMessage,
+} from "./src/saveTextFileFromWebView";
+import {
   ANDROID_UI_ASSET_PREFIX,
   isAllowedWebViewNavigationUrl,
   WEBVIEW_ORIGIN_WHITELIST,
@@ -89,7 +93,17 @@ export default function App() {
   }, []);
 
   const onWebViewMessage = useCallback((event: WebViewMessageEvent) => {
-    bridgeRef.current?.handleWebViewMessage(event.nativeEvent.data);
+    const raw = event.nativeEvent.data;
+    if (
+      handleSaveTextFileWebViewMessage(raw, (result) => {
+        webViewRef.current?.injectJavaScript(
+          buildSaveTextFileResolveScript(result),
+        );
+      })
+    ) {
+      return;
+    }
+    bridgeRef.current?.handleWebViewMessage(raw);
   }, []);
 
   if (Platform.OS !== "android") {

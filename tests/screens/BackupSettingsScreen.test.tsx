@@ -28,6 +28,10 @@ vi.mock("@/services", () => ({
   },
 }));
 
+vi.mock("@/lib/downloadJson", () => ({
+  downloadJson: vi.fn(async () => "downloaded" as const),
+}));
+
 vi.mock("@/state/walletStore", () => ({
   useWalletStore: () => ({
     initialized: true,
@@ -39,6 +43,9 @@ vi.mock("@/state/walletStore", () => ({
 }));
 
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
+import { downloadJson } from "@/lib/downloadJson";
+
+const mockedDownloadJson = vi.mocked(downloadJson);
 
 function passwordInput(): HTMLInputElement {
   return document.querySelector("input.input") as HTMLInputElement;
@@ -62,6 +69,8 @@ describe("BackupSettingsScreen password-gated secrets", () => {
       filename: "wallet.json",
       payload: { encrypted: true },
     });
+    mockedDownloadJson.mockReset();
+    mockedDownloadJson.mockResolvedValue("downloaded");
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
     HTMLAnchorElement.prototype.click = vi.fn();
@@ -141,8 +150,26 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     );
 
     expect(downloadWalletBackup).toHaveBeenCalledWith("correct-password");
+    expect(mockedDownloadJson).toHaveBeenCalledWith("wallet.json", {
+      encrypted: true,
+    });
     expect(
       await screen.findByText(/Downloaded wallet\.json/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows mobile save message when native file save is used", async () => {
+    mockedDownloadJson.mockResolvedValue("saved");
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
+
+    expect(
+      await screen.findByText(/Saved wallet\.json to Files/i),
     ).toBeInTheDocument();
   });
 });

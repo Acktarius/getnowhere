@@ -707,7 +707,9 @@ function QrPrimaryView({
             style={{ alignItems: "center", gap: 12, padding: 24 }}
           >
             <QrCode size={48} style={{ color: "var(--success)" }} />
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--success)" }}>
+            <div
+              style={{ fontSize: 14, fontWeight: 600, color: "var(--success)" }}
+            >
               Scan successful
             </div>
             <button

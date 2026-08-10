@@ -10,7 +10,30 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
   if (window.gnhMobile) return;
   var token = ${tokenJson};
   var handlers = [];
+  var saveHandlers = [];
   window.gnhMobile = {
+    saveTextFile: function(opts) {
+      if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        channel: 'gnh-file',
+        direction: 'command',
+        requestId: opts.requestId,
+        filename: opts.filename,
+        content: opts.content
+      }));
+    },
+    _onSaveTextFile: function(handler) {
+      saveHandlers.push(handler);
+      return function() {
+        var i = saveHandlers.indexOf(handler);
+        if (i >= 0) saveHandlers.splice(i, 1);
+      };
+    },
+    _resolveSaveTextFile: function(result) {
+      for (var i = 0; i < saveHandlers.length; i++) {
+        try { saveHandlers[i](result); } catch (e) {}
+      }
+    },
     sendCommand: function(cmd) {
       if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
       var msg = { channel: 'gnh-bridge', direction: 'command', token: token, type: cmd.type };

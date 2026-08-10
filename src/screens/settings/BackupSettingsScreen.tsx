@@ -5,19 +5,8 @@ import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { seedBackupService } from "@/services";
 import { useWalletStore } from "@/state/walletStore";
+import { downloadJson } from "@/lib/downloadJson";
 import type { WalletSecretsExport } from "@/types/services";
-
-function downloadJson(filename: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: "application/json",
-  });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 export function BackupSettingsScreen() {
   const wallet = useWalletStore();
@@ -59,8 +48,12 @@ export function BackupSettingsScreen() {
     try {
       const { filename, payload } =
         await seedBackupService.downloadWalletBackup(password);
-      downloadJson(filename, payload);
-      setMsg(`Downloaded ${filename}`);
+      const result = await downloadJson(filename, payload);
+      setMsg(
+        result === "saved"
+          ? `Saved ${filename} to Files`
+          : `Downloaded ${filename}`,
+      );
     } catch (e) {
       setError((e as Error).message || "Could not download wallet backup.");
     } finally {

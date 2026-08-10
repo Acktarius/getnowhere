@@ -20,6 +20,8 @@ describe("buildMobileBridgeInjection", () => {
     const bridge = window.gnhMobile as GnhMobileBridge;
     expect(bridge.sendCommand).toBeTypeOf("function");
     expect(bridge.onBridgeEvent).toBeTypeOf("function");
+    expect(bridge.saveTextFile).toBeTypeOf("function");
+    expect(bridge._onSaveTextFile).toBeTypeOf("function");
     expect("bridgeToken" in bridge).toBe(false);
 
     bridge.sendCommand({ type: "ping" });
@@ -27,5 +29,16 @@ describe("buildMobileBridgeInjection", () => {
     const payload = JSON.parse(postMessage.mock.calls[0][0] as string);
     expect(payload.token).toBe("super-secret-token");
     expect(payload.type).toBe("ping");
+
+    bridge.saveTextFile?.({
+      filename: "wallet.json",
+      content: "{}",
+      requestId: "req-1",
+    });
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    const savePayload = JSON.parse(postMessage.mock.calls[1][0] as string);
+    expect(savePayload.channel).toBe("gnh-file");
+    expect(savePayload.filename).toBe("wallet.json");
+    expect(savePayload.requestId).toBe("req-1");
   });
 });
