@@ -3,9 +3,9 @@ import { useState } from "react";
 import { SecureInput } from "@/components/SecureInput";
 import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { downloadJson } from "@/lib/downloadJson";
 import { seedBackupService } from "@/services";
 import { useWalletStore } from "@/state/walletStore";
-import { downloadJson } from "@/lib/downloadJson";
 import type { WalletSecretsExport } from "@/types/services";
 
 export function BackupSettingsScreen() {

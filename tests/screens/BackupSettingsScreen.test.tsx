@@ -42,8 +42,8 @@ vi.mock("@/state/walletStore", () => ({
   }),
 }));
 
-import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 import { downloadJson } from "@/lib/downloadJson";
+import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 
 const mockedDownloadJson = vi.mocked(downloadJson);
 
