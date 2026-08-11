@@ -24,6 +24,7 @@ import {
 } from "@/services/protocol/composerGate";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { toastError, toastSuccess } from "@/state/toastStore";
 import type { ChatMessage } from "@/types/models";
 import {
@@ -136,6 +137,11 @@ export function ChatRoomScreen() {
   } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!roomId) return;
+    useNotificationStore.getState().markRoomSeen(roomId);
+  }, [roomId]);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;

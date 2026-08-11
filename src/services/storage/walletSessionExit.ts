@@ -7,6 +7,7 @@ import { persistContacts } from "@/services/contacts/contactsPersistence";
 import { saveChatRoomsToWallet } from "@/services/p2p/HolepunchChatTransport";
 import { useAuthStore } from "@/state/authStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
@@ -48,6 +49,7 @@ export async function runWalletSessionExit(
     softLeaveAll: () => chatTransport.softLeaveAll(),
     lockWallet: () => walletService.lockWallet(),
     clearSession: () => {
+      useNotificationStore.getState().resetSession();
       useWalletStore.setState({
         initialized: false,
         locked: true,

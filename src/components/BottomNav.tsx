@@ -18,12 +18,18 @@ type Item = {
   badge?: boolean;
 };
 
-export function BottomNav({ unread = false }: { unread?: boolean }) {
+export function BottomNav({
+  chatsUnread = false,
+  contactsUnread = false,
+}: {
+  chatsUnread?: boolean;
+  contactsUnread?: boolean;
+}) {
   const navigate = useNavigate();
   const [exitOpen, setExitOpen] = useState(false);
   const items: Item[] = [
-    { to: "/chats", label: "Chats", icon: MessageSquare, badge: unread },
-    { to: "/contacts", label: "Contacts", icon: Users },
+    { to: "/chats", label: "Chats", icon: MessageSquare, badge: chatsUnread },
+    { to: "/contacts", label: "Contacts", icon: Users, badge: contactsUnread },
     { to: "/wallet", label: "Wallet", icon: Wallet },
     { to: "/settings", label: "Settings", icon: Settings },
   ];

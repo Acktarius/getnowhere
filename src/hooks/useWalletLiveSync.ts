@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { getRuntime, sync } from "@/services/conceal/sync/runtime";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { useWalletStore } from "@/state/walletStore";
 
 /** [whileCatchingUp, whenNearTip] ms — same cadence as next-wallet. */
@@ -33,6 +34,7 @@ export function useWalletLiveSync(enabled: boolean): void {
 
   useEffect(() => {
     if (!enabled) return;
+    useNotificationStore.getState().resetSession();
 
     let cancelled = false;
 

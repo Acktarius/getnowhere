@@ -3,12 +3,16 @@ import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
+import { NotifyPin } from "@/components/NotifyPin";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { PeerStatusIndicator } from "@/components/StatusBadges";
 import { TopBar } from "@/components/TopBar";
+import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { hasPendingRoomInvite } from "@/services/contacts/inviteQueue";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { initials, shortAddress, timeAgo } from "@/utils/format";
 
 export function ChatsScreen() {
@@ -16,6 +20,10 @@ export function ChatsScreen() {
   const loadRooms = useChatStore((s) => s.loadRooms);
   const messagesByRoom = useChatStore((s) => s.messagesByRoom);
   const contacts = useContactsStore((s) => s.contacts);
+  const invites = useContactsStore((s) => s.invites);
+  const roomPendingBadge = useNotificationStore((s) => s.roomPendingBadge);
+  const roomRelayBadge = useNotificationStore((s) => s.roomRelayBadge);
+  const navBadges = useNavNotificationBadges();
 
   useEffect(() => {
     loadRooms();
@@ -59,10 +67,28 @@ export function ChatsScreen() {
                   {visibleRooms.map((room) => {
                     const c = contacts.find((x) => x.id === room.contactId);
                     const last = (messagesByRoom[room.id] ?? []).at(-1);
+                    const pendingInvite =
+                      room.lifecycleStatus === "pending" &&
+                      hasPendingRoomInvite(room.id, invites);
+                    const showPending = roomPendingBadge(
+                      room.id,
+                      pendingInvite,
+                    );
+                    const relayCount = roomRelayBadge(room.id);
                     const rowInner = (
                       <>
-                        <div className="row__avatar">
-                          <RoomTopicIcon topicId={room.roomTopic} size={18} />
+                        <div className="row__avatar-wrap">
+                          <div className="row__avatar">
+                            <RoomTopicIcon
+                              topicId={room.roomTopic}
+                              size={18}
+                            />
+                          </div>
+                          {relayCount > 0 ? (
+                            <NotifyPin count={relayCount} variant="relay" />
+                          ) : showPending ? (
+                            <NotifyPin variant="pending" dot />
+                          ) : null}
                         </div>
                         <div className="row__main">
                           <div className="row__title">
@@ -148,7 +174,7 @@ export function ChatsScreen() {
           </>
         )}
       </div>
-      <BottomNav />
+      <BottomNav {...navBadges} />
     </div>
   );
 }

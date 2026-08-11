@@ -873,6 +873,12 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       const pending = findPendingInitiator(register.inviteId);
       if (!pending) continue;
       if (isRoomRevoked(pending.handshake.roomId)) continue;
+      if (pending.contactId) {
+        const { useNotificationStore } = await import(
+          "@/state/notificationStore"
+        );
+        useNotificationStore.getState().pingRegister(pending.contactId);
+      }
       try {
         await completeInitiatorHandoff(
           pending.handshake.inviteId,
@@ -1469,6 +1475,8 @@ export async function completeInitiatorHandoff(
         connected.lifecycleStatus === "connected" ? "active" : "connecting",
       roomId,
     });
+    const { useNotificationStore } = await import("@/state/notificationStore");
+    useNotificationStore.getState().pingRegister(contactId);
   }
   useContactsStore.setState((s) => ({
     invites: s.invites.map((i) =>

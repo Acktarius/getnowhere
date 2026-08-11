@@ -19,7 +19,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
-import { RoomTopicIcon } from "@/components/RoomTopicIcon";
+import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { Sheet } from "@/components/Sheet";
 import {
   ChatStatusPill,
@@ -29,11 +29,13 @@ import {
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import { getContactInviteActionCount, getInviteQueue } from "@/services/contacts/inviteQueue";
 import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { toastError } from "@/state/toastStore";
 import { shortAddress, timeAgo } from "@/utils/format";
 
@@ -81,8 +83,23 @@ export function ContactDetailScreen() {
   const [confirmBlock, setConfirmBlock] = useState(false);
   const [confirmSameTopic, setConfirmSameTopic] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [acting, setActing] = useState(false);
+  const [inviteAction, setInviteAction] = useState<"accept" | "decline" | null>(
+    null,
+  );
+  const [openingChat, setOpeningChat] = useState(false);
   const [refreshingInvite, setRefreshingInvite] = useState(false);
+  const markContactSeen = useNotificationStore((s) => s.markContactSeen);
+
+  useEffect(() => {
+    if (!id) return;
+    const c = useContactsStore.getState().getById(id);
+    if (!c) return;
+    const actionCount = getContactInviteActionCount(
+      c,
+      useContactsStore.getState().invites,
+    );
+    markContactSeen(id, actionCount);
+  }, [id, markContactSeen]);
 
   // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
   // Poll while waiting — mempool txs are near-instant; one-shot mount miss them.
@@ -128,11 +145,9 @@ export function ContactDetailScreen() {
   }
 
   const eligible = contact.relationshipStatus === "eligible";
-  const incomingInvite = eligible
-    ? [...invites]
-        .filter((i) => i.contactId === contact.id && i.status === "received")
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-    : undefined;
+  const inviteQueue = getInviteQueue(contact.id, invites);
+  const incomingInvite = eligible ? inviteQueue.newest : undefined;
+  const queuedOthers = inviteQueue.others;
   /** Newer create must show Accept even if an older invite was already accepted. */
   const showAccept = Boolean(
     incomingInvite &&
@@ -197,7 +212,7 @@ export function ContactDetailScreen() {
       await refreshInvites();
       return;
     }
-    setActing(true);
+    setInviteAction("accept");
     setError(null);
     try {
       const { roomId } = await acceptInvite(incomingInvite.id);
@@ -207,27 +222,27 @@ export function ContactDetailScreen() {
       setError(msg);
       toastError(msg);
     } finally {
-      setActing(false);
+      setInviteAction(null);
     }
   }
 
   async function handleDecline() {
     if (!incomingInvite) return;
-    setActing(true);
+    setInviteAction("decline");
     setError(null);
     try {
       await declineInvite(incomingInvite.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setActing(false);
+      setInviteAction(null);
     }
   }
 
   async function handleOpenChat() {
     if (!contact) return;
     setError(null);
-    setActing(true);
+    setOpeningChat(true);
     try {
       // Alice: pick up Bob's on-chain register before opening.
       try {
@@ -263,7 +278,7 @@ export function ContactDetailScreen() {
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setActing(false);
+      setOpeningChat(false);
     }
   }
 
@@ -380,20 +395,33 @@ export function ContactDetailScreen() {
               {showAccept && incomingInvite ? (
                 <div className="card card--pad-md stack stack--gap-2">
                   <div className="muted" style={{ fontSize: 13.5 }}>
-                    {acting
+                    {inviteAction === "accept"
                       ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
-                      : contact.inviteStatus === "accepted" &&
-                          contact.roomId !== incomingInvite.roomId
-                        ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
-                        : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
+                      : inviteAction === "decline"
+                        ? "Sending decline on-chain and revoking the pending room."
+                        : contact.inviteStatus === "accepted" &&
+                            contact.roomId !== incomingInvite.roomId
+                          ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
+                          : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
                   </div>
+                  {queuedOthers.length > 0 && (
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {queuedOthers.length} other invite
+                      {queuedOthers.length > 1 ? "s" : ""} waiting:{" "}
+                      {queuedOthers
+                        .map((i) => roomTopicLabel(i.roomTopic))
+                        .join(", ")}
+                      . Accept handles the newest (
+                      {roomTopicLabel(incomingInvite.roomTopic)}) first.
+                    </div>
+                  )}
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
                       className="btn btn--primary grow"
-                      disabled={acting}
+                      disabled={inviteAction !== null}
                       onClick={handleAccept}
                     >
-                      {acting ? (
+                      {inviteAction === "accept" ? (
                         <>
                           <Loader2 size={16} className="spin" /> Accepting…
                         </>
@@ -403,10 +431,16 @@ export function ContactDetailScreen() {
                     </button>
                     <button
                       className="btn btn--secondary grow"
-                      disabled={acting}
+                      disabled={inviteAction !== null}
                       onClick={handleDecline}
                     >
-                      Decline
+                      {inviteAction === "decline" ? (
+                        <>
+                          <Loader2 size={16} className="spin" /> Declining…
+                        </>
+                      ) : (
+                        "Decline"
+                      )}
                     </button>
                   </div>
                 </div>

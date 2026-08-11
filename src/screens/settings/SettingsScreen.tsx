@@ -20,6 +20,7 @@ import { NodeSelector } from "@/components/NodeSelector";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
+import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import { refreshAutoNode } from "@/lib/network/auto-node";
 import { setPreferredNode } from "@/lib/network/node-preference";
 import {
@@ -49,6 +50,7 @@ type WipeConfirm = "delete" | "reset" | "delete-resync";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
+  const navBadges = useNavNotificationBadges();
   const setNode = useWalletStore((w) => w.setNode);
   const resync = useWalletStore((w) => w.resync);
   const resyncFromCreationHeight = useWalletStore(
@@ -416,7 +418,7 @@ export function SettingsScreen() {
           </p>
         </div>
       </div>
-      <BottomNav />
+      <BottomNav {...navBadges} />
 
       <ConfirmModal
         open={wipeConfirm === "delete"}

@@ -16,6 +16,7 @@ import { Sheet } from "@/components/Sheet";
 import { TopBar } from "@/components/TopBar";
 import { WalletBalanceCard } from "@/components/WalletBalanceCard";
 import { useCopy } from "@/hooks/useCopy";
+import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import { walletService } from "@/services";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
@@ -24,6 +25,7 @@ import { formatCCX, shortAddress, timeAgo } from "@/utils/format";
 
 export function WalletScreen() {
   const wallet = useWalletStore();
+  const navBadges = useNavNotificationBadges();
   const hideBalances = useSettingsStore((s) => s.privacy.hideBalancesByDefault);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [loadingTx, setLoadingTx] = useState(true);
@@ -51,7 +53,7 @@ export function WalletScreen() {
             body="Create or restore a wallet to start managing CCX and establishing private relationships."
           />
         </div>
-        <BottomNav />
+        <BottomNav {...navBadges} />
       </div>
     );
   }
@@ -409,7 +411,7 @@ export function WalletScreen() {
         <ReceiveSheet address={wallet.address} />
       </Sheet>
 
-      <BottomNav />
+      <BottomNav {...navBadges} />
     </div>
   );
 }

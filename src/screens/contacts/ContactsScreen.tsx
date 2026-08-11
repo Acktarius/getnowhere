@@ -1,11 +1,12 @@
 import { Search, UserPlus, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { ContactCard } from "@/components/ContactCard";
 import { EmptyState } from "@/components/EmptyState";
 import { TopBar } from "@/components/TopBar";
 import { AddContactSheet } from "@/screens/contacts/AddContactSheet";
+import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import { useContactsStore } from "@/state/contactsStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { RelationshipStatus } from "@/types/models";
@@ -21,10 +22,17 @@ const FILTERS: { value: "all" | RelationshipStatus; label: string }[] = [
 export function ContactsScreen() {
   const navigate = useNavigate();
   const contacts = useContactsStore((s) => s.contacts);
+  const refreshInvites = useContactsStore((s) => s.refreshInvites);
+  const navBadges = useNavNotificationBadges();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | RelationshipStatus>("all");
   const [adding, setAdding] = useState(false);
   const initialized = useWalletStore((s) => s.initialized);
+
+  useEffect(() => {
+    if (!initialized) return;
+    void refreshInvites().catch(() => {});
+  }, [initialized, refreshInvites]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -141,7 +149,7 @@ export function ContactsScreen() {
           navigate(`/contacts/${id}`);
         }}
       />
-      <BottomNav />
+      <BottomNav {...navBadges} />
     </div>
   );
 }

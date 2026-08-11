@@ -4,6 +4,7 @@ import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
 import {
   getMessagesForRoom,
   ingestChatRelay,
+  relayMessageId,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   assertCanSendLive,
@@ -236,10 +237,20 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   async refreshRelays() {
     const inbound = await smartMessageService.fetchIncomingRelays();
     const touched = new Set<string>();
+    const { noteRelayIngested, finishRelayBootstrap } = (
+      await import("@/state/notificationStore")
+    ).useNotificationStore.getState();
     for (const { relay } of inbound) {
       const msg = await ingestChatRelay(relay);
-      if (msg) touched.add(msg.roomId);
+      if (msg) {
+        touched.add(msg.roomId);
+        noteRelayIngested(msg.id, msg.roomId);
+      } else {
+        const id = relayMessageId(relay.roomId, relay.sentAt, relay.text);
+        noteRelayIngested(id, relay.roomId);
+      }
     }
+    finishRelayBootstrap();
     set((s) => {
       const roomIds = new Set([
         ...Object.keys(s.messagesByRoom),
