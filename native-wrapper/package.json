@@ -12,6 +12,8 @@
     "prepare:android-assets": "node scripts/prepare-android-assets.mjs",
     "prebuild:android": "expo prebuild --platform android --clean",
     "android": "node scripts/prepare-android-assets.mjs && expo run:android",
+    "android:release": "node scripts/build-android-release.mjs",
+    "android:sign-test": "node scripts/sign-android-apk.mjs",
     "ios": "expo run:ios",
     "web": "expo start --web"
   },

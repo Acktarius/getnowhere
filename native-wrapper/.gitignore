@@ -44,3 +44,7 @@ yarn-error.*
 /android/app/src/main/addons/
 /bare/node_modules
 
+# release build outputs
+/version.properties
+/builds/
+

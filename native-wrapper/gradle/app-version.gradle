@@ -1,0 +1,25 @@
+// Applied from android/app/build.gradle — reads native-wrapper/version.properties.
+def versionPropsFile = new File(rootProject.projectDir, "../version.properties")
+def versionProps = new Properties()
+if (versionPropsFile.canRead()) {
+    versionPropsFile.withInputStream { versionProps.load(it) }
+    def versionNameValue = versionProps.getProperty("version")
+    def versionCodeValue = versionProps.getProperty("buildVersionAndroid")
+    if (versionNameValue) {
+        println "GNH app-version: versionName=${versionNameValue}"
+    }
+    if (versionCodeValue) {
+        println "GNH app-version: versionCode=${versionCodeValue}"
+    }
+}
+
+android {
+    defaultConfig {
+        if (versionProps.getProperty("version")) {
+            versionName versionProps.getProperty("version")
+        }
+        if (versionProps.getProperty("buildVersionAndroid")) {
+            versionCode versionProps.getProperty("buildVersionAndroid").toInteger()
+        }
+    }
+}

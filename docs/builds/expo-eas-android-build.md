@@ -279,6 +279,67 @@ What `mobile:android` does:
 
 The WebView loads `file:///android_asset/ui/index.html`.
 
+## Unsigned release APK (F-Droid path)
+
+Build an **unsigned** release APK locally (same flow as
+[conceal-wallet-cordova](https://github.com/ConcealNetwork/conceal-wallet-cordova)
+`build-fdroid-reference.sh`): Gradle `assembleRelease` without a release
+keystore, then sign separately with `apksigner` or let F-Droid sign.
+
+Set version fields in repo-root `version`:
+
+```text
+version=0.2.4
+buildversionIos=1
+buildVersionAndroid=1
+```
+
+- `version` → APK `versionName`
+- `buildVersionAndroid` → APK `versionCode`
+- `buildversionIos` → reserved for future iOS release builds
+
+```bash
+npm run mobile:android:release
+```
+
+What it does:
+
+1. `mobile:sync-ui` — build Vite `dist/` and stage into `native-wrapper/assets/ui/`.
+2. `prepare-android-assets.mjs` — pack Bare worklet, copy assets into `android/`.
+3. Write `native-wrapper/version.properties` from repo-root `version`.
+4. Apply `gradle/app-version.gradle` hook + strip release `signingConfig` (unsigned).
+5. `./gradlew assembleRelease` (no `clean` — RN new-arch `clean` can fail on Debug codegen JNI).
+
+Output:
+
+```text
+native-wrapper/builds/GetNowHere-v{version}-b{buildVersionAndroid}-java{major}.apk
+native-wrapper/builds/GetNowHere-v{version}-b{buildVersionAndroid}-java{major}.apk.sha256
+```
+
+Requires JDK 17+, `ANDROID_HOME`, and SDK licenses (same as debug build).
+
+### Local install (test signature)
+
+Android rejects **unsigned** APKs (`INSTALL_PARSE_FAILED_NO_CERTIFICATES`).
+That is expected — keep the unsigned artifact for F-Droid / reproducible builds.
+
+For sideload on your own device, sign with the standard Expo/RN **debug**
+keystore (created by `expo prebuild`; password `android` / alias
+`androiddebugkey`). **Not** for Play Store or F-Droid submission.
+
+```bash
+# build unsigned, then sign latest builds/*.apk with debug keystore
+npm run mobile:android:release:test
+
+# or sign an existing unsigned APK
+npm --prefix native-wrapper run android:sign-test -- builds/GetNowHere-v0.2.4-b1-java17.apk
+adb install -r native-wrapper/builds/GetNowHere-v0.2.4-b1-java17-signed-test.apk
+```
+
+Production / F-Droid: sign the unsigned APK with your release key via
+`apksigner` (same as conceal-wallet-cordova after `build-fdroid-reference.sh`).
+
 ## EAS cloud builds (later)
 
 From `native-wrapper/` after `eas build:configure`:

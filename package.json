@@ -20,6 +20,8 @@
     "mobile:sync-ui": "npm run build && node native-wrapper/scripts/sync-ui-dist.mjs",
     "mobile:test-bare": "npm --prefix native-wrapper run test:bare",
     "mobile:android": "npm run mobile:sync-ui && npm --prefix native-wrapper run android",
+    "mobile:android:release": "npm run mobile:sync-ui && npm --prefix native-wrapper run android:release",
+    "mobile:android:release:test": "npm run mobile:android:release && npm --prefix native-wrapper run android:sign-test",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "format": "biome format .",
