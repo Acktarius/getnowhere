@@ -79,10 +79,7 @@ export function ChatsScreen() {
                       <>
                         <div className="row__avatar-wrap">
                           <div className="row__avatar">
-                            <RoomTopicIcon
-                              topicId={room.roomTopic}
-                              size={18}
-                            />
+                            <RoomTopicIcon topicId={room.roomTopic} size={18} />
                           </div>
                           {relayCount > 0 ? (
                             <NotifyPin count={relayCount} variant="relay" />

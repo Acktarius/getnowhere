@@ -1,7 +1,5 @@
 import { create } from "zustand";
-import {
-  getContactInviteActionCount,
-} from "@/services/contacts/inviteQueue";
+import { getContactInviteActionCount } from "@/services/contacts/inviteQueue";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import type { ChatRoom, Contact, SmartMessageInvite } from "@/types/models";
 

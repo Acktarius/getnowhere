@@ -30,6 +30,14 @@ vi.mock("@/services/conceal/ConcealWalletService", () => ({
   updateWalletSyncSettings: vi.fn(async () => undefined),
 }));
 
+/** Settings BottomNav uses nav badges — avoid pulling chatStore → @/services. */
+vi.mock("@/hooks/useNavNotificationBadges", () => ({
+  useNavNotificationBadges: () => ({
+    contactsUnread: false,
+    chatsUnread: false,
+  }),
+}));
+
 vi.mock("@/services/conceal/sync", () => ({
   getRuntime: () => null,
 }));

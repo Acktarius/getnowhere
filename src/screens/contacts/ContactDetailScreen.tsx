@@ -28,8 +28,11 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import {
+  getContactInviteActionCount,
+  getInviteQueue,
+} from "@/services/contacts/inviteQueue";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
-import { getContactInviteActionCount, getInviteQueue } from "@/services/contacts/inviteQueue";
 import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
@@ -86,7 +89,6 @@ export function ContactDetailScreen() {
   const [inviteAction, setInviteAction] = useState<"accept" | "decline" | null>(
     null,
   );
-  const [openingChat, setOpeningChat] = useState(false);
   const [refreshingInvite, setRefreshingInvite] = useState(false);
   const markContactSeen = useNotificationStore((s) => s.markContactSeen);
 
@@ -242,7 +244,6 @@ export function ContactDetailScreen() {
   async function handleOpenChat() {
     if (!contact) return;
     setError(null);
-    setOpeningChat(true);
     try {
       // Alice: pick up Bob's on-chain register before opening.
       try {
@@ -277,8 +278,6 @@ export function ContactDetailScreen() {
       navigate(`/chats/${room.id}`);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setOpeningChat(false);
     }
   }
 

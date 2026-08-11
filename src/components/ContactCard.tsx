@@ -34,11 +34,7 @@ export function ContactCard({ contact, to }: Props) {
       <div className="row__avatar-wrap">
         <div className="row__avatar">{initials(contact.alias)}</div>
         {inviteBadge > 0 ? (
-          <NotifyPin
-            count={inviteBadge}
-            variant="invite"
-            pulse={invitePulse}
-          />
+          <NotifyPin count={inviteBadge} variant="invite" pulse={invitePulse} />
         ) : registerBadge ? (
           <NotifyPin variant="register" dot pulse={invitePulse} />
         ) : null}

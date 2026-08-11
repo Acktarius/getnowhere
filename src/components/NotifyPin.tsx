@@ -16,8 +16,7 @@ export function NotifyPin({ count = 1, variant, dot, pulse }: Props) {
   return (
     <span
       className={`notify-pin notify-pin--${variant}${label ? "" : " notify-pin--dot"}${pulse ? " notify-pin--pulse" : ""}`}
-      aria-hidden={!label}
-      aria-label={label ? `${label} notifications` : "Notification"}
+      aria-hidden
     >
       {label}
     </span>

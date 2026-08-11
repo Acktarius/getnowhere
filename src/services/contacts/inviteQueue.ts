@@ -51,7 +51,5 @@ export function hasPendingRoomInvite(
   roomId: string,
   invites: SmartMessageInvite[],
 ): boolean {
-  return invites.some(
-    (i) => i.roomId === roomId && i.status === "received",
-  );
+  return invites.some((i) => i.roomId === roomId && i.status === "received");
 }

@@ -63,9 +63,7 @@ describe("getInviteQueue", () => {
   });
 
   it("ignores invites for other contacts", () => {
-    const q = getInviteQueue("c1", [
-      invite({ contactId: "c2", roomId: "r2" }),
-    ]);
+    const q = getInviteQueue("c1", [invite({ contactId: "c2", roomId: "r2" })]);
     expect(q.count).toBe(0);
   });
 });
@@ -83,10 +81,7 @@ describe("hasPendingRoomInvite", () => {
 describe("getContactInviteActionCount", () => {
   it("falls back to inviteStatus when invites not merged yet", () => {
     expect(
-      getContactInviteActionCount(
-        { id: "c1", inviteStatus: "received" },
-        [],
-      ),
+      getContactInviteActionCount({ id: "c1", inviteStatus: "received" }, []),
     ).toBe(1);
   });
 });
