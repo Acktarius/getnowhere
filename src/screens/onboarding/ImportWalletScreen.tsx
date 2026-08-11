@@ -101,9 +101,7 @@ export function ImportWalletScreen() {
       }
       scanLoop();
     } catch {
-      setScanError(
-        "Camera unavailable. Upload a screenshot or paste the wallet data below.",
-      );
+      setScanError("Camera unavailable. Upload a QR screenshot instead.");
       setScanning(false);
     }
   }
@@ -239,7 +237,7 @@ export function ImportWalletScreen() {
   function buildInput(): ImportWalletInput | null {
     if (method === "qr") {
       if (!qrText.trim()) {
-        setError("Scan a QR code or paste the wallet data.");
+        setError("Scan a QR code or upload a QR screenshot.");
         return null;
       }
       return {
@@ -338,7 +336,7 @@ export function ImportWalletScreen() {
 
   const subtitle =
     method === "qr"
-      ? "Scan or paste wallet backup QR"
+      ? "Scan wallet backup QR code"
       : "Seed, keys, or backup file";
 
   return (
@@ -636,8 +634,6 @@ function QrPrimaryView({
   onImagePicked: (f: File) => void;
   onSwitchMethod: (m: Method) => void;
 }) {
-  const [showPaste, setShowPaste] = useState(false);
-
   return (
     <div className="stack stack--gap-4">
       {/* Scanner viewport */}
@@ -767,28 +763,6 @@ function QrPrimaryView({
           if (f) onImagePicked(f);
         }}
       />
-
-      {/* Paste fallback */}
-      {showPaste ? (
-        <div className="field">
-          <span className="field__label">Wallet data (paste)</span>
-          <textarea
-            className="textarea input--mono"
-            value={qrText}
-            onChange={(e) => setQrText(e.target.value)}
-            placeholder='{"version":1,"iv":"…","data":"…"}'
-            style={{ minHeight: 100 }}
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm btn--block"
-          onClick={() => setShowPaste(true)}
-        >
-          Paste wallet data instead
-        </button>
-      )}
 
       {/* Secondary methods */}
       <div className="card__divider" style={{ margin: "4px 0" }} />
