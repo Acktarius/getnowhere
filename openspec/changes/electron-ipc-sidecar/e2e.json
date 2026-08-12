@@ -1,0 +1,27 @@
+{
+  "change": "electron-ipc-sidecar",
+  "blocked": true,
+  "blockedReason": "Desktop IPC smoke requires display + holepunch-sidecar child; Playwright harness is browser WS-only today",
+  "steps": [
+    {
+      "id": "unit-sidecar-ipc",
+      "description": "holepunch-sidecar IPC transport tests green",
+      "command": "npm run holepunch:test"
+    },
+    {
+      "id": "unit-desktop-ipc",
+      "description": "desktop-electron IPC client + preload bridge tests green",
+      "command": "npm --prefix desktop-electron test"
+    },
+    {
+      "id": "unit-ui-backend",
+      "description": "HolepunchSidecarClient electron IPC backend tests green",
+      "command": "npm test"
+    },
+    {
+      "id": "manual-desktop-alice-bob",
+      "description": "Manual isolated Alice/Bob L2 connect over IPC (no renderer WS)",
+      "command": "npm run desktop:alice (with Vite dev server running)"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "change": "electron-ipc-sidecar",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Sidecar native IPC bridge transport",
+      "library": "holepunch-sidecar/src/bridge-ipc.mjs; holepunch-sidecar/src/server.mjs handleBridgeClient",
+      "runtimeOwner": "holepunch-sidecar process when GNH_BRIDGE_TRANSPORT=ipc",
+      "writes": "NDJSON SidecarServerMessage events to connected IPC client; Hyperswarm mesh unchanged",
+      "reads": "GNH_IPC_PATH; NDJSON SidecarClientMessage lines from IPC socket",
+      "uiConsumer": "Electron main sidecar-ipc-client (not renderer directly)",
+      "evidence": "holepunch-sidecar IPC transport tests (task 1.1)"
+    },
+    {
+      "capability": "Electron main IPC proxy to sidecar",
+      "library": "desktop-electron/sidecar-ipc-client.mjs; desktop-electron/main.mjs spawnSidecar",
+      "runtimeOwner": "Electron main process",
+      "writes": "NDJSON commands to sidecar IPC socket; gnh:sidecar-event to renderer",
+      "reads": "IPC listening bootstrap { transport: ipc, path }; gnh:sidecar-command from allowed webContents",
+      "uiConsumer": "preload gnhDesktop.sendCommand / onBridgeEvent",
+      "evidence": "desktop-electron sidecar-ipc-client tests (task 2.1); manual desktop:alice (task 5.2)"
+    },
+    {
+      "capability": "Renderer Electron IPC sidecar backend",
+      "library": "src/services/p2p/HolepunchSidecarClient.ts createElectronIpcSidecarBackend",
+      "runtimeOwner": "Vite UI in Electron renderer when gnhDesktop.bridgeTransport is ipc",
+      "writes": "sidecar join/leave/frame via preload sendCommand",
+      "reads": "gnh:sidecar-event bridge events (peers, frames, errors)",
+      "uiConsumer": "HolepunchChatTransport / chat room P2P flow",
+      "evidence": "HolepunchSidecarClient backend selection tests (task 3.3); manual L2 connect (task 5.2)"
+    }
+  ]
+}
