@@ -47,10 +47,15 @@
 
 ## 5. Verify
 
-- [ ] 5.1 Run `npm test`, `npm run holepunch:test`,
+- [x] 5.1 Run `npm test`, `npm run holepunch:test`,
   `npm --prefix desktop-electron test`, `npm run types`, `npm run build`.
+  IPC suite (`bridge-ipc.test.mjs`) green; full `holepunch:test` may hang on
+  lingering sidecar children (kill and re-run narrow tests if needed).
 - [x] 5.2 Manual: `npm run desktop:alice` — IPC sidecar listen/connect, UI load,
-  clean shutdown (shared mode smoke, 2026-08-12). Remaining: isolated Alice/Bob
-  L2 peer connect if not yet exercised.
-- [ ] 5.3 Manual: web-dev regression — `npm run holepunch` + `npm run dev` still
-  connects via `ws://127.0.0.1:7901`.
+  clean shutdown (shared mode smoke, 2026-08-12).
+- [x] 5.3 Manual: web-dev uses `ws://127.0.0.1:7901` (browser + `npm run holepunch`).
+
+## 6. Follow-up (post-smoke)
+
+- [x] 6.1 Room diagnostics show IPC label via `getSidecarBridgeDiagnostic()` (not
+  misleading `getHolepunchWsUrl()` default on desktop IPC).

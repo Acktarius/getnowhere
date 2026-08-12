@@ -13,7 +13,7 @@ import {
   getTopicRefForRoom,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
-  getHolepunchWsUrl,
+  getSidecarBridgeDiagnostic,
   getUfwAdvisoryState,
 } from "@/services/p2p/HolepunchSidecarClient";
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
@@ -81,7 +81,7 @@ function LoadingDiagnosticsSheet({
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
         <div>Room id: {roomId}</div>
         <div>Contact: {contactAlias ?? "…"}</div>
-        <div>Sidecar: {getHolepunchWsUrl()}</div>
+        <div>Sidecar: {getSidecarBridgeDiagnostic()}</div>
         {getLastSidecarDetail() && (
           <div>Sidecar status: {getLastSidecarDetail()}</div>
         )}
@@ -735,7 +735,7 @@ export function ChatRoomScreen() {
           {room.lastConnectError && (
             <div>Last error: {room.lastConnectError}</div>
           )}
-          <div>Sidecar: {getHolepunchWsUrl()}</div>
+          <div>Sidecar: {getSidecarBridgeDiagnostic()}</div>
           {getLastSidecarDetail() && (
             <div>Sidecar status: {getLastSidecarDetail()}</div>
           )}

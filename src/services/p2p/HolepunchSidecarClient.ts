@@ -105,6 +105,27 @@ export function getHolepunchWsUrl(): string {
   return DEFAULT_WS_URL;
 }
 
+/** Local bridge label for diagnostics (IPC vs WebSocket URL). */
+export function getSidecarBridgeDiagnostic(): string {
+  try {
+    if (typeof window !== "undefined") {
+      if (
+        window.gnhMobile &&
+        typeof window.gnhMobile.sendCommand === "function"
+      ) {
+        return "bare ipc (mobile worklet)";
+      }
+      const bridge = window.gnhDesktop;
+      if (bridge?.bridgeTransport === "ipc") {
+        return "native ipc (Electron main → sidecar)";
+      }
+    }
+  } catch {
+    /* non-dom */
+  }
+  return getHolepunchWsUrl();
+}
+
 type PeerHandler = (topicRef: string, count: number) => void;
 type FrameHandler = (msg: {
   topicRef: string;

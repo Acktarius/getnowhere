@@ -1,11 +1,10 @@
-## Purpose
+# desktop-shell-runtime Specification
 
+## Purpose
 Defines how the Electron desktop shell exposes the Hyperswarm sidecar bridge to
 the Vite renderer: identity, storage, and local bridge transport for packaged
 and dev harness builds.
-
-## ADDED Requirements
-
+## Requirements
 ### Requirement: Desktop IPC bridge exposes typed sidecar commands
 
 When the Electron shell uses native IPC to reach its sidecar, the preload bridge
@@ -85,8 +84,6 @@ instance SHALL read that path and connect instead of spawning its own sidecar.
 - THEN Bob connects to Alice's IPC path
 - AND Bob does not spawn a second sidecar
 
-## MODIFIED Requirements
-
 ### Requirement: Desktop bridge exposure
 
 The preload bridge SHALL expose sidecar connectivity metadata to the renderer.
@@ -124,3 +121,4 @@ role is in effect. Sandboxed `preload.cjs` SHALL be self-contained (no local
 - GIVEN the app is not packaged and `GNH_ROLE` is `bob`
 - WHEN the renderer reads `window.gnhDesktop`
 - THEN `role` is `bob`
+
