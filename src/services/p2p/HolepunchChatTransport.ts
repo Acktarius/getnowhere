@@ -662,25 +662,32 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   }
   const existing = rooms.get(id);
   if (existing) {
-    if (
+    const lifecycleChanged = Boolean(
       bootstrap?.lifecycleStatus &&
-      bootstrap.lifecycleStatus !== existing.room.lifecycleStatus
-    ) {
+        bootstrap.lifecycleStatus !== existing.room.lifecycleStatus,
+    );
+    const syncFlagChanged =
+      bootstrap?.awaitingChainSync !== undefined &&
+      bootstrap.awaitingChainSync !== existing.room.awaitingChainSync;
+    if (lifecycleChanged || syncFlagChanged) {
       existing.room = {
         ...existing.room,
-        // Monotonic: a stale `pending` hydration must never regress a room
-        // that already moved past acceptance. @see docs/security/p2pchatprotocol.md §9
-        lifecycleStatus: resolveIncomingLifecycle(
-          existing.room.lifecycleStatus,
-          bootstrap.lifecycleStatus,
-        ),
-        roomTopic: bootstrap.roomTopic ?? existing.room.roomTopic,
-        inviteId: bootstrap.inviteId ?? existing.room.inviteId,
-        inviteExpiry: bootstrap.inviteExpiry ?? existing.room.inviteExpiry,
-        roomTtl: bootstrap.roomTtl ?? existing.room.roomTtl,
-        roomKeyRef: bootstrap.roomKeyRef ?? existing.room.roomKeyRef,
+        ...(lifecycleChanged && bootstrap?.lifecycleStatus
+          ? {
+              // Monotonic: stale `pending` must never regress post-accept.
+              lifecycleStatus: resolveIncomingLifecycle(
+                existing.room.lifecycleStatus,
+                bootstrap.lifecycleStatus,
+              ),
+            }
+          : {}),
+        roomTopic: bootstrap?.roomTopic ?? existing.room.roomTopic,
+        inviteId: bootstrap?.inviteId ?? existing.room.inviteId,
+        inviteExpiry: bootstrap?.inviteExpiry ?? existing.room.inviteExpiry,
+        roomTtl: bootstrap?.roomTtl ?? existing.room.roomTtl,
+        roomKeyRef: bootstrap?.roomKeyRef ?? existing.room.roomKeyRef,
         awaitingChainSync:
-          bootstrap.awaitingChainSync ?? existing.room.awaitingChainSync,
+          bootstrap?.awaitingChainSync ?? existing.room.awaitingChainSync,
       };
       upsertCatalogRoom(existing.room);
     }

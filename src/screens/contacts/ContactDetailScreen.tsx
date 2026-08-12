@@ -129,6 +129,18 @@ export function ContactDetailScreen() {
     };
   }, [id, refreshInvites]);
 
+  const inviteQueueForContact = getInviteQueue(id, invites);
+  const incomingInviteRoomId =
+    contact?.relationshipStatus === "eligible"
+      ? inviteQueueForContact.newest?.roomId
+      : undefined;
+  const inviteRoom = useChatStore((s) =>
+    incomingInviteRoomId
+      ? s.rooms.find((r) => r.id === incomingInviteRoomId)
+      : undefined,
+  );
+  const acceptAwaitingSync = Boolean(inviteRoom?.awaitingChainSync);
+
   if (!contact) {
     return (
       <div className="screen">
@@ -147,7 +159,7 @@ export function ContactDetailScreen() {
   }
 
   const eligible = contact.relationshipStatus === "eligible";
-  const inviteQueue = getInviteQueue(contact.id, invites);
+  const inviteQueue = inviteQueueForContact;
   const incomingInvite = eligible ? inviteQueue.newest : undefined;
   const queuedOthers = inviteQueue.others;
   /** Newer create must show Accept even if an older invite was already accepted. */
@@ -398,10 +410,12 @@ export function ContactDetailScreen() {
                       ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
                       : inviteAction === "decline"
                         ? "Sending decline on-chain and revoking the pending room."
-                        : contact.inviteStatus === "accepted" &&
-                            contact.roomId !== incomingInvite.roomId
-                          ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
-                          : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
+                        : acceptAwaitingSync
+                          ? "Incoming chat invite — wallet still syncing. Accept unlocks near chain tip so any leave or revoke on the chain is visible first."
+                          : contact.inviteStatus === "accepted" &&
+                              contact.roomId !== incomingInvite.roomId
+                            ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
+                            : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
                   </div>
                   {queuedOthers.length > 0 && (
                     <div className="muted" style={{ fontSize: 12.5 }}>
@@ -417,7 +431,7 @@ export function ContactDetailScreen() {
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
                       className="btn btn--primary grow"
-                      disabled={inviteAction !== null}
+                      disabled={inviteAction !== null || acceptAwaitingSync}
                       onClick={handleAccept}
                     >
                       {inviteAction === "accept" ? (

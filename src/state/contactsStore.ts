@@ -43,7 +43,10 @@ import {
 } from "@/services/p2p/roomChainRestore";
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
-import { isPostAcceptStatus } from "@/services/protocol/roomLifecycle";
+import {
+  isPostAcceptStatus,
+  shouldAwaitChainSyncForInvite,
+} from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
 import { resolveTopicSuite } from "@/types/protocol";
@@ -802,11 +805,21 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     if (nearTip) {
       for (const entry of listCatalogRooms()) {
         if (!entry.awaitingChainSync) continue;
+        if (
+          isRoomRevoked(entry.id) ||
+          (entry.inviteId && isInviteRevoked(entry.inviteId))
+        ) {
+          continue;
+        }
+        const pendingInvite = entry.lifecycleStatus === "pending";
+        const lifecycleStatus = pendingInvite
+          ? ("pending" as const)
+          : isPostAcceptStatus(entry.lifecycleStatus)
+            ? entry.lifecycleStatus
+            : ("accepted" as const);
         patchCatalogRoom(entry.id, {
           awaitingChainSync: false,
-          lifecycleStatus: isPostAcceptStatus(entry.lifecycleStatus)
-            ? entry.lifecycleStatus
-            : "accepted",
+          lifecycleStatus,
         });
         try {
           await chatTransport.createRoom({
@@ -815,7 +828,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
               roomId: entry.id,
               roomKeyRef: entry.roomKeyRef,
               bootstrapSource: entry.bootstrapSource,
-              lifecycleStatus: "accepted",
+              lifecycleStatus,
               inviteId: entry.inviteId,
               inviteExpiry: entry.inviteExpiry,
               roomTtl: entry.roomTtl,
@@ -872,22 +885,24 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) continue;
       const contact = get().contacts.find((c) => c.id === inv.contactId);
       if (!contact || !isContactEligibleForInvite(contact)) continue;
-      const existing = await chatTransport.getRoom(inv.roomId);
-      if (!existing) {
-        await chatTransport.createRoom({
-          contactId: inv.contactId,
-          bootstrap: {
-            roomId: inv.roomId,
-            roomKeyRef: `key:${inv.roomId}`,
-            bootstrapSource: "conceal-smart-message",
-            lifecycleStatus: "pending",
-            inviteId: inv.inviteId,
-            inviteExpiry: inv.inviteExpiry,
-            roomTtl: inv.roomTtl,
-            roomTopic: inv.roomTopic,
-          },
-        });
-      }
+      const awaitingChainSync = shouldAwaitChainSyncForInvite(
+        nearTip,
+        inv.inviteExpiry,
+      );
+      await chatTransport.createRoom({
+        contactId: inv.contactId,
+        bootstrap: {
+          roomId: inv.roomId,
+          roomKeyRef: `key:${inv.roomId}`,
+          bootstrapSource: "conceal-smart-message",
+          lifecycleStatus: "pending",
+          inviteId: inv.inviteId,
+          inviteExpiry: inv.inviteExpiry,
+          roomTtl: inv.roomTtl,
+          roomTopic: inv.roomTopic,
+          awaitingChainSync,
+        },
+      });
       get().updateContact(inv.contactId, {
         inviteStatus: "received",
         roomId: inv.roomId,
@@ -1059,6 +1074,12 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 
   async acceptInvite(inviteId) {
+    if (!(await isWalletNearTip(1))) {
+      throw new Error(
+        "Wallet still syncing — wait until near chain tip before accepting. A leave or revoke may still be on the chain.",
+      );
+    }
+
     let inv = get().invites.find((i) => i.id === inviteId);
     // Prefer an already-parsed handshake (from refreshInvites). Only re-scan
     // the chain when the ECDH material is missing (e.g. after restart).
