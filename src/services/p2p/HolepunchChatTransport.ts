@@ -49,7 +49,11 @@ import {
   assertCanSendMessages,
   assertRoomInteractive,
 } from "@/services/protocol/composerGate";
-import { buildChatAad, buildProofAad } from "@/services/protocol/proofAad";
+import {
+  buildChatAad,
+  buildProofAad,
+  incomingFrameAadCandidates,
+} from "@/services/protocol/proofAad";
 import {
   isRelayEligibleStatus,
   isRoomExpired,
@@ -416,20 +420,31 @@ function maybeMarkPeerLost(topicRef: string): void {
 
 function handleIncomingFrame(roomId: string, payloadB64: string): void {
   const state = rooms.get(roomId);
-  if (!state?.session) return;
-  try {
-    const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
-    const nonce = raw.slice(0, 12);
-    const ciphertext = raw.slice(12);
-    const aad = pendingProofRooms.has(roomId)
-      ? buildProofAad(roomId, state.session)
-      : buildChatAad(roomId, state.session);
-    void P2PEncryptionAdapter.open({
-      session: state.session,
-      ciphertext,
-      nonce,
-      aad,
-    }).then((opened) => {
+  const session = state?.session;
+  if (!state || !session) return;
+  void (async () => {
+    try {
+      const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
+      const nonce = raw.slice(0, 12);
+      const ciphertext = raw.slice(12);
+      let opened: Awaited<ReturnType<typeof P2PEncryptionAdapter.open>> = null;
+      const openSession = session;
+      for (const aad of incomingFrameAadCandidates(
+        roomId,
+        openSession,
+        state.room.lifecycleStatus,
+      )) {
+        const result = await P2PEncryptionAdapter.open({
+          session: openSession,
+          ciphertext,
+          nonce,
+          aad,
+        });
+        if (result) {
+          opened = result;
+          break;
+        }
+      }
       if (!opened) {
         if (pendingProofRooms.has(roomId)) {
           const resolver = proofResolvers.get(roomId);
@@ -490,10 +505,10 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
       notify(roomId, msg);
-    });
-  } catch {
-    /* fail closed */
-  }
+    } catch {
+      /* fail closed */
+    }
+  })();
 }
 
 async function attemptConnect(state: RoomState): Promise<ChatRoom> {
