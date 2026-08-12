@@ -25,8 +25,8 @@ import type {
   InviteEnvelope,
 } from "@/types/protocol";
 import {
-  CHAT_PROTOCOL_VERSION,
   CHAT_WIRE_ACTIONS,
+  isSupportedChatProtocolVersion,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
 import type { SmartMessageProtocolService } from "@/types/services";
@@ -204,7 +204,7 @@ function readUint32BE(buf: Uint8Array, offset: number): number {
 
 /** Pack handshake into slim CREATE_PACK_BYTES (relationshipId/salt not on wire). */
 export function packCreateHandshake(handshake: ChatInviteHandshake): string {
-  if (handshake.protocolVersion !== CHAT_PROTOCOL_VERSION) {
+  if (!isSupportedChatProtocolVersion(handshake.protocolVersion)) {
     throw new Error(
       `Unsupported protocolVersion ${handshake.protocolVersion}.`,
     );
@@ -325,7 +325,7 @@ export function unpackCreateHandshake(
   protocolVersion: number,
   packB64: string,
 ): ChatInviteHandshake | null {
-  if (protocolVersion !== CHAT_PROTOCOL_VERSION) return null;
+  if (!isSupportedChatProtocolVersion(protocolVersion)) return null;
   try {
     const buf = b64urlToBytes(packB64);
     return (
@@ -382,7 +382,7 @@ export function encodeCreateSmartBody(
 function decodeCompactCreate(data: string[]): ChatInviteHandshake | null {
   if (data.length < 10) return null;
   const protocolVersion = Number(data[0]);
-  if (protocolVersion !== CHAT_PROTOCOL_VERSION) return null;
+  if (!isSupportedChatProtocolVersion(protocolVersion)) return null;
   try {
     return {
       protocolVersion,
@@ -408,7 +408,7 @@ function decodeCompactCreate(data: string[]): ChatInviteHandshake | null {
 function decodeVerboseCreate(data: string[]): ChatInviteHandshake | null {
   if (data.length < 13) return null;
   const protocolVersion = Number(data[0]);
-  if (protocolVersion !== CHAT_PROTOCOL_VERSION) return null;
+  if (!isSupportedChatProtocolVersion(protocolVersion)) return null;
   return {
     protocolVersion,
     inviteId: data[1],
@@ -439,7 +439,7 @@ export function encodeRegisterSmartBody(payload: ChatRegisterPayload): string {
 }
 
 export function encodeRevokeSmartBody(payload: ChatRevokePayload): string {
-  // Wire: contact | revoke | inviteId | replay | reason | roomId?
+  // Wire: contact | revoke | inviteId | replay | reason | roomId? | topicEpoch?
   const body = messages.encodeSmartMessage(
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.revoke,
@@ -447,6 +447,7 @@ export function encodeRevokeSmartBody(payload: ChatRevokePayload): string {
     payload.replayId ? hexToB64url(payload.replayId) : "",
     payload.reasonCode ?? "user_declined",
     payload.roomId ?? "",
+    payload.topicEpoch !== undefined ? String(payload.topicEpoch) : "",
   );
   assertBodyFits(body);
   return body;
@@ -568,6 +569,7 @@ export function parseChatSmartBody(
     const reasonCode = (String(parsed[4] ?? "user_declined") ||
       "user_declined") as ChatRevokeReasonCode;
     const roomIdRaw = String(parsed[5] ?? "").trim();
+    const epochRaw = String(parsed[6] ?? "").trim();
     if (!inviteId) return null;
     let replayId: string | undefined;
     if (replayRaw) {
@@ -579,6 +581,11 @@ export function parseChatSmartBody(
         replayId = replayRaw;
       }
     }
+    let topicEpoch: number | undefined;
+    if (epochRaw) {
+      const n = Number(epochRaw);
+      if (Number.isInteger(n) && n >= 0) topicEpoch = n;
+    }
     return {
       action: "revoke",
       payload: {
@@ -587,6 +594,7 @@ export function parseChatSmartBody(
         roomId: roomIdRaw || undefined,
         replayId,
         reasonCode,
+        topicEpoch,
       },
     };
   }
@@ -621,7 +629,7 @@ export const SmartMessageProtocolAdapter: SmartMessageProtocolService = {
     if (!relationshipEligible) {
       throw new Error("Chat create requires an eligible contact.");
     }
-    if (handshake.protocolVersion !== CHAT_PROTOCOL_VERSION) {
+    if (!isSupportedChatProtocolVersion(handshake.protocolVersion)) {
       throw new Error("Unsupported chat protocol version.");
     }
     if (isInviteExpired(handshake.inviteExpiry, nowUnix())) {
@@ -672,6 +680,7 @@ export const SmartMessageProtocolAdapter: SmartMessageProtocolService = {
       roomId: input.roomId,
       replayId: input.replayId,
       reasonCode: input.reasonCode ?? "user_declined",
+      topicEpoch: input.topicEpoch,
     };
   },
 

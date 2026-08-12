@@ -18,9 +18,11 @@ No L3. UI never joins Hyperswarm.
 3. `architecture/electron-desktop.md` — desktop Alice/Bob runbook
 4. `architecture/mobile-p2p-runtime.md` — mobile Bare decision
 5. `architecture/holepunch-sidecar.md` — live bridge schema
-5b. `architecture/holepunch-bridge-errors.md` — bridge `{ type: "error" }` codes
+5b. `architecture/local-bridge-transport.md` — ws/wss/IPC policy and roadmap
+5c. `architecture/holepunch-bridge-errors.md` — bridge `{ type: "error" }` codes
 6. `architecture/pear-runtime.md`
-7. `architecture/pairing-and-topics.md` — sole `topicRef` formula
+7. `architecture/pairing-and-topics.md` — shipped v1 `topicRef` formula
+7b. `security/capabilities-and-derivation.md` — ids as capabilities, v2 HKDF targets
 8. `security/encryption.md` — threat model + L1 / L1′ / L2
 9. `security/p2pchatprotocol.md`
 10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)

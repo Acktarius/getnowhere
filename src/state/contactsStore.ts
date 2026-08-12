@@ -24,6 +24,10 @@ import {
 } from "@/services/contacts/contactsPersistence";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
 import {
+  getRelationshipTopicEpoch,
+  syncRelationshipTopicEpoch,
+} from "@/services/p2p/relationshipTopicEpochStore";
+import {
   isInviteRevoked,
   isRoomRevoked,
   rememberRevokedRoom,
@@ -42,6 +46,7 @@ import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import { isPostAcceptStatus } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
+import { resolveTopicSuite } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
 
 type CreateChatOptions = {
@@ -195,6 +200,7 @@ async function applyRoomDestroyLocally(
   ) => void,
   roomId: string,
   inviteId?: string,
+  opts?: { skipEpochBump?: boolean },
 ): Promise<void> {
   // Tombstone first so any concurrent openRoom/reconnect cannot re-upsert.
   rememberRevokedRoom(roomId, inviteId);
@@ -203,14 +209,6 @@ async function applyRoomDestroyLocally(
       "@/services/p2p/roomCatalogStore"
     );
     removeCatalogRoom(roomId);
-  } catch {
-    /* ignore */
-  }
-  try {
-    const { removeRoomSession } = await import(
-      "@/services/p2p/roomSessionStore"
-    );
-    removeRoomSession(roomId);
   } catch {
     /* ignore */
   }
@@ -254,7 +252,9 @@ async function applyRoomDestroyLocally(
   await persistContactsDurably(get);
 
   try {
-    await chatTransport.leaveRoom(roomId);
+    await chatTransport.leaveRoom(roomId, {
+      skipEpochBump: opts?.skipEpochBump,
+    });
   } catch {
     /* already gone */
   }
@@ -693,19 +693,56 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
               normalizeInviteId(r.inviteId) ===
                 normalizeInviteId(revoke.inviteId)),
         );
+      let syncedEpochFromPeer = false;
+      if (
+        revoke.topicEpoch !== undefined &&
+        revoke.reasonCode === "room_revoked"
+      ) {
+        const handshake = getHandshakeForInvite(revoke.inviteId);
+        const contactId = inv?.contactId || catalogHit?.contactId;
+        let relationshipId = handshake?.relationshipId;
+        if (!relationshipId && contactId) {
+          const contact = get().contacts.find((c) => c.id === contactId);
+          if (contact?.paymentIdFrom && contact?.paymentIdTo) {
+            relationshipId = await deriveRelationshipId(
+              contact.paymentIdFrom,
+              contact.paymentIdTo,
+            );
+          }
+        }
+        if (relationshipId) {
+          syncRelationshipTopicEpoch(relationshipId, revoke.topicEpoch);
+          syncedEpochFromPeer = true;
+        }
+      }
       const roomId = revoke.roomId || inv?.roomId || catalogHit?.id;
       if (!roomId) continue;
+      const destroyOpts = syncedEpochFromPeer
+        ? { skipEpochBump: true as const }
+        : undefined;
       if (isRoomRevoked(roomId)) {
         // Ensure catalog/UI stay clean even if a prior pass left residue.
         try {
-          await applyRoomDestroyLocally(get, set, roomId, revoke.inviteId);
+          await applyRoomDestroyLocally(
+            get,
+            set,
+            roomId,
+            revoke.inviteId,
+            destroyOpts,
+          );
         } catch {
           /* ignore */
         }
         continue;
       }
       try {
-        await applyRoomDestroyLocally(get, set, roomId, revoke.inviteId);
+        await applyRoomDestroyLocally(
+          get,
+          set,
+          roomId,
+          revoke.inviteId,
+          destroyOpts,
+        );
       } catch {
         /* retry next poll */
       }
@@ -1235,9 +1272,24 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     }
     // Destroy immediately — do not wait for L1 broadcast/confirm.
     await applyRoomDestroyLocally(get, set, roomId, inviteId);
+    let topicEpoch: number | undefined;
+    const handshake = inviteId ? getHandshakeForInvite(inviteId) : undefined;
+    const contact = get().contacts.find((c) => c.id === contactId);
+    const relationshipId =
+      handshake?.relationshipId ??
+      (contact?.paymentIdFrom && contact?.paymentIdTo
+        ? await deriveRelationshipId(contact.paymentIdFrom, contact.paymentIdTo)
+        : undefined);
+    if (
+      relationshipId &&
+      handshake &&
+      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+    ) {
+      topicEpoch = getRelationshipTopicEpoch(relationshipId);
+    }
     // Notify counterpart on L1 in the background (best-effort).
     void smartMessageService
-      .revokeRoom({ contactId, inviteId, roomId, replayId })
+      .revokeRoom({ contactId, inviteId, roomId, replayId, topicEpoch })
       .catch(async (e) => {
         const { toastError } = await import("@/state/toastStore");
         toastError(

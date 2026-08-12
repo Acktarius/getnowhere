@@ -80,7 +80,7 @@ export const MockChatTransport: ChatTransport = {
     return room;
   },
 
-  async leaveRoom(roomId) {
+  async leaveRoom(roomId, _opts?) {
     const room = rooms.get(roomId);
     if (room) {
       room.lifecycleStatus = "closed";
@@ -115,7 +115,12 @@ export const MockChatTransport: ChatTransport = {
       sendCounter: 0,
       recvCounter: 0,
       peerRole: "initiator",
-      transport: { kind: "holepunch", topicRef: roomId },
+      transport: {
+        kind: "holepunch",
+        topicRef: roomId,
+        topicSuite: "SHA256_V1",
+        topicEpoch: 0,
+      },
       roomTtl: Math.floor(Date.now() / 1000) + 86400,
       establishedAt: new Date().toISOString(),
     });

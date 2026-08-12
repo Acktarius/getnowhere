@@ -350,7 +350,7 @@ canSendMessages(status) =>
 `inviteStatus === accepted` alone does not imply live Holepunch; it does unlock
 L1′ relay once the room lifecycle is post-accept.
 
-**Topic derivation (canonical — only formula):**
+**Topic derivation (v1 shipped — only formula for codegen):**
 
 ```ts
 topicRef = sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`)
@@ -361,7 +361,11 @@ Implemented in `src/services/protocol/ids.ts` (`deriveTopicRef`).
 - Never use a human-readable room name or guessable string as the raw topic.
 - Never embed raw payment IDs or display aliases in the topic.
 - Both peers join the derived topic only inside the P2P runtime.
-- Do not codegen alternate formulas. Details: `docs/architecture/pairing-and-topics.md`.
+- `roomId` / `topicRef` are capability secrets distributed via encrypted L1
+  SmartMessages — not via the local bridge.
+- Do not codegen alternate formulas without a protocol bump. Details:
+  `docs/architecture/pairing-and-topics.md` (v1) and
+  `docs/security/capabilities-and-derivation.md` (strategy + v2 targets).
 
 ---
 

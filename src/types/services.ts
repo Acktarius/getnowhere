@@ -21,6 +21,7 @@ import type {
   HolepunchBootstrapContract,
   InviteEnvelope,
   P2PSessionConfig,
+  TopicSuiteId,
 } from "@/types/protocol";
 
 // ---------- Wallet ----------
@@ -208,6 +209,7 @@ export type SmartMessageService = {
     inviteId: string;
     roomId: string;
     replayId?: string;
+    topicEpoch?: number;
   }): Promise<{ txHash: string }>;
   /** Scan received smart messages for chat.revoke. */
   fetchIncomingRevokes(): Promise<
@@ -255,7 +257,7 @@ export type ChatTransport = {
   /** Join topic and establish peer channel from bootstrap contract. */
   connect(contract: HolepunchBootstrapContract): Promise<ChatRoom>;
   /** Leave forever: catalog/session removal (not temporary offline). */
-  leaveRoom(roomId: string): Promise<void>;
+  leaveRoom(roomId: string, opts?: { skipEpochBump?: boolean }): Promise<void>;
   /** Leave all Hyperswarm topics without revoking catalog/sessions (Exit). */
   softLeaveAll(): Promise<void>;
   /** Retry after connect_failed. */
@@ -317,6 +319,7 @@ export type SmartMessageProtocolService = {
     roomId?: string;
     replayId?: string;
     reasonCode?: ChatRevokeReasonCode;
+    topicEpoch?: number;
   }): Promise<ChatRevokePayload>;
 
   /** @deprecated Use composeCreate. */
@@ -387,6 +390,8 @@ export type P2PEncryptionService = {
       roomId: string;
     };
     nonceSeed: string;
+    topicSuite?: TopicSuiteId;
+    topicEpoch?: number;
   }): Promise<P2PSessionConfig>;
 
   seal(input: {

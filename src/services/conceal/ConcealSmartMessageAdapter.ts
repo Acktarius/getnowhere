@@ -15,6 +15,7 @@ import {
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -277,11 +278,16 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     const senderEphemeralPublicKey =
       input.handshakeOverrides?.senderEphemeralPublicKey ?? randomHex(32);
 
+    const topicEpoch =
+      input.handshakeOverrides?.topicEpoch ??
+      getRelationshipTopicEpoch(input.relationshipId);
+
     const handshake = {
       protocolVersion: CHAT_PROTOCOL_VERSION,
       inviteId,
       relationshipId: input.relationshipId,
       roomId,
+      topicEpoch,
       cipherSuite: "CHACHA20_POLY1305_V1" as const,
       senderEphemeralPublicKey,
       kdf: "HKDF_SHA256_V1" as const,
@@ -529,6 +535,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       roomId: input.roomId,
       replayId: input.replayId,
       reasonCode: "room_revoked",
+      topicEpoch: input.topicEpoch,
     });
     const { hash } = await broadcastSmartBody({
       contactId: input.contactId,

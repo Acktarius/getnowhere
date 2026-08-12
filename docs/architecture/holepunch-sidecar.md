@@ -13,8 +13,9 @@ the React/Vite layer is UI only; Hyperswarm lives in `holepunch-sidecar/`
 - **UI layer:** TypeScript + React + Vite static bundle (browser today).
 - **P2P runtime layer (web-dev):** Node sidecar — create swarm, join topics,
   peer streams, reconnect, frame fan-out.
-- **Bridge layer:** typed WebSocket messages (schema below). Mobile replaces
-  the transport (Bare IPC) but keeps the same command/event types.
+- **Bridge layer:** typed WebSocket messages (schema below). Transport policy
+  and roadmap (ws → wss → IPC): `docs/architecture/local-bridge-transport.md`.
+  Mobile replaces the transport (Bare IPC) but keeps the same command/event types.
 
 ### Important constraint
 
@@ -369,12 +370,20 @@ Transport peer count ≥ 1 is necessary but not sufficient. The UI marks
 `connected` only after the **post-connect L1 proof** (sealed `kind: "proof"`
 frame) succeeds — see `docs/security/encryption.md`.
 
-## Sidecar WS auth
+## Sidecar bridge auth and transport
 
-Non-loopback bind (`HOLEPUNCH_HOST` not in `127.0.0.1` / `::1` / `localhost`)
-requires `GNH_SIDECAR_TOKEN` at **startup** — the process exits before listen if
-the token is missing. Loopback without a token remains the explicit web-dev
-exception (`npm run holepunch`).
+The local bridge is **not** the relationship credential path — Conceal L1
+distributes capability material; the bridge carries commands and opaque sealed
+frames only (`docs/security/capabilities-and-derivation.md`).
+
+**Transport policy:** loopback WebSocket today; target `wss://` with cert
+pinning, then IPC/Unix socket — ranked options and hardening checklist in
+`docs/architecture/local-bridge-transport.md`.
+
+**Auth (shipped):** non-loopback bind (`HOLEPUNCH_HOST` not in
+`127.0.0.1` / `::1` / `localhost`) requires `GNH_SIDECAR_TOKEN` at startup —
+process exits before listen if missing. Loopback without a token remains the
+explicit web-dev exception (`npm run holepunch`).
 
 When a token is set, clients must connect with `?token=<value>` or the upgrade
 is closed (`4001`). Comparison is timing-safe (`crypto.timingSafeEqual` on

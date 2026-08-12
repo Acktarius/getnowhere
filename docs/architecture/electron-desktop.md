@@ -30,6 +30,9 @@ Identity is resolved by `desktop-electron/desktop-identity.mjs` from
 | Bridge token | per-launch `randomUUID()`; no lockfile | shared default or UUID |
 | Single instance | yes (`requestSingleInstanceLock` after `setPath`) | no (Alice/Bob need two) |
 
+Local bridge transport policy (ws → wss → IPC roadmap):
+`docs/architecture/local-bridge-transport.md`.
+
 Packaged builds **ignore** `GNH_ROLE`, `GNH_SWARM_MODE`, and `GNH_SIDECAR_TOKEN`.
 They still honor `HOLEPUNCH_HOST`, `HOLEPUNCH_PORT`, `GNH_UI_URL`, `GNH_NODE_BIN`,
 and `GNH_HOLEPUNCH_WS_URL` as operational overrides.

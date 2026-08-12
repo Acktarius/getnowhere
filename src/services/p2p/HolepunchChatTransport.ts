@@ -26,6 +26,7 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
+import { bumpRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isRoomRevoked,
   rememberRevokedRoom,
@@ -48,6 +49,7 @@ import {
   assertCanSendMessages,
   assertRoomInteractive,
 } from "@/services/protocol/composerGate";
+import { buildProofAad } from "@/services/protocol/proofAad";
 import {
   isRelayEligibleStatus,
   isRoomExpired,
@@ -204,9 +206,7 @@ async function sendProofFrame(
     text: `${kind}:v1:${state.session.sessionId}`,
   };
   const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
-  const aad = new TextEncoder().encode(
-    `v1|${state.room.id}|${state.session.sessionId}`,
-  );
+  const aad = buildProofAad(state.room.id, state.session);
   const sealed = await P2PEncryptionAdapter.seal({
     session: state.session,
     plaintext,
@@ -432,7 +432,7 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
       session: state.session,
       ciphertext,
       nonce,
-      aad: new TextEncoder().encode(`v1|${roomId}|${state.session.sessionId}`),
+      aad: buildProofAad(roomId, state.session),
     }).then((opened) => {
       if (!opened) {
         if (pendingProofRooms.has(roomId)) {
@@ -790,11 +790,16 @@ export const HolepunchChatTransport: ChatTransport = {
         });
       }
       state.contract = contract;
+      const topicSuite = contract.transport.topicSuite ?? "SHA256_V1";
+      const topicEpoch = contract.transport.topicEpoch ?? 0;
       state.session = {
         sessionId: contract.sessionId,
         roomId: contract.roomId,
         relationshipId: contract.relationshipId,
         cipherSuite: contract.cipherSuite,
+        topicSuite,
+        topicEpoch,
+        topicRef: contract.transport.topicRef,
         sendKeyRef: contract.sendKeyRef,
         recvKeyRef: contract.recvKeyRef,
         nonceSeed: contract.nonceSeed,
@@ -822,10 +827,37 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async leaveRoom(roomId) {
+  async leaveRoom(roomId, opts) {
     const state = rooms.get(roomId);
+    const persisted = state ? undefined : loadRoomSession(roomId);
+    const topicSuite =
+      state?.contract?.transport.topicSuite ??
+      state?.session?.topicSuite ??
+      persisted?.contract.transport.topicSuite;
+    const relationshipId =
+      state?.contract?.relationshipId ??
+      state?.session?.relationshipId ??
+      persisted?.contract.relationshipId;
+    if (
+      !opts?.skipEpochBump &&
+      topicSuite === "HKDF_EPOCH_V1" &&
+      relationshipId
+    ) {
+      bumpRelationshipTopicEpoch(relationshipId);
+    }
+
     if (!state) {
-      // Still honor leave-forever when only the durable catalog remains.
+      const topicRef = persisted?.contract.transport.topicRef;
+      if (topicRef) {
+        try {
+          await backend().leave(topicRef, roomId);
+        } catch {
+          /* ignore */
+        }
+        const set = topicRooms.get(topicRef);
+        set?.delete(roomId);
+        if (set && set.size === 0) topicRooms.delete(topicRef);
+      }
       removeCatalogRoom(roomId);
       removeRoomSession(roomId);
       rememberRevokedRoom(roomId);

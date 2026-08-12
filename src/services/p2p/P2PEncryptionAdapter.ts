@@ -12,8 +12,8 @@ import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { randomHex } from "@/services/protocol/ids";
-import type { P2PSessionConfig } from "@/types/protocol";
+import { deriveTopicRefForSuite, randomHex } from "@/services/protocol/ids";
+import type { P2PSessionConfig, TopicSuiteId } from "@/types/protocol";
 import type { P2PEncryptionService } from "@/types/services";
 
 const privateKeys = new Map<string, Uint8Array>();
@@ -115,6 +115,15 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
         : input.senderEphemeralPublicKey,
     );
     const shared = x25519.getSharedSecret(localPriv, remotePub);
+    const topicSuite: TopicSuiteId = input.topicSuite ?? "SHA256_V1";
+    const topicEpoch = input.topicEpoch ?? 0;
+    const topicRef = await deriveTopicRefForSuite({
+      suite: topicSuite,
+      roomId: input.info.roomId,
+      relationshipId: input.info.relationshipId,
+      ecdhSharedSecret: shared,
+      epoch: topicEpoch,
+    });
     const okm = hkdf(
       sha256,
       shared,
@@ -146,6 +155,9 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
       roomId: input.info.roomId,
       relationshipId: input.info.relationshipId,
       cipherSuite: input.info.cipherSuite,
+      topicSuite,
+      topicEpoch,
+      topicRef,
       sendKeyRef,
       recvKeyRef,
       nonceSeed: input.nonceSeed,

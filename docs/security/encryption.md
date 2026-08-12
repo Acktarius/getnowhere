@@ -12,6 +12,8 @@ scattering cryptographic decisions across UI and feature code.
 This document defines:
 
 - the threat model and layering (L1 / L1′ / L2 — there is **no L3**)
+- **layer separation** and capability distribution (Conceal vs Hyperswarm vs
+  local bridge — `@see` `docs/security/capabilities-and-derivation.md`)
 - **metadata privacy** per channel (on-chain vs network — see § Threat model)
 - the default encryption primitive for L1 session seals
 - key handling expectations
@@ -34,6 +36,13 @@ Get NowHere runs the same product crypto across different hosts:
 **Invariant:** treat the P2P runtime and the UI↔runtime bridge as **untrusted
 for chat plaintext**. Session keys and seal/open stay with the app identity
 path (near the wallet / UI services), not inside Hyperswarm code.
+
+**Layer separation:** Conceal SmartMessages distribute relationship capability
+material (encrypted L1). Hyperswarm provides Noise transport and discovery (L2).
+The local UI↔sidecar link is control/events only — not credential distribution.
+Bridge transport policy: `docs/architecture/local-bridge-transport.md`.
+Id/topic derivation strategy (v1 shipped, v2 planned):
+`docs/security/capabilities-and-derivation.md`.
 
 ### What each piece defeats
 
