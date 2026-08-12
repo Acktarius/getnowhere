@@ -10,10 +10,28 @@ interface ImportMeta {
 
 interface GnhDesktopBridge {
   role?: string;
-  /** WS URL; may already include `?token=` under Electron. */
+  bridgeTransport?: "ipc" | "ws";
+  /** WS URL when `bridgeTransport` is `ws`. */
   holepunchWsUrl?: string;
-  /** Optional sidecar auth token (empty in web-dev). */
+  /** Sidecar auth token when using WebSocket transport. */
   wsToken?: string;
+  sendCommand?(cmd: {
+    type: string;
+    topicRef?: string;
+    roomId?: string;
+    payload?: string;
+  }): void;
+  onBridgeEvent?(
+    handler: (msg: {
+      type: string;
+      topicRef?: string;
+      roomId?: string;
+      payload?: string;
+      count?: number;
+      code?: string;
+      message?: string;
+    }) => void,
+  ): () => void;
   /**
    * Privilege-free, best-effort Linux UFW advisory (Electron only; absent in
    * the browser build). Never proof that a specific port is blocked.

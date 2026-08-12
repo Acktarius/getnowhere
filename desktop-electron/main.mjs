@@ -14,7 +14,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, session } from "electron";
 import { resolveDesktopIdentity } from "./desktop-identity.mjs";
+import {
+  generateSidecarIpcPath,
+  sharedIpcLockBasename,
+} from "./desktop-ipc-path.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
+import { connectSidecarIpc } from "./sidecar-ipc-client.mjs";
 
 const require = createRequire(import.meta.url);
 const { resolveDesktopInfoReply } = require("./desktop-info-ipc.cjs");
@@ -49,6 +54,10 @@ const isIsolated = SWARM_MODE === "isolated";
 let swarmPort = SWARM_PORT_REQUESTED;
 
 const BASE_WS_URL_OVERRIDE = process.env.GNH_HOLEPUNCH_WS_URL?.trim() || null;
+/** Native sidecar IPC unless WS URL override forces loopback WebSocket. */
+const USE_SIDECAR_IPC = !BASE_WS_URL_OVERRIDE;
+const SIDECAR_COMMAND_CHANNEL = "gnh:sidecar-command";
+const SIDECAR_EVENT_CHANNEL = "gnh:sidecar-event";
 
 /**
  * Renderer pulls its bridge config over this synchronous channel instead of
@@ -146,6 +155,37 @@ function clearTokenLock() {
   }
 }
 
+function ipcLockPath() {
+  return join(tmpdir(), sharedIpcLockBasename(SWARM_HOST, ROLE ?? "shared"));
+}
+
+/** @param {string} path */
+function writeIpcLock(path) {
+  if (!USES_TOKEN_LOCK || !USE_SIDECAR_IPC) return;
+  writeFileSync(ipcLockPath(), path, { encoding: "utf8", mode: 0o600 });
+}
+
+function readIpcLock() {
+  if (!USES_TOKEN_LOCK || !USE_SIDECAR_IPC) return null;
+  const path = ipcLockPath();
+  if (!existsSync(path)) return null;
+  try {
+    const value = readFileSync(path, "utf8").trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearIpcLock() {
+  if (!USES_TOKEN_LOCK || !USE_SIDECAR_IPC) return;
+  try {
+    unlinkSync(ipcLockPath());
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Mutable: owner keeps token; attacher replaces with lockfile / shared default.
  * Packaged builds always get a fresh per-launch token and ignore
@@ -170,6 +210,11 @@ let ufwAdvisory = { state: "unknown", reason: "not-checked" };
 let desktopInfo = null;
 /** @type {number | null} */
 let allowedWebContentsId = null;
+let sidecarIpcPath = "";
+/** @type {import("./sidecar-ipc-client.mjs").SidecarIpcConnection | null} */
+let sidecarIpcConn = null;
+/** @type {(() => void) | null} */
+let sidecarIpcEventOff = null;
 
 function installDesktopInfoHandler() {
   ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
@@ -180,6 +225,46 @@ function installDesktopInfoHandler() {
       senderId: event.sender.id,
     });
   });
+}
+
+/** @param {object} msg */
+function forwardSidecarEvent(msg) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(SIDECAR_EVENT_CHANNEL, msg);
+  }
+}
+
+function installSidecarBridgeHandlers() {
+  ipcMain.removeHandler(SIDECAR_COMMAND_CHANNEL);
+  ipcMain.handle(SIDECAR_COMMAND_CHANNEL, (event, cmd) => {
+    if (
+      allowedWebContentsId != null &&
+      event.sender.id !== allowedWebContentsId
+    ) {
+      throw new Error("unauthorized sidecar command");
+    }
+    if (!sidecarIpcConn) {
+      throw new Error("sidecar IPC not connected");
+    }
+    if (!cmd || typeof cmd !== "object" || typeof cmd.type !== "string") {
+      throw new Error("invalid sidecar command");
+    }
+    sidecarIpcConn.send(cmd);
+  });
+}
+
+/** @param {string} path */
+async function attachSidecarIpc(path) {
+  sidecarIpcPath = path;
+  sidecarIpcConn = await connectSidecarIpc(path);
+  sidecarIpcEventOff = sidecarIpcConn.onEvent(forwardSidecarEvent);
+}
+
+async function disconnectSidecarIpc() {
+  sidecarIpcEventOff?.();
+  sidecarIpcEventOff = null;
+  sidecarIpcConn?.close();
+  sidecarIpcConn = null;
 }
 
 app.setName(APP_NAME);
@@ -247,27 +332,44 @@ function adoptSharedToken() {
 }
 
 /**
- * Wait for sidecar IPC `{ type: "listening", port }` with a bounded timeout.
+ * Wait for sidecar bootstrap `{ type: "listening", … }` over Node child IPC.
  * @param {import('node:child_process').ChildProcess} child
  * @param {number} timeoutMs
+ * @returns {Promise<{ transport: "ipc"; path: string } | { transport: "ws"; port: number; host: string }>}
  */
-function waitForListeningIpc(child, timeoutMs = 10000) {
+function waitForSidecarListening(child, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => {
       cleanup();
-      reject(new Error("sidecar did not report listening port over IPC"));
+      reject(new Error("sidecar did not report listening over IPC"));
     }, timeoutMs);
 
+    /** @param {unknown} msg */
     function onMessage(msg) {
+      if (!msg || typeof msg !== "object" || msg.type !== "listening") return;
       if (
-        msg &&
-        typeof msg === "object" &&
-        msg.type === "listening" &&
+        msg.transport === "ipc" &&
+        typeof msg.path === "string" &&
+        msg.path.trim()
+      ) {
+        cleanup();
+        resolve({ transport: "ipc", path: msg.path.trim() });
+        return;
+      }
+      if (
+        (msg.transport === "ws" || msg.transport === undefined) &&
         typeof msg.port === "number" &&
         msg.port > 0
       ) {
         cleanup();
-        resolve(msg);
+        resolve({
+          transport: "ws",
+          port: msg.port,
+          host:
+            typeof msg.host === "string" && msg.host.trim()
+              ? msg.host.trim()
+              : SWARM_HOST,
+        });
       }
     }
 
@@ -301,11 +403,18 @@ async function spawnSidecar() {
   }
 
   const requestedPort = USES_EPHEMERAL_PORT ? 0 : swarmPort;
+  const spawnIpc = USE_SIDECAR_IPC || USES_EPHEMERAL_PORT;
+  if (USE_SIDECAR_IPC) {
+    sidecarIpcPath = generateSidecarIpcPath();
+  }
+
   log(
-    `spawning Hyperswarm sidecar (${nodeBin}) on ${SWARM_HOST}:${requestedPort}${USES_EPHEMERAL_PORT ? " (ephemeral)" : ""}`,
+    USE_SIDECAR_IPC
+      ? `spawning Hyperswarm sidecar (${nodeBin}) ipc://${sidecarIpcPath}`
+      : `spawning Hyperswarm sidecar (${nodeBin}) on ${SWARM_HOST}:${requestedPort}${USES_EPHEMERAL_PORT ? " (ephemeral)" : ""}`,
   );
 
-  const stdio = USES_EPHEMERAL_PORT
+  const stdio = spawnIpc
     ? /** @type {const} */ (
         app.isPackaged
           ? ["ignore", "ignore", "ignore", "ipc"]
@@ -313,15 +422,24 @@ async function spawnSidecar() {
       )
     : "inherit";
 
+  /** @type {Record<string, string>} */
+  const childEnv = {
+    ...process.env,
+    HOLEPUNCH_HOST: SWARM_HOST,
+    HOLEPUNCH_PORT: String(requestedPort),
+  };
+  if (USE_SIDECAR_IPC) {
+    childEnv.GNH_BRIDGE_TRANSPORT = "ipc";
+    childEnv.GNH_IPC_PATH = sidecarIpcPath;
+    delete childEnv.GNH_SIDECAR_TOKEN;
+  } else {
+    childEnv.GNH_SIDECAR_TOKEN = authToken;
+  }
+
   swarmChild = spawn(nodeBin, [entry], {
     stdio,
     windowsHide: true,
-    env: {
-      ...process.env,
-      HOLEPUNCH_HOST: SWARM_HOST,
-      HOLEPUNCH_PORT: String(requestedPort),
-      GNH_SIDECAR_TOKEN: authToken,
-    },
+    env: childEnv,
     cwd,
   });
 
@@ -330,17 +448,25 @@ async function spawnSidecar() {
     swarmChild = null;
     ownsSwarm = false;
     clearTokenLock();
+    clearIpcLock();
+    void disconnectSidecarIpc();
   });
 
-  if (USES_EPHEMERAL_PORT) {
-    const listening = await waitForListeningIpc(swarmChild);
-    swarmPort = listening.port;
+  if (spawnIpc) {
+    const listening = await waitForSidecarListening(swarmChild);
+    if (listening.transport === "ipc") {
+      sidecarIpcPath = listening.path;
+      await attachSidecarIpc(listening.path);
+    } else {
+      swarmPort = listening.port;
+    }
   } else {
     const ok = await waitForPort(SWARM_HOST, swarmPort);
     if (!ok) {
       swarmChild?.kill("SIGTERM");
       swarmChild = null;
       clearTokenLock();
+      clearIpcLock();
       throw new Error(
         `Hyperswarm bridge did not listen on ${SWARM_HOST}:${swarmPort}.\n` +
           (app.isPackaged
@@ -352,19 +478,37 @@ async function spawnSidecar() {
 
   ownsSwarm = true;
   writeTokenLock(authToken);
+  writeIpcLock(sidecarIpcPath);
   log(
-    `owned Hyperswarm bridge ready at ${bridgeWsBase()}${USES_TOKEN_LOCK ? " (token lock written)" : ""}`,
+    USE_SIDECAR_IPC
+      ? `owned Hyperswarm bridge ready at ipc://${sidecarIpcPath}${USES_TOKEN_LOCK ? " (ipc lock written)" : ""}`
+      : `owned Hyperswarm bridge ready at ${bridgeWsBase()}${USES_TOKEN_LOCK ? " (token lock written)" : ""}`,
   );
 }
 
 async function ensureLocalSwarm() {
+  installSidecarBridgeHandlers();
+
   // Packaged (isolated): always own — never attach to a foreign bridge.
   if (app.isPackaged || isIsolated) {
     await spawnSidecar();
     return;
   }
 
-  if (await portOpen(SWARM_HOST, swarmPort)) {
+  if (USE_SIDECAR_IPC) {
+    const fromLock = readIpcLock();
+    if (fromLock) {
+      try {
+        await attachSidecarIpc(fromLock);
+        ownsSwarm = false;
+        adoptSharedToken();
+        log(`attaching to existing Hyperswarm IPC at ${fromLock}`);
+        return;
+      } catch {
+        /* owner may still be starting — fall through to spawn / retry */
+      }
+    }
+  } else if (await portOpen(SWARM_HOST, swarmPort)) {
     ownsSwarm = false;
     adoptSharedToken();
     log(`attaching to existing Hyperswarm bridge at ${bridgeWsBase()}`);
@@ -374,28 +518,42 @@ async function ensureLocalSwarm() {
   try {
     await spawnSidecar();
   } catch {
-    if (await waitForPort(SWARM_HOST, swarmPort, 20, 100)) {
+    if (USE_SIDECAR_IPC) {
+      const fromLock = readIpcLock();
+      if (fromLock) {
+        try {
+          await attachSidecarIpc(fromLock);
+          ownsSwarm = false;
+          adoptSharedToken();
+          log(`attached to peer-owned Hyperswarm IPC at ${fromLock}`);
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
+    } else if (await waitForPort(SWARM_HOST, swarmPort, 20, 100)) {
       ownsSwarm = false;
       adoptSharedToken();
       log(`attached to peer-owned Hyperswarm bridge at ${bridgeWsBase()}`);
       return;
     }
     throw new Error(
-      `Hyperswarm bridge did not listen on ${SWARM_HOST}:${swarmPort}.\n` +
-        (app.isPackaged
-          ? "Packaged sidecar failed to start."
-          : "Run: npm run holepunch:install"),
+      USE_SIDECAR_IPC
+        ? "Hyperswarm sidecar IPC bridge did not become ready.\nRun: npm run holepunch:install"
+        : `Hyperswarm bridge did not listen on ${SWARM_HOST}:${swarmPort}.\nRun: npm run holepunch:install`,
     );
   }
 }
 
 async function stopOwnedSwarm() {
+  await disconnectSidecarIpc();
   if (!swarmChild) return;
   log("stopping owned Hyperswarm sidecar");
   const child = swarmChild;
   swarmChild = null;
   ownsSwarm = false;
   clearTokenLock();
+  clearIpcLock();
   await new Promise((resolve) => {
     const t = setTimeout(() => {
       try {
@@ -439,6 +597,7 @@ function createWindow() {
   const partition = PARTITION;
   const ses = session.fromPartition(partition);
   const baseWs = bridgeWsBase();
+  const useIpcBridge = USE_SIDECAR_IPC && !!sidecarIpcConn;
 
   const modeTag = isIsolated
     ? "isolated"
@@ -447,22 +606,30 @@ function createWindow() {
       : "shared:attach";
 
   // IPC before BrowserWindow — preload may sendSync on about:blank during ctor.
-  desktopInfo = {
-    holepunchWsUrl: baseWs,
-    wsToken: authToken,
-    ufwState: ufwAdvisory.state,
-    ...(ROLE ? { role: ROLE } : {}),
-  };
+  desktopInfo = useIpcBridge
+    ? {
+        bridgeTransport: "ipc",
+        ufwState: ufwAdvisory.state,
+        ...(ROLE ? { role: ROLE } : {}),
+      }
+    : {
+        bridgeTransport: "ws",
+        holepunchWsUrl: baseWs,
+        wsToken: authToken,
+        ufwState: ufwAdvisory.state,
+        ...(ROLE ? { role: ROLE } : {}),
+      };
   allowedWebContentsId = null;
   installDesktopInfoHandler();
 
-  // Match `.app-shell` desktop max-width (760) + ≥768 media query; do not change CSS layout.
-  // additionalArguments: backup if sync IPC misses in sandboxed preload (see preload.cjs).
-  const argvBridge = [
-    `--gnh-holepunch-ws=${baseWs}`,
-    `--gnh-ws-token=${authToken}`,
-    `--gnh-ufw-state=${ufwAdvisory.state}`,
-  ];
+  /** @type {string[]} */
+  const argvBridge = useIpcBridge
+    ? [`--gnh-bridge-transport=ipc`, `--gnh-ufw-state=${ufwAdvisory.state}`]
+    : [
+        `--gnh-holepunch-ws=${baseWs}`,
+        `--gnh-ws-token=${authToken}`,
+        `--gnh-ufw-state=${ufwAdvisory.state}`,
+      ];
   if (ROLE) argvBridge.push(`--gnh-role=${ROLE}`);
 
   mainWindow = new BrowserWindow({
@@ -501,7 +668,7 @@ function createWindow() {
   const uiLabel =
     ui.kind === "file" ? pathToFileURL(ui.value).href : ui.value;
   log(
-    `loading UI ${uiLabel} (partition ${partition}, mode=${SWARM_MODE}, bridge ${baseWs})`,
+    `loading UI ${uiLabel} (partition ${partition}, mode=${SWARM_MODE}, bridge ${useIpcBridge ? `ipc://${sidecarIpcPath}` : baseWs})`,
   );
   if (ui.kind === "file") {
     void mainWindow.loadFile(ui.value);

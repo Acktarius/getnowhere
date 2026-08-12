@@ -162,6 +162,20 @@ When Electron spawns the sidecar with `HOLEPUNCH_PORT=0` and an IPC channel
 Web-dev `npm run holepunch` and the Alice/Bob harness keep fixed ports and
 `stdio: inherit` (no IPC required).
 
+## Desktop native IPC bridge
+
+When `GNH_BRIDGE_TRANSPORT=ipc` and `GNH_IPC_PATH` is set (Electron main
+generates the path):
+
+1. The sidecar listens on a Unix domain socket (Linux/macOS) or named pipe
+   (Windows) — no loopback TCP bridge.
+2. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
+3. One NDJSON line per message; same `SidecarCommand` / `SidecarEvent` schema.
+4. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
+5. Stale Unix socket files are unlinked before bind when safe.
+
+Web-dev keeps default `GNH_BRIDGE_TRANSPORT=ws` (unset).
+
 ## Run (Alice / Bob on one machine)
 
 Install once:
@@ -396,8 +410,10 @@ equal-length buffers). Electron main always sets a per-launch token
 |---|---|---|
 | `VITE_HOLEPUNCH_WS_URL` | `ws://127.0.0.1:7901` | Vite web app |
 | `HOLEPUNCH_HOST` | `127.0.0.1` | sidecar |
-| `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar |
-| `GNH_SIDECAR_TOKEN` | (unset) | sidecar — required when set **or** when host is non-loopback |
+| `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar (WS mode) |
+| `GNH_BRIDGE_TRANSPORT` | `ws` | `ws` \| `ipc` — desktop uses `ipc` |
+| `GNH_IPC_PATH` | (unset) | sidecar — required when transport is `ipc` |
+| `GNH_SIDECAR_TOKEN` | (unset) | sidecar WS auth — not used in `ipc` mode |
 | `GNH_PARENT_POLL_MS` | `1000` | sidecar parent-death poll |
 | `GNH_DISABLE_DISCOVERY` | unset | test-only: skip Hyperswarm DHT |
 

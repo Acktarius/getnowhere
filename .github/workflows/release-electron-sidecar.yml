@@ -1,7 +1,8 @@
 name: Release Electron + sidecar
 
 # Electron Forge Linux + Windows packages (Electron + bundled sidecar + embedded Vite UI).
-# @see docs/builds/github-pages-and-desktop.md
+# Packaged desktop uses native IPC (Unix socket / named pipe) for the UI↔sidecar bridge —
+# not loopback WebSocket. @see docs/architecture/local-bridge-transport.md
 
 on:
   push:
@@ -16,6 +17,13 @@ jobs:
   desktop-linux:
     name: Electron + sidecar (Linux)
     runs-on: ubuntu-24.04
+    env:
+      GNH_BUNDLE_NODE_VERSION: "24.14.1"
+      # Packaged app: main.mjs spawns sidecar with GNH_BRIDGE_TRANSPORT=ipc (default).
+      # Never set GNH_HOLEPUNCH_WS_URL in CI — it forces loopback WebSocket in the shell.
+      GNH_HOLEPUNCH_WS_URL: ""
+      # Embedded UI must not hard-code ws://; Electron injects gnhDesktop IPC at runtime.
+      VITE_HOLEPUNCH_WS_URL: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -62,8 +70,6 @@ jobs:
 
       - name: Make Linux package
         working-directory: desktop-electron
-        env:
-          GNH_BUNDLE_NODE_VERSION: "24.14.1"
         run: npm run make
 
       - name: Collect artifacts
@@ -100,6 +106,10 @@ jobs:
   desktop-windows:
     name: Electron + sidecar (Windows)
     runs-on: windows-latest
+    env:
+      GNH_BUNDLE_NODE_VERSION: "24.14.1"
+      GNH_HOLEPUNCH_WS_URL: ""
+      VITE_HOLEPUNCH_WS_URL: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -140,8 +150,6 @@ jobs:
 
       - name: Make Windows package
         working-directory: desktop-electron
-        env:
-          GNH_BUNDLE_NODE_VERSION: "24.14.1"
         run: npm run make:win
 
       - name: Collect artifacts
@@ -214,10 +222,11 @@ jobs:
             release-assets/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body: |
-            **Get NowHere — desktop (Electron + sidecar)**
+            **Get NowHere — desktop (Electron + sidecar, native IPC bridge)**
 
             - **Linux:** `.deb` + `.zip`
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
+            - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
 
             ### Checksums
             ```

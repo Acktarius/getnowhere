@@ -64,10 +64,15 @@ windows always match. Owner also writes `$TMPDIR/gnh-sidecar-<host>-<port>.token
 
 **Isolated mode:** each role gets a random UUID token for its own sidecar.
 
-Main hands `{ role?, holepunchWsUrl, wsToken, ufwState }` to preload via
+Main hands `{ role?, bridgeTransport, … }` to preload via
 `additionalArguments` (primary — same path as v0.1.6) and sync IPC
-`gnh:get-desktop-info` (secondary). Preload prefers argv when present. Do
-**not** use `executeJavaScript` into the page main-world (XSS surface).
+`gnh:get-desktop-info` (secondary). Default desktop transport is **native IPC**
+(`bridgeTransport: "ipc"`, `sendCommand` / `onBridgeEvent` on `window.gnhDesktop`).
+Set `GNH_HOLEPUNCH_WS_URL` to force loopback WebSocket (debug override).
+
+Legacy WS fields when `bridgeTransport === "ws"`: `holepunchWsUrl`, `wsToken`.
+Preload prefers argv when present. Do **not** use `executeJavaScript` into the
+page main-world (XSS surface).
 
 v0.1.7 briefly made IPC-only the delivery path; sandboxed preload can miss
 that round-trip on `about:blank`, fall back to `ws://127.0.0.1:7901` with an
@@ -130,8 +135,9 @@ Terminal 3 — Bob:
 npm run desktop:bob
 ```
 
-Import / create a different wallet in each window. Live chat uses
-`ws://127.0.0.1:7901` (injected as `window.gnhDesktop.holepunchWsUrl`).
+Import / create a different wallet in each window. Live chat uses the sidecar
+bridge via `window.gnhDesktop` (IPC by default; WebSocket when
+`GNH_HOLEPUNCH_WS_URL` is set).
 
 Optional env (**dev harness**; packaged ignores the first three):
 
@@ -142,7 +148,7 @@ Optional env (**dev harness**; packaged ignores the first three):
 | `GNH_SIDECAR_TOKEN` | random / shared default | Required by sidecar when set | ignored (fresh UUID) |
 | `HOLEPUNCH_HOST` | `127.0.0.1` | Swarm bind / attach host | honored |
 | `HOLEPUNCH_PORT` | `7901` (bob isolated: `7902`) | Sidecar listen port (`0` = ephemeral) | honored |
-| `GNH_HOLEPUNCH_WS_URL` | derived from host/port | Base URL; token query added by main | honored |
+| `GNH_HOLEPUNCH_WS_URL` | (unset — IPC) | Forces WS base URL + token handoff | honored |
 | `GNH_UI_URL` | `http://127.0.0.1:5173` (dev) / embedded `resources/ui` (packaged) | UI origin override (`loadURL`); packaged default is `loadFile` | honored |
 | `GNH_NODE_BIN` | `node` (dev) / bundled runtime (packaged) | Node used to spawn sidecar | honored |
 

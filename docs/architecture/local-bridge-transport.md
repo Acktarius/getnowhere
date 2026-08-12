@@ -46,7 +46,7 @@ Given existing WebSocket-based code, the approved roadmap is:
 
 1. **Now:** harden `ws://127.0.0.1` (strict bind, token, limits — mostly shipped).
 2. **Next release:** `wss://127.0.0.1:<ephemeral-port>` + cert pinning + token.
-3. **Later:** Electron IPC to main, then Unix socket (Linux/macOS) / named pipe
+3. **Later (desktop shipped):** Electron IPC to main, then Unix socket (Linux/macOS) / named pipe
    (Windows) to sidecar — same bridge message schema, different transport.
 
 Mobile already uses Bare IPC (no WebSocket). Browser web-dev may keep loopback
@@ -57,8 +57,8 @@ WebSocket longest (no Electron main to proxy IPC).
 | Surface | Transport | Bind | Auth |
 |---|---|---|---|
 | Browser web-dev | `ws://127.0.0.1:7901` | Loopback default | Token optional |
-| Electron dev harness | `ws://127.0.0.1:7901/7902` | Loopback | Token / lockfile |
-| Packaged desktop | `ws://127.0.0.1:<ephemeral>` | Loopback | Per-launch UUID token |
+| Electron dev harness | Native IPC (default) or `ws://` when `GNH_HOLEPUNCH_WS_URL` set | UDS / named pipe or loopback | None on IPC; token on WS override |
+| Packaged desktop | Native IPC (default) | Per-launch socket path | None on IPC |
 | Mobile | Bare IPC | In-process | N/A |
 
 Packaged desktop: `HOLEPUNCH_PORT=0` → OS ephemeral port; sidecar reports port

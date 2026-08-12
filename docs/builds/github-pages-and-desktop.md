@@ -15,7 +15,7 @@ Desktop Linux  npm run build → dist/ staged into package
                  ├─ embedded UI (resources/ui ← Vite dist/)
                  ├─ bundled Node (resources/runtime/node)
                  └─ holepunch-sidecar (resources/sidecar)
-                      ephemeral loopback port (IPC reports bound port)
+                      native IPC bridge (Unix socket / named pipe at runtime)
                  loads UI via loadFile(resources/ui/index.html)
 ```
 
@@ -25,7 +25,8 @@ Packaged desktop does **not** load GitHub Pages at runtime. Embedding `dist/`
 avoids a remote UI origin (Pages compromise / remote XSS surface) inside Electron.
 
 Packaged identity: no Alice/Bob role; `userData` is `~/.config/getnowhere`;
-single-instance lock; per-launch bridge token. Older pre-release data under
+single-instance lock; sidecar bridge over native IPC (no loopback WebSocket).
+Older pre-release data under
 `~/.config/getnowhere-desktop-alice` is orphaned (no migration) — remove manually
 if present.
 
@@ -56,7 +57,10 @@ Triggers: push to `main`, or manual `workflow_dispatch`. Does **not** run on ver
 
 Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages workflow.
 
-Parallel jobs on `ubuntu-24.04` (Linux) and `windows-latest` (Windows):
+Parallel jobs on `ubuntu-24.04` (Linux) and `windows-latest` (Windows). Job env
+clears `GNH_HOLEPUNCH_WS_URL` and `VITE_HOLEPUNCH_WS_URL` so CI never forces
+loopback WebSocket; packaged builds use native IPC at runtime (`main.mjs` sets
+`GNH_BRIDGE_TRANSPORT=ipc` when spawning the sidecar).
 
 - Root `npm ci` + `npm run build` → `dist/`
 - Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
@@ -75,8 +79,8 @@ Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override w
 
 1. Download the `.deb` or `.zip` from the draft release / Actions artifact.
 2. Install or extract and run `getnowhere`.
-3. App starts Electron, spawns sidecar on an ephemeral loopback port, loads
-   embedded UI, and talks to that private bridge (not a fixed `7901`).
+3. App starts Electron, spawns sidecar on a per-launch IPC socket/pipe, loads
+   embedded UI, and talks to that private bridge (not `ws://127.0.0.1:7901`).
 
 ### Windows
 

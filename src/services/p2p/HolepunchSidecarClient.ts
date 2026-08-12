@@ -79,6 +79,9 @@ export function getHolepunchWsUrl(): string {
   try {
     if (typeof window !== "undefined") {
       const bridge = window.gnhDesktop;
+      if (bridge?.bridgeTransport === "ipc") {
+        return DEFAULT_WS_URL;
+      }
       if (bridge) {
         const base =
           bridge.holepunchWsUrl?.trim() ||
@@ -127,14 +130,28 @@ function getGnhMobileBridge(): GnhMobileBridge | null {
   return null;
 }
 
-/** Mobile WebView postMessage backend (Bare worklet via Expo shell). */
-export function createMobilePostMessageSidecarBackend(): HolepunchSidecarBackend {
-  const maybeBridge = getGnhMobileBridge();
-  if (!maybeBridge) {
-    throw new Error("gnhMobile bridge missing");
+function getGnhDesktopIpcBridge(): GnhDesktopBridge | null {
+  try {
+    const bridge = window.gnhDesktop;
+    if (
+      typeof window !== "undefined" &&
+      bridge?.bridgeTransport === "ipc" &&
+      typeof bridge.sendCommand === "function" &&
+      typeof bridge.onBridgeEvent === "function"
+    ) {
+      return bridge;
+    }
+  } catch {
+    /* non-dom */
   }
-  const bridge: GnhMobileBridge = maybeBridge;
+  return null;
+}
 
+/** Shared postMessage-style backend for mobile + Electron IPC bridges. */
+function createPostMessageStyleSidecarBackend(bridge: {
+  sendCommand: GnhMobileBridge["sendCommand"];
+  onBridgeEvent: GnhMobileBridge["onBridgeEvent"];
+}): HolepunchSidecarBackend {
   const peerCounts = new Map<string, number>();
   const peerHandlers = new Set<PeerHandler>();
   const frameHandlers = new Set<FrameHandler>();
@@ -237,6 +254,27 @@ export function createMobilePostMessageSidecarBackend(): HolepunchSidecarBackend
       online = false;
     },
   };
+}
+
+/** Electron desktop IPC backend (main process proxies native sidecar socket). */
+export function createElectronIpcSidecarBackend(): HolepunchSidecarBackend {
+  const bridge = getGnhDesktopIpcBridge();
+  if (!bridge?.sendCommand || !bridge.onBridgeEvent) {
+    throw new Error("gnhDesktop IPC bridge missing");
+  }
+  return createPostMessageStyleSidecarBackend({
+    sendCommand: bridge.sendCommand.bind(bridge),
+    onBridgeEvent: bridge.onBridgeEvent.bind(bridge),
+  });
+}
+
+/** Mobile WebView postMessage backend (Bare worklet via Expo shell). */
+export function createMobilePostMessageSidecarBackend(): HolepunchSidecarBackend {
+  const maybeBridge = getGnhMobileBridge();
+  if (!maybeBridge) {
+    throw new Error("gnhMobile bridge missing");
+  }
+  return createPostMessageStyleSidecarBackend(maybeBridge);
 }
 
 /** Production WebSocket backend. */
@@ -696,7 +734,9 @@ export function getHolepunchSidecarBackend(): HolepunchSidecarBackend {
   if (!defaultBackend) {
     defaultBackend = getGnhMobileBridge()
       ? createMobilePostMessageSidecarBackend()
-      : createWebSocketSidecarBackend();
+      : getGnhDesktopIpcBridge()
+        ? createElectronIpcSidecarBackend()
+        : createWebSocketSidecarBackend();
   }
   return defaultBackend;
 }
