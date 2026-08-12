@@ -1187,15 +1187,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     // Holepunch connect can take seconds — do not block redirect. Chat room
     // screen already reconnects if peers are not live yet.
     const roomId = inv.roomId;
-    const inviteIdForHandoff = inv.inviteId;
     void (async () => {
       try {
         const connected = await chatTransport.connect(contract);
-        await completeInitiatorHandoff(
-          inviteIdForHandoff,
-          register,
-          handshake!,
-        );
         useChatStore.setState((s) => ({
           rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
         }));
@@ -1378,6 +1372,14 @@ export async function completeResponderReconnect(
   roomId: string,
 ): Promise<boolean> {
   await restorePendingInitiatorKeys();
+  const live = await chatTransport.getRoom(roomId);
+  if (
+    live &&
+    (live.lifecycleStatus === "connecting" ||
+      live.lifecycleStatus === "connected")
+  ) {
+    return live.lifecycleStatus === "connected";
+  }
   let pending = [...pendingPrivateKeys.values()].find(
     (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
   );
@@ -1405,10 +1407,26 @@ export async function completeResponderReconnect(
     }
   }
   if (!pending?.register) return false;
+  const register = pending.register;
+  if (!register) return false;
+
+  if (!exportKeyHex(pending.privateKeyRef)) {
+    const rec = loadPendingInitiatorKeys().find(
+      (r) =>
+        r.peerRole === "responder" &&
+        r.inviteId === pending!.handshake.inviteId,
+    );
+    if (!rec) return false;
+    const { privateKeyRef } = await p2pEncryption.restoreEphemeralPrivateKey(
+      rec.privateKeyHex,
+    );
+    pending = { ...pending, privateKeyRef };
+    pendingPrivateKeys.set(pending.handshake.inviteId, pending);
+  }
 
   const session = await sessionBootstrap.deriveSession({
     invite: pending.handshake,
-    acceptance: pending.register,
+    acceptance: register,
     peerRole: "responder",
     localPrivateKeyRef: pending.privateKeyRef,
   });

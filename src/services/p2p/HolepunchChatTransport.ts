@@ -388,22 +388,15 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
   for (const roomId of topicRooms.get(topicRef) ?? []) {
     const state = rooms.get(roomId);
     if (!state) continue;
-    // Only re-mark a room that was already cryptographically connected and the
-    // peer briefly dropped (connecting). connect_failed means proof never ran
-    // (or failed) — do NOT skip the proof; let the reconnect interval handle it.
-    if (
-      state.room.lifecycleStatus === "connecting" ||
-      state.room.lifecycleStatus === "connected"
-    ) {
-      state.room = {
-        ...state.room,
-        lifecycleStatus: "connected",
-        peerStatus: "online",
-        lastConnectError: undefined,
-      };
-      rooms.set(roomId, state);
-      persistLiveSession(state);
-    }
+    // Only refresh peer presence for rooms that already finished proof.
+    if (state.room.lifecycleStatus !== "connected") continue;
+    state.room = {
+      ...state.room,
+      peerStatus: "online",
+      lastConnectError: undefined,
+    };
+    rooms.set(roomId, state);
+    persistLiveSession(state);
   }
 }
 

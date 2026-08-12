@@ -15,7 +15,10 @@ import {
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
-import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
+import {
+  getRelationshipTopicEpoch,
+  syncRelationshipTopicEpoch,
+} from "@/services/p2p/relationshipTopicEpochStore";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -35,7 +38,7 @@ import {
 } from "@/services/protocol/SmartMessageProtocolAdapter";
 import type { SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake, ChatRelayPayload } from "@/types/protocol";
-import { CHAT_PROTOCOL_VERSION } from "@/types/protocol";
+import { CHAT_PROTOCOL_VERSION, resolveTopicSuite } from "@/types/protocol";
 import type {
   ComposedInvite,
   ComposeInviteInput,
@@ -186,6 +189,12 @@ async function inviteFromCreateBody(
     if (!from || !to) return null;
     const relationshipId = await deriveRelationshipId(from, to);
     hs = await hydrateCreateHandshake(hs, relationshipId);
+  }
+  if (resolveTopicSuite(hs) === "HKDF_EPOCH_V1") {
+    syncRelationshipTopicEpoch(
+      hs.relationshipId,
+      hs.topicEpoch ?? getRelationshipTopicEpoch(hs.relationshipId),
+    );
   }
   handshakesByInviteId.set(hs.inviteId, hs);
   rememberReplayId(hs.replayId);

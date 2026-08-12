@@ -39,8 +39,8 @@ describe("SessionBootstrapAdapter v2 topicEpoch", () => {
     const bob = await P2PEncryptionAdapter.generateEphemeralKeypair();
     const invite = baseHandshake({
       senderEphemeralPublicKey: alice.publicKeyHex,
-      topicEpoch: undefined,
     });
+    delete invite.topicEpoch;
     const session = await SessionBootstrapAdapter.deriveSession({
       invite,
       acceptance: {

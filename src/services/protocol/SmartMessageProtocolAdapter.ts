@@ -155,8 +155,11 @@ export const CREATE_PACK_BYTES_V1 = CREATE_PACK_FIELDS.reduce(
   0,
 );
 
-/** Slim pack + 1-byte roomTopic index (current). */
+/** Slim pack + 1-byte roomTopic index (v1 / v2 without epoch wire). */
 export const CREATE_PACK_BYTES = CREATE_PACK_BYTES_V1 + 1;
+
+/** v2 slim + uint32 topicEpoch + roomTopic byte. */
+export const CREATE_PACK_BYTES_V2 = CREATE_PACK_BYTES_V1 + 4 + 1;
 
 /** @deprecated alias — pre-topic pack length still accepted on parse. */
 export const CREATE_PACK_BYTES_LEGACY_SLIM = CREATE_PACK_BYTES_V1;
@@ -202,14 +205,16 @@ function readUint32BE(buf: Uint8Array, offset: number): number {
   );
 }
 
-/** Pack handshake into slim CREATE_PACK_BYTES (relationshipId/salt not on wire). */
+/** Pack handshake into slim create blob (relationshipId/salt not on wire). */
 export function packCreateHandshake(handshake: ChatInviteHandshake): string {
   if (!isSupportedChatProtocolVersion(handshake.protocolVersion)) {
     throw new Error(
       `Unsupported protocolVersion ${handshake.protocolVersion}.`,
     );
   }
-  const buf = new Uint8Array(CREATE_PACK_BYTES);
+  const isV2 = handshake.protocolVersion >= 2;
+  const packBytes = isV2 ? CREATE_PACK_BYTES_V2 : CREATE_PACK_BYTES;
+  const buf = new Uint8Array(packBytes);
   let o = 0;
   buf.set(requireHexBytes(handshake.inviteId, 4, "inviteId"), o);
   o += 4;
@@ -232,6 +237,10 @@ export function packCreateHandshake(handshake: ChatInviteHandshake): string {
   o += 4;
   buf.set(requireHexBytes(handshake.replayId, 8, "replayId"), o);
   o += 8;
+  if (isV2) {
+    writeUint32BE(buf, o, handshake.topicEpoch ?? 0);
+    o += 4;
+  }
   buf[o] = roomTopicWireIndex(handshake.roomTopic ?? DEFAULT_ROOM_TOPIC) & 0xff;
   return bytesToB64url(buf);
 }
@@ -240,10 +249,11 @@ function unpackSlimCreate(
   protocolVersion: number,
   buf: Uint8Array,
 ): ChatInviteHandshake | null {
-  // V1 slim (64) or V1+topic (65).
-  if (buf.length !== CREATE_PACK_BYTES && buf.length !== CREATE_PACK_BYTES_V1) {
-    return null;
-  }
+  const isV2 = protocolVersion >= 2;
+  const allowed = isV2
+    ? [CREATE_PACK_BYTES_V1, CREATE_PACK_BYTES, CREATE_PACK_BYTES_V2]
+    : [CREATE_PACK_BYTES_V1, CREATE_PACK_BYTES];
+  if (!allowed.includes(buf.length)) return null;
   let o = 0;
   const inviteId = bytesToHex(buf.subarray(o, o + 4));
   o += 4;
@@ -259,10 +269,16 @@ function unpackSlimCreate(
   o += 4;
   const replayId = bytesToHex(buf.subarray(o, o + 8));
   o += 8;
-  const roomTopic =
-    buf.length >= CREATE_PACK_BYTES
-      ? roomTopicFromWireIndex(buf[o] ?? 0)
-      : DEFAULT_ROOM_TOPIC;
+  let topicEpoch: number | undefined;
+  let roomTopic = DEFAULT_ROOM_TOPIC;
+  if (buf.length === CREATE_PACK_BYTES_V2) {
+    topicEpoch = readUint32BE(buf, o);
+    o += 4;
+    roomTopic = roomTopicFromWireIndex(buf[o] ?? 0);
+  } else if (buf.length >= CREATE_PACK_BYTES) {
+    topicEpoch = isV2 ? 0 : undefined;
+    roomTopic = roomTopicFromWireIndex(buf[CREATE_PACK_BYTES_V1] ?? 0);
+  }
   return {
     protocolVersion,
     inviteId,
@@ -278,6 +294,7 @@ function unpackSlimCreate(
     roomTtl,
     replayId,
     roomTopic,
+    ...(topicEpoch !== undefined ? { topicEpoch } : {}),
   };
 }
 

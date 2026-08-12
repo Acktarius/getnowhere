@@ -38,16 +38,18 @@ export const SessionBootstrapAdapter: SessionBootstrapService = {
     };
 
     const topicSuite = resolveTopicSuite(completed);
+    if (topicSuite === "HKDF_EPOCH_V1") {
+      if (completed.topicEpoch !== undefined) {
+        syncRelationshipTopicEpoch(
+          completed.relationshipId,
+          completed.topicEpoch,
+        );
+      }
+    }
     const topicEpoch =
       topicSuite === "HKDF_EPOCH_V1"
-        ? Math.max(
-            completed.topicEpoch ?? 0,
-            getRelationshipTopicEpoch(completed.relationshipId),
-          )
+        ? getRelationshipTopicEpoch(completed.relationshipId)
         : (completed.topicEpoch ?? 0);
-    if (topicSuite === "HKDF_EPOCH_V1") {
-      syncRelationshipTopicEpoch(completed.relationshipId, topicEpoch);
-    }
 
     return P2PEncryptionAdapter.deriveSessionConfig({
       senderEphemeralPublicKey: completed.senderEphemeralPublicKey,
