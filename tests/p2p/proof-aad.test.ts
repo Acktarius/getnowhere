@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildProofAad } from "@/services/protocol/proofAad";
+import { buildChatAad, buildProofAad } from "@/services/protocol/proofAad";
 import type { P2PSessionConfig } from "@/types/protocol";
 
 function baseSession(overrides: Partial<P2PSessionConfig>): P2PSessionConfig {
@@ -34,5 +34,13 @@ describe("buildProofAad", () => {
       baseSession({ topicSuite: "HKDF_EPOCH_V1", topicEpoch: 3 }),
     );
     expect(new TextDecoder().decode(aad)).toBe("v2|room1|sess|3|HKDF_EPOCH_V1");
+  });
+
+  it("v2 chat AAD stays v1 session binding", () => {
+    const aad = buildChatAad(
+      "room1",
+      baseSession({ topicSuite: "HKDF_EPOCH_V1", topicEpoch: 2 }),
+    );
+    expect(new TextDecoder().decode(aad)).toBe("v1|room1|sess");
   });
 });

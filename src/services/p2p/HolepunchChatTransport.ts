@@ -49,7 +49,7 @@ import {
   assertCanSendMessages,
   assertRoomInteractive,
 } from "@/services/protocol/composerGate";
-import { buildProofAad } from "@/services/protocol/proofAad";
+import { buildChatAad, buildProofAad } from "@/services/protocol/proofAad";
 import {
   isRelayEligibleStatus,
   isRoomExpired,
@@ -421,11 +421,14 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
     const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
     const nonce = raw.slice(0, 12);
     const ciphertext = raw.slice(12);
+    const aad = pendingProofRooms.has(roomId)
+      ? buildProofAad(roomId, state.session)
+      : buildChatAad(roomId, state.session);
     void P2PEncryptionAdapter.open({
       session: state.session,
       ciphertext,
       nonce,
-      aad: buildProofAad(roomId, state.session),
+      aad,
     }).then((opened) => {
       if (!opened) {
         if (pendingProofRooms.has(roomId)) {
@@ -968,9 +971,7 @@ export const HolepunchChatTransport: ChatTransport = {
     if (!state.session) throw new Error("Missing session.");
 
     const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
-    const aad = new TextEncoder().encode(
-      `v1|${roomId}|${state.session.sessionId}`,
-    );
+    const aad = buildChatAad(roomId, state.session);
     const sealed = await P2PEncryptionAdapter.seal({
       session: state.session,
       plaintext,
