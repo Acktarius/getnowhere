@@ -58,6 +58,19 @@ export function ChatStatusPill({ status }: { status: ChatStatus }) {
   );
 }
 
+/** Open catalog rooms for this contact (excludes revoked). */
+export function ContactRoomCountPill({ count }: { count: number }) {
+  const label =
+    count === 0 ? "No room" : count === 1 ? "1 room" : `${count} rooms`;
+  const variant = count === 0 ? "none" : "eligible";
+  return (
+    <span className={`pill pill--${variant}`}>
+      <span className="pill__dot" />
+      {label}
+    </span>
+  );
+}
+
 export function RoomLifecyclePill({ status }: { status: RoomLifecycleStatus }) {
   const labels: Record<RoomLifecycleStatus, string> = {
     pending: "Pending",

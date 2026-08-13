@@ -353,6 +353,7 @@ function persistLiveSession(state: RoomState): void {
 /** Restore crypto session + rejoin swarm after reload. */
 export async function restoreRoomSession(
   roomId: string,
+  opts?: { backgroundConnect?: boolean },
 ): Promise<ChatRoom | null> {
   if (isRoomRevoked(roomId)) {
     removeRoomSession(roomId);
@@ -383,6 +384,12 @@ export async function restoreRoomSession(
       inviteId: contract.inviteId,
       roomTtl: contract.roomTtl,
     });
+  }
+  state.contract = contract;
+  contractsByRoom.set(roomId, contract);
+  if (opts?.backgroundConnect) {
+    void HolepunchChatTransport.connect(contract);
+    return state.room;
   }
   return HolepunchChatTransport.connect(contract);
 }

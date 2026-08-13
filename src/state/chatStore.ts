@@ -154,7 +154,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const { restoreRoomSession } = await import(
         "@/services/p2p/HolepunchChatTransport"
       );
-      const restored = await restoreRoomSession(roomId);
+      const restored = await restoreRoomSession(roomId, {
+        backgroundConnect: true,
+      });
       if (restored) transportRoom = restored;
     }
     // Re-check: leave may have completed while restore was in flight.

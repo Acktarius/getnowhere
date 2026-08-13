@@ -23,7 +23,7 @@ import { RelationshipStateCard } from "@/components/RelationshipStateCard";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { Sheet } from "@/components/Sheet";
 import {
-  ChatStatusPill,
+  ContactRoomCountPill,
   InviteStatusPill,
   RelationshipStatusBadge,
 } from "@/components/StatusBadges";
@@ -350,7 +350,7 @@ export function ContactDetailScreen() {
           >
             <RelationshipStatusBadge status={contact.relationshipStatus} />
             <InviteStatusPill status={contact.inviteStatus} />
-            <ChatStatusPill status={contact.chatStatus} />
+            <ContactRoomCountPill count={contactRooms.length} />
           </div>
           <div
             className="row-flex"

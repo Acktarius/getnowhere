@@ -400,14 +400,16 @@ export function ChatRoomScreen() {
     );
   }
 
-  const live = canComposeMessages(room.lifecycleStatus);
+  const composeAllowed =
+    canComposeMessages(room.lifecycleStatus) && !room.awaitingChainSync;
   const sendChannel = composerPreferredChannel(room.lifecycleStatus);
-  const viaChain = live && sendChannel === "relay";
-  /** True Holepunch L2; `live` alone also covers L1 relay. @see docs/security/encryption.md */
+  const viaChain = composeAllowed && sendChannel === "relay";
+  /** True Holepunch L2; relay compose is separate. @see docs/security/encryption.md */
   const holepunchLive = room.lifecycleStatus === "connected";
   const disabledReason = composerDisabledReason(
     room.lifecycleStatus,
     room.lastConnectError,
+    room.awaitingChainSync,
   );
   // Best-effort, Electron-Linux-only advisory — never proof a specific port
   // (e.g. localhost bridge 7901) is blocked, only that UFW appears active
@@ -420,7 +422,7 @@ export function ChatRoomScreen() {
     getUfwAdvisoryState() === "active";
 
   async function handleSend() {
-    if (!draft.trim() || !live || sending) return;
+    if (!draft.trim() || !composeAllowed || sending) return;
     if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
       toastError(
         `Via-chain messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
@@ -498,7 +500,7 @@ export function ChatRoomScreen() {
         }}
       >
         <RoomLifecyclePill status={room.lifecycleStatus} />
-        {!live && (
+        {!composeAllowed && (
           <span className="muted" style={{ fontSize: 12 }}>
             {disabledReason}
           </span>
@@ -658,11 +660,11 @@ export function ChatRoomScreen() {
         <textarea
           ref={composerRef}
           value={draft}
-          disabled={!live}
+          disabled={!composeAllowed}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={
-            !live
-              ? "Connect or wait for session keys…"
+            !composeAllowed
+              ? (disabledReason ?? "Messaging unavailable…")
               : viaChain
                 ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
                 : "Message…"
@@ -691,7 +693,7 @@ export function ChatRoomScreen() {
         <button
           type="button"
           className="btn btn--primary"
-          disabled={!live || sending || !draft.trim()}
+          disabled={!composeAllowed || sending || !draft.trim()}
           onClick={() => void handleSend()}
           aria-label="Send"
         >
