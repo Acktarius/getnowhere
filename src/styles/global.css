@@ -1370,6 +1370,25 @@ button {
   color: var(--text);
 }
 
+/* ===== Chat topic backdrop (Keet-style tiled mask) ===== */
+.chat-topic-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background-color: color-mix(in srgb, var(--primary) 9%, transparent);
+  mask-image: var(--chat-topic-tile);
+  mask-repeat: repeat;
+  mask-size: 168px 168px;
+  -webkit-mask-image: var(--chat-topic-tile);
+  -webkit-mask-repeat: repeat;
+  -webkit-mask-size: 168px 168px;
+}
+[data-theme="light"] .chat-topic-backdrop {
+  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
 /* ===== Preset stepper (room TTL / invite expiry) ===== */
 .preset-stepper {
   display: flex;

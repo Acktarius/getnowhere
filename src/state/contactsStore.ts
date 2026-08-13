@@ -517,13 +517,6 @@ export async function probeInitiatorHandoff(
     }
 
     if (!detail) {
-      const expectedIds = [
-        ...new Set([
-          ...pendingForRoom.map((p) => p.handshake.inviteId),
-          ...(localInvite ? [localInvite.inviteId] : []),
-        ]),
-      ];
-      const seenIds = registers.map((r) => r.register.inviteId);
       if (role === "responder") {
         detail = handoffCompleted
           ? "Connecting…"
@@ -544,7 +537,7 @@ export async function probeInitiatorHandoff(
         detail =
           "No on-chain register in this wallet yet. Wait for their accept tx to sync, then Sync again.";
       } else if (!matchingRegister) {
-        detail = `Waiting for accept of THIS invite. expected=[${expectedIds.join(",") || "?"}] registers=[${seenIds.join(",") || "none"}]. Peer must Accept the new invite (not an old room).`;
+        detail = "Waiting for peer to accept invite.";
       } else {
         detail = "Register matched; retry Sync.";
       }
