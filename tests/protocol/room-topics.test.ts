@@ -33,6 +33,12 @@ describe("room topic on create pack", () => {
     expect(hs?.roomTopic).toBe("vacation");
   });
 
+  it("round-trips finance topic", () => {
+    const packed = packCreateHandshake(sample("finance"));
+    const hs = unpackCreateHandshake(CHAT_PROTOCOL_VERSION, packed);
+    expect(hs?.roomTopic).toBe("finance");
+  });
+
   it("defaults missing topic byte to general (legacy slim)", () => {
     const packed = packCreateHandshake(sample("work"));
     // Strip last byte of decoded pack by re-packing without topic — use unpack on V1 length via manual.

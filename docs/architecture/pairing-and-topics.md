@@ -73,7 +73,7 @@ One eligible contact (pair of payment IDs) may have **many** chat rooms. Each
 room has its own opaque `roomId` and therefore its own Hyperswarm `topicRef`.
 
 Users pick a **display topic** from a fixed list (General, Work, Family,
-Vacation, Friends). That label is UI metadata and a 1-byte index on the create
+Vacation, Friends, Finance). That label is UI metadata and a 1-byte index on the create
 pack — it is **never** embedded in the DHT topic string.
 
 Supersede / resend applies **per contact + roomTopic**, so a Work invite does
