@@ -240,14 +240,24 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { noteRelayIngested, finishRelayBootstrap } = (
       await import("@/state/notificationStore")
     ).useNotificationStore.getState();
+    const { shouldSuppressRelayBadge } = await import(
+      "@/services/notifications/relayNotification"
+    );
+    const activeRoomId = get().activeRoomId;
+    const pathname =
+      typeof window !== "undefined" ? window.location.pathname : "";
+    const maybeNoteRelay = (messageId: string, roomId: string) => {
+      if (shouldSuppressRelayBadge(roomId, activeRoomId, pathname)) return;
+      noteRelayIngested(messageId, roomId);
+    };
     for (const { relay } of inbound) {
       const msg = await ingestChatRelay(relay);
       if (msg) {
         touched.add(msg.roomId);
-        noteRelayIngested(msg.id, msg.roomId);
+        maybeNoteRelay(msg.id, msg.roomId);
       } else {
         const id = relayMessageId(relay.roomId, relay.sentAt, relay.text);
-        noteRelayIngested(id, relay.roomId);
+        maybeNoteRelay(id, relay.roomId);
       }
     }
     finishRelayBootstrap();

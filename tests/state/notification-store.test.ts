@@ -73,11 +73,34 @@ describe("notificationStore", () => {
         inviteStatus: "received" as const,
       },
     ] as import("../../src/types/models").Contact[];
-    expect(store.anyContactBadge(contacts, invites)).toBe(true);
+    expect(store.anyContactBadge(contacts, invites, [])).toBe(true);
     store.markContactSeen("c1", 1);
     expect(
-      useNotificationStore.getState().anyContactBadge(contacts, invites),
+      useNotificationStore.getState().anyContactBadge(contacts, invites, []),
     ).toBe(false);
+  });
+
+  it("contact relay badge aggregates room unread", () => {
+    const store = useNotificationStore.getState();
+    const contacts = [
+      { id: "c1", alias: "Bob" },
+    ] as import("../../src/types/models").Contact[];
+    const rooms = [
+      {
+        id: "r1",
+        contactId: "c1",
+        lifecycleStatus: "accepted" as const,
+      },
+      {
+        id: "r2",
+        contactId: "c1",
+        lifecycleStatus: "pending" as const,
+      },
+    ] as import("../../src/types/models").ChatRoom[];
+    store.finishRelayBootstrap();
+    store.noteRelayIngested("m1", "r1");
+    expect(store.contactRelayBadge("c1", rooms)).toBe(1);
+    expect(store.anyContactBadge(contacts, [], rooms)).toBe(true);
   });
 
   it("Chats nav badge is L1′ relay on post-accept rooms only", () => {

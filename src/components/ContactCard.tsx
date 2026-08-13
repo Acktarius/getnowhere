@@ -5,6 +5,7 @@ import {
   contactInviteIsZeroConf,
   getContactInviteActionCount,
 } from "@/services/contacts/inviteQueue";
+import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
 import type { Contact } from "@/types/models";
@@ -16,12 +17,16 @@ type Props = { contact: Contact; to?: string };
 export function ContactCard({ contact, to }: Props) {
   const target = to ?? `/contacts/${contact.id}`;
   const invites = useContactsStore((s) => s.invites);
+  const rooms = useChatStore((s) => s.rooms);
   const actionCount = getContactInviteActionCount(contact, invites);
   const inviteBadge = useNotificationStore((s) =>
     s.contactInviteBadge(contact.id, actionCount),
   );
   const registerBadge = useNotificationStore((s) =>
     s.contactRegisterBadge(contact.id),
+  );
+  const relayBadge = useNotificationStore((s) =>
+    s.contactRelayBadge(contact.id, rooms),
   );
   const invitePulse = contactInviteIsZeroConf(contact, invites);
 
@@ -37,6 +42,8 @@ export function ContactCard({ contact, to }: Props) {
           <NotifyPin count={inviteBadge} variant="invite" pulse={invitePulse} />
         ) : registerBadge ? (
           <NotifyPin variant="register" dot pulse={invitePulse} />
+        ) : relayBadge > 0 ? (
+          <NotifyPin count={relayBadge} variant="relay" />
         ) : null}
       </div>
       <div className="row__main">

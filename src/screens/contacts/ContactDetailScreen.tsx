@@ -12,10 +12,11 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { EmptyState } from "@/components/EmptyState";
+import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
@@ -32,6 +33,7 @@ import {
   getContactInviteActionCount,
   getInviteQueue,
 } from "@/services/contacts/inviteQueue";
+import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
 import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
@@ -58,6 +60,8 @@ export function ContactDetailScreen() {
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
   const invites = useContactsStore((s) => s.invites);
   const contactRoomId = useContactsStore((s) => s.getById(id)?.roomId);
+  const rooms = useChatStore((s) => s.rooms);
+  const roomRelayBadge = useNotificationStore((s) => s.roomRelayBadge);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
   const roomLive = useChatStore((s) => {
     if (!contactRoomId) return false;
@@ -91,6 +95,17 @@ export function ContactDetailScreen() {
   );
   const [refreshingInvite, setRefreshingInvite] = useState(false);
   const markContactSeen = useNotificationStore((s) => s.markContactSeen);
+
+  const contactRooms = useMemo(() => {
+    if (!id) return [];
+    return listCatalogRooms()
+      .filter((r) => r.contactId === id && !isRoomRevoked(r.id))
+      .sort((a, b) =>
+        (b.lastMessageAt ?? b.createdAt).localeCompare(
+          a.lastMessageAt ?? a.createdAt,
+        ),
+      );
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -364,6 +379,57 @@ export function ContactDetailScreen() {
         </div>
 
         <RelationshipStateCard contact={contact} />
+
+        {contactRooms.length > 0 && (
+          <div className="stack stack--gap-2 fade-in-up">
+            <div className="card__title" style={{ paddingLeft: 4 }}>
+              Rooms
+            </div>
+            <div className="card card--flush">
+              {contactRooms.map((catalog) => {
+                const live = rooms.find((r) => r.id === catalog.id);
+                const lifecycle =
+                  live?.lifecycleStatus ?? catalog.lifecycleStatus;
+                const relayCount = roomRelayBadge(catalog.id);
+                return (
+                  <Link
+                    key={catalog.id}
+                    to={`/chats/${catalog.id}`}
+                    className="row row--clickable"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div className="row__avatar-wrap">
+                      <div className="row__avatar">
+                        <RoomTopicIcon topicId={catalog.roomTopic} size={18} />
+                      </div>
+                      {relayCount > 0 ? (
+                        <NotifyPin count={relayCount} variant="relay" />
+                      ) : null}
+                    </div>
+                    <div className="row__main">
+                      <div className="row__title">
+                        {roomTopicLabel(catalog.roomTopic)}
+                      </div>
+                      <div className="row__sub">
+                        {catalog.awaitingChainSync
+                          ? "Syncing wallet — room enables near chain tip"
+                          : lifecycle === "connected"
+                            ? "Connected"
+                            : isRelayEligibleStatus(lifecycle)
+                              ? "Chain relay"
+                              : `Status: ${lifecycle}`}
+                      </div>
+                    </div>
+                    <ArrowRight
+                      size={16}
+                      style={{ color: "var(--text-faint)", flexShrink: 0 }}
+                    />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="stack stack--gap-3 fade-in-up">
           <div className="card__title" style={{ paddingLeft: 4 }}>

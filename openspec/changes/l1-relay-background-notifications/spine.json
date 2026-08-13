@@ -1,0 +1,24 @@
+{
+  "change": "l1-relay-background-notifications",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Background L1′ relay ingest while wallet unlocked",
+      "library": "src/hooks/useWalletLiveSync.ts",
+      "runtimeOwner": "useWalletLiveSync(enabled) tick when wallet initialized",
+      "writes": "chain sync state; chatStore messages via refreshRelays",
+      "reads": "document.visibilityState; wallet unlock flag",
+      "uiConsumer": "ChatsScreen; ContactCard (indirect via ingest)",
+      "evidence": "tests/hooks/use-wallet-live-sync.test.ts; forge e2e run"
+    },
+    {
+      "capability": "Relay unread pins on Chats + Contacts surfaces",
+      "library": "src/state/notificationStore.ts; src/state/chatStore.ts",
+      "runtimeOwner": "refreshRelays → noteRelayIngested; nav/row selectors",
+      "writes": "notificationStore.roomRelayUnread (session RAM)",
+      "reads": "room catalog; activeRoomId; route pathname",
+      "uiConsumer": "ChatsScreen; ContactCard; ContactDetailScreen; BottomNav badges",
+      "evidence": "tests/state/notification-store.test.ts; forge e2e run"
+    }
+  ]
+}

@@ -27,7 +27,23 @@ L1′ does **not** replace L2. Same `roomId` thread mixes both channels.
 
 - Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L3 stays live).
 - Also rescans on enter and when lifecycle becomes relay-eligible.
-- Global wallet poll also calls `refreshRelays` (slower when near tip).
+- Global wallet poll calls `refreshRelays` while the wallet is unlocked — foreground
+  uses 2.5s / 20s cadence; **background** (hidden tab/window) uses 30s until Exit.
+
+## Relay notification pins
+
+In-app pins (`NotifyPin`) for unread L1′ relay on post-accept rooms:
+
+| Surface | Pin |
+|---------|-----|
+| Chats list row | per-room relay count |
+| Chats tab | aggregate |
+| Contacts list row | per-contact aggregate |
+| Contact detail | per room/topic row |
+| Contacts tab | aggregate (invites, register, relay) |
+
+Pins clear when the user opens that room. Exit/disconnect clears session state.
+Invite/register pins unchanged. L2 live messages are not badged.
 
 ## Limits
 

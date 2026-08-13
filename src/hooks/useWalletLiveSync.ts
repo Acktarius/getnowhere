@@ -10,7 +10,18 @@ import { useNotificationStore } from "@/state/notificationStore";
 import { useWalletStore } from "@/state/walletStore";
 
 /** [whileCatchingUp, whenNearTip] ms — same cadence as next-wallet. */
-const WALLET_POLL_MS = [2500, 20_000] as const;
+export const WALLET_POLL_MS = [2500, 20_000] as const;
+
+/** Slower cadence when tab/window is hidden (battery). */
+export const BACKGROUND_POLL_MS = 30_000;
+
+export function resolveWalletPollMs(
+  hidden: boolean,
+  catchingUp: boolean,
+): number {
+  if (hidden) return BACKGROUND_POLL_MS;
+  return catchingUp ? WALLET_POLL_MS[0] : WALLET_POLL_MS[1];
+}
 
 function isCatchingUp(): boolean {
   const status = useWalletStore.getState().syncStatus;
@@ -22,8 +33,8 @@ function isCatchingUp(): boolean {
 }
 
 /**
- * While the wallet is open: background `sync()` (coalesced) + invite/relay refresh.
- * Pauses when the tab is hidden.
+ * While the wallet is open: chain sync + invite/relay refresh until Exit.
+ * Foreground uses fast/near-tip cadence; background uses {@link BACKGROUND_POLL_MS}.
  */
 export function useWalletLiveSync(enabled: boolean): void {
   const refreshBalance = useWalletStore((s) => s.refreshBalance);
@@ -54,24 +65,21 @@ export function useWalletLiveSync(enabled: boolean): void {
     };
 
     const tick = async () => {
-      if (cancelled || document.visibilityState === "hidden") {
-        schedule(WALLET_POLL_MS[1]);
-        return;
-      }
+      if (cancelled) return;
+      const hidden = document.visibilityState === "hidden";
       if (runningRef.current) {
-        schedule(WALLET_POLL_MS[0]);
+        schedule(hidden ? BACKGROUND_POLL_MS : WALLET_POLL_MS[0]);
         return;
       }
       runningRef.current = true;
       try {
-        // Non-blocking tip catch-up (same pattern as next-wallet getWalletInfo).
         void sync().catch(() => {});
-        await refreshBalance();
+        if (!hidden) await refreshBalance();
         await refreshInvites();
         await refreshRelays();
-        schedule(isCatchingUp() ? WALLET_POLL_MS[0] : WALLET_POLL_MS[1]);
+        schedule(resolveWalletPollMs(hidden, isCatchingUp()));
       } catch {
-        schedule(WALLET_POLL_MS[0]);
+        schedule(hidden ? BACKGROUND_POLL_MS : WALLET_POLL_MS[0]);
       } finally {
         runningRef.current = false;
       }

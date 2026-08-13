@@ -1,0 +1,75 @@
+<!-- forge-brief-specs-hash:781a3d1752afaf4b -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>L1′ relay background notifications</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>L1′ relay background notifications</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    When someone sends you a grey-bubble chain-relay chat while you have Get
+    NowHere open but are not looking at that room, you will see notification
+    pins — on the chat row, the contact row, and each room on the contact
+    screen. The wallet keeps checking the chain in background (slower, to save
+    battery) until you Exit.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li><strong>Background sync:</strong> unlocked wallet keeps ingesting L1′ relays even when the tab/window is hidden (30s poll vs faster when visible).</li>
+    <li><strong>Chats list:</strong> relay pin on the room row + Chats tab dot (extends existing).</li>
+    <li><strong>Contacts list:</strong> relay pin on the contact when any of their rooms has unread relay.</li>
+    <li><strong>Contact detail:</strong> new Rooms section — one row per topic/room with its own pin.</li>
+    <li><strong>Clear rule:</strong> open the room → pin clears. Exit → all pins clear.</li>
+  </ul>
+
+  <h2>What stays the same</h2>
+  <ul>
+    <li>Invite and register pins (accept invite, invite accepted) — unchanged.</li>
+    <li>Live L2 chat (accent bubbles) — no badges; only applies when you're in the room.</li>
+    <li>No phone/desktop push or app-icon badge in this change.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <pre class="mermaid">
+flowchart LR
+  A[Wallet unlocked] --> B{Tab visible?}
+  B -->|yes| C[Fast poll]
+  B -->|no| D[Slow poll 30s]
+  C --> E[sync + invites + relays]
+  D --> E
+  E --> F{New L1′ for room?}
+  F -->|yes, not viewing room| G[Increment relay pin]
+  F -->|viewing room| H[Suppress pin]
+  G --> I[Chats + Contacts UI]
+  </pre>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>OS notifications / app-icon badge</li>
+    <li>L2 live message badges</li>
+    <li>Keeping Hyperswarm rooms connected in background</li>
+    <li>Remembering unread after wallet lock</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Background poll fix — 3 tasks</li>
+    <li>Notification store + ingest — 5 tasks</li>
+    <li>Contacts UI — 3 tasks</li>
+    <li>Docs + verify — 2 tasks</li>
+  </ul>
+</body>
+</html>

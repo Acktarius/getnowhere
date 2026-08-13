@@ -23,7 +23,8 @@ export function useNavNotificationBadges(): {
   const onContactsList = location.pathname === "/contacts";
 
   const contactsUnread = useNotificationStore(
-    (s) => s.anyContactBadge(contacts, invites) && !onContactsList,
+    (s) =>
+      s.anyContactBadge(contacts, invites, visibleRooms) && !onContactsList,
   );
   /** Chats tab dot = new L1′ relay on a post-accept room only. */
   const chatsUnread = useNotificationStore((s) => s.anyRoomBadge(visibleRooms));

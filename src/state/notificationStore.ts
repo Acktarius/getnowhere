@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { getContactInviteActionCount } from "@/services/contacts/inviteQueue";
-import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
+import {
+  contactRelayCount,
+  isActiveRoomForRelayNav,
+} from "@/services/notifications/relayNotification";
 import type { ChatRoom, Contact, SmartMessageInvite } from "@/types/models";
 
 type NotificationStore = {
@@ -21,22 +24,16 @@ type NotificationStore = {
 
   contactInviteBadge: (contactId: string, queueCount: number) => number;
   contactRegisterBadge: (contactId: string) => boolean;
+  contactRelayBadge: (contactId: string, rooms: ChatRoom[]) => number;
   roomPendingBadge: (roomId: string, isPending: boolean) => boolean;
   roomRelayBadge: (roomId: string) => number;
   anyContactBadge: (
     contacts: Contact[],
     invites: SmartMessageInvite[],
+    rooms: ChatRoom[],
   ) => boolean;
   anyRoomBadge: (rooms: ChatRoom[]) => boolean;
 };
-
-/** Post-accept / live rooms only — L1′ relay cannot land on pending invites. */
-function isActiveRoomForRelayNav(room: ChatRoom): boolean {
-  return (
-    room.lifecycleStatus === "connected" ||
-    isRelayEligibleStatus(room.lifecycleStatus)
-  );
-}
 
 const initialState = {
   contactQueueBaseline: {} as Record<string, number>,
@@ -124,12 +121,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
 
   roomRelayBadge: (roomId) => get().roomRelayUnread[roomId] ?? 0,
 
-  anyContactBadge: (contacts, invites) => {
+  contactRelayBadge: (contactId, rooms) =>
+    contactRelayCount(contactId, rooms, get().roomRelayUnread),
+
+  anyContactBadge: (contacts, invites, rooms) => {
     const s = get();
     for (const contact of contacts) {
       const actionCount = getContactInviteActionCount(contact, invites);
       if (s.contactInviteBadge(contact.id, actionCount) > 0) return true;
       if (s.contactRegisterBadge(contact.id)) return true;
+      if (s.contactRelayBadge(contact.id, rooms) > 0) return true;
     }
     return false;
   },
