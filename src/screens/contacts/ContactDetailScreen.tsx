@@ -18,6 +18,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { EmptyState } from "@/components/EmptyState";
 import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
+import { PresetStepper } from "@/components/PresetStepper";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
@@ -29,6 +30,12 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import {
+  DEFAULT_INVITE_EXPIRY_HOURS,
+  DEFAULT_ROOM_TTL_DAYS,
+  INVITE_EXPIRY_PRESETS,
+  ROOM_TTL_PRESETS,
+} from "@/lib/roomTtlPresets";
 import {
   getContactInviteActionCount,
   getInviteQueue,
@@ -81,8 +88,10 @@ export function ContactDetailScreen() {
   const [copiedFrom, copyFrom] = useCopy();
   const [sendingInvite, setSendingInvite] = useState(false);
   const [createSheet, setCreateSheet] = useState(false);
-  const [inviteExpiryHours, setInviteExpiryHours] = useState(24);
-  const [roomTtlDays, setRoomTtlDays] = useState(7);
+  const [inviteExpiryHours, setInviteExpiryHours] = useState(
+    DEFAULT_INVITE_EXPIRY_HOURS,
+  );
+  const [roomTtlDays, setRoomTtlDays] = useState(DEFAULT_ROOM_TTL_DAYS);
   const [roomTopic, setRoomTopic] =
     useState<import("@/services/protocol/roomTopics").RoomTopicId>("general");
   const [shareSheet, setShareSheet] = useState(false);
@@ -660,28 +669,20 @@ export function ContactDetailScreen() {
               );
             })}
           </div>
-          <label className="stack stack--gap-1">
-            <span className="eyebrow">Invite expiry (hours)</span>
-            <input
-              type="number"
-              min={1}
-              max={168}
-              value={inviteExpiryHours}
-              onChange={(e) =>
-                setInviteExpiryHours(Number(e.target.value) || 24)
-              }
-            />
-          </label>
-          <label className="stack stack--gap-1">
-            <span className="eyebrow">Room TTL (days)</span>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={roomTtlDays}
-              onChange={(e) => setRoomTtlDays(Number(e.target.value) || 7)}
-            />
-          </label>
+          <PresetStepper
+            label="Invite expiry"
+            options={INVITE_EXPIRY_PRESETS}
+            value={inviteExpiryHours}
+            onChange={setInviteExpiryHours}
+            hint="How long the peer has to accept."
+          />
+          <PresetStepper
+            label="Room TTL"
+            options={ROOM_TTL_PRESETS}
+            value={roomTtlDays}
+            onChange={setRoomTtlDays}
+            hint="Room is destroyed locally after this period."
+          />
           {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"

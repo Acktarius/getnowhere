@@ -40,9 +40,7 @@ describe("resolveRoomTtl", () => {
       replayId: "dd".repeat(8),
     };
     rememberHandshake(handshake);
-    expect(
-      resolveRoomTtl({ roomId: "e24dfa85", inviteId: "inv1" }),
-    ).toBe(ttl);
+    expect(resolveRoomTtl({ roomId: "e24dfa85", inviteId: "inv1" })).toBe(ttl);
   });
 
   it("reads roomTtl from catalog when live room omitted it", () => {

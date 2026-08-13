@@ -33,11 +33,11 @@ import {
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
 import {
+  type CatalogRetirementReason,
   findCatalogRetirements,
   listCatalogRooms,
   loadCatalogRoom,
   patchCatalogRoom,
-  type CatalogRetirementReason,
 } from "@/services/p2p/roomCatalogStore";
 import {
   applyRestoredRoomCatalog,

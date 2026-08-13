@@ -140,8 +140,7 @@ export type CatalogRetirementReason = "room_ttl" | "invite_expiry";
 export function findCatalogRetirements(
   nowSec: number = nowUnix(),
 ): Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> {
-  const due: Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> =
-    [];
+  const due: Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> = [];
   for (const room of Object.values(readAll())) {
     if (isRoomRevoked(room.id)) continue;
     const reason = shouldRetireCatalogRoom(room, nowSec);
