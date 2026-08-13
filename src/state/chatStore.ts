@@ -61,6 +61,12 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
   async loadRooms() {
     set({ loadingRooms: true });
+    try {
+      const { useContactsStore } = await import("@/state/contactsStore");
+      await useContactsStore.getState().retireExpiredRooms();
+    } catch {
+      /* contacts may not be ready */
+    }
     const { isRoomRevoked, isInviteRevoked } = await import(
       "@/services/p2p/revokedRoomsStore"
     );

@@ -17,11 +17,13 @@ import {
   getUfwAdvisoryState,
 } from "@/services/p2p/HolepunchSidecarClient";
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
+import { resolveRoomTtl } from "@/services/p2p/resolveRoomTtl";
 import {
   canComposeMessages,
   composerDisabledReason,
   composerPreferredChannel,
 } from "@/services/protocol/composerGate";
+import { isRoomExpired } from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
@@ -31,8 +33,15 @@ import {
   type ConnectFailureCode,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
+import { formatUnixDateTime } from "@/utils/format";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+
+function roomExpiryDiagnosticLine(roomTtl?: number): string {
+  if (!roomTtl) return "Room expiry: —";
+  const suffix = isRoomExpired(roomTtl) ? " (elapsed)" : "";
+  return `Room expiry: ${formatUnixDateTime(roomTtl)}${suffix}`;
+}
 
 /** Shared leave confirmation — used from every screen state, even before the room finishes loading. */
 function LeaveRoomModal({
@@ -69,11 +78,13 @@ function LoadingDiagnosticsSheet({
   open,
   roomId,
   contactAlias,
+  roomTtl,
   onClose,
 }: {
   open: boolean;
   roomId: string;
   contactAlias?: string;
+  roomTtl?: number;
   onClose: () => void;
 }) {
   return (
@@ -81,6 +92,7 @@ function LoadingDiagnosticsSheet({
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
         <div>Room id: {roomId}</div>
         <div>Contact: {contactAlias ?? "…"}</div>
+        <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
         <div>Sidecar: {getSidecarBridgeDiagnostic()}</div>
         {getLastSidecarDetail() && (
           <div>Sidecar status: {getLastSidecarDetail()}</div>
@@ -119,6 +131,15 @@ export function ChatRoomScreen() {
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
   const refreshRelays = useChatStore((s) => s.refreshRelays);
   const revokeRoom = useContactsStore((s) => s.revokeRoom);
+  const inviteForRoom = useContactsStore((s) =>
+    s.invites.find((i) => i.roomId === roomId),
+  );
+  const diagnosticRoomTtl = resolveRoomTtl({
+    roomId,
+    roomTtl: room?.roomTtl,
+    inviteId: room?.inviteId ?? inviteForRoom?.inviteId,
+    inviteRecordTtl: inviteForRoom?.roomTtl,
+  });
 
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -342,6 +363,7 @@ export function ChatRoomScreen() {
           open={diagOpen}
           roomId={roomId}
           contactAlias={contact?.alias}
+          roomTtl={diagnosticRoomTtl}
           onClose={() => setDiagOpen(false)}
         />
         <LeaveRoomModal
@@ -388,6 +410,7 @@ export function ChatRoomScreen() {
           open={diagOpen}
           roomId={roomId}
           contactAlias={contact?.alias}
+          roomTtl={diagnosticRoomTtl}
           onClose={() => setDiagOpen(false)}
         />
         <LeaveRoomModal
@@ -713,6 +736,7 @@ export function ChatRoomScreen() {
             Topic: {getTopicRefForRoom(room.id) ?? "— not joined yet —"}
           </div>
           <div>Lifecycle: {room.lifecycleStatus}</div>
+          <div>{roomExpiryDiagnosticLine(diagnosticRoomTtl)}</div>
           <div>Peer: {room.peerStatus}</div>
           <div>Bootstrap: {room.bootstrapSource}</div>
           <div>Connect attempts: {room.connectAttempts ?? 0}</div>

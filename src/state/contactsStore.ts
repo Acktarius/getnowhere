@@ -33,8 +33,11 @@ import {
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
 import {
+  findCatalogRetirements,
   listCatalogRooms,
+  loadCatalogRoom,
   patchCatalogRoom,
+  type CatalogRetirementReason,
 } from "@/services/p2p/roomCatalogStore";
 import {
   applyRestoredRoomCatalog,
@@ -44,7 +47,10 @@ import {
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import {
+  isInviteExpired,
   isPostAcceptStatus,
+  isRoomExpired,
+  nowUnix,
   shouldAwaitChainSyncForInvite,
 } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
@@ -78,6 +84,8 @@ type ContactsStore = {
   archiveContact: (id: string) => void;
   blockContact: (id: string) => void;
   refreshInvites: () => Promise<void>;
+  /** Local destroy when roomTtl or unaccepted inviteExpiry elapses — no L1 tx. */
+  retireExpiredRooms: () => Promise<void>;
   sendInvite: (
     contactId: string,
     senderAlias: string,
@@ -194,6 +202,51 @@ async function persistContactsDurably(get: () => ContactsStore): Promise<void> {
  * Wipe local room completely after L1 revoke broadcast (or peer revoke scanned).
  * Room MUST disappear from Chats — catalog, session, invites, contact.roomId, UI.
  */
+function collectRoomsDueForRetirement(
+  invites: SmartMessageInvite[],
+  nowSec = nowUnix(),
+): Map<string, CatalogRetirementReason> {
+  const due = new Map<string, CatalogRetirementReason>();
+  for (const { room, reason } of findCatalogRetirements(nowSec)) {
+    due.set(room.id, reason);
+  }
+  for (const inv of invites) {
+    if (isRoomRevoked(inv.roomId)) continue;
+    if (inv.roomTtl && isRoomExpired(inv.roomTtl, nowSec)) {
+      due.set(inv.roomId, "room_ttl");
+      continue;
+    }
+    if (
+      inv.inviteExpiry &&
+      isInviteExpired(inv.inviteExpiry, nowSec) &&
+      inv.status !== "accepted"
+    ) {
+      due.set(inv.roomId, "invite_expiry");
+    }
+  }
+  return due;
+}
+
+async function retireExpiredRoomsImpl(
+  get: () => ContactsStore,
+  set: (
+    partial:
+      | Partial<ContactsStore>
+      | ((s: ContactsStore) => Partial<ContactsStore>),
+  ) => void,
+): Promise<void> {
+  for (const [roomId] of collectRoomsDueForRetirement(get().invites)) {
+    if (isRoomRevoked(roomId)) continue;
+    const inv = get().invites.find((i) => i.roomId === roomId);
+    const inviteId = inv?.inviteId ?? loadCatalogRoom(roomId)?.inviteId;
+    try {
+      await applyRoomDestroyLocally(get, set, roomId, inviteId);
+    } catch {
+      /* retry on next refresh */
+    }
+  }
+}
+
 async function applyRoomDestroyLocally(
   get: () => ContactsStore,
   set: (
@@ -677,10 +730,15 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     schedulePersistContacts(get);
   },
 
+  async retireExpiredRooms() {
+    await retireExpiredRoomsImpl(get, set);
+  },
+
   async refreshInvites() {
     await restorePendingInitiatorKeys();
+    await retireExpiredRoomsImpl(get, set);
 
-    // Apply peer revokes first — never recreate a room we are about to destroy.
+    // Peer leave-forever revokes — never recreate a room we are about to destroy.
     const revokes = await smartMessageService.fetchIncomingRevokes();
     for (const { revoke } of revokes) {
       const inv = get().invites.find(

@@ -134,6 +134,22 @@ export function patchCatalogRoom(
   return next;
 }
 
+export type CatalogRetirementReason = "room_ttl" | "invite_expiry";
+
+/** Catalog rows due for local destroy (run before silent prune). */
+export function findCatalogRetirements(
+  nowSec: number = nowUnix(),
+): Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> {
+  const due: Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> =
+    [];
+  for (const room of Object.values(readAll())) {
+    if (isRoomRevoked(room.id)) continue;
+    const reason = shouldRetireCatalogRoom(room, nowSec);
+    if (reason) due.push({ room, reason });
+  }
+  return due;
+}
+
 /** User chose to leave forever — only permanent remove API besides TTL prune. */
 export function removeCatalogRoom(roomId: string): void {
   const all = readAll();

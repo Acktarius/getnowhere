@@ -676,7 +676,16 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     const syncFlagChanged =
       bootstrap?.awaitingChainSync !== undefined &&
       bootstrap.awaitingChainSync !== existing.room.awaitingChainSync;
-    if (lifecycleChanged || syncFlagChanged) {
+    const ttlFieldsChanged = Boolean(
+      bootstrap &&
+        ((bootstrap.roomTtl !== undefined &&
+          bootstrap.roomTtl !== existing.room.roomTtl) ||
+          (bootstrap.inviteExpiry !== undefined &&
+            bootstrap.inviteExpiry !== existing.room.inviteExpiry) ||
+          (bootstrap.inviteId !== undefined &&
+            bootstrap.inviteId !== existing.room.inviteId)),
+    );
+    if (lifecycleChanged || syncFlagChanged || ttlFieldsChanged) {
       existing.room = {
         ...existing.room,
         ...(lifecycleChanged && bootstrap?.lifecycleStatus
@@ -815,6 +824,9 @@ export const HolepunchChatTransport: ChatTransport = {
         });
       }
       state.contract = contract;
+      if (contract.roomTtl && !state.room.roomTtl) {
+        state.room = { ...state.room, roomTtl: contract.roomTtl };
+      }
       const topicSuite = contract.transport.topicSuite ?? "SHA256_V1";
       const topicEpoch = contract.transport.topicEpoch ?? 0;
       state.session = {
