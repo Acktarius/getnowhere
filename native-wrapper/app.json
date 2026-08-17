@@ -39,6 +39,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withGnhSecurity.js",
       [
         "expo-build-properties",
         {

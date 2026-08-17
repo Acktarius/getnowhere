@@ -41,4 +41,23 @@ describe("buildMobileBridgeInjection", () => {
     expect(savePayload.filename).toBe("wallet.json");
     expect(savePayload.requestId).toBe("req-1");
   });
+
+  it("exposes biometric and securePrefs security channels", () => {
+    const script = buildMobileBridgeInjection("token");
+    const postMessage = vi.fn();
+    Object.defineProperty(window, "ReactNativeWebView", {
+      value: { postMessage },
+      configurable: true,
+    });
+    new Function(script)();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    expect(bridge.biometric?.isAvailable).toBeTypeOf("function");
+    expect(bridge.securePrefs?.get).toBeTypeOf("function");
+    expect(bridge.onLifecycle).toBeTypeOf("function");
+    void bridge.biometric?.isAvailable("data");
+    expect(postMessage).toHaveBeenCalled();
+    const payload = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(payload.channel).toBe("gnh-biometric");
+    expect(payload.action).toBe("isAvailable");
+  });
 });

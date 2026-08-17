@@ -30,4 +30,5 @@ npm run mobile:android
 
 Cordova/Capacitor are not used. `desktop-electron/` is untouched.
 
-**Follow-ups:** biometrics; mobile↔desktop L2 session stability; iOS device P2P — see Android runbook § Follow-ups.
+**Follow-ups:** app access / data unlock biometrics (`docs/features/app-access-and-data-unlock.md`);
+mobile↔desktop L2 session stability; iOS device P2P — see Android runbook § Follow-ups.

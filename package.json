@@ -1,7 +1,7 @@
 {
   "name": "getnowhere",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -65,7 +65,8 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "nanoid": "3.3.17",
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.25",
     "react-router": "8.3.0"
   }
 }

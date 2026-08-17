@@ -76,9 +76,34 @@ interface GnhMobileBridge {
   ): () => void;
   _resolveSaveTextFile?(result: GnhMobileSaveTextFileResult): void;
   _dispatchBridgeEvent?(msg: Record<string, unknown>): void;
+  getLockGeneration?(): number;
+  setLockGeneration?(n: number): void;
+  _resolveSecurity?(result: Record<string, unknown>): void;
+  biometric?: {
+    isAvailable(purpose: "app" | "data"): Promise<Record<string, unknown>>;
+    enrollDataUnlock(
+      walletId: string,
+      password: string,
+    ): Promise<Record<string, unknown>>;
+    unlockDataUnlock(
+      walletId: string,
+      credentialId: string,
+    ): Promise<Record<string, unknown>>;
+    enrollAppAccess(passcode: string): Promise<Record<string, unknown>>;
+    unlockAppAccess(): Promise<Record<string, unknown>>;
+    removeCredential(credentialId: string): Promise<Record<string, unknown>>;
+  };
+  securePrefs?: {
+    get(key: string): Promise<Record<string, unknown>>;
+    set(key: string, value: string): Promise<Record<string, unknown>>;
+    remove(key: string): Promise<Record<string, unknown>>;
+  };
+  onLifecycle?(handler: (evt: { type: string }) => void): () => void;
+  _dispatchLifecycleEvent?(evt: { type: string }): void;
 }
 
 interface Window {
   gnhDesktop?: GnhDesktopBridge;
   gnhMobile?: GnhMobileBridge;
+  ReactNativeWebView?: { postMessage: (data: string) => void };
 }

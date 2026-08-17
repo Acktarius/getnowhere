@@ -1508,3 +1508,13 @@ export async function changeRuntimePassword(
   rt.password = nextPassword;
   await persistRuntime(rt);
 }
+
+/** Set wallet password while runtime is already unlocked (e.g. onboarding create). */
+export async function setRuntimePassword(nextPassword: string): Promise<void> {
+  const rt = requireRuntime();
+  if (!nextPassword) {
+    throw new Error("A wallet password is required.");
+  }
+  rt.password = nextPassword;
+  await persistRuntime(rt);
+}

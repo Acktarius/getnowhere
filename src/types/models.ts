@@ -227,5 +227,6 @@ export type AppSettings = {
   accent: AccentName;
   privacy: PrivacySettings;
   network: "mainnet" | "testnet" | "devnet";
-  biometricEnabled: boolean;
+  appAccessBiometricEnabled: boolean;
+  dataUnlockBiometricEnabled: boolean;
 };

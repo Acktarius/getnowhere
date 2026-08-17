@@ -56,12 +56,17 @@ npm run mobile:sync-ui && npm run mobile:android
 `prepare-android-assets.mjs` runs `pack-bare` and copies both `ui/` and
 `bare/app.bundle.mjs` into `android/app/src/main/assets/`.
 
-After adding `react-native-bare-kit`, or changing Expo SDK / `newArchEnabled` in
-`app.json`, run once:
+After adding `react-native-bare-kit`, changing Expo SDK / `newArchEnabled`, or
+**editing `android-native/GnhSecurity/` or `ios-native/GnhSecurity/`**, run once:
 
 ```bash
 cd native-wrapper && npx expo prebuild --platform android --clean
 ```
+
+Native security sources are **not** stored under `android/` (gitignored, regenerated).
+Edit Kotlin in `native-wrapper/android-native/GnhSecurity/`; Swift in
+`native-wrapper/ios-native/GnhSecurity/`. Both are injected by
+`plugins/withGnhSecurity.js`.
 
 Keep Metro running when opening a debug build (`npx expo start --clear` in
 `native-wrapper/`). A black screen after splash with no `ReactNativeJS` logcat
@@ -123,8 +128,12 @@ Then: invite/accept, open the room on both sides, compare **Topic** (`topicRef` 
 check logcat for `[swarm] topic … announced` → `connection open peer=…`, and confirm transport
 **connected** (L1 post-connect proof).
 
-Still **not** in scope: native secure storage, biometrics unlock, iOS device P2P
-sign-off.
+Still **not** in scope: iOS device P2P sign-off (Android security modules ship first).
+
+**Security (2026-08):** `GnhSecurity` native module (Kotlin + Swift via
+`plugins/withGnhSecurity.js`) exposes biometric + securePrefs + lifecycle bridge
+channels. See `native-wrapper/docs/gnh-mobile-security-bridge.md` and
+`docs/features/app-access-and-data-unlock.md`. Device verification pending.
 
 ## Follow-ups
 
@@ -137,12 +146,13 @@ Tracked after successful local `npm run mobile:android` sideload.
 | 2 | **Settings backup row icon** | `Download` icon on Settings → **Backup** (`SettingsScreen.tsx`). |
 | 3 | **Launcher + splash** | `npm run generate:icons` — adaptive safe-zone launcher, splash tile on `#0a0b0f`. See `native-wrapper/README.md`. |
 | 4 | **Bare worklet P2P (Android bootstrap)** | Packed bundle + Hyperswarm on device; cross-platform topic join with Electron verified 2026-08. See `mobile-p2p-runtime.md`. |
+| 1 | **Biometrics & unlock (code landed)** | Kotlin `GnhBiometricModule` + Swift twin; JS bridge + app/data unlock UI. **Device sign-off pending.** |
 
 ### Remaining
 
 | # | Area | Work |
 |---|------|------|
-| 1 | **Biometrics & unlock** | Wire fingerprint / device passcode / optional 2FA — replace onboarding and Settings placeholders. Native bridge + tests on physical device. |
+| 1b | **Biometrics device QA** | Physical enroll/unlock/invalidation on Android; iOS when WebView shell ships. |
 | 5 | **Mobile ↔ desktop L2 session** | Swarm transport opens then `connection reset by peer` — trace L1 post-connect proof / session stability. |
 | 6 | **iOS Bare P2P** | Same bundle + `expo prebuild --platform ios`; EAS device test when Android L2 is stable. |
 

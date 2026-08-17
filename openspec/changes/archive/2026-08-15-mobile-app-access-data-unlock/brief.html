@@ -1,0 +1,78 @@
+<!-- forge-brief-specs-hash:cf3372245fe94ac0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mobile app access and data unlock</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Mobile app access and data unlock</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    On Android and iOS, Get NowHere gets two separate locks: <strong>app access</strong>
+    (blur the UI when you switch away — wallet stays open) and <strong>data unlock</strong>
+    (open the wallet with fingerprint/face or password). Crypto stays in native code;
+    web and desktop are unchanged.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li><strong>App access:</strong> auto-lock after idle, lock on screen-off/resume, optional blur in app switcher, passcode + optional app biometric.</li>
+    <li><strong>Data unlock:</strong> after wallet password verify, enroll fingerprint/face to skip typing password next time (password always works as fallback).</li>
+    <li><strong>Two settings:</strong> independent toggles for app vs data biometrics.</li>
+    <li><strong>Sleep mode:</strong> after 10 min background idle, stop chain polling until you return and unlock the app.</li>
+    <li><strong>Android + iOS:</strong> Kotlin and Swift native modules; stronger design — secrets never exposed to the WebView.</li>
+  </ul>
+
+  <h2>What stays the same</h2>
+  <ul>
+    <li>Browser dev and Electron — no biometrics or auto-lock wiring.</li>
+    <li>Exit, Leave room, revoke — unchanged.</li>
+    <li>Wallet + chat still mount together for data unlock.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <pre class="mermaid">
+flowchart TB
+  subgraph app [App access — UI only]
+    A[Resume / idle / screen off] --> B[Lock UI + blur]
+    B --> C[Passcode or app biometric]
+    C --> D[Resume where you left off]
+  end
+  subgraph data [Data unlock — wallet mount]
+    E[Cold start / Exit / kill] --> F[Data locked]
+    F --> G[Password or data biometric]
+    G --> H[Wallet + chat mounted]
+  end
+  </pre>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Web/Electron biometrics</li>
+    <li>Re-encrypting wallet under biometrics only</li>
+    <li>Exit / LEAVE ROOM changes</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Bridge + state machine — 2 tasks</li>
+    <li>Android Kotlin — 4 tasks</li>
+    <li>iOS Swift — 3 tasks</li>
+    <li>gnhMobile bridge JS — 3 tasks</li>
+    <li>Data unlock core + UI — 7 tasks</li>
+    <li>App access — 4 tasks</li>
+    <li>Sleep/poll — 3 tasks</li>
+    <li>Docs + verify — 3 tasks</li>
+  </ul>
+</body>
+</html>

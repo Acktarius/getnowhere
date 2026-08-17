@@ -1,12 +1,46 @@
-import { KeyRound, Loader2, Radio, ShieldCheck } from "lucide-react";
+import {
+  Fingerprint,
+  KeyRound,
+  Loader2,
+  Radio,
+  ShieldCheck,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BrandMark, Wordmark } from "@/components/Brand";
 import { SecureInput } from "@/components/SecureInput";
 import { Sheet } from "@/components/Sheet";
+import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
+import { getBiometricEnrollment } from "@/lib/auth/biometric-store";
+import { PasskeyError, unlockWithBiometric } from "@/lib/auth/platform-unlock";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { markOnboarded } from "@/state/authStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 import { version } from "../../../package.json";
+
+const WALLET_BIO_ICON_STYLE = {
+  width: "2.25rem",
+  height: "2.25rem",
+  minWidth: "2.25rem",
+  minHeight: "2.25rem",
+} as const;
+
+const WALLET_BIO_BTN_STYLE = {
+  width: "4.5rem",
+  height: "4.5rem",
+  minWidth: "4.5rem",
+  minHeight: "4.5rem",
+  borderRadius: "50%",
+  padding: 0,
+  border: "none",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+  color: "var(--primary)",
+  background: "var(--primary-soft)",
+} as const;
 
 export function WelcomeScreen() {
   const navigate = useNavigate();
@@ -14,29 +48,43 @@ export function WelcomeScreen() {
   const hasStoredWallet = useWalletStore((s) => s.hasStoredWallet);
   const initializing = useWalletStore((s) => s.initializing);
 
+  const dataUnlockBiometricEnabled = useSettingsStore(
+    (s) => s.dataUnlockBiometricEnabled,
+  );
+
   const [stored, setStored] = useState<boolean | null>(null);
   const [openSheet, setOpenSheet] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [biometricBusy, setBiometricBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void hasStoredWallet().then((v) => {
-      if (!cancelled) setStored(v);
-    });
+    void (async () => {
+      const storedWallet = await hasStoredWallet();
+      if (!cancelled) setStored(storedWallet);
+      if (cancelled || !isMobileHost()) return;
+      await initMobileBiometricStorage();
+    })();
     return () => {
       cancelled = true;
     };
   }, [hasStoredWallet]);
 
-  async function handleOpen() {
+  useEffect(() => {
+    if (!openSheet || !isMobileHost()) return;
+    void initMobileBiometricStorage();
+  }, [openSheet]);
+
+  async function handleOpen(withPassword?: string) {
     setError(null);
-    if (!password.trim()) {
+    const pw = withPassword ?? password;
+    if (!pw.trim()) {
       setError("Enter your wallet password.");
       return;
     }
     try {
-      await openStoredWallet(password);
+      await openStoredWallet(pw);
       markOnboarded();
       setOpenSheet(false);
       setPassword("");
@@ -46,7 +94,26 @@ export function WelcomeScreen() {
     }
   }
 
+  async function handleBiometricOpen() {
+    setError(null);
+    setBiometricBusy(true);
+    try {
+      const enrollment = await getBiometricEnrollment();
+      if (!enrollment) {
+        setError("No biometric enrollment found — use your wallet password.");
+        return;
+      }
+      const recovered = await unlockWithBiometric("default", enrollment);
+      await handleOpen(recovered);
+    } catch (e) {
+      setError(e instanceof PasskeyError ? e.message : (e as Error).message);
+    } finally {
+      setBiometricBusy(false);
+    }
+  }
+
   const showOpen = stored === true;
+  const showWalletBioUnlock = isMobileHost() && dataUnlockBiometricEnabled;
 
   return (
     <div className="screen" style={{ padding: 0 }}>
@@ -170,6 +237,39 @@ export function WelcomeScreen() {
       <Sheet
         open={openSheet}
         title="Open wallet"
+        belowTitle={
+          showWalletBioUnlock ? (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                padding: "0.5rem 0 0.75rem",
+              }}
+            >
+              <button
+                type="button"
+                aria-label="Unlock with biometrics"
+                disabled={initializing || biometricBusy}
+                onClick={() => void handleBiometricOpen()}
+                style={WALLET_BIO_BTN_STYLE}
+              >
+                {biometricBusy ? (
+                  <Loader2
+                    className="spin"
+                    style={WALLET_BIO_ICON_STYLE}
+                    aria-hidden
+                  />
+                ) : (
+                  <Fingerprint
+                    strokeWidth={1.75}
+                    style={WALLET_BIO_ICON_STYLE}
+                    aria-hidden
+                  />
+                )}
+              </button>
+            </div>
+          ) : null
+        }
         onClose={() => {
           if (initializing) return;
           setOpenSheet(false);
@@ -187,9 +287,9 @@ export function WelcomeScreen() {
             onChange={setPassword}
             placeholder="Password"
             revealable
-            autoFocus
+            autoFocus={!showWalletBioUnlock}
           />
-          {error && <div className="field__error">{error}</div>}
+          {error && openSheet && <div className="field__error">{error}</div>}
           <button
             type="button"
             className="btn btn--block btn--primary"

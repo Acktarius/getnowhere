@@ -3,6 +3,12 @@
  * Keeps tip + mempool fresh so L1 invites / relays arrive near-instantly.
  */
 import { useEffect, useRef } from "react";
+import {
+  getAppAccessState,
+  isAppAccessLocked,
+  onAppAccessLifecycle,
+} from "@/lib/mobile/AppAccessController";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { getRuntime, sync } from "@/services/conceal/sync/runtime";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
@@ -64,9 +70,24 @@ export function useWalletLiveSync(enabled: boolean): void {
       }, ms);
     };
 
+    const isBackgrounded = () => {
+      if (document.visibilityState === "hidden") return true;
+      if (isMobileHost()) {
+        const reason = getAppAccessState().reason;
+        return reason === "background" || reason === "screenOff";
+      }
+      return false;
+    };
+
     const tick = async () => {
       if (cancelled) return;
-      const hidden = document.visibilityState === "hidden";
+      const hidden = isBackgrounded();
+
+      if (isMobileHost() && isAppAccessLocked()) {
+        schedule(BACKGROUND_POLL_MS);
+        return;
+      }
+
       if (runningRef.current) {
         schedule(hidden ? BACKGROUND_POLL_MS : WALLET_POLL_MS[0]);
         return;
@@ -86,8 +107,16 @@ export function useWalletLiveSync(enabled: boolean): void {
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void tick();
+      if (document.visibilityState === "visible") {
+        void tick();
+      }
     };
+
+    const unsubLifecycle = isMobileHost()
+      ? onAppAccessLifecycle((type) => {
+          if (type === "foreground") void tick();
+        })
+      : () => {};
 
     document.addEventListener("visibilitychange", onVisibility);
     void tick();
@@ -96,6 +125,7 @@ export function useWalletLiveSync(enabled: boolean): void {
       cancelled = true;
       clear();
       document.removeEventListener("visibilitychange", onVisibility);
+      unsubLifecycle();
     };
   }, [enabled, refreshBalance, refreshInvites, refreshRelays]);
 }

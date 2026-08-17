@@ -7,15 +7,17 @@ import {
   Routes,
   useLocation,
 } from "react-router-dom";
+import { AppAccessBlurOverlay } from "@/components/AppAccessBlurOverlay";
 import { ToastHost } from "@/components/ToastHost";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
+import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
+import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
-import { ChatsScreen } from "@/screens/chats/ChatsScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
-import { ContactsScreen } from "@/screens/contacts/ContactsScreen";
 import { CreateWalletScreen } from "@/screens/onboarding/CreateWalletScreen";
 import { ImportWalletScreen } from "@/screens/onboarding/ImportWalletScreen";
 import { RestoreWalletScreen } from "@/screens/onboarding/RestoreWalletScreen";
@@ -23,20 +25,23 @@ import { WelcomeScreen } from "@/screens/onboarding/WelcomeScreen";
 import { AboutScreen } from "@/screens/settings/AboutScreen";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 import { SecuritySettingsScreen } from "@/screens/settings/SecuritySettingsScreen";
-import { SettingsScreen } from "@/screens/settings/SettingsScreen";
 import { WalletPasswordScreen } from "@/screens/settings/WalletPasswordScreen";
-import { UnlockScreen } from "@/screens/UnlockScreen";
-import { WalletScreen } from "@/screens/wallet/WalletScreen";
+import { AppLockScreen } from "@/screens/AppLockScreen";
+import { MainTabShell } from "@/layouts/MainTabShell";
 import { isOnboarded, useAuthStore } from "@/state/authStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 function AppInner() {
   useApplyTheme();
+  useMobileAppAccess();
   const location = useLocation();
   const init = useAuthStore((s) => s.init);
-  const passcodeSet = useAuthStore((s) => s.passcodeSet);
-  const unlocked = useAuthStore((s) => s.unlocked);
+  const appAccessLocked = useAppAccessLocked();
+  const appAccessBiometricEnabled = useSettingsStore(
+    (s) => s.appAccessBiometricEnabled,
+  );
   const walletInitialized = useWalletStore((s) => s.initialized);
   const hydrateContacts = useContactsStore((s) => s.hydrate);
   const [ready, setReady] = useState(false);
@@ -61,9 +66,14 @@ function AppInner() {
     return <Navigate to="/welcome" replace />;
   }
 
-  // Unlock gate (after onboarding complete, app locked)
-  if (onboarded && passcodeSet && !unlocked && !onOnboardingPath) {
-    return <UnlockScreen />;
+  // App-access lock (mobile + app biometrics enabled)
+  if (
+    onboarded &&
+    isMobileHost() &&
+    appAccessBiometricEnabled &&
+    appAccessLocked
+  ) {
+    return <AppLockScreen />;
   }
 
   return (
@@ -74,19 +84,24 @@ function AppInner() {
       <Route path="/onboarding/import" element={<ImportWalletScreen />} />
 
       <Route element={<RequireWallet />}>
-        <Route path="/contacts" element={<ContactsScreen />} />
-        <Route path="/contacts/:id" element={<ContactDetailScreen />} />
-        <Route path="/wallet" element={<WalletScreen />} />
-        <Route path="/chats" element={<ChatsScreen />} />
-        <Route path="/chats/:roomId" element={<ChatRoomScreen />} />
-        <Route path="/settings" element={<SettingsScreen />} />
-        <Route path="/settings/security" element={<SecuritySettingsScreen />} />
-        <Route
-          path="/settings/wallet-password"
-          element={<WalletPasswordScreen />}
-        />
-        <Route path="/settings/backup" element={<BackupSettingsScreen />} />
-        <Route path="/settings/about" element={<AboutScreen />} />
+        <Route element={<MainTabShell />}>
+          <Route path="/chats" />
+          <Route path="/contacts" />
+          <Route path="/wallet" />
+          <Route path="/settings" />
+          <Route path="/contacts/:id" element={<ContactDetailScreen />} />
+          <Route path="/chats/:roomId" element={<ChatRoomScreen />} />
+          <Route
+            path="/settings/security"
+            element={<SecuritySettingsScreen />}
+          />
+          <Route
+            path="/settings/wallet-password"
+            element={<WalletPasswordScreen />}
+          />
+          <Route path="/settings/backup" element={<BackupSettingsScreen />} />
+          <Route path="/settings/about" element={<AboutScreen />} />
+        </Route>
       </Route>
 
       <Route path="*" element={<Navigate to="/contacts" replace />} />
@@ -111,6 +126,7 @@ export default function App() {
       <HashRouter>
         <AppInner />
       </HashRouter>
+      <AppAccessBlurOverlay />
       <ToastHost />
     </div>
   );

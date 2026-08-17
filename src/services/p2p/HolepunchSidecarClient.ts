@@ -2,6 +2,8 @@
  * Browser client for the Holepunch Hyperswarm sidecar (WebSocket bridge).
  * Opaque sealed frames only — no session keys on the wire to the sidecar.
  */
+import { isAppAccessLocked } from "@/lib/mobile/AppAccessController";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 
 /** Stable bridge error codes from holepunch-sidecar/src/errors.mjs */
 export type SidecarBridgeErrorCode =
@@ -212,6 +214,9 @@ function createPostMessageStyleSidecarBackend(bridge: {
   });
 
   function send(msg: SidecarClientMessage): void {
+    if (isMobileHost() && isAppAccessLocked()) {
+      throw new Error("App access locked");
+    }
     bridge.sendCommand(msg);
   }
 

@@ -4,6 +4,8 @@
  * @see docs/security/p2pchatprotocol.md §9 / §16
  */
 
+import { assertAppAccessUnlocked } from "@/lib/mobile/AppAccessController";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   canSendLiveMessages,
   canSendMessages,
@@ -93,6 +95,7 @@ export function assertCanSendLive(status: RoomLifecycleStatus): void {
 }
 
 export function assertCanSendMessages(status: RoomLifecycleStatus): void {
+  if (isMobileHost()) assertAppAccessUnlocked();
   if (!canComposeMessages(status)) {
     throw new Error(
       composerDisabledReason(status) ??

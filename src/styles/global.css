@@ -175,6 +175,54 @@ button {
   container-name: app;
 }
 
+.main-tab-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.tab-panels {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panels--suspended {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.tab-panel {
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.tab-panel--active {
+  display: flex;
+}
+
+.tab-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+}
+
 .screen {
   flex: 1;
   display: flex;
@@ -443,6 +491,46 @@ button {
 }
 .btn--pill {
   border-radius: var(--radius-pill);
+}
+
+/** Wallet sheet biometric unlock — rem via CSS (not Lucide size attr; WebView-safe). */
+.wallet-bio-unlock-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0 0.5rem;
+}
+.wallet-bio-unlock {
+  width: 4.5rem;
+  height: 4.5rem;
+  min-width: 4.5rem;
+  min-height: 4.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--primary);
+  background: var(--primary-soft);
+  transition:
+    background var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+.wallet-bio-unlock:hover {
+  background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+}
+.wallet-bio-unlock:active {
+  transform: scale(0.96);
+}
+.wallet-bio-unlock:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.wallet-bio-unlock svg {
+  width: 2.25rem !important;
+  height: 2.25rem !important;
 }
 
 /* ===== Cards ===== */

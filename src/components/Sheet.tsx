@@ -4,11 +4,19 @@ import type { ReactNode } from "react";
 type SheetProps = {
   open: boolean;
   title?: ReactNode;
+  /** Rendered immediately under the title row (before sheet body). */
+  belowTitle?: ReactNode;
   onClose: () => void;
   children: ReactNode;
 };
 
-export function Sheet({ open, title, onClose, children }: SheetProps) {
+export function Sheet({
+  open,
+  title,
+  belowTitle,
+  onClose,
+  children,
+}: SheetProps) {
   if (!open) return null;
   return (
     <>
@@ -23,6 +31,7 @@ export function Sheet({ open, title, onClose, children }: SheetProps) {
         </button>
         <div className="sheet__grip" />
         {title && <div className="sheet__title">{title}</div>}
+        {belowTitle}
         {children}
       </div>
     </>

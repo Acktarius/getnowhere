@@ -412,16 +412,6 @@ export type P2PEncryptionService = {
   }): Promise<{ plaintext: Uint8Array; session: P2PSessionConfig } | null>;
 };
 
-// ---------- Local security ----------
-
-export type LocalSecurityService = {
-  setPasscode(passcode: string): Promise<void>;
-  verifyPasscode(passcode: string): Promise<boolean>;
-  changePasscode(oldPasscode: string, newPasscode: string): Promise<boolean>;
-  isPasscodeSet(): Promise<boolean>;
-  // NOTE: conceptual only. Real device keystore is a React Native concern.
-};
-
 // ---------- Seed / key backup ----------
 
 export type WalletSecretsExport = {

@@ -6,7 +6,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   accent: "teal",
   network: "mainnet",
-  biometricEnabled: false,
+  appAccessBiometricEnabled: false,
+  dataUnlockBiometricEnabled: false,
   privacy: {
     localMessageRetention: true,
     hideBalancesByDefault: false,
@@ -18,11 +19,33 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const STORAGE_KEY = "gnh.settings";
 
+function migrateLegacySettings(parsed: Record<string, unknown>): AppSettings {
+  const next = {
+    ...DEFAULT_SETTINGS,
+    ...parsed,
+    privacy: {
+      ...DEFAULT_SETTINGS.privacy,
+      ...(parsed.privacy as Partial<AppSettings["privacy"]> | undefined),
+    },
+  } as AppSettings & {
+    biometricEnabled?: boolean;
+  };
+  if (
+    typeof next.biometricEnabled === "boolean" &&
+    parsed.dataUnlockBiometricEnabled === undefined
+  ) {
+    next.dataUnlockBiometricEnabled = next.biometricEnabled;
+    next.appAccessBiometricEnabled = false;
+  }
+  delete (next as { biometricEnabled?: boolean }).biometricEnabled;
+  return next;
+}
+
 function load(): AppSettings {
   try {
     const raw = getStorage().getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    return migrateLegacySettings(JSON.parse(raw) as Record<string, unknown>);
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -37,7 +60,8 @@ type SettingsStore = AppSettings & {
   setAccent: (a: AccentName) => void;
   setNetwork: (n: AppSettings["network"]) => void;
   setPrivacy: (patch: Partial<AppSettings["privacy"]>) => void;
-  setBiometric: (on: boolean) => void;
+  setAppAccessBiometric: (on: boolean) => void;
+  setDataUnlockBiometric: (on: boolean) => void;
   reset: () => void;
 };
 
@@ -67,9 +91,15 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       persist(next);
       return next;
     }),
-  setBiometric: (biometricEnabled) =>
+  setAppAccessBiometric: (appAccessBiometricEnabled) =>
     set((s) => {
-      const next = { ...s, biometricEnabled };
+      const next = { ...s, appAccessBiometricEnabled };
+      persist(next);
+      return next;
+    }),
+  setDataUnlockBiometric: (dataUnlockBiometricEnabled) =>
+    set((s) => {
+      const next = { ...s, dataUnlockBiometricEnabled };
       persist(next);
       return next;
     }),

@@ -6,13 +6,16 @@ import {
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
 import { useContactsStore } from "@/state/contactsStore";
-import type { WalletState } from "@/types/models";
+import type { Transaction, WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 
 type WalletStore = WalletState & {
   seedPhrase: string | null; // held only in-memory, never persisted to disk
   initializing: boolean;
   error: string | null;
+  /** Cached tx history — survives tab unmounts (mobile WebView perf). */
+  transactions: Transaction[];
+  transactionsLoading: boolean;
   /** Set on encrypted file import; consumed once for room replay. */
   pendingFileImportRoomRestore: boolean;
   /** Returns true once after file import, then clears the flag. */
@@ -59,6 +62,8 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   seedPhrase: null,
   initializing: false,
   error: null,
+  transactions: [],
+  transactionsLoading: false,
   pendingFileImportRoomRestore: false,
 
   takeFileImportRoomRestore() {
@@ -83,6 +88,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
       await useContactsStore.getState().hydrate();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
@@ -194,20 +200,33 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   async refreshBalance() {
     const b = await walletService.getBalance();
+    const prevTotal = get().balanceTotal;
     set({
       balanceTotal: b.total,
       balanceAvailable: b.available,
       balancePending: b.pending,
     });
+    if (b.total !== prevTotal) {
+      void get().refreshTransactions();
+    }
   },
 
   async refreshTransactions() {
-    // transactions handled in wallet view via direct service call
+    if (!get().initialized) return;
+    const hadTx = get().transactions.length > 0;
+    if (!hadTx) set({ transactionsLoading: true });
+    try {
+      const txs = await walletService.getTransactions();
+      set({ transactions: txs, transactionsLoading: false });
+    } catch {
+      set({ transactionsLoading: false });
+    }
   },
 
   async send(input) {
     await walletService.sendTransaction(input);
     await get().refreshBalance();
+    await get().refreshTransactions();
   },
 
   async resync() {
@@ -225,6 +244,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         lastSyncError: undefined,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
       void useContactsStore.getState().refreshInvites();
     } catch (error) {
       // Daemon unreachable or sync error — don't block the wallet flow.
@@ -252,6 +272,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         lastSyncError: undefined,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
       void useContactsStore.getState().refreshInvites();
     } catch (error) {
       set({
@@ -278,6 +299,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         lastSyncError: undefined,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
       void useContactsStore.getState().refreshInvites();
     } catch (error) {
       set({

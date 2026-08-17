@@ -2,10 +2,12 @@
  * WebView injection for window.gnhMobile bridge (before Vite UI loads).
  * @see docs/architecture/mobile-p2p-runtime.md
  */
+import { securityBridgeInjectionJs } from "./securityBridgeInjection";
 
 /** Build injected JS: gnhMobile API with bridge token held in closure (not on window). */
 export function buildMobileBridgeInjection(bridgeToken: string): string {
   const tokenJson = JSON.stringify(bridgeToken);
+  const securityJs = securityBridgeInjectionJs();
   return `(function(){
   if (window.gnhMobile) return;
   var token = ${tokenJson};
@@ -55,6 +57,7 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
       }
     }
   };
+  ${securityJs}
 })();true;`;
 }
 

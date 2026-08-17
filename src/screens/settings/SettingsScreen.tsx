@@ -2,7 +2,6 @@ import {
   ChevronRight,
   Database,
   Download,
-  Fingerprint,
   Gauge,
   Info,
   KeyRound,
@@ -208,8 +207,8 @@ export function SettingsScreen() {
             <LinkRow
               to="/settings/security"
               icon={Shield}
-              title="Passcode & biometrics"
-              sub="Change unlock PIN, biometric placeholder"
+              title="Biometrics & auto-lock"
+              sub="Auto-lock, app access, and data unlock"
             />
             <LinkRow
               to="/settings/wallet-password"
@@ -342,43 +341,6 @@ export function SettingsScreen() {
                   size={16}
                   style={{ color: "var(--text-faint)" }}
                 />
-              }
-            />
-            <hr className="divider divider--flush" />
-            <Row
-              icon={Fingerprint}
-              title="Biometric unlock"
-              sub="Placeholder — available on supported devices"
-              trailing={
-                <button
-                  role="switch"
-                  aria-checked={s.biometricEnabled}
-                  onClick={() => s.setBiometric(!s.biometricEnabled)}
-                  style={{
-                    width: 44,
-                    height: 26,
-                    borderRadius: 13,
-                    background: s.biometricEnabled
-                      ? "var(--primary)"
-                      : "var(--bg-press)",
-                    border: "1px solid var(--border)",
-                    position: "relative",
-                    flexShrink: 0,
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: s.biometricEnabled ? 20 : 2,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      background: "var(--text-inverse)",
-                      transition: "left var(--dur) var(--ease)",
-                    }}
-                  />
-                </button>
               }
             />
           </div>

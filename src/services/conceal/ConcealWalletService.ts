@@ -515,6 +515,14 @@ export async function changeWalletPassword(
   await changeRuntimePassword(currentPassword, nextPassword);
 }
 
+/** Set wallet password on an already-unlocked session (onboarding create path). */
+export async function setSessionWalletPassword(
+  nextPassword: string,
+): Promise<void> {
+  const { setRuntimePassword } = await import("@/services/conceal/sync");
+  await setRuntimePassword(nextPassword);
+}
+
 export async function updateWalletSyncSettings(input: {
   readSpeed?: number;
   checkMinerTx?: boolean;

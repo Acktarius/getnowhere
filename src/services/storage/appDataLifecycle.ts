@@ -2,6 +2,7 @@
  * Wallet / app-data wipe helpers (disconnect → key remove → reload).
  * @see docs/architecture/web-vs-wrapper.md
  */
+import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
 import { getStorage } from "@/services/storage/StorageAdapter";
 
@@ -9,7 +10,6 @@ import { getStorage } from "@/services/storage/StorageAdapter";
 export const WALLET_TIED_KEYS = [
   "wallet",
   "gnh.onboarded",
-  "gnh.appPasscode",
   "gnh.contacts",
   "gnh.invites",
   "gnh.pendingInitiatorKeys",
@@ -45,6 +45,7 @@ function removeAdapterKeys(keys: readonly string[]): void {
  */
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
+  await clearAllMobileBiometricEnrollments();
   removeAdapterKeys(WALLET_TIED_KEYS);
   location.reload();
 }
@@ -55,6 +56,7 @@ export async function deleteWalletData(): Promise<void> {
  */
 export async function resetAppData(): Promise<void> {
   await disconnect();
+  await clearAllMobileBiometricEnrollments();
   removeAdapterKeys(WALLET_TIED_KEYS);
   removeAdapterKeys(APP_PREF_ADAPTER_KEYS);
   for (const key of APP_PREF_LOCAL_SIDE_KEYS) {

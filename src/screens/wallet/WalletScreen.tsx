@@ -17,32 +17,47 @@ import { TopBar } from "@/components/TopBar";
 import { WalletBalanceCard } from "@/components/WalletBalanceCard";
 import { useCopy } from "@/hooks/useCopy";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
-import { walletService } from "@/services";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
-import type { Transaction } from "@/types/models";
 import { formatCCX, shortAddress, timeAgo } from "@/utils/format";
 
 export function WalletScreen() {
-  const wallet = useWalletStore();
+  const initialized = useWalletStore((s) => s.initialized);
+  const address = useWalletStore((s) => s.address);
+  const network = useWalletStore((s) => s.network);
+  const locked = useWalletStore((s) => s.locked);
+  const syncStatus = useWalletStore((s) => s.syncStatus);
+  const lastSyncError = useWalletStore((s) => s.lastSyncError);
+  const balanceTotal = useWalletStore((s) => s.balanceTotal);
+  const balanceAvailable = useWalletStore((s) => s.balanceAvailable);
+  const balancePending = useWalletStore((s) => s.balancePending);
+  const transactions = useWalletStore((s) => s.transactions);
+  const transactionsLoading = useWalletStore((s) => s.transactionsLoading);
+  const refreshTransactions = useWalletStore((s) => s.refreshTransactions);
+  const refreshBalance = useWalletStore((s) => s.refreshBalance);
+  const resync = useWalletStore((s) => s.resync);
+  const lock = useWalletStore((s) => s.lock);
+  const unlock = useWalletStore((s) => s.unlock);
   const navBadges = useNavNotificationBadges();
   const hideBalances = useSettingsStore((s) => s.privacy.hideBalancesByDefault);
-  const [txs, setTxs] = useState<Transaction[]>([]);
-  const [loadingTx, setLoadingTx] = useState(true);
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [copied, copy] = useCopy();
 
   useEffect(() => {
-    if (!wallet.initialized) return;
-    walletService.getTransactions().then((t) => {
-      setTxs(t);
-      setLoadingTx(false);
-    });
-  }, [wallet.initialized, wallet.balanceTotal]);
+    if (!initialized) return;
+    if (transactions.length === 0 && !transactionsLoading) {
+      void refreshTransactions();
+    }
+  }, [
+    initialized,
+    transactions.length,
+    transactionsLoading,
+    refreshTransactions,
+  ]);
 
-  if (!wallet.initialized) {
+  if (!initialized) {
     return (
       <div className="screen">
         <TopBar title="Wallet" bordered />
@@ -65,16 +80,16 @@ export function WalletScreen() {
     >
       <TopBar
         title="Wallet"
-        subtitle={wallet.network}
+        subtitle={network}
         trailing={
           <button
             className="topbar__icon-btn"
-            onClick={() => wallet.resync()}
+            onClick={() => resync()}
             aria-label="Resync"
           >
             <RefreshCw
               size={17}
-              className={wallet.syncStatus === "syncing" ? "spin" : ""}
+              className={syncStatus === "syncing" ? "spin" : ""}
             />
           </button>
         }
@@ -91,7 +106,7 @@ export function WalletScreen() {
         }}
       >
         <div className="stack stack--gap-4" style={{ flexShrink: 0 }}>
-          {wallet.syncStatus === "error" && wallet.lastSyncError && (
+          {syncStatus === "error" && lastSyncError && (
             <div
               className="card"
               style={{
@@ -130,13 +145,13 @@ export function WalletScreen() {
                       wordBreak: "break-word",
                     }}
                   >
-                    {wallet.lastSyncError}
+                    {lastSyncError}
                   </div>
                 </div>
                 <button
                   className="btn btn--sm btn--ghost"
                   style={{ flexShrink: 0 }}
-                  onClick={() => wallet.resync()}
+                  onClick={() => resync()}
                 >
                   Retry
                 </button>
@@ -145,10 +160,16 @@ export function WalletScreen() {
           )}
           <div className="fade-in-up">
             <WalletBalanceCard
-              wallet={wallet}
+              wallet={{
+                balanceTotal,
+                balanceAvailable,
+                balancePending,
+                syncStatus,
+                locked,
+              }}
               hideByDefault={hideBalances}
-              onResync={() => wallet.resync()}
-              onToggleLock={() => wallet.lock()}
+              onResync={() => resync()}
+              onToggleLock={() => lock()}
             />
           </div>
 
@@ -162,7 +183,7 @@ export function WalletScreen() {
             <button
               className="btn btn--primary grow"
               onClick={() => setSendOpen(true)}
-              disabled={wallet.locked}
+              disabled={locked}
             >
               <ArrowUpFromLine size={16} /> Send
             </button>
@@ -177,7 +198,7 @@ export function WalletScreen() {
               </div>
               <button
                 className="btn btn--sm btn--ghost"
-                onClick={() => copy(wallet.address)}
+                onClick={() => copy(address)}
               >
                 {copied ? "Copied" : "Copy"}
               </button>
@@ -191,7 +212,7 @@ export function WalletScreen() {
                 color: "var(--text-muted)",
               }}
             >
-              {wallet.address}
+              {address}
             </div>
           </div>
 
@@ -210,7 +231,7 @@ export function WalletScreen() {
             paddingBottom: 32,
           }}
         >
-          {loadingTx ? (
+          {transactionsLoading ? (
             <div className="card card--flush">
               {[0, 1, 2].map((i) => (
                 <div className="row" key={i}>
@@ -229,14 +250,14 @@ export function WalletScreen() {
                 </div>
               ))}
             </div>
-          ) : txs.length === 0 ? (
+          ) : transactions.length === 0 ? (
             <EmptyState
               title="No transactions yet"
               body="Incoming and outgoing CCX transfers will appear here."
             />
           ) : (
             <div className="card card--flush stagger">
-              {txs.map((tx) => {
+              {transactions.map((tx) => {
                 const open = expandedTxId === tx.id;
                 return (
                   <div key={tx.id} className="tx-row">
@@ -379,24 +400,23 @@ export function WalletScreen() {
         title="Send CCX"
         onClose={() => setSendOpen(false)}
       >
-        {wallet.locked ? (
+        {locked ? (
           <div className="card card--pad-md center stack stack--gap-2">
             <Lock size={18} style={{ color: "var(--text-faint)" }} />
             <div className="muted">Unlock the wallet to send.</div>
             <button
               className="btn btn--sm btn--primary"
-              onClick={() => wallet.unlock("")}
+              onClick={() => unlock("")}
             >
               Unlock
             </button>
           </div>
         ) : (
           <SendSheet
-            wallet={wallet}
+            wallet={{ balanceAvailable, address }}
             onSent={async () => {
-              await wallet.refreshBalance();
-              const t = await walletService.getTransactions();
-              setTxs(t);
+              await refreshBalance();
+              await refreshTransactions();
             }}
             onClose={() => setSendOpen(false)}
           />
@@ -408,7 +428,7 @@ export function WalletScreen() {
         title="Receive CCX"
         onClose={() => setReceiveOpen(false)}
       >
-        <ReceiveSheet address={wallet.address} />
+        <ReceiveSheet address={address} />
       </Sheet>
 
       <BottomNav {...navBadges} />

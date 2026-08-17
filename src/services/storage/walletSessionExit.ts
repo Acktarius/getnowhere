@@ -58,6 +58,8 @@ export async function runWalletSessionExit(
         seedPhrase: null,
         syncStatus: "idle",
         syncProgress: 0,
+        transactions: [],
+        transactionsLoading: false,
       });
       useAuthStore.getState().lock();
     },

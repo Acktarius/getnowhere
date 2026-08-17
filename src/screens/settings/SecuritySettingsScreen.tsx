@@ -1,31 +1,111 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { SecureInput } from "@/components/SecureInput";
+import { Sheet } from "@/components/Sheet";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { localSecurityService } from "@/services";
+import { clearDataUnlockBiometricEnrollment } from "@/lib/auth/biometric-lifecycle";
+import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
+import {
+  enrollUnlockCredential,
+  isBiometricUnlockAvailable,
+  PasskeyError,
+} from "@/lib/auth/platform-unlock";
+import {
+  clearAppAccessBiometric,
+  enrollAppAccessBiometric,
+  isAppAccessBiometricAvailable,
+} from "@/lib/mobile/app-access-biometric";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { getRuntime } from "@/services/conceal/sync";
 import { useSettingsStore } from "@/state/settingsStore";
+import { useWalletStore } from "@/state/walletStore";
 
 export function SecuritySettingsScreen() {
   const s = useSettingsStore();
-  const [oldCode, setOldCode] = useState("");
-  const [newCode, setNewCode] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const address = useWalletStore((st) => st.address);
+  const [dataUnlockAvailable, setDataUnlockAvailable] = useState(false);
+  const [appAccessAvailable, setAppAccessAvailable] = useState(false);
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [walletPassword, setWalletPassword] = useState("");
+  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [enrollBusy, setEnrollBusy] = useState(false);
 
-  async function handleChange() {
-    setError(null);
-    setMsg(null);
-    const ok = await localSecurityService.verifyPasscode(oldCode);
-    if (!ok) return setError("Current passcode is incorrect.");
-    if (newCode.length < 6)
-      return setError("New passcode must be at least 6 digits.");
-    if (newCode !== confirm) return setError("New passcodes do not match.");
-    await localSecurityService.changePasscode(oldCode, newCode);
-    setMsg("Passcode updated.");
-    setOldCode("");
-    setNewCode("");
-    setConfirm("");
+  useEffect(() => {
+    if (isMobileHost()) {
+      void initMobileBiometricStorage();
+    }
+    void isBiometricUnlockAvailable().then(setDataUnlockAvailable);
+    void isAppAccessBiometricAvailable().then(setAppAccessAvailable);
+  }, []);
+
+  async function verifyWalletPassword(password: string): Promise<boolean> {
+    const rt = getRuntime();
+    if (rt) return rt.password === password;
+    return false;
+  }
+
+  async function handleAppAccessToggle(on: boolean) {
+    setEnrollError(null);
+    if (!on) {
+      await clearAppAccessBiometric();
+      s.setAppAccessBiometric(false);
+      return;
+    }
+    if (!appAccessAvailable) {
+      setEnrollError("Biometric app unlock is not available on this device.");
+      return;
+    }
+    setEnrollBusy(true);
+    try {
+      await enrollAppAccessBiometric();
+      s.setAppAccessBiometric(true);
+    } catch (e) {
+      setEnrollError(
+        e instanceof PasskeyError ? e.message : (e as Error).message,
+      );
+    } finally {
+      setEnrollBusy(false);
+    }
+  }
+
+  async function handleDataUnlockToggle(on: boolean) {
+    setEnrollError(null);
+    if (!on) {
+      await clearDataUnlockBiometricEnrollment();
+      s.setDataUnlockBiometric(false);
+      return;
+    }
+    if (!dataUnlockAvailable) {
+      setEnrollError("Biometric data unlock is not available on this device.");
+      return;
+    }
+    setWalletPassword("");
+    setEnrollOpen(true);
+  }
+
+  async function handleEnrollDataUnlock() {
+    setEnrollError(null);
+    if (!(await verifyWalletPassword(walletPassword))) {
+      setEnrollError("Wallet password is incorrect.");
+      return;
+    }
+    setEnrollBusy(true);
+    try {
+      await enrollUnlockCredential(
+        "default",
+        walletPassword,
+        address || undefined,
+      );
+      s.setDataUnlockBiometric(true);
+      setEnrollOpen(false);
+      setWalletPassword("");
+    } catch (e) {
+      setEnrollError(
+        e instanceof PasskeyError ? e.message : (e as Error).message,
+      );
+    } finally {
+      setEnrollBusy(false);
+    }
   }
 
   return (
@@ -33,7 +113,7 @@ export function SecuritySettingsScreen() {
       <TopBar
         title="Security"
         leading={<BackLink to="/settings" />}
-        subtitle="Passcode & biometrics"
+        subtitle="Auto-lock & biometrics"
         bordered
       />
       <div
@@ -54,47 +134,9 @@ export function SecuritySettingsScreen() {
             ))}
           </div>
           <p className="field__hint" style={{ marginTop: 10 }}>
-            How long the app can stay idle before requiring the passcode again.
+            When app biometrics is on: lock after this long idle in the app, or
+            after the same duration in background before returning.
           </p>
-        </div>
-
-        <div className="card">
-          <div className="card__title">Change passcode</div>
-          <div className="stack stack--gap-3">
-            <SecureInput
-              label="Current passcode"
-              value={oldCode}
-              onChange={setOldCode}
-              inputMode="numeric"
-              revealable
-            />
-            <SecureInput
-              label="New passcode"
-              value={newCode}
-              onChange={setNewCode}
-              inputMode="numeric"
-              revealable
-            />
-            <SecureInput
-              label="Confirm new passcode"
-              value={confirm}
-              onChange={setConfirm}
-              inputMode="numeric"
-              revealable
-            />
-            {error && <div className="field__error">{error}</div>}
-            {msg && (
-              <div className="success-text" style={{ fontSize: 13 }}>
-                {msg}
-              </div>
-            )}
-            <button
-              className="btn btn--block btn--primary"
-              onClick={handleChange}
-            >
-              Update passcode
-            </button>
-          </div>
         </div>
 
         <div className="card card--flush">
@@ -102,16 +144,77 @@ export function SecuritySettingsScreen() {
             className="card__title"
             style={{ padding: "var(--space-4) var(--space-4) 0" }}
           >
-            Biometric
+            Biometrics
           </div>
           <PrivacySettingItem
-            title="Enable biometric unlock"
-            description="Placeholder — on supported devices, Face ID or fingerprint can unlock the app."
-            on={s.biometricEnabled}
-            onToggle={(v) => s.setBiometric(v)}
+            title="Unlock app with biometrics"
+            description={
+              isMobileHost()
+                ? "Use Face ID or fingerprint for app access after background or idle lock."
+                : "Available on mobile only."
+            }
+            on={appAccessAvailable ? s.appAccessBiometricEnabled : false}
+            onToggle={
+              appAccessAvailable
+                ? (v) => void handleAppAccessToggle(v)
+                : undefined
+            }
           />
+          <PrivacySettingItem
+            title="Unlock data with biometrics"
+            description={
+              dataUnlockAvailable
+                ? "Open your wallet with biometrics instead of typing the encryption password."
+                : "Requires a mobile device with biometric hardware."
+            }
+            on={dataUnlockAvailable ? s.dataUnlockBiometricEnabled : false}
+            onToggle={
+              dataUnlockAvailable
+                ? (v) => void handleDataUnlockToggle(v)
+                : undefined
+            }
+          />
+          {enrollError && !enrollOpen && (
+            <div className="field__error" style={{ padding: "0 16px 12px" }}>
+              {enrollError}
+            </div>
+          )}
         </div>
       </div>
+
+      <Sheet
+        open={enrollOpen}
+        title="Enable data unlock"
+        onClose={() => {
+          if (enrollBusy) return;
+          setEnrollOpen(false);
+          setWalletPassword("");
+          setEnrollError(null);
+        }}
+      >
+        <div className="stack stack--gap-3">
+          <p className="muted" style={{ fontSize: 13.5 }}>
+            Confirm your wallet encryption password to register this device for
+            biometric data unlock.
+          </p>
+          <SecureInput
+            label="Wallet password"
+            value={walletPassword}
+            onChange={setWalletPassword}
+            revealable
+            autoFocus
+          />
+          {enrollError && <div className="field__error">{enrollError}</div>}
+          <button
+            type="button"
+            className="btn btn--block btn--primary"
+            disabled={enrollBusy || walletPassword.length < 1}
+            onClick={() => void handleEnrollDataUnlock()}
+          >
+            {enrollBusy ? "Enrolling…" : "Enable biometric unlock"}
+          </button>
+        </div>
+      </Sheet>
     </div>
   );
 }

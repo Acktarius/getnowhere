@@ -16,6 +16,11 @@ console.log(`  version:              ${appVersion.version}`);
 console.log(`  buildVersionAndroid:  ${appVersion.buildVersionAndroid}`);
 console.log("");
 
+const repoRoot = join(root, "..");
+
+console.log("Syncing Vite UI bundle (npm run mobile:sync-ui)…");
+execSync("npm run mobile:sync-ui", { cwd: repoRoot, stdio: "inherit" });
+
 console.log("Preparing Android assets…");
 execSync("node scripts/prepare-android-assets.mjs", { cwd: root, stdio: "inherit" });
 

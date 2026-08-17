@@ -5,11 +5,22 @@
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
+import type { AppStateStatus } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  Platform,
+  StyleSheet,
+  View,
+} from "react-native";
 import type { WebViewMessageEvent } from "react-native-webview";
 import { WebView } from "react-native-webview";
 import { createBridgeToken } from "./src/bridgeToken";
 import type { GnhMobileBridge } from "./src/GnhMobileBridge";
+import {
+  buildSecurityResolveScript,
+  handleSecurityWebViewMessage,
+} from "./src/handleSecurityWebViewMessage";
 import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
@@ -18,6 +29,7 @@ import {
   buildSaveTextFileResolveScript,
   handleSaveTextFileWebViewMessage,
 } from "./src/saveTextFileFromWebView";
+import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
 import {
   ANDROID_UI_ASSET_PREFIX,
   isAllowedWebViewNavigationUrl,
@@ -28,6 +40,13 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const ANDROID_UI_URI = `${ANDROID_UI_ASSET_PREFIX}index.html`;
 
+/** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
+const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
+
+type PendingForeground = {
+  backgroundElapsedMs?: number;
+};
+
 function resolveBridgeToken(): string | null {
   try {
     return createBridgeToken();
@@ -37,11 +56,24 @@ function resolveBridgeToken(): string | null {
   }
 }
 
+function parseLifecycleHostMessage(raw: string): { type?: string } | null {
+  try {
+    const msg = JSON.parse(raw) as { channel?: string; type?: string };
+    if (msg.channel !== "gnh-lifecycle") return null;
+    return msg;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const bridgeRef = useRef<GnhMobileBridge | null>(null);
   const bridgeStartingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
+  const backgroundAtMsRef = useRef<number | null>(null);
+  const pendingForegroundRef = useRef<PendingForeground | null>(null);
+  const flushTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
 
   const injectedBeforeLoad = useMemo(
@@ -49,9 +81,72 @@ export default function App() {
     [bridgeToken],
   );
 
+  const injectLifecycle = useCallback(
+    (type: string, backgroundElapsedMs?: number) => {
+      const webView = webViewRef.current;
+      if (!webView) {
+        console.warn("[gnh-lifecycle] inject skipped — no WebView", {
+          type,
+          backgroundElapsedMs,
+        });
+        return false;
+      }
+      console.warn("[gnh-lifecycle] inject", { type, backgroundElapsedMs });
+      webView.injectJavaScript(
+        buildLifecycleDispatchScript(type, backgroundElapsedMs),
+      );
+      return true;
+    },
+    [],
+  );
+
+  const clearForegroundFlushTimeouts = useCallback(() => {
+    for (const id of flushTimeoutsRef.current) clearTimeout(id);
+    flushTimeoutsRef.current = [];
+  }, []);
+
+  const flushPendingForeground = useCallback(() => {
+    const pending = pendingForegroundRef.current;
+    if (!pending) return;
+    injectLifecycle("foreground", pending.backgroundElapsedMs);
+  }, [injectLifecycle]);
+
+  const schedulePendingForegroundFlush = useCallback(() => {
+    clearForegroundFlushTimeouts();
+    for (const delayMs of FOREGROUND_INJECT_RETRY_MS) {
+      const id = setTimeout(() => flushPendingForeground(), delayMs);
+      flushTimeoutsRef.current.push(id);
+    }
+  }, [clearForegroundFlushTimeouts, flushPendingForeground]);
+
+  const noteBackground = useCallback(() => {
+    if (backgroundAtMsRef.current == null) {
+      backgroundAtMsRef.current = Date.now();
+    }
+    console.warn("[gnh-lifecycle] AppState background", {
+      backgroundAtMs: backgroundAtMsRef.current,
+    });
+    injectLifecycle("background");
+  }, [injectLifecycle]);
+
+  const noteForeground = useCallback(() => {
+    const elapsedMs =
+      backgroundAtMsRef.current != null
+        ? Date.now() - backgroundAtMsRef.current
+        : undefined;
+    backgroundAtMsRef.current = null;
+    pendingForegroundRef.current = { backgroundElapsedMs: elapsedMs };
+    console.warn("[gnh-lifecycle] AppState foreground", {
+      backgroundElapsedMs: elapsedMs,
+      hasWebView: !!webViewRef.current,
+    });
+    schedulePendingForegroundFlush();
+  }, [schedulePendingForegroundFlush]);
+
   const onWebViewReady = useCallback(() => {
     setLoading(false);
     void SplashScreen.hideAsync();
+    flushPendingForeground();
 
     if (
       Platform.OS !== "android" ||
@@ -79,32 +174,73 @@ export default function App() {
         console.error("[gnh-mobile] Bare worklet start failed", err);
       }
     })();
-  }, [bridgeToken]);
+  }, [bridgeToken, flushPendingForeground]);
 
   useEffect(() => {
     if (Platform.OS !== "android") {
       void SplashScreen.hideAsync();
     }
     return () => {
+      clearForegroundFlushTimeouts();
       bridgeRef.current?.destroy();
       bridgeRef.current = null;
       bridgeStartingRef.current = false;
     };
-  }, []);
+  }, [clearForegroundFlushTimeouts]);
 
-  const onWebViewMessage = useCallback((event: WebViewMessageEvent) => {
-    const raw = event.nativeEvent.data;
-    if (
-      handleSaveTextFileWebViewMessage(raw, (result) => {
-        webViewRef.current?.injectJavaScript(
-          buildSaveTextFileResolveScript(result),
-        );
-      })
-    ) {
-      return;
-    }
-    bridgeRef.current?.handleWebViewMessage(raw);
-  }, []);
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const dispatch = (state: AppStateStatus) => {
+      console.warn("[gnh-lifecycle] AppState change", state);
+      if (state === "background" || state === "inactive") {
+        noteBackground();
+        return;
+      }
+      if (state === "active") {
+        noteForeground();
+      }
+    };
+    const sub = AppState.addEventListener("change", dispatch);
+    return () => sub.remove();
+  }, [noteBackground, noteForeground]);
+
+  const onWebViewMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      const raw = event.nativeEvent.data;
+      const lifecycleMsg = parseLifecycleHostMessage(raw);
+      if (lifecycleMsg?.type === "ui-ready") {
+        console.warn("[gnh-lifecycle] WebView ui-ready");
+        flushPendingForeground();
+        return;
+      }
+      if (lifecycleMsg?.type === "lifecycle-delivered") {
+        console.warn("[gnh-lifecycle] WebView delivered", lifecycleMsg);
+        pendingForegroundRef.current = null;
+        clearForegroundFlushTimeouts();
+        return;
+      }
+      if (
+        handleSaveTextFileWebViewMessage(raw, (result) => {
+          webViewRef.current?.injectJavaScript(
+            buildSaveTextFileResolveScript(result),
+          );
+        })
+      ) {
+        return;
+      }
+      if (
+        handleSecurityWebViewMessage(raw, (response) => {
+          webViewRef.current?.injectJavaScript(
+            buildSecurityResolveScript(response),
+          );
+        })
+      ) {
+        return;
+      }
+      bridgeRef.current?.handleWebViewMessage(raw);
+    },
+    [clearForegroundFlushTimeouts, flushPendingForeground],
+  );
 
   if (Platform.OS !== "android") {
     return (

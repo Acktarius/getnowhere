@@ -30,6 +30,7 @@ export {
   resetAndRescanFromCreationHeight,
   resyncFromCreationHeight,
   type SdkRuntime,
+  setRuntimePassword,
   sync,
   syncRuntime,
   unlock,
