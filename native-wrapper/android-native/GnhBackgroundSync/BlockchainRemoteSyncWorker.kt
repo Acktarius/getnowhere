@@ -10,15 +10,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 class BlockchainRemoteSyncWorker(
     appContext: Context,
     params: WorkerParameters,
-    private val syncService: RemoteNodeSyncService = WebViewRemoteNodeSyncService(),
 ) : CoroutineWorker(appContext, params) {
 
-    override suspend fun doWork(): ListenableWorker.Result {
-        val timeoutMs = RemoteNodeBackgroundSyncConfig.DEFAULT_TIMEOUT_MS
-        val outcome =
-            withTimeoutOrNull(timeoutMs + 2_000L) {
-                syncService.syncFromRemoteNode(timeoutMs)
-            } ?: RemoteNodeSyncOutcome.RETRYABLE
-        return RemoteNodeSyncResultMapper.toWorkResult(outcome)
-    }
+    override suspend fun doWork(): ListenableWorker.Result =
+        executeRemoteNodeBackgroundSync(WebViewRemoteNodeSyncService())
+}
+
+internal suspend fun executeRemoteNodeBackgroundSync(
+    syncService: RemoteNodeSyncService,
+): ListenableWorker.Result {
+    val timeoutMs = RemoteNodeBackgroundSyncConfig.DEFAULT_TIMEOUT_MS
+    val outcome =
+        withTimeoutOrNull(timeoutMs + 2_000L) {
+            syncService.syncFromRemoteNode(timeoutMs)
+        } ?: RemoteNodeSyncOutcome.RETRYABLE
+    return RemoteNodeSyncResultMapper.toWorkResult(outcome)
 }
