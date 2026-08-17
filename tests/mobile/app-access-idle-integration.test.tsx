@@ -1,9 +1,9 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PasskeyError } from "@/lib/auth/passkey-error";
-import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
+import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
+import { PasskeyError } from "@/lib/auth/passkey-error";
 import { _resetAppAccessControllerForTests } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { AppLockScreen } from "@/screens/AppLockScreen";

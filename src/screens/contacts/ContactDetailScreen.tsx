@@ -21,6 +21,7 @@ import { PaymentIdField } from "@/components/PaymentIdField";
 import { PresetStepper } from "@/components/PresetStepper";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
+import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { Sheet } from "@/components/Sheet";
 import {
@@ -388,6 +389,8 @@ export function ContactDetailScreen() {
         </div>
 
         <RelationshipStateCard contact={contact} />
+
+        <ContactCategoryTagCard contact={contact} />
 
         {contactRooms.length > 0 && (
           <div className="stack stack--gap-2 fade-in-up">

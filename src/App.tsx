@@ -9,13 +9,15 @@ import {
 } from "react-router-dom";
 import { AppAccessBlurOverlay } from "@/components/AppAccessBlurOverlay";
 import { ToastHost } from "@/components/ToastHost";
-import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
+import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
+import { MainTabShell } from "@/layouts/MainTabShell";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { AppLockScreen } from "@/screens/AppLockScreen";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
 import { CreateWalletScreen } from "@/screens/onboarding/CreateWalletScreen";
@@ -26,11 +28,9 @@ import { AboutScreen } from "@/screens/settings/AboutScreen";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 import { SecuritySettingsScreen } from "@/screens/settings/SecuritySettingsScreen";
 import { WalletPasswordScreen } from "@/screens/settings/WalletPasswordScreen";
-import { AppLockScreen } from "@/screens/AppLockScreen";
-import { MainTabShell } from "@/layouts/MainTabShell";
 import { isOnboarded, useAuthStore } from "@/state/authStore";
-import { useSettingsStore } from "@/state/settingsStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 function AppInner() {

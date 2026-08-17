@@ -3,6 +3,7 @@
  * @see docs/features/app-access-and-data-unlock.md
  */
 import { useEffect, useRef } from "react";
+import type { AppAccessLockReason } from "@/lib/mobile/AppAccessController";
 import {
   checkIdleDeadlineIfDue,
   getAppAccessLockGeneration,
@@ -14,7 +15,6 @@ import {
   setAutoLockTimeoutSec,
   setOnAppAccessLock,
 } from "@/lib/mobile/AppAccessController";
-import type { AppAccessLockReason } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { useAuthStore } from "@/state/authStore";
 import { useSettingsStore } from "@/state/settingsStore";

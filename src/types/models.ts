@@ -2,6 +2,10 @@
 // Wallet identity = relationship anchor.
 // Contacts are bound by CCX address + exchanged payment IDs.
 
+import type { ContactCategoryTag } from "@/lib/contactCategoryTags";
+
+export type { ContactCategoryTag };
+
 export type RelationshipStatus =
   | "pending"
   | "eligible"
@@ -57,6 +61,8 @@ export type Contact = {
   // so they can identify you on receive.
   paymentIdTo?: string;
   notes?: string;
+  /** Optional user categories (Family, Friend, Love, Colleague, …). */
+  categoryTags?: ContactCategoryTag[];
   relationshipStatus: RelationshipStatus;
   inviteStatus: InviteStatus;
   chatStatus: ChatStatus;

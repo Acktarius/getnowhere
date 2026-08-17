@@ -2,17 +2,17 @@
  * Keeps primary tab screens mounted after first visit (lazy keep-alive).
  * Avoids full React remount on bottom-nav switches — mobile WebView perf.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useLocation, useOutlet } from "react-router-dom";
-import { ChatsScreen } from "@/screens/chats/ChatsScreen";
-import { ContactsScreen } from "@/screens/contacts/ContactsScreen";
-import { SettingsScreen } from "@/screens/settings/SettingsScreen";
-import { WalletScreen } from "@/screens/wallet/WalletScreen";
 import {
   activeTabFromPath,
   isTabDetailPath,
   type MainTabId,
 } from "@/layouts/mainTabPaths";
+import { ChatsScreen } from "@/screens/chats/ChatsScreen";
+import { ContactsScreen } from "@/screens/contacts/ContactsScreen";
+import { SettingsScreen } from "@/screens/settings/SettingsScreen";
+import { WalletScreen } from "@/screens/wallet/WalletScreen";
 
 function TabPanel({
   active,
