@@ -231,6 +231,8 @@ export type PrivacySettings = {
 export type AppSettings = {
   theme: AppTheme;
   accent: AccentName;
+  /** Contextual hints on Exit and similar actions. */
+  showTips: boolean;
   privacy: PrivacySettings;
   network: "mainnet" | "testnet" | "devnet";
   appAccessBiometricEnabled: boolean;

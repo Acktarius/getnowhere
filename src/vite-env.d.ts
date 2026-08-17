@@ -100,6 +100,7 @@ interface GnhMobileBridge {
   };
   onLifecycle?(handler: (evt: { type: string }) => void): () => void;
   _dispatchLifecycleEvent?(evt: { type: string }): void;
+  _runBackgroundRemoteSync?(requestId: string): void;
 }
 
 interface Window {

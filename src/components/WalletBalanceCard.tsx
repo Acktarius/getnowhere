@@ -1,5 +1,6 @@
 import { Eye, EyeOff, Lock, RefreshCw, Unlock } from "lucide-react";
 import { useState } from "react";
+import { useWalletSyncHeights } from "@/hooks/useWalletSyncHeights";
 import type { WalletState } from "@/types/models";
 import { formatCCX } from "@/utils/format";
 
@@ -25,14 +26,15 @@ export function WalletBalanceCard({
 }: Props) {
   const [hidden, setHidden] = useState(Boolean(hideByDefault));
   const blur = hidden ? "privacy-blur" : "";
-  const syncLabel =
-    wallet.syncStatus === "syncing"
-      ? "syncing…"
-      : wallet.syncStatus === "synced"
-        ? "synced"
-        : wallet.syncStatus === "error"
-          ? "sync error"
-          : "idle";
+  const syncing = wallet.syncStatus === "syncing";
+  const syncHeights = useWalletSyncHeights(syncing);
+  const syncLabel = syncing
+    ? "syncing…"
+    : wallet.syncStatus === "synced"
+      ? "synced"
+      : wallet.syncStatus === "error"
+        ? "sync error"
+        : "idle";
 
   return (
     <div className="card card--pad-lg">
@@ -116,6 +118,21 @@ export function WalletBalanceCard({
           >
             {syncLabel}
           </div>
+          {syncing && syncHeights ? (
+            <div
+              className="mono"
+              style={{
+                fontSize: 11,
+                marginTop: 3,
+                color: "var(--text-faint)",
+                letterSpacing: "-0.01em",
+              }}
+              title="Wallet scan height / chain tip"
+            >
+              {syncHeights.scannedHeight.toLocaleString()} /{" "}
+              {syncHeights.networkHeight.toLocaleString()}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

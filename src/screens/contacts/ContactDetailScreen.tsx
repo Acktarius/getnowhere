@@ -15,13 +15,13 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
 import { EmptyState } from "@/components/EmptyState";
 import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { PresetStepper } from "@/components/PresetStepper";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
-import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { Sheet } from "@/components/Sheet";
 import {

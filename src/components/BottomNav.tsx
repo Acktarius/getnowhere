@@ -9,7 +9,9 @@ import {
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { EXIT_SESSION_TIP } from "@/lib/uxTips";
 import { runWalletSessionExit } from "@/services/storage/walletSessionExit";
+import { useSettingsStore } from "@/state/settingsStore";
 
 type Item = {
   to: string;
@@ -26,6 +28,7 @@ export function BottomNav({
   contactsUnread?: boolean;
 }) {
   const navigate = useNavigate();
+  const showTips = useSettingsStore((s) => s.showTips);
   const [exitOpen, setExitOpen] = useState(false);
   const items: Item[] = [
     { to: "/chats", label: "Chats", icon: MessageSquare, badge: chatsUnread },
@@ -65,7 +68,7 @@ export function BottomNav({
         open={exitOpen}
         onClose={() => setExitOpen(false)}
         title="Confirm disconnect"
-        body="Your wallet stays on this device. Keys leave memory until you reopen from welcome. If Local message retention is on, chat text is saved encrypted with the wallet."
+        body={showTips ? EXIT_SESSION_TIP : undefined}
         confirmLabel="Confirm"
         busyLabel="Disconnecting…"
         onConfirm={async () => {

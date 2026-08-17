@@ -40,6 +40,7 @@
     },
     "plugins": [
       "./plugins/withGnhSecurity.js",
+      "./plugins/withGnhBackgroundSync.js",
       [
         "expo-build-properties",
         {

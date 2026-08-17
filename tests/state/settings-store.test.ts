@@ -17,5 +17,14 @@ describe("settingsStore biometric migration", () => {
     expect(s.dataUnlockBiometricEnabled).toBe(true);
     expect(s.appAccessBiometricEnabled).toBe(false);
     expect(s.theme).toBe("light");
+    expect(s.showTips).toBe(true);
+  });
+
+  it("persists showTips preference", async () => {
+    const { useSettingsStore } = await import("@/state/settingsStore");
+    useSettingsStore.getState().setShowTips(false);
+    expect(
+      JSON.parse(getStorage().getItem("gnh.settings") ?? "{}").showTips,
+    ).toBe(false);
   });
 });

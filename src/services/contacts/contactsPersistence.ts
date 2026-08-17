@@ -4,13 +4,13 @@
  * 2. Wallet blob `addressBook` — rides encrypted wallet .json export/import.
  */
 import type { RawAddressEntry, RawWalletV1 } from "conceal-wallet-sdk";
+import { parseContactCategoryTags } from "@/lib/contactCategoryTags";
 import {
   getRuntime,
   persistRuntime,
   requireRuntime,
 } from "@/services/conceal/sync/runtime";
 import { getStorage } from "@/services/storage/StorageAdapter";
-import { parseContactCategoryTags } from "@/lib/contactCategoryTags";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
 

@@ -5,6 +5,7 @@ import type { AccentName, AppSettings, AppTheme } from "@/types/models";
 const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   accent: "teal",
+  showTips: true,
   network: "mainnet",
   appAccessBiometricEnabled: false,
   dataUnlockBiometricEnabled: false,
@@ -58,6 +59,7 @@ function persist(s: AppSettings) {
 type SettingsStore = AppSettings & {
   setTheme: (t: AppTheme) => void;
   setAccent: (a: AccentName) => void;
+  setShowTips: (on: boolean) => void;
   setNetwork: (n: AppSettings["network"]) => void;
   setPrivacy: (patch: Partial<AppSettings["privacy"]>) => void;
   setAppAccessBiometric: (on: boolean) => void;
@@ -76,6 +78,12 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   setAccent: (accent) =>
     set((s) => {
       const next = { ...s, accent };
+      persist(next);
+      return next;
+    }),
+  setShowTips: (showTips) =>
+    set((s) => {
+      const next = { ...s, showTips };
       persist(next);
       return next;
     }),

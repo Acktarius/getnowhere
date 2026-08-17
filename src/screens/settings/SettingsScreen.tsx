@@ -160,9 +160,7 @@ export function SettingsScreen() {
         className="screen-scroll stack stack--gap-4"
         style={{ padding: "16px 0 32px" }}
       >
-        <div className="section">
-          <ThemeSelector />
-        </div>
+        <ThemeSelector />
 
         <div className="section">
           <div className="section__head">

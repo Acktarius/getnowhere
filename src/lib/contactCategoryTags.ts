@@ -38,7 +38,9 @@ const LEGACY_CONTACT_CATEGORY_TAGS: Record<string, ContactCategoryTag> = {
   work: "colleague",
 };
 
-function normalizeContactCategoryTag(value: unknown): ContactCategoryTag | null {
+function normalizeContactCategoryTag(
+  value: unknown,
+): ContactCategoryTag | null {
   if (typeof value !== "string") return null;
   const mapped = LEGACY_CONTACT_CATEGORY_TAGS[value] ?? value;
   return isContactCategoryTag(mapped) ? mapped : null;

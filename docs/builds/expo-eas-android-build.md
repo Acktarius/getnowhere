@@ -350,6 +350,25 @@ adb install -r native-wrapper/builds/GetNowHere-v0.2.4-b1-java17-signed-test.apk
 Production / F-Droid: sign the unsigned APK with your release key via
 `apksigner` (same as conceal-wallet-cordova after `build-fdroid-reference.sh`).
 
+### TODO: de-Google for F-Droid
+
+The Expo/RN prebuild tree may pull **Google Maven** repos and transitive
+**Play Services / GMS** artifacts. Background sync itself uses **AndroidX
+WorkManager** only (`androidx.work:work-runtime-ktx`) — no Firebase, FCM, or
+proprietary sync SDKs — but the **whole** `native-wrapper/android/` graph still
+needs an F-Droid audit before submission.
+
+Planned: a **Python post-prebuild script** (same idea as
+[acktarius/conceal-2fa](https://github.com/acktarius/conceal-2fa)) to:
+
+- strip or rewrite `google()` / GMS Gradle deps where replaceable;
+- verify release `:app:dependencies` has no unwanted `com.google.android.gms` lines;
+- keep reproducible, unsigned release APK output compatible with F-Droid build
+  recipes.
+
+Until that script lands, treat `./gradlew :app:dependencies --configuration releaseRuntimeClasspath`
+as the manual audit step after `expo prebuild`.
+
 ## EAS cloud builds (later)
 
 From `native-wrapper/` after `eas build:configure`:

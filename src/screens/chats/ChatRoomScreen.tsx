@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
+import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   getLastSidecarDetail,
   getMessagesForRoom,
@@ -176,6 +178,22 @@ export function ChatRoomScreen() {
   } | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const composerBarRef = useRef<HTMLDivElement>(null);
+  const mobileHost = isMobileHost();
+  const keyboardInset = useVisualViewportBottomInset(mobileHost);
+  const [composerBarHeight, setComposerBarHeight] = useState(64);
+
+  useEffect(() => {
+    const el = composerBarRef.current;
+    if (!el || !mobileHost) return;
+    const syncHeight = () => {
+      setComposerBarHeight(el.offsetHeight);
+    };
+    syncHeight();
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobileHost]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -419,14 +437,14 @@ export function ChatRoomScreen() {
     setSending(true);
     const text = draft.trim();
     setDraft("");
-    composerRef.current?.focus();
+    composerRef.current?.focus({ preventScroll: mobileHost });
     try {
       await send(roomId, text);
     } catch (e) {
       toastError((e as Error).message || "Send failed.");
     } finally {
       setSending(false);
-      composerRef.current?.focus();
+      composerRef.current?.focus({ preventScroll: mobileHost });
     }
   }
 
@@ -581,7 +599,9 @@ export function ChatRoomScreen() {
             minWidth: 0,
             overflowY: "auto",
             overflowX: "hidden",
-            padding: "16px 14px 8px",
+            padding: mobileHost
+              ? `16px 14px ${composerBarHeight + 8}px`
+              : "16px 14px 8px",
             display: "flex",
             flexDirection: "column",
             position: "relative",
@@ -697,14 +717,20 @@ export function ChatRoomScreen() {
       </div>
 
       <div
+        ref={composerBarRef}
+        className={mobileHost ? "chat-room-composer--mobile" : undefined}
         style={{
-          padding: "10px 12px 14px",
-          borderTop: "1px solid var(--border)",
-          display: "flex",
-          gap: 8,
-          alignItems: "flex-end",
-          flexShrink: 0,
-          background: "var(--bg)",
+          ...(mobileHost
+            ? { bottom: keyboardInset }
+            : {
+                padding: "10px 12px 14px",
+                borderTop: "1px solid var(--border)",
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-end",
+                flexShrink: 0,
+                background: "var(--bg)",
+              }),
         }}
       >
         <textarea
@@ -738,6 +764,15 @@ export function ChatRoomScreen() {
               e.preventDefault();
               void handleSend();
             }
+          }}
+          onFocus={() => {
+            if (!mobileHost) return;
+            const scroller = scrollerRef.current;
+            if (!scroller) return;
+            const scrollTop = scroller.scrollTop;
+            requestAnimationFrame(() => {
+              scroller.scrollTop = scrollTop;
+            });
           }}
         />
         <button

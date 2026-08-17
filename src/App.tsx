@@ -16,6 +16,7 @@ import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { MainTabShell } from "@/layouts/MainTabShell";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
+import { installBackgroundRemoteSyncHook } from "@/lib/mobile/backgroundRemoteSync";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { AppLockScreen } from "@/screens/AppLockScreen";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
@@ -48,6 +49,7 @@ function AppInner() {
 
   useEffect(() => {
     scrubLeftoverDaemonCaches();
+    if (isMobileHost()) installBackgroundRemoteSyncHook();
     init().then(async () => {
       await hydrateContacts();
       setReady(true);

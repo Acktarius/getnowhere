@@ -18,6 +18,11 @@ import { WebView } from "react-native-webview";
 import { createBridgeToken } from "./src/bridgeToken";
 import type { GnhMobileBridge } from "./src/GnhMobileBridge";
 import {
+  isGnhBackgroundSyncNativeAvailable,
+  registerBackgroundSyncWebViewInjector,
+  resolveNativeBackgroundSync,
+} from "./src/gnhBackgroundSyncNative";
+import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
 } from "./src/handleSecurityWebViewMessage";
@@ -61,6 +66,27 @@ function parseLifecycleHostMessage(raw: string): { type?: string } | null {
     const msg = JSON.parse(raw) as { channel?: string; type?: string };
     if (msg.channel !== "gnh-lifecycle") return null;
     return msg;
+  } catch {
+    return null;
+  }
+}
+
+function parseBackgroundSyncMessage(raw: string): {
+  requestId: string;
+  outcome: string;
+} | null {
+  try {
+    const msg = JSON.parse(raw) as {
+      channel?: string;
+      direction?: string;
+      requestId?: string;
+      outcome?: string;
+    };
+    if (msg.channel !== "gnh-background-sync" || msg.direction !== "response") {
+      return null;
+    }
+    if (!msg.requestId || !msg.outcome) return null;
+    return { requestId: msg.requestId, outcome: msg.outcome };
   } catch {
     return null;
   }
@@ -190,6 +216,14 @@ export default function App() {
 
   useEffect(() => {
     if (Platform.OS !== "android") return;
+    if (!isGnhBackgroundSyncNativeAvailable()) return;
+    return registerBackgroundSyncWebViewInjector((script) => {
+      webViewRef.current?.injectJavaScript(script);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
       if (state === "background" || state === "inactive") {
@@ -207,6 +241,11 @@ export default function App() {
   const onWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const raw = event.nativeEvent.data;
+      const bgSync = parseBackgroundSyncMessage(raw);
+      if (bgSync) {
+        resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
+        return;
+      }
       const lifecycleMsg = parseLifecycleHostMessage(raw);
       if (lifecycleMsg?.type === "ui-ready") {
         console.warn("[gnh-lifecycle] WebView ui-ready");

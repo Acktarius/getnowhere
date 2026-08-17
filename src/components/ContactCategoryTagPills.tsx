@@ -1,9 +1,9 @@
-import { Briefcase, Heart, Home, User, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Briefcase, Heart, Home, User, Users } from "lucide-react";
 import {
   CONTACT_CATEGORY_TAGS,
-  contactCategoryTagAccent,
   type ContactCategoryTag,
+  contactCategoryTagAccent,
   toggleContactCategoryTag,
 } from "@/lib/contactCategoryTags";
 
@@ -52,9 +52,7 @@ export function ContactCategoryTagPills({
             label={tag.label}
             icon={Icon}
             emoji={tag.emoji}
-            onClick={() =>
-              onChange(toggleContactCategoryTag(selected, tag.id))
-            }
+            onClick={() => onChange(toggleContactCategoryTag(selected, tag.id))}
           />
         );
       })}

@@ -292,6 +292,12 @@ export function isUnlocked(): boolean {
   return activeId !== null && runtimes.has(activeId);
 }
 
+/** True when the active wallet has a sync chain in flight. */
+export function isSyncInProgress(): boolean {
+  if (activeId === null) return false;
+  return coordinationFor(activeId).inFlightSync !== null;
+}
+
 /** True when the wallet `id` already has a cached (unlocked) runtime. */
 export function hasUnlockedRuntime(id: string): boolean {
   return runtimes.has(id);

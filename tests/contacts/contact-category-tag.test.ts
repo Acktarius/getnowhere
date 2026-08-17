@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   addressEntryToContact,
-  contactToAddressEntry,
   contactsExportPayload,
+  contactToAddressEntry,
 } from "@/services/contacts/contactsPersistence";
 import type { Contact } from "@/types/models";
 
