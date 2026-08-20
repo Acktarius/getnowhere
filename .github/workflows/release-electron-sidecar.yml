@@ -41,7 +41,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot dpkg rpm
+          sudo apt-get install -y fakeroot dpkg rpm libfuse2t64 squashfs-tools
 
       - name: Install UI deps
         run: npm ci
@@ -72,6 +72,56 @@ jobs:
         working-directory: desktop-electron
         run: npm run make
 
+      - name: Build AppImage (linuxdeploy)
+        working-directory: desktop-electron
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          PACKAGED="out/GetNowHere-linux-x64"
+          APPDIR="$(pwd)/AppDir"
+
+          # Assemble AppDir from the Forge-packaged app
+          mkdir -p "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/icons/hicolor/256x256/apps"
+          cp -r "$PACKAGED"/. "$APPDIR/"
+
+          cat > "$APPDIR/AppRun" << 'APPRUN'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/getnowhere" "$@"
+          APPRUN
+          chmod +x "$APPDIR/AppRun"
+
+          cat > "$APPDIR/usr/share/applications/getnowhere.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=Get NowHere
+          Exec=getnowhere
+          Icon=getnowhere
+          Type=Application
+          Categories=Network;
+          DESKTOP
+
+          cp icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
+          cp icons/icon.png "$APPDIR/getnowhere.png"
+
+          # Download linuxdeploy + AppImage output plugin (both in same dir for discovery)
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
+               -O linuxdeploy
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" \
+               -O linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod +x linuxdeploy linuxdeploy-plugin-appimage-x86_64.AppImage
+
+          # Produce AppImage; Electron bundles its own libs so skip dep scanning
+          ARCH=x86_64 VERSION="$VERSION" \
+            ./linuxdeploy \
+              --appdir "$APPDIR" \
+              --desktop-file "$APPDIR/usr/share/applications/getnowhere.desktop" \
+              --icon-file "$APPDIR/getnowhere.png" \
+              --output appimage
+
+          ls -la ./*.AppImage
+
       - name: Collect artifacts
         run: |
           mkdir -p output
@@ -80,9 +130,10 @@ jobs:
           files=(
             desktop-electron/out/make/deb/x64/*.deb
             desktop-electron/out/make/zip/linux/x64/*.zip
+            desktop-electron/*.AppImage
           )
           if ((${#files[@]} == 0)); then
-            mapfile -t files < <(find desktop-electron/out/make -type f \( -name '*.deb' -o -name '*.zip' \))
+            mapfile -t files < <(find desktop-electron/out/make -type f \( -name '*.deb' -o -name '*.zip' \); find desktop-electron -maxdepth 1 -name '*.AppImage')
           fi
           if ((${#files[@]} == 0)); then
             echo "ERROR: no desktop artifacts under desktop-electron/out/make"
@@ -205,7 +256,7 @@ jobs:
         run: |
           cd release-assets
           rm -f SHA256SUMS.txt
-          sha256sum *.deb *.zip > SHA256SUMS.txt
+          sha256sum *.deb *.zip *.AppImage > SHA256SUMS.txt
           ls -la
           echo "hash_block<<EOF" >> "$GITHUB_OUTPUT"
           cat SHA256SUMS.txt >> "$GITHUB_OUTPUT"
@@ -218,13 +269,14 @@ jobs:
           name: Get NowHere v${{ steps.ver.outputs.version }}
           files: |
             release-assets/*.deb
+            release-assets/*.AppImage
             release-assets/*.zip
             release-assets/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body: |
             **Get NowHere — desktop (Electron + sidecar, native IPC bridge)**
 
-            - **Linux:** `.deb` + `.zip`
+            - **Linux:** `.AppImage` (Debian/Ubuntu + Arch), `.deb` + `.zip`
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
             - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
 
