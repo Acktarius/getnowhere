@@ -50,6 +50,7 @@ No L3. UI never joins Hyperswarm.
 
 - `architecture/` — repo boundaries and system shape
 - `builds/` — native wrapper and App Store delivery
+- `decisions/` — accepted ADRs (spend policy, etc.)
 - `features/` — product behavior and user-facing flows
 - `security/` — encryption, key handling, and protocol details
 - `prompts/` — durable coding constraints for AI / codegen tools

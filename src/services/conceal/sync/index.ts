@@ -36,4 +36,12 @@ export {
   unlock,
   updateRuntimeOptions,
 } from "./runtime";
-export { sendCcx, sendSmartMessage } from "./spend";
+export {
+  fetchDecoys,
+  isPrettyAmount,
+  selectableOutputs,
+  selectSpendInputs,
+  sendCcx,
+  sendSmartMessage,
+  unspentOutputs,
+} from "./spend";

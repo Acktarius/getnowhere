@@ -1,8 +1,10 @@
 /**
- * Lite-wallet spend path — decoys → buildTransaction / buildMessageTransaction → broadcast → sync.
+ * Spend path: select → decoys → build → broadcast.
+ * @see docs/decisions/001-skip-dust-on-spend.md
  */
 import {
   DEFAULT_MIXIN,
+  DUST_THRESHOLD,
   decodeAddress,
   getUnspentOutputs,
   isValidAddress,
@@ -10,6 +12,7 @@ import {
   MESSAGE_TX_AMOUNT_ATOMIC,
   MINIMUM_FEE_V2,
   type OwnedOutput,
+  PRETTY_AMOUNTS,
   REMOTE_NODE_FEE_ATOMIC,
   transactions as txns,
 } from "conceal-wallet-sdk";
@@ -34,15 +37,20 @@ import {
 type BuiltTransaction = txns.BuiltTransaction;
 type DecoySet = txns.DecoySet;
 
-/**
- * Same as conceal-next-wallet `spend.ts`:
- * SDK `mixin` = decoy count = {@link DEFAULT_MIXIN} (5).
- * Ring size = 5 decoys + 1 real output = 6.
- * Daemon fetch asks for `MIXIN + 1` outs per amount.
- */
+/** Ring size minus one — the wallet default mixin. */
 export const MIXIN = DEFAULT_MIXIN;
+/** Ring size = mixin decoys + 1 real. Daemon fetch asks for `MIXIN + 1` outs. */
 export const RING_SIZE = MIXIN + 1;
+/** Standard transaction network fee, atomic units. */
 export const FEE_ATOMIC = MINIMUM_FEE_V2;
+
+/** `{1..9} × 10^k` ladder — only these denominations are selected for spends. */
+const PRETTY_SET = new Set(PRETTY_AMOUNTS);
+
+/** True when `amount` is on the Conceal pretty denomination ladder. */
+export function isPrettyAmount(amount: number): boolean {
+  return PRETTY_SET.has(amount);
+}
 
 export type DecodedRecipient = {
   spendPublicKey: string;
@@ -141,7 +149,8 @@ function ownKeys(runtime: SdkRuntime): {
   };
 }
 
-function unspentOutputs(runtime: SdkRuntime): OwnedOutput[] {
+/** Unspent outs excluding pending-spent key images. */
+export function unspentOutputs(runtime: SdkRuntime): OwnedOutput[] {
   const pendingSpent = pendingSpentKeyImages(runtime.raw);
   const knownSpent = new Set(
     (runtime.state.spentKeyImages ?? []).map((k) => k.toLowerCase()),
@@ -155,9 +164,29 @@ function unspentOutputs(runtime: SdkRuntime): OwnedOutput[] {
   });
 }
 
-/** Refresh chain state before selecting inputs (avoids already-spent key images). */
+/**
+ * Pretty unspent pool (includes dust for future fusion).
+ * @see docs/decisions/001-skip-dust-on-spend.md
+ */
+export async function selectableOutputs(
+  runtime: SdkRuntime,
+): Promise<OwnedOutput[]> {
+  return unspentOutputs(runtime).filter((out) => isPrettyAmount(out.amount));
+}
+
+/**
+ * Ordinary-spend input pick; passes `DUST_THRESHOLD` into `selectInputs`.
+ * @see docs/decisions/001-skip-dust-on-spend.md
+ */
+export function selectSpendInputs(
+  outputs: readonly OwnedOutput[],
+  targetAmount: number,
+): { selected: OwnedOutput[]; total: number } {
+  return txns.selectInputs(outputs, targetAmount, DUST_THRESHOLD);
+}
+
+/** Best-effort tip sync before selecting inputs (bounded; never blocks forever). */
 async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
-  // Live poll may already be mid deep-sync; never block invite/send forever.
   const SPEND_SYNC_BUDGET_MS = 12_000;
   try {
     let networkHeight: number | null = null;
@@ -175,7 +204,6 @@ async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
       typeof networkHeight === "number"
         ? Math.max(0, networkHeight - (runtime.state.scannedHeight ?? 0))
         : 0;
-    // Far behind: wait briefly then spend from current outs (live poll keeps catching up).
     const budgetMs = lag > 200 ? 8_000 : SPEND_SYNC_BUDGET_MS;
     const outcome = await Promise.race([
       syncRuntime(runtime).then(() => "ok" as const),
@@ -183,10 +211,7 @@ async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
         setTimeout(() => resolve("timeout"), budgetMs);
       }),
     ]);
-    if (outcome === "timeout") {
-      // Best-effort: build/broadcast still surfaces unmixable / no-funds clearly.
-      return;
-    }
+    if (outcome === "timeout") return;
   } catch (error) {
     throw new Error(
       `Wallet sync failed before send. ${error instanceof Error ? error.message : String(error)}`,
@@ -208,13 +233,13 @@ function broadcastFailureMessage(error: unknown): string {
   return raw;
 }
 
-async function fetchDecoys(
+/** Decoy rings for the given outs (`MIXIN + 1` per amount). */
+export async function fetchDecoys(
   runtime: SdkRuntime,
   outputs: readonly OwnedOutput[],
 ): Promise<DecoySet[]> {
   const amounts = [...new Set(outputs.map((out) => out.amount))];
   if (amounts.length === 0) return [];
-  // Same as next-wallet: request MIXIN+1 outs (6) per amount.
   const raw = await withTimeout(
     runtime.daemon.getRandomOuts(amounts, RING_SIZE),
     20_000,
@@ -223,10 +248,7 @@ async function fetchDecoys(
   return decoysFromDaemon(raw);
 }
 
-/**
- * Drop outs whose denomination has too few on-chain peers to build a ring of 6.
- * Odd amounts (e.g. 7016906 from a past bug) are almost never mixable.
- */
+/** Keep outs whose amount has enough on-chain peers for a full ring. */
 function mixableOutputs(
   outputs: readonly OwnedOutput[],
   decoys: readonly DecoySet[],
@@ -239,7 +261,6 @@ function mixableOutputs(
   const selectable: OwnedOutput[] = [];
   for (const out of outputs) {
     const n = decoyCount.get(out.amount) ?? 0;
-    // Need ≥ MIXIN other outs of the same amount (assembleRing takes mixin decoys).
     if (n >= MIXIN) {
       selectable.push(out);
     } else {
@@ -261,7 +282,7 @@ function mixableShortageError(droppedAmounts: number[]): string {
   );
 }
 
-/** Fail closed if any ring is short of 5 decoys + real (daemon would return Failed). */
+/** Reject builds whose rings are shorter than {@link RING_SIZE}. */
 function assertFullRings(built: BuiltTransaction): void {
   for (const vin of built.inputs) {
     const n = vin.ringPublicKeys?.length ?? vin.keyOffsets?.length ?? 0;
@@ -317,10 +338,7 @@ function plainDestinations(
 
 const M_COIN = 1_000_000;
 
-/**
- * Send CCX from the active runtime.
- * `amount` is in whole CCX (UI units); converted to atomic internally.
- */
+/** Send CCX (`amount` in whole CCX). @see docs/decisions/001-skip-dust-on-spend.md */
 export async function sendCcx(input: {
   toAddress: string;
   amount: number;
@@ -336,21 +354,6 @@ export async function sendCcx(input: {
   await syncBeforeSpend(runtime);
 
   const recipient = decodeRecipient(input.toAddress);
-  const allOutputs = unspentOutputs(runtime);
-  if (allOutputs.length === 0) {
-    throw new Error("No spendable outputs. Sync fully or fund the wallet.");
-  }
-  const decoysAll = await fetchDecoys(runtime, allOutputs);
-  const { selectable: outputs, droppedAmounts } = mixableOutputs(
-    allOutputs,
-    decoysAll,
-  );
-  if (outputs.length === 0) {
-    throw new Error(mixableShortageError(droppedAmounts));
-  }
-  const decoys = decoysAll.filter((set) =>
-    outputs.some((out) => out.amount === set.amount),
-  );
   const feeAddress = await safeNodeFeeAddress(runtime.daemon);
   const feeRecipient = feeAddress ? decodeFeeRecipient(feeAddress) : null;
   const nodeFee =
@@ -363,13 +366,29 @@ export async function sendCcx(input: {
           },
         }
       : undefined;
+  const nodeFeeAtomic = nodeFee?.amount ?? 0;
   const paymentId = resolveOutboundPaymentId(input.paymentId, recipient);
+
+  const outputs = await selectableOutputs(runtime);
+  if (outputs.length === 0) {
+    throw new Error("No spendable outputs. Sync fully or fund the wallet.");
+  }
+  const target = amountAtomic + FEE_ATOMIC + nodeFeeAtomic;
+  const { selected } = selectSpendInputs(outputs, target);
+  const decoys = await fetchDecoys(runtime, selected);
+  const { selectable: mixable, droppedAmounts } = mixableOutputs(
+    selected,
+    decoys,
+  );
+  if (mixable.length < selected.length) {
+    throw new Error(mixableShortageError(droppedAmounts));
+  }
 
   const built = txns.buildTransaction({
     keys: runtime.account.keys,
     destinations: plainDestinations(recipient, amountAtomic, nodeFee),
     changeKeys: ownKeys(runtime),
-    unspentOutputs: outputs,
+    unspentOutputs: selected,
     decoys,
     fee: FEE_ATOMIC,
     mixin: MIXIN,
@@ -417,8 +436,8 @@ export async function sendCcx(input: {
 }
 
 /**
- * Broadcast a Conceal smart-message tx (tx_extra 0x04), mirroring next-wallet pulse/send.
- * Persists a sent copy so sync does not reclassify our outbound as inbound.
+ * Broadcast a smart-message tx (tx_extra 0x04); persists a sent copy.
+ * @see docs/decisions/001-skip-dust-on-spend.md
  */
 export async function sendSmartMessage(input: {
   recipientAddress: string;
@@ -439,7 +458,6 @@ export async function sendSmartMessage(input: {
     throw new Error("This wallet is view-only and cannot send messages.");
   }
 
-  // Hard ceiling so leave/invite UI never spins forever on a stuck daemon RPC.
   return withTimeout(sendSmartMessageInner(runtime, input), 45_000, "Send");
 }
 
@@ -486,23 +504,27 @@ async function sendSmartMessageInner(
     }
   }
 
-  const allOutputs = unspentOutputs(runtime);
-  if (allOutputs.length === 0) {
+  const outputs = await selectableOutputs(runtime);
+  if (outputs.length === 0) {
     throw new Error(
       "No spendable outputs after sync. Fund the wallet or wait for sync to drop spent outs.",
     );
   }
-  const decoysAll = await fetchDecoys(runtime, allOutputs);
-  const { selectable: outputs, droppedAmounts } = mixableOutputs(
-    allOutputs,
-    decoysAll,
+  const messageAmount = MESSAGE_TX_AMOUNT_ATOMIC;
+  const feeForSelect = hasTtl ? 0 : FEE_ATOMIC;
+  const nodeFeeAtomic = nodeFee ? REMOTE_NODE_FEE_ATOMIC : 0;
+  const { selected } = selectSpendInputs(
+    outputs,
+    messageAmount + feeForSelect + nodeFeeAtomic,
   );
-  if (outputs.length === 0) {
+  const decoys = await fetchDecoys(runtime, selected);
+  const { selectable: mixable, droppedAmounts } = mixableOutputs(
+    selected,
+    decoys,
+  );
+  if (mixable.length < selected.length) {
     throw new Error(mixableShortageError(droppedAmounts));
   }
-  const decoys = decoysAll.filter((set) =>
-    outputs.some((out) => out.amount === set.amount),
-  );
   let built: BuiltTransaction;
   try {
     built = txns.buildMessageTransaction({
@@ -513,13 +535,13 @@ async function sendSmartMessageInner(
       },
       body,
       changeKeys: ownKeys(runtime),
-      unspentOutputs: outputs,
+      unspentOutputs: selected,
       decoys,
       fee: FEE_ATOMIC,
       mixin: MIXIN,
       ttlUnixSeconds,
       nodeFee,
-      messageAmount: MESSAGE_TX_AMOUNT_ATOMIC,
+      messageAmount,
       ...(paymentId ? { paymentId: paymentId as txns.Hex } : {}),
     });
   } catch (error) {
@@ -568,7 +590,6 @@ async function sendSmartMessageInner(
     record,
   ]);
   await persistRuntime(runtime);
-  // Never block leave/invite UI on tip catch-up — live poll will reconcile.
   void syncRuntime(runtime).catch(() => {});
   return { hash: built.hash };
 }
