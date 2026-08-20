@@ -55,6 +55,8 @@ native-wrapper/assets/ui/*
 .repo-kit/
 .forge/
 .kilo/
+.cursor/
+docs/
 
 # Build|related
 tsconfig.tsbuildinfo
