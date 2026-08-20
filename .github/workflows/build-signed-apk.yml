@@ -49,6 +49,9 @@ jobs:
         working-directory: native-wrapper
         run: npm ci
 
+      - name: Install holepunch-sidecar dependencies
+        run: npm run holepunch:install
+
       - name: Prebuild Android (generate android/ tree)
         working-directory: native-wrapper
         run: npx expo prebuild --platform android --clean
