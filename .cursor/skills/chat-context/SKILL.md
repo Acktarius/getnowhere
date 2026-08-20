@@ -72,6 +72,23 @@ role/path only (`"API key from CI secret"`, `".env:DATABASE_URL"`). Strip
 sensitive values from copied commands, logs, URLs, and error messages before
 writing. When merging an existing handoff, remove any of the above if present.
 
+## Privacy — never log
+
+**Never write any of the following into `.chat/` files** (including
+`current.*`, `sessions/`, `decisions/`, `archive/`), confirmations, or notes:
+
+- Secrets: passwords, API keys, tokens, credentials, private keys, connection
+  strings with credentials, `.env` values, auth headers/cookies
+- Phone numbers
+- Email addresses
+- IP addresses (IPv4 or IPv6)
+
+If the session needs the *fact* that something sensitive was used, redact it:
+write a placeholder (e.g. `[REDACTED_TOKEN]`, `[REDACTED_EMAIL]`) or refer by
+role/path only (`"API key from CI secret"`, `".env:DATABASE_URL"`). Strip
+sensitive values from copied commands, logs, URLs, and error messages before
+writing. When merging an existing handoff, remove any of the above if present.
+
 ## Workflow
 
 1. Read existing `.repo-kit/chat/current.json` / `.repo-kit/chat/current.md`
