@@ -2,13 +2,27 @@
  * Browser client for the Holepunch Hyperswarm sidecar (WebSocket bridge).
  * Opaque sealed frames only — no session keys on the wire to the sidecar.
  */
+import { isAppAccessLocked } from "@/lib/mobile/AppAccessController";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+
+/** Stable bridge error codes from holepunch-sidecar/src/errors.mjs */
+export type SidecarBridgeErrorCode =
+  | "message_too_large"
+  | "payload_too_large"
+  | "invalid_json"
+  | "join_requires_fields"
+  | "leave_requires_topic"
+  | "frame_requires_fields"
+  | "frame_requires_join"
+  | "unknown_type"
+  | "sidecar_error";
 
 export type SidecarServerMessage =
   | { type: "ready"; topicRef: string }
   | { type: "peers"; topicRef: string; count: number }
   | { type: "frame"; topicRef: string; roomId?: string; payload: string }
   | { type: "pong" }
-  | { type: "error"; message: string };
+  | { type: "error"; code: SidecarBridgeErrorCode | string; message: string };
 
 export type SidecarClientMessage =
   | { type: "join"; topicRef: string; roomId: string }
@@ -54,7 +68,7 @@ function appendToken(baseUrl: string, token: string): string {
 export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
   try {
     if (typeof window !== "undefined") {
-      const bridge = window.gnhDesktop ?? window.__GNH_DESKTOP__;
+      const bridge = window.gnhDesktop;
       if (bridge?.ufwState) return bridge.ufwState;
     }
   } catch {
@@ -66,7 +80,10 @@ export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
 export function getHolepunchWsUrl(): string {
   try {
     if (typeof window !== "undefined") {
-      const bridge = window.gnhDesktop ?? window.__GNH_DESKTOP__;
+      const bridge = window.gnhDesktop;
+      if (bridge?.bridgeTransport === "ipc") {
+        return DEFAULT_WS_URL;
+      }
       if (bridge) {
         const base =
           bridge.holepunchWsUrl?.trim() ||
@@ -90,6 +107,27 @@ export function getHolepunchWsUrl(): string {
   return DEFAULT_WS_URL;
 }
 
+/** Local bridge label for diagnostics (IPC vs WebSocket URL). */
+export function getSidecarBridgeDiagnostic(): string {
+  try {
+    if (typeof window !== "undefined") {
+      if (
+        window.gnhMobile &&
+        typeof window.gnhMobile.sendCommand === "function"
+      ) {
+        return "bare ipc (mobile worklet)";
+      }
+      const bridge = window.gnhDesktop;
+      if (bridge?.bridgeTransport === "ipc") {
+        return "native ipc (Electron main → sidecar)";
+      }
+    }
+  } catch {
+    /* non-dom */
+  }
+  return getHolepunchWsUrl();
+}
+
 type PeerHandler = (topicRef: string, count: number) => void;
 type FrameHandler = (msg: {
   topicRef: string;
@@ -97,6 +135,173 @@ type FrameHandler = (msg: {
   payload: string;
 }) => void;
 type StatusHandler = (status: "online" | "offline", detail?: string) => void;
+
+function getGnhMobileBridge(): GnhMobileBridge | null {
+  try {
+    const bridge = window.gnhMobile;
+    if (
+      typeof window !== "undefined" &&
+      bridge &&
+      typeof bridge.sendCommand === "function" &&
+      typeof bridge.onBridgeEvent === "function"
+    ) {
+      return bridge;
+    }
+  } catch {
+    /* non-dom */
+  }
+  return null;
+}
+
+function getGnhDesktopIpcBridge(): GnhDesktopBridge | null {
+  try {
+    const bridge = window.gnhDesktop;
+    if (
+      typeof window !== "undefined" &&
+      bridge?.bridgeTransport === "ipc" &&
+      typeof bridge.sendCommand === "function" &&
+      typeof bridge.onBridgeEvent === "function"
+    ) {
+      return bridge;
+    }
+  } catch {
+    /* non-dom */
+  }
+  return null;
+}
+
+/** Shared postMessage-style backend for mobile + Electron IPC bridges. */
+function createPostMessageStyleSidecarBackend(bridge: {
+  sendCommand: GnhMobileBridge["sendCommand"];
+  onBridgeEvent: GnhMobileBridge["onBridgeEvent"];
+}): HolepunchSidecarBackend {
+  const peerCounts = new Map<string, number>();
+  const peerHandlers = new Set<PeerHandler>();
+  const frameHandlers = new Set<FrameHandler>();
+  const statusHandlers = new Set<StatusHandler>();
+  const joined = new Map<string, string>();
+  let online = false;
+
+  function emitStatus(status: "online" | "offline", detail?: string): void {
+    online = status === "online";
+    for (const h of statusHandlers) h(status, detail);
+  }
+
+  function handleEvent(msg: SidecarServerMessage): void {
+    if (msg.type === "peers") {
+      peerCounts.set(msg.topicRef, msg.count);
+      for (const h of peerHandlers) h(msg.topicRef, msg.count);
+    } else if (msg.type === "frame" && msg.roomId && msg.payload) {
+      for (const h of frameHandlers) {
+        h({
+          topicRef: msg.topicRef,
+          roomId: msg.roomId,
+          payload: msg.payload,
+        });
+      }
+    } else if (msg.type === "pong" && !online) {
+      emitStatus("online");
+    } else if (msg.type === "error") {
+      const detail = msg.code
+        ? `${msg.code}: ${msg.message || "sidecar error"}`
+        : msg.message || "sidecar error";
+      emitStatus("offline", detail);
+    }
+  }
+
+  const offBridge = bridge.onBridgeEvent((raw) => {
+    handleEvent(raw as SidecarServerMessage);
+  });
+
+  function send(msg: SidecarClientMessage): void {
+    if (isMobileHost() && isAppAccessLocked()) {
+      throw new Error("App access locked");
+    }
+    bridge.sendCommand(msg);
+  }
+
+  return {
+    async ensureConnected() {
+      if (online) return;
+      emitStatus("online");
+      send({ type: "ping" });
+    },
+
+    async join(topicRef, roomId) {
+      await this.ensureConnected();
+      joined.set(topicRef, roomId);
+      send({ type: "join", topicRef, roomId });
+    },
+
+    async leave(topicRef, roomId) {
+      joined.delete(topicRef);
+      peerCounts.delete(topicRef);
+      if (!online) return;
+      try {
+        send({ type: "leave", topicRef, roomId });
+      } catch {
+        /* ignore */
+      }
+    },
+
+    sendFrame(topicRef, roomId, payload) {
+      send({ type: "frame", topicRef, roomId, payload });
+    },
+
+    getPeerCount(topicRef) {
+      return peerCounts.get(topicRef) ?? 0;
+    },
+
+    onPeers(handler) {
+      peerHandlers.add(handler);
+      return () => {
+        peerHandlers.delete(handler);
+      };
+    },
+
+    onFrame(handler) {
+      frameHandlers.add(handler);
+      return () => {
+        frameHandlers.delete(handler);
+      };
+    },
+
+    onConnectionStatus(handler) {
+      statusHandlers.add(handler);
+      return () => {
+        statusHandlers.delete(handler);
+      };
+    },
+
+    close() {
+      offBridge();
+      joined.clear();
+      peerCounts.clear();
+      online = false;
+    },
+  };
+}
+
+/** Electron desktop IPC backend (main process proxies native sidecar socket). */
+export function createElectronIpcSidecarBackend(): HolepunchSidecarBackend {
+  const bridge = getGnhDesktopIpcBridge();
+  if (!bridge?.sendCommand || !bridge.onBridgeEvent) {
+    throw new Error("gnhDesktop IPC bridge missing");
+  }
+  return createPostMessageStyleSidecarBackend({
+    sendCommand: bridge.sendCommand.bind(bridge),
+    onBridgeEvent: bridge.onBridgeEvent.bind(bridge),
+  });
+}
+
+/** Mobile WebView postMessage backend (Bare worklet via Expo shell). */
+export function createMobilePostMessageSidecarBackend(): HolepunchSidecarBackend {
+  const maybeBridge = getGnhMobileBridge();
+  if (!maybeBridge) {
+    throw new Error("gnhMobile bridge missing");
+  }
+  return createPostMessageStyleSidecarBackend(maybeBridge);
+}
 
 /** Production WebSocket backend. */
 export function createWebSocketSidecarBackend(
@@ -134,7 +339,10 @@ export function createWebSocketSidecarBackend(
         });
       }
     } else if (msg.type === "error") {
-      emitStatus("offline", msg.message || "sidecar error");
+      const detail = msg.code
+        ? `${msg.code}: ${msg.message || "sidecar error"}`
+        : msg.message || "sidecar error";
+      emitStatus("offline", detail);
     }
   }
 
@@ -550,7 +758,11 @@ export function __setHolepunchSidecarBackend(
 export function getHolepunchSidecarBackend(): HolepunchSidecarBackend {
   if (injectedBackend) return injectedBackend;
   if (!defaultBackend) {
-    defaultBackend = createWebSocketSidecarBackend();
+    defaultBackend = getGnhMobileBridge()
+      ? createMobilePostMessageSidecarBackend()
+      : getGnhDesktopIpcBridge()
+        ? createElectronIpcSidecarBackend()
+        : createWebSocketSidecarBackend();
   }
   return defaultBackend;
 }

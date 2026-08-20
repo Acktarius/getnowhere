@@ -1,9 +1,10 @@
 /**
- * Persist Get Now Here contacts:
+ * Persist Get NowHere contacts:
  * 1. App local storage (`gnh.contacts`) — survives refresh / lock.
  * 2. Wallet blob `addressBook` — rides encrypted wallet .json export/import.
  */
 import type { RawAddressEntry, RawWalletV1 } from "conceal-wallet-sdk";
+import { parseContactCategoryTags } from "@/lib/contactCategoryTags";
 import {
   getRuntime,
   persistRuntime,
@@ -36,6 +37,9 @@ export type PendingInitiatorRecord = {
 export type StoredAddressEntry = RawAddressEntry & {
   paymentIdTo?: string;
   notes?: string;
+  categoryTags?: Contact["categoryTags"];
+  /** @deprecated Legacy single tag — read only for migration. */
+  categoryTag?: string;
   relationshipStatus?: Contact["relationshipStatus"];
   inviteStatus?: Contact["inviteStatus"];
   chatStatus?: Contact["chatStatus"];
@@ -72,6 +76,10 @@ export function contactToAddressEntry(contact: Contact): StoredAddressEntry {
     paymentId: contact.paymentIdFrom || undefined,
     paymentIdTo: contact.paymentIdTo,
     notes: contact.notes,
+    categoryTags:
+      contact.categoryTags && contact.categoryTags.length > 0
+        ? contact.categoryTags
+        : undefined,
     relationshipStatus: contact.relationshipStatus,
     inviteStatus: contact.inviteStatus,
     chatStatus: contact.chatStatus,
@@ -113,6 +121,13 @@ export function addressEntryToContact(entry: StoredAddressEntry): Contact {
     paymentIdFrom: entry.paymentId?.trim() || "",
     paymentIdTo: entry.paymentIdTo?.trim() || undefined,
     notes: entry.notes,
+    categoryTags: (() => {
+      const tags = parseContactCategoryTags(
+        entry.categoryTags,
+        entry.categoryTag,
+      );
+      return tags.length > 0 ? tags : undefined;
+    })(),
     relationshipStatus,
     inviteStatus: entry.inviteStatus ?? "none",
     chatStatus,
@@ -168,7 +183,18 @@ export function loadContactsFromLocal(): Contact[] {
         (c.chatStatus as string) === "eligible"
           ? ("ready" as const)
           : c.chatStatus;
-      return { ...c, relationshipStatus, chatStatus };
+      const legacy = c as Contact & { categoryTag?: unknown };
+      const categoryTags = parseContactCategoryTags(
+        legacy.categoryTags,
+        legacy.categoryTag,
+      );
+      const { categoryTag: _legacy, ...rest } = legacy;
+      return {
+        ...rest,
+        relationshipStatus,
+        chatStatus,
+        categoryTags: categoryTags.length > 0 ? categoryTags : undefined,
+      };
     });
   } catch {
     return [];
@@ -314,6 +340,7 @@ export function contactsExportPayload(contacts: Contact[]): unknown[] {
     paymentIdFrom: c.paymentIdFrom,
     paymentIdTo: c.paymentIdTo ?? null,
     notes: c.notes ?? null,
+    categoryTags: c.categoryTags ?? [],
     relationshipStatus: c.relationshipStatus,
     inviteStatus: c.inviteStatus,
     chatStatus: c.chatStatus,

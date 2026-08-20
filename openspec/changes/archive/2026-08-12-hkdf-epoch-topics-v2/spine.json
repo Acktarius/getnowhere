@@ -1,0 +1,24 @@
+{
+  "change": "hkdf-epoch-topics-v2",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "HKDF epoch topicRef derivation (v2 suite)",
+      "library": "src/services/protocol/ids.ts",
+      "runtimeOwner": "Vite app protocol path (P2PEncryptionService / HolepunchChatTransport); sidecar joins opaque topicRef only",
+      "writes": "topicRef bytes passed to sidecar join command; persisted topicSuite + epoch on room session",
+      "reads": "ecdhSharedSecret, relationshipId, roomId, epoch from bootstrap contract",
+      "uiConsumer": "HolepunchChatTransport.connect → HolepunchSidecarClient.join(topicRef)",
+      "evidence": "unit tests on ids.ts HKDF vectors; proof AAD epoch tests; manual Alice/Bob connect with v2 create"
+    },
+    {
+      "capability": "Capability + local bridge strategy documentation",
+      "library": "docs/security/capabilities-and-derivation.md",
+      "runtimeOwner": "N/A (documentation)",
+      "writes": "docs/security/*, docs/architecture/local-bridge-transport.md",
+      "reads": "existing encryption.md, pairing-and-topics.md",
+      "uiConsumer": "N/A",
+      "evidence": "doc cross-link grep; README reading order"
+    }
+  ]
+}

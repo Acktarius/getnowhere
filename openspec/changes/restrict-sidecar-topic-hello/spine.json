@@ -1,0 +1,15 @@
+{
+  "change": "restrict-sidecar-topic-hello",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Hyperswarm-only topic association (no cross-topic hello)",
+      "library": "holepunch-sidecar/src/swarm.mjs",
+      "runtimeOwner": "holepunch-sidecar process (npm run holepunch / Electron sidecar child) via createSwarmMesh connection + join handlers",
+      "writes": "connTopics and remotePeerIds for Hyperswarm-shared locally joined topics only; no outbound hello topicRef advertisements",
+      "reads": "Hyperswarm info.topics / topic events; local topics map",
+      "uiConsumer": "N/A (sidecar wire); ChatRoomScreen peer count via HolepunchSidecarClient peers events",
+      "evidence": "holepunch-sidecar/test/sidecar.test.mjs cross-topic hello regressions; forge e2e run"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 **Status:** Implemented for web app. Sync engine matches conceal-next-wallet.
 
-Get Now Here ships a **lite Conceal wallet**: send, receive, and transaction history.
+Get NowHere ships a **lite Conceal wallet**: send, receive, and transaction history.
 Deposit and withdraw transactions may **appear in history** after sync, but the app does
 **not** offer UI to create deposits or withdrawals.
 
@@ -48,6 +48,11 @@ screen). App unlock passcode can be set later under Settings → Passcode.
 **Open / import / restore:** decrypt and enter the app immediately. Tip catch-up runs in the
 background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync continues.
 
+**Chat room replay:** only **file backup** import restores rooms (from exported
+`sentMessages` / `receivedMessages`). Seed, keys, and QR restore the wallet and
+show smart-message **transactions** in history (fee dot) but do **not** recreate
+chat rooms. Settings **Resync** re-scans txs for balance integrity only.
+
 ## Settings
 
 - **Sync speed** — DOOM-labeled profiles; persisted as `options.readSpeed`.
@@ -65,9 +70,9 @@ background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync c
 
 - **Receive** — address + QR.
 - **Send** — real `buildTransaction` + `sendRawTransaction` via the sync runtime.
-  Ordinary spends use `selectSpendInputs` with `DUST_THRESHOLD` so mixable dust
-  (amount below 10 atomic) is not chosen as inputs — same policy as next-wallet /
-  Desktop (`docs/decisions/001-skip-dust-on-spend.md`).
+  Contact picker (when eligible contacts exist) autofills recipient address and
+  `paymentIdTo` (PidTo) when present; rows show a round letter mark (multi-word
+  initials, or single-word ≤3 letters).
 - **History** — kinds: transfer, miner, deposit, withdrawal, fusion (display only).
 - **Spend failures** (no funds, unmixable denominations, build/broadcast errors) surface
   as an in-app toast and inline error — invite create must not spin forever on deep sync.
@@ -98,5 +103,5 @@ do **not** treat mempool alone as proof of a new relationship. See
 - Deposit / withdraw creation UI.
 - Multi-wallet index / switcher.
 - Next-wallet i18n, Cordova, biometric vault.
-- Holepunch / P2P chat crypto (L1–L3) — see `docs/security/p2pchatprotocol.md`
+- Holepunch / P2P chat crypto (L1 / L1′ / L2) — see `docs/security/p2pchatprotocol.md`
   and `docs/security/encryption.md`.

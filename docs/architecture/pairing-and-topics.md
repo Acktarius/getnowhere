@@ -1,11 +1,15 @@
 # Pairing and Topic Derivation
 
-Get Now Here is not a public chat room model. It is a relationship-based,
+Get NowHere is not a public chat room model. It is a relationship-based,
 invite-led, one-to-one connection model.
 
 Wire-level invite and handshake details live in
-`docs/security/p2pchatprotocol.md`. This page states the **only** networking
-topic rule coding agents may implement.
+`docs/security/p2pchatprotocol.md`. Strategy for ids as capabilities, v2 HKDF
+targets, and layer separation:
+`docs/security/capabilities-and-derivation.md`.
+
+This page states the **only shipped (v1)** networking topic rule coding agents
+may implement today.
 
 ## Rule
 
@@ -20,11 +24,11 @@ Instead:
 4. run an application-level identity check after connection
 5. only then unlock the chat session
 
-## Canonical topic derivation (implemented)
+## Shipped topic derivation (v1 — only live formula for codegen)
 
-**This is the only live formula.** Do not invent alternate prefixes or
-`inviteSecret`-based topics in codegen unless `p2pchatprotocol.md` and
-`src/services/protocol/ids.ts` are updated first in the same change.
+**This is the only formula that may be implemented without a protocol bump.**
+Target v2 (HKDF epoch topics) is documented in
+`docs/security/capabilities-and-derivation.md` — not shipped.
 
 ```ts
 // src/services/protocol/ids.ts — deriveTopicRef
@@ -32,7 +36,10 @@ topicRef = sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`)
 ```
 
 - Output: 64 hex characters = 32 bytes for `swarm.join(Buffer.from(topicRef, "hex"))`.
-- `roomId` and `relationshipId` are opaque protocol identifiers, not display names.
+- `roomId` and `relationshipId` are **capability material**, not display names
+  (`docs/security/capabilities-and-derivation.md`).
+- Shipped create pack: `roomId` and `inviteId` are **4 bytes** each — fixed
+  Conceal body size budget; not planned to widen.
 - Never embed raw payment IDs, aliases, or human room titles in the topic string.
 - Display topics (work/family/…) live in `handshake.roomTopic` / UI only — see
   `src/services/protocol/roomTopics.ts`.
@@ -66,7 +73,7 @@ One eligible contact (pair of payment IDs) may have **many** chat rooms. Each
 room has its own opaque `roomId` and therefore its own Hyperswarm `topicRef`.
 
 Users pick a **display topic** from a fixed list (General, Work, Family,
-Vacation, Friends). That label is UI metadata and a 1-byte index on the create
+Vacation, Friends, Finance). That label is UI metadata and a 1-byte index on the create
 pack — it is **never** embedded in the DHT topic string.
 
 Supersede / resend applies **per contact + roomTopic**, so a Work invite does

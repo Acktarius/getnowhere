@@ -23,6 +23,8 @@ import {
   hasStoredWallet,
   lock as lockRuntime,
   nodeUrlFromRaw,
+  resetAndRescanFromCreationHeight as runtimeResetAndRescanFromCreationHeight,
+  resyncFromCreationHeight as runtimeResyncFromCreationHeight,
   sendCcx,
   sync,
   unlock,
@@ -35,6 +37,7 @@ import {
   buildViewOnly,
   mnemonicFromSpendKey,
 } from "@/services/conceal/walletBuild";
+import { decodeWalletQr } from "@/services/conceal/walletQr";
 import type { Transaction, WalletState } from "@/types/models";
 import type {
   CreateWalletResult,
@@ -215,24 +218,18 @@ export const ConcealWalletService: WalletService = {
   },
 
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {
-    if (input.method === "file" || input.method === "qr") {
+    if (input.method === "file") {
       try {
-        const text = (input.method === "file" ? input.file : input.qr)
-          .replace(/^\uFEFF/, "")
-          .trim();
+        const text = input.file.replace(/^\uFEFF/, "").trim();
         let envelope: unknown;
         try {
           envelope = JSON.parse(text);
         } catch {
-          throw new Error(
-            input.method === "file"
-              ? "The selected file is not valid JSON."
-              : "The QR code does not contain valid wallet data.",
-          );
+          throw new Error("The selected file is not valid JSON.");
         }
         const opened = openEncryptedWalletFile(envelope, input.password);
         if (opened === null) {
-          throw new Error("Invalid wallet data or password.");
+          throw new Error("Invalid wallet file or password.");
         }
         const mnemonic =
           opened.keys.priv.spend !== ""
@@ -281,6 +278,24 @@ export const ConcealWalletService: WalletService = {
                 input.scanHeight ?? 0,
               );
           break;
+        case "qr": {
+          const decoded = decodeWalletQr(input.qr);
+          const height = decoded.height ?? 0;
+          if (decoded.mnemonicSeed) {
+            built = buildFromMnemonic(decoded.mnemonicSeed, height);
+          } else if (decoded.spendKey) {
+            built = buildFromSpendKey(
+              decoded.spendKey,
+              decoded.viewKey ?? "",
+              height,
+            );
+          } else if (decoded.viewKey && decoded.address) {
+            built = buildViewOnly(decoded.address, decoded.viewKey, height);
+          } else {
+            throw new Error("Unsupported QR wallet payload.");
+          }
+          break;
+        }
         default:
           throw new Error("This import method is not supported.");
       }
@@ -410,6 +425,58 @@ export const ConcealWalletService: WalletService = {
       throw error;
     }
   },
+
+  async resyncFromCreationHeight(): Promise<void> {
+    if (!snapshot) return;
+    snapshot.syncStatus = "syncing";
+    snapshot.syncProgress = 0.05;
+    snapshot.lastSyncError = undefined;
+    try {
+      await ensureWasmReady();
+      if (!getRuntime()) {
+        throw new Error("Wallet is not open. Import or unlock first.");
+      }
+      const networkHeight = await runtimeResyncFromCreationHeight();
+      refreshSnapshotFromRuntime();
+      const scanned = getRuntime()?.state.scannedHeight ?? 0;
+      const total = Math.max(networkHeight, 1);
+      snapshot.syncProgress = Math.min(1, scanned / total);
+      snapshot.syncStatus = "synced";
+      snapshot.lastSyncedAt = new Date().toISOString();
+    } catch (error) {
+      const msg = (error as Error)?.message ?? String(error);
+      snapshot.syncStatus = "error";
+      snapshot.syncProgress = 0;
+      snapshot.lastSyncError = msg;
+      throw error;
+    }
+  },
+
+  async resetAndRescanFromCreationHeight(): Promise<void> {
+    if (!snapshot) return;
+    snapshot.syncStatus = "syncing";
+    snapshot.syncProgress = 0.05;
+    snapshot.lastSyncError = undefined;
+    try {
+      await ensureWasmReady();
+      if (!getRuntime()) {
+        throw new Error("Wallet is not open. Import or unlock first.");
+      }
+      const networkHeight = await runtimeResetAndRescanFromCreationHeight();
+      refreshSnapshotFromRuntime();
+      const scanned = getRuntime()?.state.scannedHeight ?? 0;
+      const total = Math.max(networkHeight, 1);
+      snapshot.syncProgress = Math.min(1, scanned / total);
+      snapshot.syncStatus = "synced";
+      snapshot.lastSyncedAt = new Date().toISOString();
+    } catch (error) {
+      const msg = (error as Error)?.message ?? String(error);
+      snapshot.syncStatus = "error";
+      snapshot.syncProgress = 0;
+      snapshot.lastSyncError = msg;
+      throw error;
+    }
+  },
 };
 
 export function getInternalWalletState(): WalletSnapshot | null {
@@ -446,6 +513,14 @@ export async function changeWalletPassword(
   nextPassword: string,
 ): Promise<void> {
   await changeRuntimePassword(currentPassword, nextPassword);
+}
+
+/** Set wallet password on an already-unlocked session (onboarding create path). */
+export async function setSessionWalletPassword(
+  nextPassword: string,
+): Promise<void> {
+  const { setRuntimePassword } = await import("@/services/conceal/sync");
+  await setRuntimePassword(nextPassword);
 }
 
 export async function updateWalletSyncSettings(input: {

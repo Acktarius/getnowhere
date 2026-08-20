@@ -58,9 +58,9 @@ Cross-platform map:
 4. Topic derivation is only the formula in `docs/architecture/pairing-and-topics.md`
    (and `deriveTopicRef` in code).
 5. App-layer peer verification after transport connect; topic alone is not trust.
-6. Sealed chat frames are opaque to the runtime (ChaCha20-Poly1305 L3 E2E in
-   the app crypto path). Hyperswarm Noise is L2 transport. Dual protection is
-   intentional — see `docs/security/encryption.md`.
+6. Sealed chat frames are opaque to the runtime (ChaCha20-Poly1305 **L1 session
+   seal** — not a separate L3). Hyperswarm Noise is **L2**. See
+   `docs/security/encryption.md`.
 
 ### Mobile implementation sketch
 
@@ -83,8 +83,149 @@ References:
 
 | Phase | Scope | Networking host |
 |---|---|---|
-| A — now | Vite UI + sidecar | Node Hyperswarm |
-| B — mobile MVP | Expo UI + Bare worklet + same bridge | Bare Hyperswarm |
+| A — web-dev | Vite UI + sidecar | Node Hyperswarm |
+| B — mobile MVP (Android) | Expo WebView + Bare worklet + `window.gnhMobile` | Bare Hyperswarm |
+
+Phase B is implemented in `native-wrapper/` (see **Implementation layout** below).
+Android device verification (2026-08): packed Bare worklet boots, DHT announces room
+topics, and opens Hyperswarm connections to desktop peers. iOS uses the same Bare
+bundle; device P2P sign-off on iOS is deferred.
+
+## Bare worklet packaging (Android)
+
+End-to-end path from repo to on-device Hyperswarm:
+
+```text
+bare/entry.mjs + deps
+  → bare-pack --linked (--host android-arm64, android-arm)
+  → assets/bare/app.bundle.mjs (+ extracted app.bundle)
+  → prepare-android-assets.mjs copies into android/app/src/main/assets/bare/
+  → bare-link copies sodium-native / udx-native .so → android/app/src/main/addons/
+  → GnhMobileBridge loads bytes via expo-asset; Worklet.start("/app.bundle", …)
+```
+
+Commands (repo root):
+
+```bash
+npm run holepunch:install    # bare/node_modules symlink to sidecar deps
+npm run mobile:sync-ui && npm run mobile:android
+```
+
+`sync-ui-dist.mjs` strips remote Google Fonts links from the copied `index.html`
+and runs a bundled-UI audit (no external scripts; local module entry only).
+See `native-wrapper/scripts/bundled-ui-audit.mjs`.
+
+Optional: `BARE_ENTRY=other.mjs node native-wrapper/scripts/pack-bare.mjs` for
+alternate pack entry points (default `entry.mjs`).
+
+### Implementation constraints (Bare mobile)
+
+These are required for a stable Android worklet — not optional Nitro/CMake steps:
+
+| Constraint | Why |
+|---|---|
+| `import * as swarm from "./swarm.mjs"` | bare-pack linked bundles fail on named imports from local `.mjs` (`createSwarmMesh` SyntaxError). |
+| No `process.on("SIGTERM")` / `process.exit` in worklet | Node sidecar pattern aborts RN (`SIGABRT` on `mqt_v_js`). Teardown: `worklet.terminate()` from `GnhMobileBridge.destroy()`. |
+| Single worklet start (`bridgeStartingRef` in `App.tsx`) | `onLoadEnd` + `onError` both fire `onWebViewReady`; guard before `ensureStarted()`. |
+| `BARE_INLINE_SMOKE` removed | Packed `.bundle` path is the only production start path. |
+
+Native addons (`libsodium-native`, `libudx-native`, …) are **prebuilt** by
+`bare-link` into `jniLibs` — not compiled via app CMake (unlike Nitro modules).
+
+### Device verification (logcat)
+
+```bash
+adb logcat | grep -E 'swarm|gnh-mobile|SIGABRT|FATAL'
+```
+
+Healthy swarm activity when opening a room:
+
+- `[swarm] DHT bootstrap ok`
+- `[swarm] topic … announced (flushed)`
+- `[swarm] connection open peer=…`
+
+Cross-platform lab (Android + Electron desktop): same `topicRef` in room
+diagnostics; desktop runs sidecar (`npm run holepunch` + `npm run dev` or
+`npm run desktop:alice`). Symmetric NAT on mobile Wi‑Fi may log firewalled
+warnings; relay paths can still connect. Post-transport **connection reset**
+indicates app/session layer (L1 proof), not bundle mount — check both hosts.
+
+## Implementation layout (phase B)
+
+```text
+native-wrapper/
+  App.tsx                      # starts Worklet, wires WebView postMessage
+  src/GnhMobileBridge.ts       # per-launch bridgeToken + Worklet IPC
+  src/ipcLineProcessor.ts      # bounded NDJSON reassembly (maxNdjsonLineBytes)
+  src/createLineReader.ts      # incremental splitter (parity with bare/swarm.mjs)
+  src/injectMobileBridge.ts    # window.gnhMobile injection script
+  src/webviewNavigation.ts     # asset-only navigation allowlist
+  bare/
+    entry.mjs                  # BareKit.IPC + swarm mesh
+    bridge.mjs                 # same SidecarCommand/Event as holepunch-sidecar
+    swarm.mjs                  # ported from holepunch-sidecar (no-hello policy)
+    test/swarm-security.test.mjs
+  assets/bare/app.bundle.mjs   # bare-pack output (gitignored)
+  scripts/pack-bare.mjs
+```
+
+UI bridge selection (`src/services/p2p/HolepunchSidecarClient.ts`):
+
+1. Test injection
+2. `window.gnhMobile` → `createMobilePostMessageSidecarBackend()`
+3. `window.gnhDesktop` → WebSocket (Electron)
+4. Default WebSocket (browser dev)
+
+### Security parity (mobile)
+
+Mobile uses in-process Bare IPC + WebView `postMessage` (no localhost WebSocket).
+Controls match packaged desktop / sidecar where applicable:
+
+| Control | Mobile |
+|---|---|
+| No NDJSON `hello` / Hyperswarm-only topic adoption | `bare/swarm.mjs` (same as sidecar) |
+| `connTopics` frame gating | `bare/swarm.mjs` |
+| `frame_requires_join`, size limits, error codes | `bare/bridge.mjs` |
+| Opaque L1-sealed frames | Unchanged app crypto path |
+| Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
+| RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
+| WebView navigation restricted to `file:///android_asset/ui/` | `App.tsx` → `webviewNavigation.ts` |
+| Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
+| CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
+| `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
+| Bridge command rate limits (`rate_limited`) | `bare/bridge.mjs` + `bare/rateLimit.mjs` |
+| Ephemeral loopback port | N/A — bridge is in-process only |
+| Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
+
+**Pending hardening (2026-08 review):** findings 08–15 addressed in code/docs;
+manual Android smoke (task 6.2) and Hermes `crypto.randomUUID` device check remain.
+OpenSpec `openspec/changes/mobile-bridge-hardening/`.
+
+### WebView trust model
+
+The bundled Vite UI runs inside an Android WebView loading only
+`file:///android_asset/ui/`. Top-level navigation to `http(s)://`, `intent://`,
+or other asset paths is blocked via `onShouldStartLoadWithRequest`. The per-launch
+bridge token lives in the RN host and in the injected script closure — it is **not**
+published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
+still attaches the token in postMessage payloads validated by RN), but cannot read
+the secret for exfiltration by untrusted scripts that lack postMessage access.
+`allowUniversalAccessFromFileURLs` is disabled; same-directory asset loads use
+`allowFileAccessFromFileURLs` for the packaged bundle only.
+
+Bridge tokens are UUID v4 from CSPRNG. On Hermes/RN, `expo-crypto` provides native
+`randomUUID`; Web Crypto is used when present (tests/browser). No `Math.random`
+fallback. The
+worklet enforces per-type token-bucket rate limits on `join`, `leave`, `frame`,
+and `ping` (default burst: 8 join/leave, 40 frame/s sustained); excess commands
+return `{ type: "error", code: "rate_limited" }`.
+
+Bridge tokens are UUID v4 (`crypto.randomUUID`) — fixed 36-character length. The
+constant-time compare may short-circuit on length mismatch; this is acceptable
+because token format is fixed (finding 14). Revisit if variable-length tokens are
+introduced.
+
+`desktop-electron/` is unchanged by the mobile track.
 
 Desktop Electron is a **parallel** track (`electron-desktop.md`), not a
 replacement for this mobile plan.

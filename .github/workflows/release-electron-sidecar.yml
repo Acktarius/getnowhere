@@ -1,7 +1,8 @@
 name: Release Electron + sidecar
 
-# Electron Forge Linux package (Electron + bundled sidecar + embedded Vite UI).
-# @see docs/builds/github-pages-and-desktop.md
+# Electron Forge Linux + Windows packages (Electron + bundled sidecar + embedded Vite UI).
+# Packaged desktop uses native IPC (Unix socket / named pipe) for the UI↔sidecar bridge —
+# not loopback WebSocket. @see docs/architecture/local-bridge-transport.md
 
 on:
   push:
@@ -16,8 +17,13 @@ jobs:
   desktop-linux:
     name: Electron + sidecar (Linux)
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    env:
+      GNH_BUNDLE_NODE_VERSION: "24.14.1"
+      # Packaged app: main.mjs spawns sidecar with GNH_BRIDGE_TRANSPORT=ipc (default).
+      # Never set GNH_HOLEPUNCH_WS_URL in CI — it forces loopback WebSocket in the shell.
+      GNH_HOLEPUNCH_WS_URL: ""
+      # Embedded UI must not hard-code ws://; Electron injects gnhDesktop IPC at runtime.
+      VITE_HOLEPUNCH_WS_URL: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -64,12 +70,9 @@ jobs:
 
       - name: Make Linux package
         working-directory: desktop-electron
-        env:
-          GNH_BUNDLE_NODE_VERSION: "24.14.1"
         run: npm run make
 
       - name: Collect artifacts
-        id: collect
         run: |
           mkdir -p output
           # Forge nests: out/make/deb/x64/*.deb and out/make/zip/linux/x64/*.zip
@@ -92,9 +95,6 @@ jobs:
             cd output
             sha256sum * > SHA256SUMS.txt
           )
-          echo "hash_block<<EOF" >> "$GITHUB_OUTPUT"
-          cat output/SHA256SUMS.txt >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
@@ -103,15 +103,130 @@ jobs:
           path: output/
           retention-days: 14
 
+  desktop-windows:
+    name: Electron + sidecar (Windows)
+    runs-on: windows-latest
+    env:
+      GNH_BUNDLE_NODE_VERSION: "24.14.1"
+      GNH_HOLEPUNCH_WS_URL: ""
+      VITE_HOLEPUNCH_WS_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop-electron/package-lock.json
+            holepunch-sidecar/package-lock.json
+
+      - name: Install UI deps
+        run: npm ci
+
+      - name: Build UI (dist/)
+        run: npm run build
+
+      - name: Install desktop deps
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Sync version from tag
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            BASE="$(node -p "require('./desktop-electron/package.json').version")"
+            VERSION="${BASE}-ci.${GITHUB_SHA::7}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          npm version "${VERSION}" --prefix desktop-electron --no-git-tag-version --allow-same-version
+          echo "Desktop package version → ${VERSION}"
+
+      - name: Make Windows package
+        working-directory: desktop-electron
+        run: npm run make:win
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path output | Out-Null
+          $files = Get-ChildItem -Path desktop-electron/out/make/zip/win32/x64 -Filter *.zip -ErrorAction SilentlyContinue
+          if (-not $files) {
+            $files = Get-ChildItem -Path desktop-electron/out/make -Recurse -Filter *.zip -ErrorAction SilentlyContinue
+          }
+          if (-not $files) {
+            Write-Error "ERROR: no Windows zip under desktop-electron/out/make"
+            Get-ChildItem -Path desktop-electron/out -Recurse -File | Select-Object -First 100
+            exit 1
+          }
+          $files | Copy-Item -Destination output -Verbose
+          Get-ChildItem output
+          Push-Location output
+          Get-ChildItem -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content SHA256SUMS.txt
+          Pop-Location
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: getnowhere-windows-desktop-${{ steps.ver.outputs.version }}
+          path: output/
+          retention-days: 14
+
+  release:
+    name: Draft GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop-linux, desktop-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: getnowhere-*-desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Combined checksums
+        id: collect
+        run: |
+          cd release-assets
+          rm -f SHA256SUMS.txt
+          sha256sum *.deb *.zip > SHA256SUMS.txt
+          ls -la
+          echo "hash_block<<EOF" >> "$GITHUB_OUTPUT"
+          cat SHA256SUMS.txt >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
       - name: Draft GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: output/*
+          name: Get NowHere v${{ steps.ver.outputs.version }}
+          files: |
+            release-assets/*.deb
+            release-assets/*.zip
+            release-assets/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body: |
-            **Get Now Here — Ubuntu desktop (Electron + sidecar)**
+            **Get NowHere — desktop (Electron + sidecar, native IPC bridge)**
+
+            - **Linux:** `.deb` + `.zip`
+            - **Windows:** `.zip` (extract and run `getnowhere.exe`)
+            - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
 
             ### Checksums
             ```

@@ -1,0 +1,51 @@
+{
+  "change": "packaged-desktop-identity",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "packaged builds carry no dev role (identity, storage, title, log)",
+      "library": "desktop-electron/desktop-identity.mjs resolveDesktopIdentity",
+      "runtimeOwner": "desktop-electron/main.mjs module init (app.setName / app.setPath userData) and createWindow",
+      "writes": "app name getnowhere, userData ~/.config/getnowhere, session partition persist:gnh, window title Get NowHere, log prefix [desktop]",
+      "reads": "app.isPackaged and process.env (HOLEPUNCH_HOST/PORT honored; GNH_ROLE/GNH_SWARM_MODE/GNH_SIDECAR_TOKEN ignored when packaged)",
+      "uiConsumer": "desktop window chrome and the renderer's partition-scoped localStorage (wallet, contacts, room sessions)",
+      "evidence": "desktop-electron/test/desktop-identity.test.mjs; manual packaged acceptance task 5.2"
+    },
+    {
+      "capability": "unpredictable local bridge: ephemeral port via IPC and per-launch token",
+      "library": "desktop-electron/desktop-identity.mjs usesEphemeralPort / usesTokenLock; holepunch-sidecar/src/server.mjs process.send listening",
+      "runtimeOwner": "desktop-electron/main.mjs spawnSidecar IPC handshake and ensureLocalSwarm",
+      "writes": "sidecar child bound to an OS-assigned loopback port, authenticated by a randomUUID token; no gnh-sidecar-*.token lockfile",
+      "reads": "IPC message { type: listening, host, port }",
+      "uiConsumer": "renderer via preload gnhDesktop.holepunchWsUrl + wsToken consumed by src/services/p2p/HolepunchSidecarClient.ts",
+      "evidence": "holepunch-sidecar IPC listening test; desktop-electron/test/desktop-identity.test.mjs; manual packaged acceptance task 5.2"
+    },
+    {
+      "capability": "packaged builds never attach to a foreign bridge",
+      "library": "desktop-electron/main.mjs ensureLocalSwarm packaged branch",
+      "runtimeOwner": "desktop-electron/main.mjs app.whenReady startup",
+      "writes": "always its own sidecar child; the attach path is unreachable when packaged",
+      "reads": "resolved identity swarmMode isolated",
+      "uiConsumer": "renderer bridge URL, which can only ever point at the shell's own child",
+      "evidence": "manual packaged acceptance task 5.2"
+    },
+    {
+      "capability": "packaged builds run as a single instance",
+      "library": "desktop-electron/main.mjs requestSingleInstanceLock after setPath",
+      "runtimeOwner": "desktop-electron/main.mjs startup and second-instance handler",
+      "writes": "second process exits without spawning a sidecar or window; existing window restored and focused",
+      "reads": "Electron single-instance lock keyed by the userData path",
+      "uiConsumer": "desktop user relaunching the installed application",
+      "evidence": "manual packaged acceptance task 5.2"
+    },
+    {
+      "capability": "sidecar reports bound port, bind failures, and parent death",
+      "library": "holepunch-sidecar/src/server.mjs listening IPC, error handler, parent-death watch",
+      "runtimeOwner": "sidecar process spawned by desktop-electron/main.mjs spawnSidecar",
+      "writes": "IPC listening message; address-conflict log and non-zero exit; process exit when parent dies",
+      "reads": "WebSocketServer events and process.ppid / PDEATHSIG",
+      "uiConsumer": "N/A — consumed by the Electron port handshake and startup error path",
+      "evidence": "holepunch-sidecar IPC, bind-failure, and parent-death tests"
+    }
+  ]
+}

@@ -9,9 +9,44 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/types/models";
 import { formatTime } from "@/utils/format";
+import { renderMarkdownLite } from "@/utils/markdownLite";
 
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀"];
+/** Wire token for the Conceal mark quick reaction. */
+export const CCX_REACTION = ":ccx:";
+const CONCEAL_MARK_SRC = `${import.meta.env.BASE_URL}brand/conceal-mark.png`;
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", CCX_REACTION];
 const LONG_PRESS_MS = 450;
+/** PNG reads smaller than emoji at the same px — tune display only. */
+const CCX_REACTION_SIZE_SCALE = 1.45;
+
+function reactionDisplaySize(reaction: string, emojiSize: number): number {
+  return reaction === CCX_REACTION
+    ? Math.round(emojiSize * CCX_REACTION_SIZE_SCALE)
+    : emojiSize;
+}
+
+function ReactionGlyph({
+  reaction,
+  size = 18,
+}: {
+  reaction: string;
+  size?: number;
+}) {
+  if (reaction === CCX_REACTION) {
+    const px = reactionDisplaySize(reaction, size);
+    return (
+      <img
+        src={CONCEAL_MARK_SRC}
+        alt=""
+        width={px}
+        height={px}
+        aria-hidden
+        style={{ display: "block", objectFit: "contain", flexShrink: 0 }}
+      />
+    );
+  }
+  return <>{reaction}</>;
+}
 
 export type BubbleReaction = {
   emoji: string;
@@ -109,14 +144,15 @@ export function MessageBubble({
       {!out && <div style={{ width: 28, flexShrink: 0 }} />}
       <div style={{ position: "relative", maxWidth: "76%" }}>
         <div
-          role={canAct ? "button" : undefined}
-          tabIndex={canAct ? 0 : undefined}
+          role={canAct && !editing ? "button" : undefined}
+          tabIndex={canAct && !editing ? 0 : undefined}
           onClick={onBubbleClick}
           onPointerDown={onBubblePointerDown}
           onPointerUp={clearLongPress}
           onPointerLeave={clearLongPress}
           onPointerCancel={clearLongPress}
           onKeyDown={(e) => {
+            if (editing) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               openPicker();
@@ -136,6 +172,20 @@ export function MessageBubble({
             userSelect: "text",
             WebkitUserSelect: "text",
             outline: "none",
+            ...(out && !relay
+              ? ({
+                  "--bubble-fence-bg":
+                    "color-mix(in srgb, var(--primary) 78%, black)",
+                  "--bubble-fence-fg": "var(--primary-fg)",
+                  "--bubble-fence-border":
+                    "color-mix(in srgb, var(--primary-fg) 22%, transparent)",
+                } as React.CSSProperties)
+              : ({
+                  "--bubble-fence-bg":
+                    "color-mix(in srgb, var(--bg-elev-2) 82%, black)",
+                  "--bubble-fence-fg": "var(--text)",
+                  "--bubble-fence-border": "var(--border-strong)",
+                } as React.CSSProperties)),
           }}
         >
           {editing ? (
@@ -144,7 +194,9 @@ export function MessageBubble({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 style={{ fontSize: 14 }}
+                autoFocus
                 onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
               />
               <div className="row-flex" style={{ gap: 6 }}>
                 <button
@@ -179,7 +231,11 @@ export function MessageBubble({
                 fontStyle: deleted ? "italic" : undefined,
               }}
             >
-              {deleted ? "Message deleted" : message.text}
+              {deleted
+                ? "Message deleted"
+                : relay
+                  ? message.text
+                  : renderMarkdownLite(message.text)}
             </span>
           )}
           <div
@@ -215,6 +271,7 @@ export function MessageBubble({
               // Sender (out): top-left · Receiver (in): top-right
               [out ? "left" : "right"]: 6,
               display: "flex",
+              alignItems: "center",
               gap: 2,
               padding: "1px 5px",
               borderRadius: 999,
@@ -228,7 +285,9 @@ export function MessageBubble({
             }}
           >
             {badgeEmojis.map((emoji) => (
-              <span key={emoji}>{emoji}</span>
+              <span key={emoji}>
+                <ReactionGlyph reaction={emoji} size={13} />
+              </span>
             ))}
           </div>
         )}
@@ -260,6 +319,7 @@ export function MessageBubble({
                   type="button"
                   role="menuitem"
                   className="btn btn--sm btn--ghost"
+                  aria-label={emoji === CCX_REACTION ? "Conceal" : emoji}
                   style={{
                     padding: "4px 8px",
                     minHeight: 0,
@@ -271,7 +331,7 @@ export function MessageBubble({
                     setPickerOpen(false);
                   }}
                 >
-                  {emoji}
+                  <ReactionGlyph reaction={emoji} />
                 </button>
               ))}
             {onEdit && (

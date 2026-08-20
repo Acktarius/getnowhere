@@ -19,6 +19,7 @@ import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter
 import { markOnboarded } from "@/state/authStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { ImportWalletInput } from "@/types/services";
+import { shortAddress } from "@/utils/format";
 import {
   describePasswordFailure,
   WALLET_PASSWORD_HINTS,
@@ -40,7 +41,9 @@ export function ImportWalletScreen() {
   const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
 
   const passwordStrength = walletPasswordStrength(walletPassword);
-  const isFileLike = method === "file" || method === "qr";
+  const needsBackupPassword = method === "file";
+  const needsNewWalletPassword =
+    method === "qr" || method === "mnemonic" || method === "keys";
 
   // qr
   const [qrText, setQrText] = useState("");
@@ -98,9 +101,7 @@ export function ImportWalletScreen() {
       }
       scanLoop();
     } catch {
-      setScanError(
-        "Camera unavailable. Upload a screenshot or paste the wallet data below.",
-      );
+      setScanError("Camera unavailable. Upload a QR screenshot instead.");
       setScanning(false);
     }
   }
@@ -236,7 +237,7 @@ export function ImportWalletScreen() {
   function buildInput(): ImportWalletInput | null {
     if (method === "qr") {
       if (!qrText.trim()) {
-        setError("Scan a QR code or paste the wallet data.");
+        setError("Scan a QR code or upload a QR screenshot.");
         return null;
       }
       return {
@@ -309,12 +310,11 @@ export function ImportWalletScreen() {
 
   async function handleImport() {
     setError(null);
-    if (isFileLike) {
+    if (needsBackupPassword) {
       if (!walletPassword) {
         return setError("Enter the password used to encrypt this backup.");
       }
-    } else {
-      // seed / keys — new wallet password must meet strength rules
+    } else if (needsNewWalletPassword) {
       const pwError = describePasswordFailure(walletPassword);
       if (pwError) return setError(pwError);
       if (walletPassword !== walletPasswordConfirm) {
@@ -336,7 +336,7 @@ export function ImportWalletScreen() {
 
   const subtitle =
     method === "qr"
-      ? "Scan or paste wallet backup QR"
+      ? "Scan wallet backup QR code"
       : "Seed, keys, or backup file";
 
   return (
@@ -361,7 +361,7 @@ export function ImportWalletScreen() {
             <div className="row-flex" style={{ gap: 8 }}>
               <AlertCircle size={16} style={{ color: "var(--danger)" }} />
               <span style={{ fontSize: 13, color: "var(--danger)" }}>
-                Only enter wallet secrets on a device you control. Get Now Here
+                Only enter wallet secrets on a device you control. Get NowHere
                 never sends them anywhere.
               </span>
             </div>
@@ -503,7 +503,7 @@ export function ImportWalletScreen() {
                               color: "var(--primary)",
                             }}
                           >
-                            {previewedAddress}
+                            {shortAddress(previewedAddress, 5, 5)}
                           </div>
                         </div>
                       )}
@@ -579,12 +579,12 @@ export function ImportWalletScreen() {
           )}
 
           {method === "qr" && (
-            <SecureInput
-              label="Backup password"
-              value={walletPassword}
-              onChange={setWalletPassword}
-              placeholder="Password used when exporting"
-              revealable
+            <PasswordSection
+              password={walletPassword}
+              setPassword={setWalletPassword}
+              confirmPassword={walletPasswordConfirm}
+              setConfirmPassword={setWalletPasswordConfirm}
+              strength={passwordStrength}
             />
           )}
 
@@ -634,8 +634,6 @@ function QrPrimaryView({
   onImagePicked: (f: File) => void;
   onSwitchMethod: (m: Method) => void;
 }) {
-  const [showPaste, setShowPaste] = useState(false);
-
   return (
     <div className="stack stack--gap-4">
       {/* Scanner viewport */}
@@ -705,15 +703,10 @@ function QrPrimaryView({
             style={{ alignItems: "center", gap: 12, padding: 24 }}
           >
             <QrCode size={48} style={{ color: "var(--success)" }} />
-            <div style={{ fontSize: 14, fontWeight: 600 }}>
-              QR code captured
-            </div>
             <div
-              className="mono faint"
-              style={{ fontSize: 11, wordBreak: "break-all", maxWidth: 280 }}
+              style={{ fontSize: 14, fontWeight: 600, color: "var(--success)" }}
             >
-              {qrText.slice(0, 80)}
-              {qrText.length > 80 ? "…" : ""}
+              Scan successful
             </div>
             <button
               type="button"
@@ -770,28 +763,6 @@ function QrPrimaryView({
           if (f) onImagePicked(f);
         }}
       />
-
-      {/* Paste fallback */}
-      {showPaste ? (
-        <div className="field">
-          <span className="field__label">Wallet data (paste)</span>
-          <textarea
-            className="textarea input--mono"
-            value={qrText}
-            onChange={(e) => setQrText(e.target.value)}
-            placeholder='{"version":1,"iv":"…","data":"…"}'
-            style={{ minHeight: 100 }}
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm btn--block"
-          onClick={() => setShowPaste(true)}
-        >
-          Paste wallet data instead
-        </button>
-      )}
 
       {/* Secondary methods */}
       <div className="card__divider" style={{ margin: "4px 0" }} />

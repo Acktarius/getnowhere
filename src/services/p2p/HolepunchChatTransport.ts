@@ -1,10 +1,17 @@
 /**
- * HolepunchChatTransport — L2 live frames (L3 seal) + plain L1 chat.relay fallback.
+ * HolepunchChatTransport — L2 live frames (L1 session seal) + L1′ chat.relay fallback.
  * @see docs/security/encryption.md
  * @see docs/security/p2pchatprotocol.md §16
  */
 
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
+import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
+import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
+import {
+  readChatRooms,
+  saveActiveMessages,
+  tombstoneChatRoom,
+} from "@/services/p2p/chatRoomsBlob";
 import {
   __setHolepunchSidecarBackend,
   getHolepunchSidecarBackend,
@@ -19,7 +26,11 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
-import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
+import { bumpRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
+import {
+  isRoomRevoked,
+  rememberRevokedRoom,
+} from "@/services/p2p/revokedRoomsStore";
 import {
   listCatalogRooms,
   loadCatalogRoom,
@@ -36,7 +47,13 @@ import {
 import {
   assertCanSendLive,
   assertCanSendMessages,
+  assertRoomInteractive,
 } from "@/services/protocol/composerGate";
+import {
+  buildChatAad,
+  buildProofAad,
+  incomingFrameAadCandidates,
+} from "@/services/protocol/proofAad";
 import {
   isRelayEligibleStatus,
   isRoomExpired,
@@ -193,9 +210,7 @@ async function sendProofFrame(
     text: `${kind}:v1:${state.session.sessionId}`,
   };
   const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
-  const aad = new TextEncoder().encode(
-    `v1|${state.room.id}|${state.session.sessionId}`,
-  );
+  const aad = buildProofAad(state.room.id, state.session);
   const sealed = await P2PEncryptionAdapter.seal({
     session: state.session,
     plaintext,
@@ -245,10 +260,8 @@ async function waitForProof(
 
 function notify(roomId: string, msg: ChatMessage): void {
   const list = messagesByRoom.get(roomId) ?? [];
-  const idx = list.findIndex((m) => m.id === msg.id);
-  if (idx >= 0) list[idx] = msg;
-  else list.push(msg);
-  messagesByRoom.set(roomId, list);
+  const next = mergeContentMessage(list, msg);
+  messagesByRoom.set(roomId, next);
   for (const h of subscribers.get(roomId) ?? []) h(msg);
 }
 
@@ -340,6 +353,7 @@ function persistLiveSession(state: RoomState): void {
 /** Restore crypto session + rejoin swarm after reload. */
 export async function restoreRoomSession(
   roomId: string,
+  opts?: { backgroundConnect?: boolean },
 ): Promise<ChatRoom | null> {
   if (isRoomRevoked(roomId)) {
     removeRoomSession(roomId);
@@ -371,6 +385,12 @@ export async function restoreRoomSession(
       roomTtl: contract.roomTtl,
     });
   }
+  state.contract = contract;
+  contractsByRoom.set(roomId, contract);
+  if (opts?.backgroundConnect) {
+    void HolepunchChatTransport.connect(contract);
+    return state.room;
+  }
   return HolepunchChatTransport.connect(contract);
 }
 
@@ -379,22 +399,15 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
   for (const roomId of topicRooms.get(topicRef) ?? []) {
     const state = rooms.get(roomId);
     if (!state) continue;
-    // Only re-mark a room that was already cryptographically connected and the
-    // peer briefly dropped (connecting). connect_failed means proof never ran
-    // (or failed) — do NOT skip the proof; let the reconnect interval handle it.
-    if (
-      state.room.lifecycleStatus === "connecting" ||
-      state.room.lifecycleStatus === "connected"
-    ) {
-      state.room = {
-        ...state.room,
-        lifecycleStatus: "connected",
-        peerStatus: "online",
-        lastConnectError: undefined,
-      };
-      rooms.set(roomId, state);
-      persistLiveSession(state);
-    }
+    // Only refresh peer presence for rooms that already finished proof.
+    if (state.room.lifecycleStatus !== "connected") continue;
+    state.room = {
+      ...state.room,
+      peerStatus: "online",
+      lastConnectError: undefined,
+    };
+    rooms.set(roomId, state);
+    persistLiveSession(state);
   }
 }
 
@@ -414,17 +427,31 @@ function maybeMarkPeerLost(topicRef: string): void {
 
 function handleIncomingFrame(roomId: string, payloadB64: string): void {
   const state = rooms.get(roomId);
-  if (!state?.session) return;
-  try {
-    const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
-    const nonce = raw.slice(0, 12);
-    const ciphertext = raw.slice(12);
-    void P2PEncryptionAdapter.open({
-      session: state.session,
-      ciphertext,
-      nonce,
-      aad: new TextEncoder().encode(`v1|${roomId}|${state.session.sessionId}`),
-    }).then((opened) => {
+  const session = state?.session;
+  if (!state || !session) return;
+  void (async () => {
+    try {
+      const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
+      const nonce = raw.slice(0, 12);
+      const ciphertext = raw.slice(12);
+      let opened: Awaited<ReturnType<typeof P2PEncryptionAdapter.open>> = null;
+      const openSession = session;
+      for (const aad of incomingFrameAadCandidates(
+        roomId,
+        openSession,
+        state.room.lifecycleStatus,
+      )) {
+        const result = await P2PEncryptionAdapter.open({
+          session: openSession,
+          ciphertext,
+          nonce,
+          aad,
+        });
+        if (result) {
+          opened = result;
+          break;
+        }
+      }
       if (!opened) {
         if (pendingProofRooms.has(roomId)) {
           const resolver = proofResolvers.get(roomId);
@@ -485,10 +512,10 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
       notify(roomId, msg);
-    });
-  } catch {
-    /* fail closed */
-  }
+    } catch {
+      /* fail closed */
+    }
+  })();
 }
 
 async function attemptConnect(state: RoomState): Promise<ChatRoom> {
@@ -642,23 +669,41 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   }
   const existing = rooms.get(id);
   if (existing) {
-    if (
+    const lifecycleChanged = Boolean(
       bootstrap?.lifecycleStatus &&
-      bootstrap.lifecycleStatus !== existing.room.lifecycleStatus
-    ) {
+        bootstrap.lifecycleStatus !== existing.room.lifecycleStatus,
+    );
+    const syncFlagChanged =
+      bootstrap?.awaitingChainSync !== undefined &&
+      bootstrap.awaitingChainSync !== existing.room.awaitingChainSync;
+    const ttlFieldsChanged = Boolean(
+      bootstrap &&
+        ((bootstrap.roomTtl !== undefined &&
+          bootstrap.roomTtl !== existing.room.roomTtl) ||
+          (bootstrap.inviteExpiry !== undefined &&
+            bootstrap.inviteExpiry !== existing.room.inviteExpiry) ||
+          (bootstrap.inviteId !== undefined &&
+            bootstrap.inviteId !== existing.room.inviteId)),
+    );
+    if (lifecycleChanged || syncFlagChanged || ttlFieldsChanged) {
       existing.room = {
         ...existing.room,
-        // Monotonic: a stale `pending` hydration must never regress a room
-        // that already moved past acceptance. @see docs/security/p2pchatprotocol.md §9
-        lifecycleStatus: resolveIncomingLifecycle(
-          existing.room.lifecycleStatus,
-          bootstrap.lifecycleStatus,
-        ),
-        roomTopic: bootstrap.roomTopic ?? existing.room.roomTopic,
-        inviteId: bootstrap.inviteId ?? existing.room.inviteId,
-        inviteExpiry: bootstrap.inviteExpiry ?? existing.room.inviteExpiry,
-        roomTtl: bootstrap.roomTtl ?? existing.room.roomTtl,
-        roomKeyRef: bootstrap.roomKeyRef ?? existing.room.roomKeyRef,
+        ...(lifecycleChanged && bootstrap?.lifecycleStatus
+          ? {
+              // Monotonic: stale `pending` must never regress post-accept.
+              lifecycleStatus: resolveIncomingLifecycle(
+                existing.room.lifecycleStatus,
+                bootstrap.lifecycleStatus,
+              ),
+            }
+          : {}),
+        roomTopic: bootstrap?.roomTopic ?? existing.room.roomTopic,
+        inviteId: bootstrap?.inviteId ?? existing.room.inviteId,
+        inviteExpiry: bootstrap?.inviteExpiry ?? existing.room.inviteExpiry,
+        roomTtl: bootstrap?.roomTtl ?? existing.room.roomTtl,
+        roomKeyRef: bootstrap?.roomKeyRef ?? existing.room.roomKeyRef,
+        awaitingChainSync:
+          bootstrap?.awaitingChainSync ?? existing.room.awaitingChainSync,
       };
       upsertCatalogRoom(existing.room);
     }
@@ -682,6 +727,8 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     inviteId: bootstrap?.inviteId ?? catalog?.inviteId,
     inviteExpiry: bootstrap?.inviteExpiry ?? catalog?.inviteExpiry,
     roomTtl: bootstrap?.roomTtl ?? catalog?.roomTtl,
+    awaitingChainSync:
+      bootstrap?.awaitingChainSync ?? catalog?.awaitingChainSync,
     connectAttempts: 0,
     lastConnectError: catalog?.lastConnectError,
     createdAt: catalog?.createdAt ?? new Date().toISOString(),
@@ -759,6 +806,11 @@ export const HolepunchChatTransport: ChatTransport = {
 
   async connect(contract) {
     return runConnectSingleFlight(contract.roomId, async () => {
+      const existing = rooms.get(contract.roomId)?.room;
+      assertRoomInteractive(
+        existing?.lifecycleStatus ?? "accepted",
+        existing?.awaitingChainSync,
+      );
       contractsByRoom.set(contract.roomId, contract);
       let state = rooms.get(contract.roomId);
       if (!state) {
@@ -772,11 +824,19 @@ export const HolepunchChatTransport: ChatTransport = {
         });
       }
       state.contract = contract;
+      if (contract.roomTtl && !state.room.roomTtl) {
+        state.room = { ...state.room, roomTtl: contract.roomTtl };
+      }
+      const topicSuite = contract.transport.topicSuite ?? "SHA256_V1";
+      const topicEpoch = contract.transport.topicEpoch ?? 0;
       state.session = {
         sessionId: contract.sessionId,
         roomId: contract.roomId,
         relationshipId: contract.relationshipId,
         cipherSuite: contract.cipherSuite,
+        topicSuite,
+        topicEpoch,
+        topicRef: contract.transport.topicRef,
         sendKeyRef: contract.sendKeyRef,
         recvKeyRef: contract.recvKeyRef,
         nonceSeed: contract.nonceSeed,
@@ -804,12 +864,41 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async disconnect(roomId) {
+  async leaveRoom(roomId, opts) {
     const state = rooms.get(roomId);
+    const persisted = state ? undefined : loadRoomSession(roomId);
+    const topicSuite =
+      state?.contract?.transport.topicSuite ??
+      state?.session?.topicSuite ??
+      persisted?.contract.transport.topicSuite;
+    const relationshipId =
+      state?.contract?.relationshipId ??
+      state?.session?.relationshipId ??
+      persisted?.contract.relationshipId;
+    if (
+      !opts?.skipEpochBump &&
+      topicSuite === "HKDF_EPOCH_V1" &&
+      relationshipId
+    ) {
+      bumpRelationshipTopicEpoch(relationshipId);
+    }
+
     if (!state) {
-      // Still honor leave-forever when only the durable catalog remains.
+      const topicRef = persisted?.contract.transport.topicRef;
+      if (topicRef) {
+        try {
+          await backend().leave(topicRef, roomId);
+        } catch {
+          /* ignore */
+        }
+        const set = topicRooms.get(topicRef);
+        set?.delete(roomId);
+        if (set && set.size === 0) topicRooms.delete(topicRef);
+      }
       removeCatalogRoom(roomId);
       removeRoomSession(roomId);
+      rememberRevokedRoom(roomId);
+      await persistChatRoomTombstone(roomId);
       return;
     }
     const proofResolver = proofResolvers.get(roomId);
@@ -831,7 +920,7 @@ export const HolepunchChatTransport: ChatTransport = {
       set?.delete(roomId);
       if (set && set.size === 0) topicRooms.delete(topicRef);
     }
-    // disconnect = leave forever (product rule). Temporary offline never calls this.
+    // leaveRoom = leave forever (product rule). Temporary offline never calls this.
     rooms.delete(roomId);
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
@@ -839,11 +928,47 @@ export const HolepunchChatTransport: ChatTransport = {
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
     removeCatalogRoom(roomId);
+    rememberRevokedRoom(roomId, state.room.inviteId);
+    await persistChatRoomTombstone(roomId);
+  },
+
+  /** Leave swarm for all rooms; keep catalog, sessions, and in-memory rooms. */
+  async softLeaveAll() {
+    const joined = [...topicRooms.entries()].flatMap(([topicRef, roomIds]) =>
+      [...roomIds].map((roomId) => ({ topicRef, roomId })),
+    );
+    for (const { topicRef, roomId } of joined) {
+      try {
+        await backend().leave(topicRef, roomId);
+      } catch {
+        /* ignore */
+      }
+      const state = rooms.get(roomId);
+      if (state) {
+        state.topicRef = undefined;
+        if (
+          state.room.lifecycleStatus === "connected" ||
+          state.room.lifecycleStatus === "connecting"
+        ) {
+          state.room = {
+            ...state.room,
+            peerStatus: "offline",
+            lifecycleStatus: "accepted",
+          };
+        }
+        rooms.set(roomId, state);
+      }
+    }
+    topicRooms.clear();
   },
 
   async retryConnect(roomId) {
     const state = rooms.get(roomId);
     if (!state?.contract) throw new Error("Nothing to retry.");
+    assertRoomInteractive(
+      state.room.lifecycleStatus,
+      state.room.awaitingChainSync,
+    );
     return runConnectSingleFlight(roomId, async () => {
       const attempt = state.room.connectAttempts ?? 1;
       await sleep(holepunchBackoffMs(attempt));
@@ -854,6 +979,10 @@ export const HolepunchChatTransport: ChatTransport = {
   async sendMessage(roomId, text) {
     const state = rooms.get(roomId) ?? ensureRoomForRelay(roomId);
     if (!state) throw new Error("Room not found.");
+    assertRoomInteractive(
+      state.room.lifecycleStatus,
+      state.room.awaitingChainSync,
+    );
     assertCanSendMessages(state.room.lifecycleStatus);
     if (state.room.roomTtl && isRoomExpired(state.room.roomTtl, nowUnix())) {
       state.room.lifecycleStatus = "expired";
@@ -883,9 +1012,7 @@ export const HolepunchChatTransport: ChatTransport = {
     if (!state.session) throw new Error("Missing session.");
 
     const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
-    const aad = new TextEncoder().encode(
-      `v1|${roomId}|${state.session.sessionId}`,
-    );
+    const aad = buildChatAad(roomId, state.session);
     const sealed = await P2PEncryptionAdapter.seal({
       session: state.session,
       plaintext,
@@ -970,6 +1097,7 @@ export const HolepunchChatTransport: ChatTransport = {
       inviteExpiry: catalog.inviteExpiry,
       roomTtl: catalog.roomTtl,
       roomTopic: catalog.roomTopic,
+      awaitingChainSync: catalog.awaitingChainSync,
     }).room;
   },
 
@@ -994,6 +1122,7 @@ export const HolepunchChatTransport: ChatTransport = {
           inviteExpiry: entry.inviteExpiry,
           roomTtl: entry.roomTtl,
           roomTopic: entry.roomTopic,
+          awaitingChainSync: entry.awaitingChainSync,
         });
       }
     }
@@ -1009,6 +1138,50 @@ export const HolepunchChatTransport: ChatTransport = {
 
 export function getMessagesForRoom(roomId: string): ChatMessage[] {
   return [...(messagesByRoom.get(roomId) ?? [])];
+}
+
+/** Save in-memory room messages into the encrypted wallet blob. */
+export async function saveChatRoomsToWallet(): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  const bag: Record<string, ChatMessage[]> = {};
+  for (const [roomId, list] of messagesByRoom.entries()) {
+    bag[roomId] = [...list];
+  }
+  rt.raw = saveActiveMessages(rt.raw, bag);
+  await persistRuntime(rt);
+}
+
+/**
+ * Load non-revoked transcripts from the wallet blob into memory.
+ * Revoked stubs sync into gnh.revokedRooms.
+ */
+export function hydrateChatRoomsFromWallet(): void {
+  const rt = getRuntime();
+  if (!rt) return;
+  const roomsMap = readChatRooms(rt.raw);
+  for (const [roomId, entry] of Object.entries(roomsMap)) {
+    if (entry.revoked === true) {
+      rememberRevokedRoom(roomId);
+      messagesByRoom.delete(roomId);
+      continue;
+    }
+    if (isRoomRevoked(roomId)) continue;
+    const existing = messagesByRoom.get(roomId) ?? [];
+    if (existing.length > 0) continue;
+    messagesByRoom.set(roomId, [...entry.messages]);
+  }
+}
+
+async function persistChatRoomTombstone(roomId: string): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  rt.raw = tombstoneChatRoom(rt.raw, roomId);
+  try {
+    await persistRuntime(rt);
+  } catch {
+    /* local revoke still recorded */
+  }
 }
 
 export function getLastSidecarDetail(): string | undefined {
@@ -1044,6 +1217,14 @@ export function __resetHolepunchTransport(): void {
   inFlightConnects.clear();
   nextAutoRetryAt.clear();
   __setHolepunchSidecarBackend(null);
+}
+
+/** Test helper: seed in-memory transcript for a room. */
+export function __seedRoomMessagesForTests(
+  roomId: string,
+  msgs: ChatMessage[],
+): void {
+  messagesByRoom.set(roomId, [...msgs]);
 }
 
 /** @deprecated use __setHolepunchSidecarBackend from HolepunchSidecarClient */

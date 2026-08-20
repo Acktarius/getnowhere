@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "Get NowHere",
+    "slug": "get-nowhere-wrapper",
+    "version": "0.3.0",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0b0f",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0b0f"
+    },
+    "assetBundlePatterns": ["assets/ui/**/*", "assets/bare/**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "im.getnowhere.app"
+    },
+    "android": {
+      "package": "im.getnowhere.app",
+      "label": "Get NowHere",
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "WAKE_LOCK",
+        "CAMERA",
+        "POST_NOTIFICATIONS"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#161922",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "./plugins/withGnhSecurity.js",
+      "./plugins/withGnhBackgroundSync.js",
+      "./plugins/withGnhNotifications.js",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 29
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0a0b0f",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "dark": {
+            "backgroundColor": "#0a0b0f"
+          }
+        }
+      ]
+    ]
+  }
+}

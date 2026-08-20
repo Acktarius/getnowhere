@@ -1,26 +1,51 @@
-import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { Fingerprint, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BrandMark } from "@/components/Brand";
 import { SecureInput } from "@/components/SecureInput";
 import { SeedBackupPanel } from "@/components/SeedBackupPanel";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { useAuthStore } from "@/state/authStore";
+import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
+import {
+  enrollUnlockCredential,
+  isBiometricUnlockAvailable,
+  PasskeyError,
+} from "@/lib/auth/platform-unlock";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { setSessionWalletPassword } from "@/services/conceal/ConcealWalletService";
+import { markOnboarded } from "@/state/authStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
+import {
+  describePasswordFailure,
+  walletPasswordStrength,
+} from "@/utils/walletPassword";
 
-type Step = "creating" | "seed" | "passcode" | "biometric" | "done";
+type Step = "creating" | "seed" | "biometric" | "done";
 
 export function CreateWalletScreen() {
   const navigate = useNavigate();
   const createWallet = useWalletStore((s) => s.createWallet);
   const seedPhrase = useWalletStore((s) => s.seedPhrase);
+  const address = useWalletStore((s) => s.address);
   const initializing = useWalletStore((s) => s.initializing);
-  const setAppPasscode = useAuthStore((s) => s.setPasscode);
+  const setDataUnlockBiometric = useSettingsStore(
+    (s) => s.setDataUnlockBiometric,
+  );
 
   const [step, setStep] = useState<Step>("creating");
-  const [passcode, setPasscode] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [walletPassword, setWalletPassword] = useState("");
+  const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [enrollBusy, setEnrollBusy] = useState(false);
+
+  useEffect(() => {
+    if (isMobileHost()) {
+      void initMobileBiometricStorage();
+    }
+    void isBiometricUnlockAvailable().then(setBiometricAvailable);
+  }, []);
 
   async function handleCreate() {
     try {
@@ -31,21 +56,49 @@ export function CreateWalletScreen() {
     }
   }
 
-  async function handlePasscode() {
-    setError(null);
-    if (passcode.length < 6) return setError("Use at least 6 digits.");
-    if (passcode !== confirm) return setError("Passcodes do not match.");
+  async function persistWalletPassword(): Promise<boolean> {
+    const fail = describePasswordFailure(walletPassword);
+    if (fail) {
+      setError(fail);
+      return false;
+    }
+    if (walletPassword !== walletPasswordConfirm) {
+      setError("Wallet passwords do not match.");
+      return false;
+    }
     try {
-      await setAppPasscode(passcode);
-      setStep("biometric");
+      await setSessionWalletPassword(walletPassword);
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     }
   }
 
-  function finish() {
+  async function finish(enrollBiometric = false) {
+    setError(null);
+    if (!(await persistWalletPassword())) return;
+    if (enrollBiometric && biometricAvailable) {
+      setEnrollBusy(true);
+      try {
+        await enrollUnlockCredential(
+          "default",
+          walletPassword,
+          address || undefined,
+        );
+        setDataUnlockBiometric(true);
+      } catch (e) {
+        setError(e instanceof PasskeyError ? e.message : (e as Error).message);
+        setEnrollBusy(false);
+        return;
+      }
+      setEnrollBusy(false);
+    }
+    markOnboarded();
     navigate("/contacts");
   }
+
+  const passwordStrength = walletPasswordStrength(walletPassword);
 
   return (
     <div className="screen">
@@ -57,9 +110,7 @@ export function CreateWalletScreen() {
             ? "Generating fresh Conceal identity"
             : step === "seed"
               ? "Back up your seed"
-              : step === "passcode"
-                ? "Set unlock passcode"
-                : "Almost done"
+              : "Wallet password & biometrics"
         }
       />
       <div
@@ -82,7 +133,7 @@ export function CreateWalletScreen() {
             <button
               className="btn btn--primary btn--block"
               disabled={initializing}
-              onClick={handleCreate}
+              onClick={() => void handleCreate()}
               style={{ maxWidth: 280 }}
             >
               {initializing ? (
@@ -105,59 +156,82 @@ export function CreateWalletScreen() {
             </p>
             <SeedBackupPanel
               seedPhrase={seedPhrase}
-              onConfirm={() => setStep("passcode")}
+              onConfirm={() => setStep("biometric")}
             />
-          </div>
-        )}
-
-        {step === "passcode" && (
-          <div className="stack stack--gap-4 fade-in-up">
-            <p className="muted" style={{ fontSize: 14 }}>
-              This passcode unlocks the app locally. It is never sent anywhere.
-            </p>
-            <SecureInput
-              label="New passcode"
-              value={passcode}
-              onChange={setPasscode}
-              placeholder="At least 6 digits"
-              inputMode="numeric"
-              revealable
-              maxLength={16}
-            />
-            <SecureInput
-              label="Confirm passcode"
-              value={confirm}
-              onChange={setConfirm}
-              placeholder="Repeat passcode"
-              inputMode="numeric"
-              revealable
-              maxLength={16}
-            />
-            {error && <div className="field__error">{error}</div>}
-            <button
-              className="btn btn--block btn--primary"
-              onClick={handlePasscode}
-            >
-              Continue
-            </button>
           </div>
         )}
 
         {step === "biometric" && (
           <div className="stack stack--gap-4 fade-in-up">
-            <div className="card card--pad-md">
-              <div className="card__title">Biometric unlock (optional)</div>
-              <p className="muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
-                When available on device, Get Now Here can use Face ID or
-                fingerprint to unlock. This is a placeholder for now — you can
-                enable it later in Settings.
-              </p>
-            </div>
-            <button className="btn btn--block btn--primary" onClick={finish}>
-              Enter Get Now Here
-            </button>
-            <button className="btn btn--block btn--ghost" onClick={finish}>
-              Skip for now
+            <p className="muted" style={{ fontSize: 14 }}>
+              Choose a wallet encryption password. You will need it to open this
+              wallet after the app exits — or use biometrics if you enable them
+              below.
+            </p>
+            <SecureInput
+              label="Wallet password"
+              value={walletPassword}
+              onChange={setWalletPassword}
+              revealable
+            />
+            {walletPassword.length > 0 && (
+              <div className="row-flex" style={{ gap: 4 }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <div
+                    key={n}
+                    style={{
+                      flex: 1,
+                      height: 4,
+                      borderRadius: 2,
+                      background:
+                        n <= passwordStrength
+                          ? passwordStrength >= 4
+                            ? "var(--success)"
+                            : "var(--primary)"
+                          : "var(--border)",
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            <SecureInput
+              label="Confirm wallet password"
+              value={walletPasswordConfirm}
+              onChange={setWalletPasswordConfirm}
+              revealable
+            />
+            {error && <div className="field__error">{error}</div>}
+            {biometricAvailable ? (
+              <button
+                className="btn btn--block btn--primary"
+                disabled={enrollBusy}
+                onClick={() => void finish(true)}
+              >
+                {enrollBusy ? (
+                  <>
+                    <Loader2 size={16} className="spin" /> Enabling…
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint size={16} /> Enable biometrics & continue
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                className="btn btn--block btn--primary"
+                disabled={enrollBusy}
+                onClick={() => void finish(false)}
+              >
+                Enter Get NowHere
+              </button>
+            )}
+            <button
+              className="btn btn--block btn--ghost"
+              disabled={enrollBusy}
+              onClick={() => void finish(false)}
+            >
+              {biometricAvailable ? "Skip biometrics" : "Continue"}
             </button>
           </div>
         )}

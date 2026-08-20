@@ -3,9 +3,18 @@
  */
 
 import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
-import { deriveTopicRef } from "@/services/protocol/ids";
-import type { HolepunchBootstrapContract } from "@/types/protocol";
-import { HOLEPUNCH_CONTRACT_VERSION } from "@/types/protocol";
+import {
+  getRelationshipTopicEpoch,
+  syncRelationshipTopicEpoch,
+} from "@/services/p2p/relationshipTopicEpochStore";
+import type {
+  HolepunchBootstrapContract,
+  TopicSuiteId,
+} from "@/types/protocol";
+import {
+  HOLEPUNCH_CONTRACT_VERSION,
+  resolveTopicSuite,
+} from "@/types/protocol";
 import type { SessionBootstrapService } from "@/types/services";
 
 export const SessionBootstrapAdapter: SessionBootstrapService = {
@@ -28,6 +37,20 @@ export const SessionBootstrapAdapter: SessionBootstrapService = {
       receiverEphemeralPublicKey: acceptance.receiverEphemeralPublicKey,
     };
 
+    const topicSuite = resolveTopicSuite(completed);
+    if (topicSuite === "HKDF_EPOCH_V1") {
+      if (completed.topicEpoch !== undefined) {
+        syncRelationshipTopicEpoch(
+          completed.relationshipId,
+          completed.topicEpoch,
+        );
+      }
+    }
+    const topicEpoch =
+      topicSuite === "HKDF_EPOCH_V1"
+        ? getRelationshipTopicEpoch(completed.relationshipId)
+        : (completed.topicEpoch ?? 0);
+
     return P2PEncryptionAdapter.deriveSessionConfig({
       senderEphemeralPublicKey: completed.senderEphemeralPublicKey,
       receiverEphemeralPublicKey: completed.receiverEphemeralPublicKey!,
@@ -41,14 +64,14 @@ export const SessionBootstrapAdapter: SessionBootstrapService = {
         roomId: completed.roomId,
       },
       nonceSeed: completed.nonceSeed,
+      topicSuite,
+      topicEpoch,
     });
   },
 
   async buildHolepunchContract({ session, invite, peerRole, relayHints }) {
-    const topicRef = await deriveTopicRef(
-      session.roomId,
-      session.relationshipId,
-    );
+    const topicSuite: TopicSuiteId = session.topicSuite;
+    const topicEpoch = session.topicEpoch;
     const contract: HolepunchBootstrapContract = {
       contractVersion: HOLEPUNCH_CONTRACT_VERSION,
       roomId: session.roomId,
@@ -65,7 +88,9 @@ export const SessionBootstrapAdapter: SessionBootstrapService = {
       peerRole,
       transport: {
         kind: "holepunch",
-        topicRef,
+        topicRef: session.topicRef,
+        topicSuite,
+        topicEpoch,
         relayHints,
       },
       roomTtl: invite.roomTtl,

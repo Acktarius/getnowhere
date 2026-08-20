@@ -89,6 +89,15 @@ export function resolveIncomingLifecycle(
   return incoming;
 }
 
+/** Pending invite visible during rescan; Accept blocked until tip (leave/revoke may lag). */
+export function shouldAwaitChainSyncForInvite(
+  nearTip: boolean,
+  inviteExpiry: number,
+  nowSec = nowUnix(),
+): boolean {
+  return !nearTip && !isInviteExpired(inviteExpiry, nowSec);
+}
+
 const ALLOWED: Record<RoomLifecycleStatus, ReadonlySet<RoomLifecycleStatus>> = {
   pending: new Set(["accepted", "declined", "expired", "failed", "destroyed"]),
   accepted: new Set(["connecting", "expired", "destroyed", "failed"]),

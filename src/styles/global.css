@@ -33,6 +33,7 @@
 [data-theme="dark"] {
   --bg: #0a0b0f;
   --bg-elev: #11131a;
+  --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #161922;
   --bg-card: #14161d;
   --bg-hover: #1b1e28;
@@ -68,6 +69,7 @@
 [data-theme="light"] {
   --bg: #f6f7f9;
   --bg-elev: #ffffff;
+  --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #f0f2f6;
   --bg-card: #ffffff;
   --bg-hover: #f0f2f6;
@@ -171,6 +173,54 @@ button {
   position: relative;
   container-type: inline-size;
   container-name: app;
+}
+
+.main-tab-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+
+.tab-panels {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panels--suspended {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.tab-panel {
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.tab-panel--active {
+  display: flex;
+}
+
+.tab-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
 }
 
 .screen {
@@ -307,7 +357,7 @@ button {
   -webkit-backdrop-filter: saturate(140%) blur(20px);
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   z-index: 20;
 }
 @media (min-width: 768px) {
@@ -327,6 +377,11 @@ button {
   letter-spacing: 0.02em;
   transition: color var(--dur) var(--ease);
   position: relative;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
 }
 .bottom-nav__item svg {
   width: 22px;
@@ -436,6 +491,46 @@ button {
 }
 .btn--pill {
   border-radius: var(--radius-pill);
+}
+
+/** Wallet sheet biometric unlock — rem via CSS (not Lucide size attr; WebView-safe). */
+.wallet-bio-unlock-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 0.25rem 0 0.5rem;
+}
+.wallet-bio-unlock {
+  width: 4.5rem;
+  height: 4.5rem;
+  min-width: 4.5rem;
+  min-height: 4.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--primary);
+  background: var(--primary-soft);
+  transition:
+    background var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+.wallet-bio-unlock:hover {
+  background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+}
+.wallet-bio-unlock:active {
+  transform: scale(0.96);
+}
+.wallet-bio-unlock:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.wallet-bio-unlock svg {
+  width: 2.25rem !important;
+  height: 2.25rem !important;
 }
 
 /* ===== Cards ===== */
@@ -701,6 +796,50 @@ button {
 }
 .tx-row__hash:hover {
   color: var(--text);
+}
+.row__avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.notify-pin {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  border: 2px solid var(--bg-elev);
+  pointer-events: none;
+  z-index: 1;
+}
+.notify-pin--dot {
+  min-width: 10px;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  top: 0;
+  right: 0;
+}
+.notify-pin--invite {
+  background: var(--secondary);
+}
+.notify-pin--register {
+  background: var(--success);
+}
+.notify-pin--relay {
+  background: var(--accent);
+}
+.notify-pin--pending {
+  background: var(--secondary);
+}
+.notify-pin--pulse {
+  animation: tx-dot-pulse 1.4s ease-in-out infinite;
 }
 .row__avatar {
   width: 44px;
@@ -1028,6 +1167,17 @@ button {
 .privacy-setting-item {
   align-items: flex-start;
 }
+.privacy-setting-item__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--bg-elev-2);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .privacy-setting-item__title {
   display: block;
   font-size: 14.5px;
@@ -1157,6 +1307,51 @@ button {
   animation-delay: 240ms;
 }
 
+/* Markdown-lite fenced code (L2 chat bubbles) */
+.md-fence-wrap {
+  position: relative;
+  margin: 6px 0 4px;
+  max-width: 100%;
+}
+
+.md-fence-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  min-height: 0;
+  padding: 4px 6px;
+  opacity: 0.75;
+}
+
+.md-fence-wrap:hover .md-fence-copy,
+.md-fence-copy:focus-visible {
+  opacity: 1;
+}
+
+.md-fence {
+  margin: 0;
+  padding: 10px 36px 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bubble-fence-bg, var(--bg-hover));
+  color: var(--bubble-fence-fg, inherit);
+  border: 1px solid var(--bubble-fence-border, var(--border-strong));
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.md-fence code {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1261,6 +1456,64 @@ button {
 .toast__close:hover {
   background: var(--bg-elev-2);
   color: var(--text);
+}
+
+/* ===== Chat topic backdrop (Keet-style tiled mask) ===== */
+.chat-topic-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background-color: color-mix(in srgb, var(--primary) 9%, transparent);
+  mask-image: var(--chat-topic-tile);
+  mask-repeat: repeat;
+  mask-size: 168px 168px;
+  -webkit-mask-image: var(--chat-topic-tile);
+  -webkit-mask-repeat: repeat;
+  -webkit-mask-size: 168px 168px;
+}
+[data-theme="light"] .chat-topic-backdrop {
+  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+/* ===== Preset stepper (room TTL / invite expiry) ===== */
+.preset-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.preset-stepper__btn {
+  flex: 0 0 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  touch-action: manipulation;
+}
+.preset-stepper__value {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/** Mobile WebView chat room — fixed composer above keyboard + home indicator. */
+.chat-room-composer--mobile {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  z-index: 10;
+  width: 100%;
+  max-width: 480px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-shrink: 0;
+  background: var(--bg);
 }
 
 /* Utilities */

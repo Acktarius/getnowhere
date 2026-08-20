@@ -37,3 +37,26 @@ desktop-electron/resources/sidecar/
 desktop-electron/resources/runtime/
 desktop-electron/resources/ui/
 desktop-electron/resources/gnh-defaults.json
+
+# Local security-review notes (not for commit)
+.repo-kit/findings/*
+.repo-kit/scripts/*
+
+# Expo native wrapper (generated / local build)
+native-wrapper/node_modules/
+native-wrapper/.expo/
+native-wrapper/android/
+native-wrapper/ios/
+native-wrapper/assets/ui/*
+!native-wrapper/assets/ui/.gitkeep
+
+# AI files
+.continue/
+.repo-kit/
+.forge/
+.kilo/
+.cursor/
+docs/
+
+# Build|related
+tsconfig.tsbuildinfo

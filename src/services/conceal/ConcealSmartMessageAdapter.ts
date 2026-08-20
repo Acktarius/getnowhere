@@ -5,13 +5,20 @@
  */
 
 import { messages } from "conceal-wallet-sdk";
-import { readReceivedRecords } from "@/services/conceal/sync/messages-store";
+import {
+  readReceivedRecords,
+  readSentRecords,
+} from "@/services/conceal/sync/messages-store";
 import {
   pollMempoolRuntime,
   requireRuntime,
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
+import {
+  getRelationshipTopicEpoch,
+  syncRelationshipTopicEpoch,
+} from "@/services/p2p/relationshipTopicEpochStore";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -31,7 +38,7 @@ import {
 } from "@/services/protocol/SmartMessageProtocolAdapter";
 import type { SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake, ChatRelayPayload } from "@/types/protocol";
-import { CHAT_PROTOCOL_VERSION } from "@/types/protocol";
+import { CHAT_PROTOCOL_VERSION, resolveTopicSuite } from "@/types/protocol";
 import type {
   ComposedInvite,
   ComposeInviteInput,
@@ -141,6 +148,26 @@ function matchContactByPaymentId(
     .find((c) => c.paymentIdFrom.trim().toLowerCase() === needle);
 }
 
+function matchContactForSentRecord(
+  record: import("@/services/conceal/sync/messages-store").SdkMessageRecord,
+): SmartMessageContactDelivery | undefined {
+  if (!contactBinder) return undefined;
+  const pidTo = record.paymentIdTo?.trim().toLowerCase();
+  if (pidTo) {
+    const byPid = contactBinder
+      .list()
+      .find((c) => c.paymentIdTo?.trim().toLowerCase() === pidTo);
+    if (byPid) return byPid;
+  }
+  const addr = (record.sentTo ?? record.counterpartyAddress)
+    ?.trim()
+    .toLowerCase();
+  if (!addr) return undefined;
+  return contactBinder
+    .list()
+    .find((c) => c.address.trim().toLowerCase() === addr);
+}
+
 async function inviteFromCreateBody(
   body: string,
   meta: {
@@ -162,6 +189,12 @@ async function inviteFromCreateBody(
     if (!from || !to) return null;
     const relationshipId = await deriveRelationshipId(from, to);
     hs = await hydrateCreateHandshake(hs, relationshipId);
+  }
+  if (resolveTopicSuite(hs) === "HKDF_EPOCH_V1") {
+    syncRelationshipTopicEpoch(
+      hs.relationshipId,
+      hs.topicEpoch ?? getRelationshipTopicEpoch(hs.relationshipId),
+    );
   }
   handshakesByInviteId.set(hs.inviteId, hs);
   rememberReplayId(hs.replayId);
@@ -254,11 +287,16 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     const senderEphemeralPublicKey =
       input.handshakeOverrides?.senderEphemeralPublicKey ?? randomHex(32);
 
+    const topicEpoch =
+      input.handshakeOverrides?.topicEpoch ??
+      getRelationshipTopicEpoch(input.relationshipId);
+
     const handshake = {
       protocolVersion: CHAT_PROTOCOL_VERSION,
       inviteId,
       relationshipId: input.relationshipId,
       roomId,
+      topicEpoch,
       cipherSuite: "CHACHA20_POLY1305_V1" as const,
       senderEphemeralPublicKey,
       kdf: "HKDF_SHA256_V1" as const,
@@ -390,6 +428,23 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           });
         }
       }
+      for (const record of readSentRecords(rt.raw)) {
+        if (!messages.isSmartMessage(record.body)) continue;
+        const contact = matchContactForSentRecord(record);
+        if (!contact) continue;
+        const invite = await inviteFromCreateBody(record.body, {
+          contactId: contact.contactId,
+          status: "sent",
+          txHash: record.id,
+          createdAt: record.timestamp,
+          senderAlias: contact.alias,
+          paymentIdFrom: contact.paymentIdFrom,
+          paymentIdTo: contact.paymentIdTo,
+        });
+        if (invite && !out.some((i) => i.inviteId === invite.inviteId)) {
+          out.push(invite);
+        }
+      }
       // Keep any local sent copies that aren't on the received list.
       for (const inv of invitesById.values()) {
         if (inv.status === "sent" && !out.some((i) => i.id === inv.id)) {
@@ -489,6 +544,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       roomId: input.roomId,
       replayId: input.replayId,
       reasonCode: "room_revoked",
+      topicEpoch: input.topicEpoch,
     });
     const { hash } = await broadcastSmartBody({
       contactId: input.contactId,

@@ -1,22 +1,28 @@
 import {
-  Bug,
+  Bell,
   ChevronRight,
   Database,
-  Fingerprint,
+  Download,
   Gauge,
   Info,
   KeyRound,
   Network,
+  Pickaxe,
+  RefreshCw,
   Shield,
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { NodeSelector } from "@/components/NodeSelector";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
+import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { bridgeRequestNotificationPermissions } from "@/lib/mobile/nativeNotificationsBridge";
 import { refreshAutoNode } from "@/lib/network/auto-node";
 import { setPreferredNode } from "@/lib/network/node-preference";
 import {
@@ -33,13 +39,30 @@ import {
   updateWalletSyncSettings,
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
+import { onNotificationPrivacyChanged } from "@/services/notifications/publishBackgroundNotification";
+import {
+  deleteWalletData,
+  resetAppData,
+} from "@/services/storage/appDataLifecycle";
 import { useSettingsStore } from "@/state/settingsStore";
+import { toastError } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
+import { version } from "../../../package.json";
+
+type WipeConfirm = "delete" | "reset" | "delete-resync";
 
 export function SettingsScreen() {
   const s = useSettingsStore();
+  const navBadges = useNavNotificationBadges();
   const setNode = useWalletStore((w) => w.setNode);
   const resync = useWalletStore((w) => w.resync);
+  const resyncFromCreationHeight = useWalletStore(
+    (w) => w.resyncFromCreationHeight,
+  );
+  const resetAndRescanFromCreationHeight = useWalletStore(
+    (w) => w.resetAndRescanFromCreationHeight,
+  );
+  const syncStatus = useWalletStore((w) => w.syncStatus);
   const [showNodeSheet, setShowNodeSheet] = useState(false);
   const [customUrl, setCustomUrl] = useState("");
   const [showCustom, setShowCustom] = useState(false);
@@ -47,6 +70,9 @@ export function SettingsScreen() {
   const [syncSpeed, setSyncSpeed] = useState<SyncSpeed>(DEFAULT_SYNC_SPEED);
   const [readMinerTx, setReadMinerTx] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
+  const [resyncBusy, setResyncBusy] = useState(false);
+  const [creationHeight, setCreationHeight] = useState<number | null>(null);
+  const [wipeConfirm, setWipeConfirm] = useState<WipeConfirm | null>(null);
 
   useEffect(() => {
     void refreshAutoNode();
@@ -57,6 +83,7 @@ export function SettingsScreen() {
       );
       setReadMinerTx(Boolean(rt.raw.options.checkMinerTx));
       setCurrentNode(getInternalWalletNodeUrl());
+      setCreationHeight(Math.max(0, Number(rt.raw.creationHeight ?? 0) || 0));
     }
   }, []);
 
@@ -90,6 +117,61 @@ export function SettingsScreen() {
     }
   }
 
+  async function runResyncFromCreation() {
+    setResyncBusy(true);
+    try {
+      await resyncFromCreationHeight();
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Resync failed.");
+    } finally {
+      setResyncBusy(false);
+    }
+  }
+
+  async function runDeleteAndResync() {
+    setResyncBusy(true);
+    try {
+      await resetAndRescanFromCreationHeight();
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Delete and resync failed.");
+      throw err;
+    } finally {
+      setResyncBusy(false);
+    }
+  }
+
+  /** User-gesture flow: persist setting, sync native, request OS permission. */
+  function applyNotificationsEnabled(on: boolean) {
+    s.setPrivacy({ notificationsEnabled: on });
+    onNotificationPrivacyChanged();
+    if (on && isMobileHost()) {
+      bridgeRequestNotificationPermissions({ badge: true, alert: false });
+    }
+  }
+
+  function applyNotificationBanners(on: boolean) {
+    s.setPrivacy({ notificationBannersEnabled: on });
+    onNotificationPrivacyChanged();
+    if (on && isMobileHost()) {
+      bridgeRequestNotificationPermissions({ badge: true, alert: true });
+    }
+  }
+
+  async function runWipe(kind: WipeConfirm) {
+    try {
+      if (kind === "delete") await deleteWalletData();
+      else await resetAppData();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toastError(
+        kind === "delete"
+          ? `Could not delete wallet: ${message}`
+          : `Could not reset app data: ${message}`,
+      );
+      throw err;
+    }
+  }
+
   const customHints = getNodeUrlFormatHints(customUrl);
 
   return (
@@ -99,9 +181,7 @@ export function SettingsScreen() {
         className="screen-scroll stack stack--gap-4"
         style={{ padding: "16px 0 32px" }}
       >
-        <div className="section">
-          <ThemeSelector />
-        </div>
+        <ThemeSelector />
 
         <div className="section">
           <div className="section__head">
@@ -131,16 +211,40 @@ export function SettingsScreen() {
             <hr className="divider divider--flush" />
             <PrivacySettingItem
               title="Local message retention"
-              description="Keep a local-only cache of recent P2P messages."
+              description="On Exit, save chat messages into the encrypted wallet. Off = do not save chat text."
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem
-              title="Advanced debug logging"
-              description="Off by default. Enables diagnostics capture for troubleshooting."
-              on={s.privacy.advancedDebugLogging}
-              onToggle={(v) => s.setPrivacy({ advancedDebugLogging: v })}
+              icon={Bell}
+              title="Notifications"
+              description="Badge the app icon when invitations or chain messages arrive while the app is in the background."
+              on={s.privacy.notificationsEnabled}
+              onToggle={(v) => applyNotificationsEnabled(v)}
+            />
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              title="Notification banner"
+              description={
+                s.privacy.notificationsEnabled
+                  ? "Also show a system banner. Requires OS notification permission."
+                  : "Enable notifications to configure banners."
+              }
+              on={
+                s.privacy.notificationsEnabled &&
+                s.privacy.notificationBannersEnabled
+              }
+              onToggle={
+                s.privacy.notificationsEnabled
+                  ? (v) => applyNotificationBanners(v)
+                  : undefined
+              }
+              trailing={
+                s.privacy.notificationsEnabled ? undefined : (
+                  <span className="field__hint">Off</span>
+                )
+              }
             />
           </div>
         </div>
@@ -153,8 +257,8 @@ export function SettingsScreen() {
             <LinkRow
               to="/settings/security"
               icon={Shield}
-              title="Passcode & biometrics"
-              sub="Change unlock PIN, biometric placeholder"
+              title="Biometrics & auto-lock"
+              sub="Auto-lock, app access, and data unlock"
             />
             <LinkRow
               to="/settings/wallet-password"
@@ -164,9 +268,9 @@ export function SettingsScreen() {
             />
             <LinkRow
               to="/settings/backup"
-              icon={KeyRound}
-              title="Backup seed phrase"
-              sub="Reveal and confirm your seed backup"
+              icon={Download}
+              title="Backup"
+              sub="Reveal seed & keys, download encrypted wallet"
             />
           </div>
         </div>
@@ -188,10 +292,7 @@ export function SettingsScreen() {
                 <RowLead icon={Gauge} />
                 <div className="row__main">
                   <div className="row__title">Sync speed</div>
-                  <div className="row__sub" style={{ fontSize: 12.5 }}>
-                    Same profiles as Conceal Next Wallet (workers, batch,
-                    sources).
-                  </div>
+                  <span className="field__hint">Profiles</span>
                 </div>
               </div>
               <div
@@ -213,11 +314,58 @@ export function SettingsScreen() {
             </div>
             <hr className="divider divider--flush" />
             <PrivacySettingItem
+              icon={Pickaxe}
               title="Read miner transactions"
               description="Include coinbase outputs when syncing — needed for solo mining."
               on={readMinerTx}
               onToggle={(v) => void applyMinerTx(v)}
             />
+            <hr className="divider divider--flush" />
+            <div
+              className="row"
+              style={{
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 10,
+              }}
+            >
+              <div className="row-flex" style={{ gap: 10 }}>
+                <RowLead icon={RefreshCw} />
+                <div className="row__main">
+                  <div className="row__title">Blockchain rescan</div>
+                  <span className="field__hint">
+                    {creationHeight !== null
+                      ? `Creation height: ${creationHeight}. Resync rewinds the scan cursor; delete and resync clears stored transactions first.`
+                      : "Resync from wallet creation height (unlock wallet first)."}
+                  </span>
+                </div>
+              </div>
+              <div
+                className="row-flex"
+                style={{ flexWrap: "wrap", gap: 6, paddingLeft: 46 }}
+              >
+                <button
+                  type="button"
+                  disabled={
+                    resyncBusy || settingsBusy || syncStatus === "syncing"
+                  }
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void runResyncFromCreation()}
+                >
+                  {resyncBusy ? "Resyncing…" : "Resync"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    resyncBusy || settingsBusy || syncStatus === "syncing"
+                  }
+                  className="btn btn--sm btn--danger"
+                  onClick={() => setWipeConfirm("delete-resync")}
+                >
+                  Delete and resync
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -245,57 +393,6 @@ export function SettingsScreen() {
                 />
               }
             />
-            <hr className="divider divider--flush" />
-            <Row
-              icon={Fingerprint}
-              title="Biometric unlock"
-              sub="Placeholder — available on supported devices"
-              trailing={
-                <button
-                  role="switch"
-                  aria-checked={s.biometricEnabled}
-                  onClick={() => s.setBiometric(!s.biometricEnabled)}
-                  style={{
-                    width: 44,
-                    height: 26,
-                    borderRadius: 13,
-                    background: s.biometricEnabled
-                      ? "var(--primary)"
-                      : "var(--bg-press)",
-                    border: "1px solid var(--border)",
-                    position: "relative",
-                    flexShrink: 0,
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: s.biometricEnabled ? 20 : 2,
-                      width: 20,
-                      height: 20,
-                      borderRadius: "50%",
-                      background: "var(--text-inverse)",
-                      transition: "left var(--dur) var(--ease)",
-                    }}
-                  />
-                </button>
-              }
-            />
-            <hr className="divider divider--flush" />
-            <Row
-              icon={Bug}
-              title="Diagnostics"
-              sub="View logs and adapter state"
-              trailing={
-                <Link
-                  className="btn btn--sm btn--secondary"
-                  to="/settings/about"
-                >
-                  Open
-                </Link>
-              }
-            />
           </div>
         </div>
 
@@ -307,22 +404,64 @@ export function SettingsScreen() {
             <LinkRow
               to="/settings/about"
               icon={Info}
-              title="About Get Now Here"
+              title="About Get NowHere"
               sub="Version, story, and licenses"
             />
           </div>
         </div>
 
-        <div className="section">
-          <button className="btn btn--block btn--danger">
+        <div className="section" style={{ display: "grid", gap: 8 }}>
+          <button
+            type="button"
+            className="btn btn--block btn--danger"
+            onClick={() => setWipeConfirm("delete")}
+          >
+            <Trash2 size={15} /> Delete wallet
+          </button>
+          <button
+            type="button"
+            className="btn btn--block btn--danger"
+            onClick={() => setWipeConfirm("reset")}
+          >
             <Trash2 size={15} /> Reset app data
           </button>
           <p className="center faint" style={{ fontSize: 11.5, paddingTop: 8 }}>
-            Get Now Here · v0.1.0 · getnowhere.im
+            Get NowHere · v{version} · getnowhere.im
           </p>
         </div>
       </div>
-      <BottomNav />
+      <BottomNav {...navBadges} />
+
+      <ConfirmModal
+        open={wipeConfirm === "delete"}
+        title="Delete wallet?"
+        body="This removes your wallet, contacts, and rooms. Theme and other preferences are kept. The app will reload."
+        confirmLabel="Delete wallet"
+        destructive
+        busyLabel="Deleting…"
+        onConfirm={() => runWipe("delete")}
+        onClose={() => setWipeConfirm(null)}
+      />
+      <ConfirmModal
+        open={wipeConfirm === "delete-resync"}
+        title="Delete and resync?"
+        body="This clears all stored wallet transactions and received smart messages, then rescans from your wallet creation height. Balances will rebuild as blocks are scanned."
+        confirmLabel="Delete and resync"
+        destructive
+        busyLabel="Rescanning…"
+        onConfirm={() => runDeleteAndResync()}
+        onClose={() => setWipeConfirm(null)}
+      />
+      <ConfirmModal
+        open={wipeConfirm === "reset"}
+        title="Reset all app data?"
+        body="This removes your wallet, contacts, rooms, theme, and preferences. The app will reload."
+        confirmLabel="Reset app data"
+        destructive
+        busyLabel="Resetting…"
+        onConfirm={() => runWipe("reset")}
+        onClose={() => setWipeConfirm(null)}
+      />
 
       {showNodeSheet && (
         <div

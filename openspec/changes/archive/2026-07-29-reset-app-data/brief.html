@@ -1,0 +1,99 @@
+<!-- forge-brief-specs-hash:2f09da986cf2dd26 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset app data — operator brief</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+      color: #1a1a1a;
+      background: #f7f7f5;
+    }
+    main {
+      max-width: 48rem;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+    h1 { font-size: 1.75rem; line-height: 1.2; margin: 0 0 0.75rem; }
+    h2 { font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+    p, li { margin: 0.4rem 0; }
+    ul { padding-left: 1.25rem; }
+    .muted { color: #555; }
+    code { font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Delete wallet &amp; reset app data</h1>
+    <p class="muted">Operator brief for change <code>reset-app-data</code></p>
+
+    <h2>TL;DR</h2>
+    <p>
+      Settings will get two working danger buttons. <strong>Delete wallet</strong>
+      clears the wallet and chat/contact state so you can import another wallet,
+      while keeping theme and similar preferences.
+      <strong>Reset app data</strong> clears wallet state <em>and</em> preferences
+      for a clean slate.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>A real <strong>Delete wallet</strong> action (confirm → wipe → reload → Welcome / Import).</li>
+      <li>A real <strong>Reset app data</strong> action that also drops theme/settings/node prefs.</li>
+      <li>Same behavior in the browser and Electron Alice/Bob windows (each window keeps its own storage).</li>
+      <li>Automated tests that prove prefs survive delete-wallet and disappear on full reset.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      The app removes an explicit list of storage keys (wallet blob, onboarding
+      flag, contacts, rooms, etc.). Full reset also removes preference keys.
+      Memory is cleared first so secrets do not linger after the wipe. Then the
+      page reloads.
+    </p>
+    <pre class="mermaid">
+flowchart LR
+  A[Confirm in Settings] --> B[Disconnect wallet runtime]
+  B --> C{Which action?}
+  C -->|Delete wallet| D[Remove wallet-tied keys]
+  C -->|Reset app data| E[Remove wallet-tied + prefs]
+  D --> F[Reload → Welcome / Import]
+  E --> F
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>Open Settings: two red buttons instead of one dead stub.</li>
+      <li>Browser confirm dialog before either wipe.</li>
+      <li>No need to manually clear site data or delete <code>~/.config/getnowhere-*</code> for a normal wallet swap.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>If a future feature adds a new storage key and forgets to register it, it could survive a wipe — lists are documented and exported for review.</li>
+      <li>Mobile secure-storage bulk wipe is deferred until a native adapter exists; the same Settings buttons will call the same functions.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Electron IPC / wiping the whole Chromium profile directory.</li>
+      <li>Typed “type RESET to confirm” dialogs.</li>
+      <li>Multi-wallet switcher (app remains single-wallet).</li>
+      <li>Migrating or exporting data before wipe.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Wipe module + unit tests (3 tasks).</li>
+      <li>Settings UI wiring (1 task).</li>
+      <li>Docs + e2e evidence (2 tasks).</li>
+    </ul>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

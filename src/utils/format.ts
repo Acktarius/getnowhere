@@ -36,6 +36,17 @@ export function formatTime(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** Unix seconds → locale date and time (room TTL diagnostics). */
+export function formatUnixDateTime(unixSec: number): string {
+  return new Date(unixSec * 1000).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function formatCCX(amount: number, dp = 4): string {
   const s = amount.toFixed(dp);
   // strip trailing zeros but keep at least 2 dp

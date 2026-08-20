@@ -6,13 +6,20 @@ import {
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
 import { useContactsStore } from "@/state/contactsStore";
-import type { WalletState } from "@/types/models";
+import type { Transaction, WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
 
 type WalletStore = WalletState & {
   seedPhrase: string | null; // held only in-memory, never persisted to disk
   initializing: boolean;
   error: string | null;
+  /** Cached tx history — survives tab unmounts (mobile WebView perf). */
+  transactions: Transaction[];
+  transactionsLoading: boolean;
+  /** Set on encrypted file import; consumed once for room replay. */
+  pendingFileImportRoomRestore: boolean;
+  /** Returns true once after file import, then clears the flag. */
+  takeFileImportRoomRestore: () => boolean;
   createWallet: () => Promise<{ seedPhrase: string }>;
   restoreWallet: (seed: string) => Promise<void>;
   importWallet: (input: ImportWalletInput) => Promise<void>;
@@ -29,6 +36,8 @@ type WalletStore = WalletState & {
     paymentId?: string;
   }) => Promise<void>;
   resync: () => Promise<void>;
+  resyncFromCreationHeight: () => Promise<void>;
+  resetAndRescanFromCreationHeight: () => Promise<void>;
   setNetwork: (n: WalletState["network"]) => void;
   setNode: (url: string) => void;
   getNode: () => string;
@@ -53,6 +62,15 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   seedPhrase: null,
   initializing: false,
   error: null,
+  transactions: [],
+  transactionsLoading: false,
+  pendingFileImportRoomRestore: false,
+
+  takeFileImportRoomRestore() {
+    const pending = get().pendingFileImportRoomRestore;
+    if (pending) set({ pendingFileImportRoomRestore: false });
+    return pending;
+  },
 
   async createWallet() {
     set({ initializing: true, error: null });
@@ -70,6 +88,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
       await useContactsStore.getState().hydrate();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
@@ -117,8 +136,14 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0.05,
         initializing: false,
       });
+      if (input.method === "file") {
+        set({ pendingFileImportRoomRestore: true });
+      }
       await useContactsStore.getState().hydrate();
       void get().resync();
+      if (input.method === "file") {
+        void useContactsStore.getState().refreshInvites();
+      }
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -145,8 +170,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await useContactsStore.getState().hydrate();
+      const { hydrateChatRoomsFromWallet } = await import(
+        "@/services/p2p/HolepunchChatTransport"
+      );
+      hydrateChatRoomsFromWallet();
       // Enter app immediately; live sync + resync catch tip in background.
       void get().resync();
+      void useContactsStore.getState().refreshInvites();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -161,6 +191,11 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     await walletService.unlockWallet("");
     set({ locked: false });
     await useContactsStore.getState().hydrate();
+    const { hydrateChatRoomsFromWallet } = await import(
+      "@/services/p2p/HolepunchChatTransport"
+    );
+    hydrateChatRoomsFromWallet();
+    void useContactsStore.getState().refreshInvites();
   },
 
   async refreshBalance() {
@@ -170,15 +205,26 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       balanceAvailable: b.available,
       balancePending: b.pending,
     });
+    // Always reload history: 0-amount L1′ txs do not change totals.
+    await get().refreshTransactions();
   },
 
   async refreshTransactions() {
-    // transactions handled in wallet view via direct service call
+    if (!get().initialized) return;
+    const hadTx = get().transactions.length > 0;
+    if (!hadTx) set({ transactionsLoading: true });
+    try {
+      const txs = await walletService.getTransactions();
+      set({ transactions: txs, transactionsLoading: false });
+    } catch {
+      set({ transactionsLoading: false });
+    }
   },
 
   async send(input) {
     await walletService.sendTransaction(input);
     await get().refreshBalance();
+    await get().refreshTransactions();
   },
 
   async resync() {
@@ -196,6 +242,8 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         lastSyncError: undefined,
       });
       await get().refreshBalance();
+      await get().refreshTransactions();
+      void useContactsStore.getState().refreshInvites();
     } catch (error) {
       // Daemon unreachable or sync error — don't block the wallet flow.
       // Surface the message so the user can diagnose (CORS, node down, etc).
@@ -204,6 +252,60 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0,
         lastSyncError: (error as Error)?.message ?? String(error),
       });
+    }
+  },
+
+  async resyncFromCreationHeight() {
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
+    try {
+      await walletService.resyncFromCreationHeight();
+      set({
+        syncStatus: "synced",
+        syncProgress: 1,
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
+      });
+      await get().refreshBalance();
+      await get().refreshTransactions();
+      void useContactsStore.getState().refreshInvites();
+    } catch (error) {
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
+      throw error;
+    }
+  },
+
+  async resetAndRescanFromCreationHeight() {
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
+    try {
+      await walletService.resetAndRescanFromCreationHeight();
+      set({
+        syncStatus: "synced",
+        syncProgress: 1,
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
+      });
+      await get().refreshBalance();
+      await get().refreshTransactions();
+      void useContactsStore.getState().refreshInvites();
+    } catch (error) {
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
+      throw error;
     }
   },
 

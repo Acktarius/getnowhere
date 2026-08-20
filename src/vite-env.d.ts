@@ -10,10 +10,28 @@ interface ImportMeta {
 
 interface GnhDesktopBridge {
   role?: string;
-  /** WS URL; may already include `?token=` under Electron. */
+  bridgeTransport?: "ipc" | "ws";
+  /** WS URL when `bridgeTransport` is `ws`. */
   holepunchWsUrl?: string;
-  /** Optional sidecar auth token (empty in web-dev). */
+  /** Sidecar auth token when using WebSocket transport. */
   wsToken?: string;
+  sendCommand?(cmd: {
+    type: string;
+    topicRef?: string;
+    roomId?: string;
+    payload?: string;
+  }): void;
+  onBridgeEvent?(
+    handler: (msg: {
+      type: string;
+      topicRef?: string;
+      roomId?: string;
+      payload?: string;
+      count?: number;
+      code?: string;
+      message?: string;
+    }) => void,
+  ): () => void;
   /**
    * Privilege-free, best-effort Linux UFW advisory (Electron only; absent in
    * the browser build). Never proof that a specific port is blocked.
@@ -22,7 +40,71 @@ interface GnhDesktopBridge {
   ufwState?: "active" | "inactive" | "unknown";
 }
 
+/** Mobile Expo WebView bridge (Bare worklet behind postMessage). Token is RN-only. */
+interface GnhMobileSaveTextFileResult {
+  requestId: string;
+  ok: boolean;
+  message?: string;
+}
+
+/** Mobile Expo WebView bridge API surface injected before Vite UI loads. */
+interface GnhMobileBridge {
+  sendCommand(cmd: {
+    type: string;
+    topicRef?: string;
+    roomId?: string;
+    payload?: string;
+  }): void;
+  onBridgeEvent(
+    handler: (msg: {
+      type: string;
+      topicRef?: string;
+      roomId?: string;
+      payload?: string;
+      count?: number;
+      code?: string;
+      message?: string;
+    }) => void,
+  ): () => void;
+  saveTextFile?(opts: {
+    filename: string;
+    content: string;
+    requestId: string;
+  }): void;
+  _onSaveTextFile?(
+    handler: (result: GnhMobileSaveTextFileResult) => void,
+  ): () => void;
+  _resolveSaveTextFile?(result: GnhMobileSaveTextFileResult): void;
+  _dispatchBridgeEvent?(msg: Record<string, unknown>): void;
+  getLockGeneration?(): number;
+  setLockGeneration?(n: number): void;
+  _resolveSecurity?(result: Record<string, unknown>): void;
+  biometric?: {
+    isAvailable(purpose: "app" | "data"): Promise<Record<string, unknown>>;
+    enrollDataUnlock(
+      walletId: string,
+      password: string,
+    ): Promise<Record<string, unknown>>;
+    unlockDataUnlock(
+      walletId: string,
+      credentialId: string,
+    ): Promise<Record<string, unknown>>;
+    enrollAppAccess(passcode: string): Promise<Record<string, unknown>>;
+    unlockAppAccess(): Promise<Record<string, unknown>>;
+    removeCredential(credentialId: string): Promise<Record<string, unknown>>;
+  };
+  securePrefs?: {
+    get(key: string): Promise<Record<string, unknown>>;
+    set(key: string, value: string): Promise<Record<string, unknown>>;
+    remove(key: string): Promise<Record<string, unknown>>;
+  };
+  onLifecycle?(handler: (evt: { type: string }) => void): () => void;
+  _dispatchLifecycleEvent?(evt: { type: string }): void;
+  _runBackgroundRemoteSync?(requestId: string): void;
+}
+
 interface Window {
   gnhDesktop?: GnhDesktopBridge;
-  __GNH_DESKTOP__?: GnhDesktopBridge;
+  gnhMobile?: GnhMobileBridge;
+  ReactNativeWebView?: { postMessage: (data: string) => void };
 }

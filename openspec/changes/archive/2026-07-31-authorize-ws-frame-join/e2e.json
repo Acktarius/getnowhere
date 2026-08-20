@@ -1,0 +1,12 @@
+{
+  "change": "authorize-ws-frame-join",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar mesh: WS/sendFrame requires join",
+      "cmd": "node --test holepunch-sidecar/test/sidecar.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

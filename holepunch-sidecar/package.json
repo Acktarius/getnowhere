@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Hyperswarm Holepunch sidecar for Get Now Here (Pear-shaped worker over WebSocket)",
+  "description": "Hyperswarm Holepunch sidecar for Get NowHere (Pear-shaped worker over WebSocket)",
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test test/sidecar.test.mjs"
+    "test": "node --test test/*.mjs"
   },
   "dependencies": {
     "b4a": "^1.6.7",

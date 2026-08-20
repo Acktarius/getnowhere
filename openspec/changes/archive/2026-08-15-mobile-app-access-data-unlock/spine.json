@@ -1,0 +1,33 @@
+{
+  "change": "mobile-app-access-data-unlock",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Native data-unlock biometric (Android + iOS)",
+      "library": "native-wrapper GnhBiometricModule; src/lib/auth/platform-unlock.ts",
+      "runtimeOwner": "gnhMobile bridge → App.tsx message router → native module",
+      "writes": "native secure prefs enrollment; Keystore/Keychain credentials",
+      "reads": "walletId; credentialId; lock generation",
+      "uiConsumer": "UnlockScreen data-unlock variant; Security settings",
+      "evidence": "tests/mobile/gnh-biometric-unlock.test.ts; tests/auth/biometric-store.test.ts; device checklist"
+    },
+    {
+      "capability": "Mobile app access lock + blur",
+      "library": "src/lib/mobile/AppAccessController.ts; MobileLocalSecurityService",
+      "runtimeOwner": "native AppState lifecycle → gnhMobile.onLifecycle → authStore.lock",
+      "writes": "authStore.unlocked; blur overlay state",
+      "reads": "autoLockTimeoutSec; blurInAppSwitcher; lockGeneration",
+      "uiConsumer": "UnlockScreen app-access variant; App.tsx gate",
+      "evidence": "tests/mobile/app-access-controller.test.ts; device checklist"
+    },
+    {
+      "capability": "Mobile background sleep poll cutoff",
+      "library": "src/hooks/useWalletLiveSync.ts",
+      "runtimeOwner": "useWalletLiveSync mobile branch when gnhMobile + backgroundSleepSec",
+      "writes": "poll timer state",
+      "reads": "gnhMobile lifecycle; privacy.backgroundSleepSec",
+      "uiConsumer": "N/A (background behavior)",
+      "evidence": "tests/hooks/use-wallet-live-sync-sleep.test.ts; forge e2e run"
+    }
+  ]
+}

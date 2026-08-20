@@ -10,11 +10,18 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.join(root, "src"),
+      "expo-crypto": path.join(
+        root,
+        "native-wrapper/node_modules/expo-crypto/build/Crypto.js",
+      ),
     },
   },
   test: {
     environment: "jsdom",
-    include: ["tests/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "tests/**/*.{test,spec}.{ts,tsx}",
+      "native-wrapper/src/**/*.test.ts",
+    ],
     setupFiles: ["./tests/setup.ts"],
     pool: "threads",
   },

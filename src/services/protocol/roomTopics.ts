@@ -10,6 +10,7 @@ export const ROOM_TOPIC_IDS = [
   "family",
   "vacation",
   "friends",
+  "finance",
 ] as const;
 
 export type RoomTopicId = (typeof ROOM_TOPIC_IDS)[number];
@@ -19,7 +20,7 @@ export const DEFAULT_ROOM_TOPIC: RoomTopicId = "general";
 export type RoomTopicDef = {
   id: RoomTopicId;
   /** Lucide icon name key used by UI. */
-  icon: "message" | "work" | "family" | "vacation" | "friends";
+  icon: "message" | "work" | "family" | "vacation" | "friends" | "finance";
   label: string;
   /** Wire index in create pack (0..n). */
   wireIndex: number;
@@ -31,6 +32,7 @@ export const ROOM_TOPICS: readonly RoomTopicDef[] = [
   { id: "family", icon: "family", label: "Family", wireIndex: 2 },
   { id: "vacation", icon: "vacation", label: "Vacation", wireIndex: 3 },
   { id: "friends", icon: "friends", label: "Friends", wireIndex: 4 },
+  { id: "finance", icon: "finance", label: "Finance", wireIndex: 5 },
 ] as const;
 
 export function isRoomTopicId(value: unknown): value is RoomTopicId {

@@ -1,0 +1,89 @@
+<!-- forge-brief-specs-hash:319d9eaf244380d3 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nav Exit, leaveRoom, encrypted room history</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Nav Exit, leaveRoom, encrypted room history</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Exit on the bottom bar will lock the wallet and return to the open screen,
+    while keeping the wallet and chat history encrypted on this device.
+    Leaving a room forever gets a clear name (<code>leaveRoom</code>) and leaves
+    only a tiny “revoked” stub so that room id cannot come back.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Bottom nav order: Chats → Contacts → Wallet → Settings → Exit (door).</li>
+    <li>Exit asks <strong>Confirm disconnect</strong>; cancel does nothing.</li>
+    <li>After Exit, reopen wallet from welcome; conversations still there when <strong>Local message retention</strong> was on (encrypted with wallet password).</li>
+    <li>One shared confirm dialog for Exit, delete wallet, and reset app data.</li>
+    <li>Revoked rooms keep only <code>{ roomId, revoked: true }</code> — no leftover messages.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    While you are unlocked, messages live in memory. On Exit, if
+    <strong>Local message retention</strong> is on, we write them into the same
+    encrypted wallet store that already holds contacts, then clear keys from
+    memory. If that setting is off, Exit still locks the wallet but does not
+    save chat text. Leave-forever still destroys the live room and sends revoke;
+    the blob keeps a revoked stub so the same id cannot be recreated.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  A[Unlocked chat] -->|Exit confirm| B[Flush messages into wallet blob]
+  B --> C[Soft-leave P2P topics]
+  C --> D[Lock wallet / clear RAM]
+  D --> E[Welcome / open]
+  E -->|Unlock| F[Hydrate messages from blob]
+  A -->|Leave forever| G["Tombstone: roomId + revoked"]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Use Exit to lock and leave the session (not Leave room).</li>
+    <li>Leave room still means gone forever + revoke to the peer.</li>
+    <li>Settings destructive actions use the same style of confirm dialog.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>History is on this device’s storage (localStorage under Electron/browser). Uninstall without a backup still loses it.</li>
+    <li>Catching up missing messages from the other peer is a later change.</li>
+    <li>Very long chats will grow the encrypted wallet blob.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Peer-to-peer history catch-up.</li>
+    <li>Full shared replication (Hypercore-style).</li>
+    <li>A second plaintext copy of transcripts outside the wallet blob.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>ConfirmModal + Settings confirms (2 tasks)</li>
+    <li>leaveRoom rename + nav Exit (2 tasks)</li>
+    <li>Wallet-blob transcripts + revoke tombstone + docs/e2e (3 tasks)</li>
+  </ul>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral" });
+  </script>
+</body>
+</html>

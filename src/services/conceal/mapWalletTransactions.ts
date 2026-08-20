@@ -140,7 +140,8 @@ export function mapWalletTransactions(
     });
   }
 
-  // 0-conf message copies still in grace (left pool, not yet folded into state).
+  // 0-conf copies and mined 0-amount L1′ relays that never fold into SDK
+  // outputs (no owned CCX). Chat ingest reads these records; history must too.
   for (const msg of byMsg.values()) {
     if (byHash.has(msg.id)) {
       const existing = byHash.get(msg.id)!;
@@ -150,7 +151,7 @@ export function mapWalletTransactions(
       }
       continue;
     }
-    if (msg.blockHeight !== 0) continue;
+    const zeroConf = msg.blockHeight === 0;
     byHash.set(msg.id, {
       id: msg.id,
       type: msg.direction === "received" ? "incoming" : "outgoing",
@@ -160,11 +161,15 @@ export function mapWalletTransactions(
       paymentId: msg.paymentIdFrom ?? msg.paymentIdTo ?? undefined,
       counterparty: msg.counterpartyAddress || undefined,
       timestamp: msg.timestamp,
-      state: "pending",
-      zeroConf: true,
+      state: zeroConf ? "pending" : "confirmed",
       contactHint: hintFromRecord(msg),
+      ...(zeroConf ? { zeroConf: true } : {}),
     });
   }
 
-  return [...byHash.values()];
+  return [...byHash.values()].sort((a, b) => {
+    const ta = Date.parse(a.timestamp ?? "") || 0;
+    const tb = Date.parse(b.timestamp ?? "") || 0;
+    return tb - ta;
+  });
 }

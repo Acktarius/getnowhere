@@ -31,6 +31,7 @@ export type CatalogRoom = Pick<
   | "createdAt"
   | "lastMessageAt"
   | "lastConnectError"
+  | "awaitingChainSync"
 >;
 
 function readAll(): Record<string, CatalogRoom> {
@@ -109,6 +110,7 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
     createdAt: room.createdAt || prev?.createdAt || new Date().toISOString(),
     lastMessageAt: room.lastMessageAt ?? prev?.lastMessageAt,
     lastConnectError: room.lastConnectError ?? prev?.lastConnectError,
+    awaitingChainSync: room.awaitingChainSync ?? prev?.awaitingChainSync,
   };
   all[room.id] = next;
   writeAll(all);
@@ -130,6 +132,21 @@ export function patchCatalogRoom(
   all[roomId] = next;
   writeAll(all);
   return next;
+}
+
+export type CatalogRetirementReason = "room_ttl" | "invite_expiry";
+
+/** Catalog rows due for local destroy (run before silent prune). */
+export function findCatalogRetirements(
+  nowSec: number = nowUnix(),
+): Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> {
+  const due: Array<{ room: CatalogRoom; reason: CatalogRetirementReason }> = [];
+  for (const room of Object.values(readAll())) {
+    if (isRoomRevoked(room.id)) continue;
+    const reason = shouldRetireCatalogRoom(room, nowSec);
+    if (reason) due.push({ room, reason });
+  }
+  return due;
 }
 
 /** User chose to leave forever — only permanent remove API besides TTL prune. */

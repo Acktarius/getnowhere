@@ -20,6 +20,7 @@ import {
   isRelayEligibleStatus,
   preferredChannel,
   resolveIncomingLifecycle,
+  shouldAwaitChainSyncForInvite,
 } from "../../src/services/protocol/roomLifecycle";
 import type { RoomLifecycleStatus } from "../../src/types/models";
 
@@ -108,6 +109,22 @@ describe("post-accept lifecycle is monotonic", () => {
     expect(resolveIncomingLifecycle("connected", "destroyed")).toBe(
       "destroyed",
     );
+  });
+});
+
+describe("pending invite chain-sync gate", () => {
+  const now = 1_700_000_000;
+
+  it("blocks accept while lagging tip for a non-expired invite", () => {
+    expect(shouldAwaitChainSyncForInvite(false, now + 3600, now)).toBe(true);
+  });
+
+  it("allows accept at tip even if invite is still valid", () => {
+    expect(shouldAwaitChainSyncForInvite(true, now + 3600, now)).toBe(false);
+  });
+
+  it("does not gate an expired invite during rescan", () => {
+    expect(shouldAwaitChainSyncForInvite(false, now - 3600, now)).toBe(false);
   });
 });
 

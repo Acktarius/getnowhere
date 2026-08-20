@@ -1,5 +1,6 @@
 import { BrandMark, Wordmark } from "@/components/Brand";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { version } from "../../../package.json";
 
 export function AboutScreen() {
   return (
@@ -13,13 +14,13 @@ export function AboutScreen() {
           <BrandMark size={64} />
           <Wordmark large />
           <span className="faint" style={{ fontSize: 12 }}>
-            v0.1.0 · getnowhere.im
+            v{version} · getnowhere.im
           </span>
         </div>
 
         <div className="card fade-in-up">
           <p style={{ fontSize: 14, lineHeight: 1.6 }}>
-            Get Now Here is a privacy-first messenger that pairs a lightweight
+            Get NowHere is a privacy-first messenger that pairs a lightweight
             Conceal wallet with anonymous peer-to-peer chat. Two people
             establish a private relationship using Conceal wallet identities and
             exchanged payment IDs, then escalate into an encrypted, no-server

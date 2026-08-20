@@ -11,7 +11,7 @@ React + TypeScript + Vite. The UI never joins Hyperswarm.
 | Desktop | Vite in Electron | sidecar child (shared or isolated) | `docs/architecture/electron-desktop.md` |
 | Mobile | Expo (target) | Bare worklet (target) | `docs/architecture/mobile-p2p-runtime.md` |
 
-Crypto: L1 SmartMessage → L2 Noise → L3 ChaCha E2E — `docs/security/encryption.md`.
+Crypto: L1 SmartMessage (+ session seal) → L2 Noise; L1′ when L2 is down — `docs/security/encryption.md`.
 
 ## Install (once)
 
@@ -38,7 +38,7 @@ Open `http://127.0.0.1:5173`. Composer stays locked for live chat (no sidecar).
 
 ### 2. Web + sidecar (browser Alice / Bob)
 
-Same-machine fan-out over one Node sidecar. Good for UI + bridge + L3 frames.
+Same-machine fan-out over one Node sidecar. Good for UI + bridge + L1-sealed frames.
 **Not** two independent Hyperswarm DHT peers (both UIs share one process).
 
 ```bash
@@ -82,7 +82,7 @@ Use for shell + partitions + local fan-out. Details:
 ### 4. Desktop — isolated swarm (real peer path)
 
 Each Electron owns its own sidecar (alice `:7901`, bob `:7902`). Peers meet via
-DHT + Noise. Use this to verify end-to-end Hyperswarm + L3 + post-connect proof.
+DHT + Noise. Use this to verify end-to-end Hyperswarm + L1 session seal + post-connect proof.
 
 ```bash
 # Terminal 1
@@ -95,14 +95,13 @@ npm run desktop:alice:isolated
 npm run desktop:bob:isolated
 ```
 
-### 5. Web as stand-in while building mobile
+### 5. Mobile wrapper (WebView UI on device)
 
-There is no runnable `native-wrapper/` Expo app in-repo yet. Until Bare lands:
+Expo shell in `native-wrapper/` loads the Vite `dist/` bundle. First APK path:
+`npm run mobile:android` — see `docs/builds/expo-eas-android-build.md`.
 
-- Develop product UI and protocol in **scenario 1–2** (Vite + sidecar).
-- Keep Hyperswarm out of the Vite bundle; bridge schema stays the contract for
-  a future Bare IPC host — `docs/architecture/mobile-p2p-runtime.md`.
-- Production `dist/` is tuned for WebView / `file://` embedding (see below).
+P2P on device waits for the Bare worklet (`docs/architecture/mobile-p2p-runtime.md`).
+Until then, use **scenario 1–2** for chat/P2P dev in browser or Electron.
 
 ### 6. Automated checks
 
@@ -118,10 +117,11 @@ npm run build && npm run preview
 | Goal | Scenario | Swarm |
 |---|---|---|
 | UI / wallet without peers | 1 | none |
-| Bridge + L3 in browser | 2 | shared Node sidecar |
+| Bridge + L1-sealed frames in browser | 2 | shared Node sidecar |
 | Electron shells, fast dual-wallet | 3 | shared `:7901` |
 | Prove DHT / Noise / proof handshake | 4 | two sidecars |
-| Mobile product work today | 5 → use 1–2 | same as web-dev |
+| Mobile UI on Android device | 5 | none (Bare worklet pending) |
+| Mobile P2P dev today | 1–2 | same as web-dev |
 | CI / regression | 6 | mocks / e2e |
 
 ## Native delivery notes
@@ -170,7 +170,7 @@ Seed phrase stays in-memory only — never route it through storage.
 - Do not add SSR or a backend; the build is static.
 - Do not import `hyperswarm` in the Vite/React bundle.
 - Do not codegen Nitro-Hyperswarm or a React Native desktop shell.
-- Do not drop L3 ChaCha E2E because Noise exists — `docs/security/encryption.md`.
+- Do not drop the L1 session seal because Noise exists — `docs/security/encryption.md`.
 
 ## Docs
 

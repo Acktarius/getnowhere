@@ -1,0 +1,18 @@
+{
+  "change": "send-contact-recipient",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Send contact recipient helpers",
+      "cmd": "npx vitest run tests/send-contact-recipient.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

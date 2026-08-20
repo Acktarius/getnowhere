@@ -5,6 +5,7 @@ import {
   MessageSquare,
   Palmtree,
   Users,
+  Wallet,
 } from "lucide-react";
 import {
   type RoomTopicId,
@@ -17,9 +18,16 @@ const ICONS: Record<RoomTopicDefIcon, LucideIcon> = {
   family: Users,
   vacation: Palmtree,
   friends: Heart,
+  finance: Wallet,
 };
 
-type RoomTopicDefIcon = "message" | "work" | "family" | "vacation" | "friends";
+type RoomTopicDefIcon =
+  | "message"
+  | "work"
+  | "family"
+  | "vacation"
+  | "friends"
+  | "finance";
 
 export function RoomTopicIcon({
   topicId,

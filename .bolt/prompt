@@ -4,7 +4,7 @@ By default, this template supports JSX syntax with Tailwind CSS classes, React h
 
 Use icons from lucide-react for logos.
 
-## Get Now Here networking (mandatory)
+## Get NowHere networking (mandatory)
 
 - Product UI is in `src/` (Vite). There is no top-level `web/` folder.
 - Do not import or initialize `hyperswarm` in UI / renderer code.

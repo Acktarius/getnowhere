@@ -1,0 +1,15 @@
+{
+  "change": "send-contact-recipient",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Send sheet contact recipient picker",
+      "library": "src/lib/send-contact-recipient.ts; src/components/SendSheet.tsx",
+      "runtimeOwner": "SendSheet Contact dropdown → autofillFromContact → address + paymentId fields → walletService.sendTransaction",
+      "writes": "none (form state only until user confirms send)",
+      "reads": "contactsStore.contacts; Contact.ccxAddress; Contact.paymentIdTo",
+      "uiConsumer": "Wallet Send sheet",
+      "evidence": "tests/send-contact-recipient.test.ts; forge e2e run"
+    }
+  ]
+}

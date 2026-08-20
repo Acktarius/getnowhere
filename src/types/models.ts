@@ -1,6 +1,10 @@
-// ===== Domain models for Get Now Here =====
+// ===== Domain models for Get NowHere =====
 // Wallet identity = relationship anchor.
 // Contacts are bound by CCX address + exchanged payment IDs.
+
+import type { ContactCategoryTag } from "@/lib/contactCategoryTags";
+
+export type { ContactCategoryTag };
 
 export type RelationshipStatus =
   | "pending"
@@ -57,6 +61,8 @@ export type Contact = {
   // so they can identify you on receive.
   paymentIdTo?: string;
   notes?: string;
+  /** Optional user categories (Family, Friend, Love, Colleague, …). */
+  categoryTags?: ContactCategoryTag[];
   relationshipStatus: RelationshipStatus;
   inviteStatus: InviteStatus;
   chatStatus: ChatStatus;
@@ -85,6 +91,8 @@ export type ChatRoom = {
   roomTtl?: number;
   connectAttempts?: number;
   lastConnectError?: string;
+  /** Rescan lag gate — room visible but connect/send blocked until near chain tip. */
+  awaitingChainSync?: boolean;
   createdAt: string;
   lastMessageAt?: string;
 };
@@ -218,21 +226,19 @@ export type PrivacySettings = {
   blurInAppSwitcher: boolean;
   autoLockTimeoutSec: number;
   clearClipboardWarnings: boolean;
-  advancedDebugLogging: boolean;
+  /** Native badge + optional local banners for background L1/L1′ sync events. */
+  notificationsEnabled: boolean;
+  /** Requires notificationsEnabled; controls OS banner/alert presentation. */
+  notificationBannersEnabled: boolean;
 };
 
 export type AppSettings = {
   theme: AppTheme;
   accent: AccentName;
+  /** Contextual hints on Exit and similar actions. */
+  showTips: boolean;
   privacy: PrivacySettings;
   network: "mainnet" | "testnet" | "devnet";
-  biometricEnabled: boolean;
-};
-
-export type DiagnosticsEntry = {
-  id: string;
-  level: "info" | "warn" | "error";
-  source: string;
-  message: string;
-  timestamp: string;
+  appAccessBiometricEnabled: boolean;
+  dataUnlockBiometricEnabled: boolean;
 };

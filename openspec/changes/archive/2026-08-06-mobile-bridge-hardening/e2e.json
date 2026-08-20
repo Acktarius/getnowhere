@@ -1,0 +1,30 @@
+{
+  "change": "mobile-bridge-hardening",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Bare worklet: swarm security regressions",
+      "cmd": "node native-wrapper/scripts/run-bare-tests.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "RN IPC line cap regression (vitest)",
+      "cmd": "npx vitest run tests/native-wrapper/gnh-mobile-bridge-ipc.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "WebView bridge + navigation regressions (vitest)",
+      "cmd": "npx vitest run tests/native-wrapper/inject-mobile-bridge.test.ts tests/native-wrapper/webview-navigation.test.ts tests/native-wrapper/bridge-token.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Bundled mobile UI XSS audit (vitest)",
+      "cmd": "npx vitest run tests/native-wrapper/bundled-ui-audit.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 # Coding Constraints (AI / codegen)
 
-Paste or cite this when generating Get Now Here code so tools stop emitting
+Paste or cite this when generating Get NowHere code so tools stop emitting
 browser Hyperswarm usage or inventing alternate bridge/topic shapes.
 
 ## Coding constraints
 
-When generating code for Get Now Here, follow these rules strictly:
+When generating code for Get NowHere, follow these rules strictly:
 
 - Use **TypeScript, React, and Vite** for the web UI (`src/`).
 - Treat the Vite app as a **static UI bundle** — not a Hyperswarm host.
@@ -23,12 +23,13 @@ When generating code for Get Now Here, follow these rules strictly:
   (`join` / `leave` / `frame` / `ready` / `peers` / `error`).
 - Topic derivation: **only**
   `sha256Hex(\`gnh-chat-v1||${roomId}||${relationshipId}\`)` via `deriveTopicRef`.
-- Prefer **ChaCha20-Poly1305** for app-layer content envelopes (L3 E2E) per
-  `encryption.md` / `p2pchatprotocol.md`. Runtime carries opaque sealed frames.
-- Rely on Hyperswarm **Noise** for DHT transport (L2); do not re-wrap the live
-  stream with a third ad hoc cipher.
-- Do not remove L3 seal/open “because Noise exists” — the bridge/runtime is
+- Prefer **ChaCha20-Poly1305** for live content envelopes (**L1 session seal**)
+  per `encryption.md` / `p2pchatprotocol.md`. Runtime carries opaque sealed frames.
+- Rely on Hyperswarm **Noise** for DHT transport (**L2**); do not re-wrap the live
+  stream with a third ad hoc cipher. There is **no L3** layer.
+- Do not remove L1 session seal/open “because Noise exists” — the bridge/runtime is
   untrusted for plaintext under the max-security threat model.
+- L1′ (`chat.relay`) compensates L2 failure only; it does not replace L2.
 - Product UI paths are under `src/` (not a `web/` folder).
 - **Comments:** prefer JSDoc; keep prose to **≤2 lines**. Longer guidance belongs in
   `docs/` with a `@see` pointer — see `.cursor/rules/code-comments.mdc`.

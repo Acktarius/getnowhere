@@ -1,0 +1,12 @@
+{
+  "change": "unbounded-ndjson-buffer",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sidecar mesh: NDJSON line length cap",
+      "cmd": "node --test holepunch-sidecar/test/sidecar.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

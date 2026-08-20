@@ -9,7 +9,7 @@ import { defineConfig } from "vite";
 //   1. `base: "./"` → every asset reference is relative (./assets/…), so the
 //      bundle works from a dev server, a subpath host, OR a bundled local
 //      file:// path inside a WebView. Do NOT set `base: "/"`.
-//   2. `build.rollupOptions.output.inlineDynamicImports` → no separate JS
+//   2. `build.rolldownOptions.output.codeSplitting: false` → no separate JS
 //      chunks. Dynamic-import code-split chunks fail to load under file://
 //      because module fetch is blocked on opaque file:// origins.
 //   3. `build.assetsInlineLimit` raised → the Conceal SDK's WASM is inlined as
@@ -33,6 +33,9 @@ export default defineConfig((_a) => {
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
+        crypto: fileURLToPath(
+          new URL("./src/shims/crypto.ts", import.meta.url),
+        ),
       },
     },
     server: {
@@ -57,16 +60,18 @@ export default defineConfig((_a) => {
     },
     build: {
       assetsDir: "assets",
+      // Main bundle + scan worker exceed 500 kB by design (codeSplitting: false, inlined WASM).
+      chunkSizeWarningLimit: 2000,
       // Inline all assets (including the SDK's WASM) as base64 data URLs so the
       // build is self-contained: no fetch() needed at runtime, which is required
       // for file:// loading inside a WebView. 4MB covers the ~228KB wasm modules
       // with headroom; raise only if a new binary asset exceeds this.
       assetsInlineLimit: 4000000,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
           // Force a single JS bundle — no dynamic-import chunks. Chunked
           // loading uses dynamic import(), which is blocked under file://.
-          inlineDynamicImports: true,
+          codeSplitting: false,
         },
       },
     },

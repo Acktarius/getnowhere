@@ -10,7 +10,28 @@
  */
 export type CipherSuiteId = "CHACHA20_POLY1305_V1";
 
-export const CHAT_PROTOCOL_VERSION = 1;
+/** Hyperswarm discovery topic derivation suite. @see capabilities-and-derivation.md */
+export type TopicSuiteId = "SHA256_V1" | "HKDF_EPOCH_V1";
+
+export const DEFAULT_TOPIC_SUITE: TopicSuiteId = "HKDF_EPOCH_V1";
+
+export const CHAT_PROTOCOL_VERSION = 2;
+export const CHAT_PROTOCOL_VERSION_MIN = 1;
+
+export function isSupportedChatProtocolVersion(version: number): boolean {
+  return (
+    version >= CHAT_PROTOCOL_VERSION_MIN && version <= CHAT_PROTOCOL_VERSION
+  );
+}
+
+/** Infer topic suite from handshake when topicSuite field omitted on wire. */
+export function resolveTopicSuite(handshake: {
+  protocolVersion: number;
+  topicSuite?: TopicSuiteId;
+}): TopicSuiteId {
+  if (handshake.topicSuite) return handshake.topicSuite;
+  return handshake.protocolVersion >= 2 ? "HKDF_EPOCH_V1" : "SHA256_V1";
+}
 export const HOLEPUNCH_CONTRACT_VERSION = 1;
 
 /** SDK ACTION_MAP verbs for chat signaling on module `contact`. */
@@ -66,6 +87,13 @@ export type ChatInviteHandshake = {
   /** Unique per invite; tracked to reject duplicates. */
   replayId: string;
   /**
+   * Discovery topic derivation suite. Omitted on legacy handshakes → SHA256_V1.
+   * New creates emit HKDF_EPOCH_V1.
+   */
+  topicSuite?: TopicSuiteId;
+  /** Hyperswarm topic epoch for HKDF_EPOCH_V1 (default 0). */
+  topicEpoch?: number;
+  /**
    * Display room category (work/family/…). Not part of Hyperswarm topicRef.
    * Omitted / unknown → general. Wire: 1 byte at end of slim create pack.
    */
@@ -112,6 +140,8 @@ export type ChatRevokePayload = {
   roomId?: string;
   replayId?: string;
   reasonCode?: ChatRevokeReasonCode;
+  /** HKDF_EPOCH_V1: next discovery epoch for this relationship (room_revoked). */
+  topicEpoch?: number;
 };
 
 /** @deprecated Use ChatRevokePayload. */
@@ -150,6 +180,10 @@ export type P2PSessionConfig = {
   roomId: string;
   relationshipId: string;
   cipherSuite: CipherSuiteId;
+  topicSuite: TopicSuiteId;
+  topicEpoch: number;
+  /** Precomputed discovery topic for transport join. */
+  topicRef: string;
   sendKeyRef: string;
   recvKeyRef: string;
   nonceSeed: string;
@@ -205,8 +239,10 @@ export type HolepunchBootstrapContract = {
   peerRole: "initiator" | "responder";
   transport: {
     kind: "holepunch";
-    /** Discovery topic — sha256Hex(`gnh-chat-v1||${roomId}||${relationshipId}`). */
+    /** Discovery topic — suite-dependent; see capabilities-and-derivation.md */
     topicRef: string;
+    topicSuite: TopicSuiteId;
+    topicEpoch: number;
     relayHints?: string[];
   };
   /** Hard room end unix sec — connecting/connected still expire. */

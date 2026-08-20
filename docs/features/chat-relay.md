@@ -1,20 +1,20 @@
-# L1 chat relay (grey bubbles)
+# L1′ chat relay (grey bubbles)
 
 **Status:** Implemented. Spec: `docs/security/p2pchatprotocol.md` §16.
 
-When Hyperswarm is not connected but the invite was **accepted**, text can ride
-Conceal smart messages. Live Holepunch remains preferred. **Pending never
-allows send** (no spam before Accept).
+When Hyperswarm (L2) is not connected but the invite was **accepted**, text can
+ride Conceal smart messages (**L1′**). Live Holepunch remains preferred.
+**Pending never allows send** (no spam before Accept).
 
 ## Channels
 
 | Channel | Transport | Bubble |
 |---|---|---|
-| `live` | Holepunch frame (L2 Noise + L3 seal) | Accent |
-| `relay` | L1 `{contact,e,roomId,ts,text}` | Grey |
+| `live` | Holepunch frame (L2 Noise + L1 session seal) | Accent |
+| `relay` | L1′ `{contact,e,roomId,ts,text}` | Grey |
 
 Conceal MESSAGE already encrypts with ChaCha + DH. App body is plain fields.
-Relay does **not** replace L2.
+L1′ does **not** replace L2. Same `roomId` thread mixes both channels.
 
 ## Composer
 
@@ -25,9 +25,25 @@ Relay does **not** replace L2.
 
 ## Inbound refresh
 
-- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L1' stays live).
+- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L3 stays live).
 - Also rescans on enter and when lifecycle becomes relay-eligible.
-- Global wallet poll also calls `refreshRelays` (slower when near tip).
+- Global wallet poll calls `refreshRelays` while the wallet is unlocked — foreground
+  uses 2.5s / 20s cadence; **background** (hidden tab/window) uses 30s until Exit.
+
+## Relay notification pins
+
+In-app pins (`NotifyPin`) for unread L1′ relay on post-accept rooms:
+
+| Surface | Pin |
+|---------|-----|
+| Chats list row | per-room relay count |
+| Chats tab | aggregate |
+| Contacts list row | per-contact aggregate |
+| Contact detail | per room/topic row |
+| Contacts tab | aggregate (invites, register, relay) |
+
+Pins clear when the user opens that room. Exit/disconnect clears session state.
+Invite/register pins unchanged. L2 live messages are not badged.
 
 ## Limits
 

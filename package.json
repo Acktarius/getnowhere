@@ -1,7 +1,7 @@
 {
   "name": "getnowhere",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.3.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,13 @@
     "desktop:bob:isolated": "npm --prefix desktop-electron run start:bob:isolated",
     "desktop:prepare": "npm --prefix desktop-electron run prepare:sidecar",
     "desktop:make": "npm --prefix desktop-electron run make",
+    "desktop:make:win": "npm --prefix desktop-electron run make:win",
+    "mobile:install": "npm --prefix native-wrapper install",
+    "mobile:sync-ui": "npm run build && node native-wrapper/scripts/sync-ui-dist.mjs",
+    "mobile:test-bare": "npm --prefix native-wrapper run test:bare",
+    "mobile:android": "npm run mobile:sync-ui && npm --prefix native-wrapper run android",
+    "mobile:android:release": "npm run mobile:sync-ui && npm --prefix native-wrapper run android:release",
+    "mobile:android:release:test": "npm run mobile:android:release && npm --prefix native-wrapper run android:sign-test",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "format": "biome format .",
@@ -26,7 +33,7 @@
     "types": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preflight": "tsc -b && vitest run && biome check ."
+    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format ."
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
@@ -36,13 +43,13 @@
     "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "qrcode-generator": "^2.0.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2",
     "zustand": "^5.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.4",
+    "@biomejs/biome": "^2.5.5",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
@@ -50,11 +57,16 @@
     "@types/node": "^26.0.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@vitejs/plugin-react": "^6.0.4",
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "typescript": "^5.6.3",
-    "vite": "^6.0.0",
+    "vite": "^8.0.16",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.25",
+    "react-router": "8.3.0"
   }
 }

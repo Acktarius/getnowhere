@@ -12,25 +12,43 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
 import { EmptyState } from "@/components/EmptyState";
+import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
+import { PresetStepper } from "@/components/PresetStepper";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { RelationshipStateCard } from "@/components/RelationshipStateCard";
-import { RoomTopicIcon } from "@/components/RoomTopicIcon";
-import { ConfirmModal, Sheet } from "@/components/Sheet";
+import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
+import { Sheet } from "@/components/Sheet";
 import {
-  ChatStatusPill,
+  ContactRoomCountPill,
   InviteStatusPill,
   RelationshipStatusBadge,
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import {
+  DEFAULT_INVITE_EXPIRY_HOURS,
+  DEFAULT_ROOM_TTL_DAYS,
+  INVITE_EXPIRY_PRESETS,
+  ROOM_TTL_PRESETS,
+} from "@/lib/roomTtlPresets";
+import {
+  getContactInviteActionCount,
+  getInviteQueue,
+} from "@/services/contacts/inviteQueue";
+import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
+import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
 import { toastError } from "@/state/toastStore";
 import { shortAddress, timeAgo } from "@/utils/format";
 
@@ -48,9 +66,10 @@ export function ContactDetailScreen() {
   const acceptInvite = useContactsStore((s) => s.acceptInvite);
   const declineInvite = useContactsStore((s) => s.declineInvite);
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
-  const abandonPendingInvite = useContactsStore((s) => s.abandonPendingInvite);
   const invites = useContactsStore((s) => s.invites);
   const contactRoomId = useContactsStore((s) => s.getById(id)?.roomId);
+  const rooms = useChatStore((s) => s.rooms);
+  const roomRelayBadge = useNotificationStore((s) => s.roomRelayBadge);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
   const roomLive = useChatStore((s) => {
     if (!contactRoomId) return false;
@@ -59,11 +78,7 @@ export function ContactDetailScreen() {
       room?.lifecycleStatus === "connected" && room.peerStatus === "online"
     );
   });
-  /**
-   * Room already accepted and messaging over the L1 chain relay — resending
-   * here would silently end the peer's working session, not "recover" it.
-   * @see docs/security/p2pchatprotocol.md §16
-   */
+  /** Latest contact room is on L1 relay (Holepunch not connected yet). */
   const roomRelayActive = useChatStore((s) => {
     if (!contactRoomId) return false;
     const room = s.rooms.find((r) => r.id === contactRoomId);
@@ -74,17 +89,44 @@ export function ContactDetailScreen() {
   const [copiedFrom, copyFrom] = useCopy();
   const [sendingInvite, setSendingInvite] = useState(false);
   const [createSheet, setCreateSheet] = useState(false);
-  const [inviteExpiryHours, setInviteExpiryHours] = useState(24);
-  const [roomTtlDays, setRoomTtlDays] = useState(7);
+  const [inviteExpiryHours, setInviteExpiryHours] = useState(
+    DEFAULT_INVITE_EXPIRY_HOURS,
+  );
+  const [roomTtlDays, setRoomTtlDays] = useState(DEFAULT_ROOM_TTL_DAYS);
   const [roomTopic, setRoomTopic] =
     useState<import("@/services/protocol/roomTopics").RoomTopicId>("general");
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
-  const [confirmResend, setConfirmResend] = useState(false);
+  const [confirmSameTopic, setConfirmSameTopic] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [acting, setActing] = useState(false);
+  const [inviteAction, setInviteAction] = useState<"accept" | "decline" | null>(
+    null,
+  );
   const [refreshingInvite, setRefreshingInvite] = useState(false);
+  const markContactSeen = useNotificationStore((s) => s.markContactSeen);
+
+  const contactRooms = useMemo(() => {
+    if (!id) return [];
+    return listCatalogRooms()
+      .filter((r) => r.contactId === id && !isRoomRevoked(r.id))
+      .sort((a, b) =>
+        (b.lastMessageAt ?? b.createdAt).localeCompare(
+          a.lastMessageAt ?? a.createdAt,
+        ),
+      );
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    const c = useContactsStore.getState().getById(id);
+    if (!c) return;
+    const actionCount = getContactInviteActionCount(
+      c,
+      useContactsStore.getState().invites,
+    );
+    markContactSeen(id, actionCount);
+  }, [id, markContactSeen]);
 
   // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
   // Poll while waiting — mempool txs are near-instant; one-shot mount miss them.
@@ -112,6 +154,18 @@ export function ContactDetailScreen() {
     };
   }, [id, refreshInvites]);
 
+  const inviteQueueForContact = getInviteQueue(id, invites);
+  const incomingInviteRoomId =
+    contact?.relationshipStatus === "eligible"
+      ? inviteQueueForContact.newest?.roomId
+      : undefined;
+  const inviteRoom = useChatStore((s) =>
+    incomingInviteRoomId
+      ? s.rooms.find((r) => r.id === incomingInviteRoomId)
+      : undefined,
+  );
+  const acceptAwaitingSync = Boolean(inviteRoom?.awaitingChainSync);
+
   if (!contact) {
     return (
       <div className="screen">
@@ -130,11 +184,9 @@ export function ContactDetailScreen() {
   }
 
   const eligible = contact.relationshipStatus === "eligible";
-  const incomingInvite = eligible
-    ? [...invites]
-        .filter((i) => i.contactId === contact.id && i.status === "received")
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-    : undefined;
+  const inviteQueue = inviteQueueForContact;
+  const incomingInvite = eligible ? inviteQueue.newest : undefined;
+  const queuedOthers = inviteQueue.others;
   /** Newer create must show Accept even if an older invite was already accepted. */
   const showAccept = Boolean(
     incomingInvite &&
@@ -158,29 +210,21 @@ export function ContactDetailScreen() {
     !roomLive;
 
   function handleResendInvite() {
-    // Peer may already be chatting via chain relay — confirm before nuking it.
-    if (contact?.inviteStatus === "accepted" && roomRelayActive) {
-      setConfirmResend(true);
-      return;
-    }
-    void doResendInvite();
-  }
-
-  async function doResendInvite() {
-    if (!contact) return;
-    setError(null);
-    setSendingInvite(true);
-    try {
-      await abandonPendingInvite(contact.id);
-      setCreateSheet(true);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSendingInvite(false);
-    }
+    // Open create sheet — does not abandon existing rooms. Same-topic confirm
+    // runs when the user submits Create.
+    setCreateSheet(true);
   }
 
   async function handleInvite() {
+    if (!contact) return;
+    if (hasOpenRoomForTopic(listCatalogRooms(), contact.id, roomTopic)) {
+      setConfirmSameTopic(true);
+      return;
+    }
+    await submitInvite();
+  }
+
+  async function submitInvite() {
     if (!contact) return;
     setError(null);
     setSendingInvite(true);
@@ -191,6 +235,7 @@ export function ContactDetailScreen() {
         roomTopic,
       });
       setCreateSheet(false);
+      setConfirmSameTopic(false);
       navigate(`/chats/${roomId}`);
     } catch (e) {
       const msg = (e as Error).message || "Failed to create room.";
@@ -206,7 +251,7 @@ export function ContactDetailScreen() {
       await refreshInvites();
       return;
     }
-    setActing(true);
+    setInviteAction("accept");
     setError(null);
     try {
       const { roomId } = await acceptInvite(incomingInvite.id);
@@ -216,27 +261,26 @@ export function ContactDetailScreen() {
       setError(msg);
       toastError(msg);
     } finally {
-      setActing(false);
+      setInviteAction(null);
     }
   }
 
   async function handleDecline() {
     if (!incomingInvite) return;
-    setActing(true);
+    setInviteAction("decline");
     setError(null);
     try {
       await declineInvite(incomingInvite.id);
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setActing(false);
+      setInviteAction(null);
     }
   }
 
   async function handleOpenChat() {
     if (!contact) return;
     setError(null);
-    setActing(true);
     try {
       // Alice: pick up Bob's on-chain register before opening.
       try {
@@ -271,8 +315,6 @@ export function ContactDetailScreen() {
       navigate(`/chats/${room.id}`);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setActing(false);
     }
   }
 
@@ -318,7 +360,7 @@ export function ContactDetailScreen() {
           >
             <RelationshipStatusBadge status={contact.relationshipStatus} />
             <InviteStatusPill status={contact.inviteStatus} />
-            <ChatStatusPill status={contact.chatStatus} />
+            <ContactRoomCountPill count={contactRooms.length} />
           </div>
           <div
             className="row-flex"
@@ -347,6 +389,59 @@ export function ContactDetailScreen() {
         </div>
 
         <RelationshipStateCard contact={contact} />
+
+        <ContactCategoryTagCard contact={contact} />
+
+        {contactRooms.length > 0 && (
+          <div className="stack stack--gap-2 fade-in-up">
+            <div className="card__title" style={{ paddingLeft: 4 }}>
+              Rooms
+            </div>
+            <div className="card card--flush">
+              {contactRooms.map((catalog) => {
+                const live = rooms.find((r) => r.id === catalog.id);
+                const lifecycle =
+                  live?.lifecycleStatus ?? catalog.lifecycleStatus;
+                const relayCount = roomRelayBadge(catalog.id);
+                return (
+                  <Link
+                    key={catalog.id}
+                    to={`/chats/${catalog.id}`}
+                    className="row row--clickable"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div className="row__avatar-wrap">
+                      <div className="row__avatar">
+                        <RoomTopicIcon topicId={catalog.roomTopic} size={18} />
+                      </div>
+                      {relayCount > 0 ? (
+                        <NotifyPin count={relayCount} variant="relay" />
+                      ) : null}
+                    </div>
+                    <div className="row__main">
+                      <div className="row__title">
+                        {roomTopicLabel(catalog.roomTopic)}
+                      </div>
+                      <div className="row__sub">
+                        {catalog.awaitingChainSync
+                          ? "Syncing wallet — room enables near chain tip"
+                          : lifecycle === "connected"
+                            ? "Connected"
+                            : isRelayEligibleStatus(lifecycle)
+                              ? "Chain relay"
+                              : `Status: ${lifecycle}`}
+                      </div>
+                    </div>
+                    <ArrowRight
+                      size={16}
+                      style={{ color: "var(--text-faint)", flexShrink: 0 }}
+                    />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="stack stack--gap-3 fade-in-up">
           <div className="card__title" style={{ paddingLeft: 4 }}>
@@ -389,20 +484,35 @@ export function ContactDetailScreen() {
               {showAccept && incomingInvite ? (
                 <div className="card card--pad-md stack stack--gap-2">
                   <div className="muted" style={{ fontSize: 13.5 }}>
-                    {acting
+                    {inviteAction === "accept"
                       ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
-                      : contact.inviteStatus === "accepted" &&
-                          contact.roomId !== incomingInvite.roomId
-                        ? "New chat invite supersedes the old room. Accept to connect the new invite."
-                        : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
+                      : inviteAction === "decline"
+                        ? "Sending decline on-chain and revoking the pending room."
+                        : acceptAwaitingSync
+                          ? "Incoming chat invite — wallet still syncing. Accept unlocks near chain tip so any leave or revoke on the chain is visible first."
+                          : contact.inviteStatus === "accepted" &&
+                              contact.roomId !== incomingInvite.roomId
+                            ? "New chat invite for another room. Accept to open it — your existing rooms with this contact stay open."
+                            : "Incoming chat invite. Accept sends an on-chain register, then opens the room — live chat starts once peers connect."}
                   </div>
+                  {queuedOthers.length > 0 && (
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {queuedOthers.length} other invite
+                      {queuedOthers.length > 1 ? "s" : ""} waiting:{" "}
+                      {queuedOthers
+                        .map((i) => roomTopicLabel(i.roomTopic))
+                        .join(", ")}
+                      . Accept handles the newest (
+                      {roomTopicLabel(incomingInvite.roomTopic)}) first.
+                    </div>
+                  )}
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
                       className="btn btn--primary grow"
-                      disabled={acting}
+                      disabled={inviteAction !== null || acceptAwaitingSync}
                       onClick={handleAccept}
                     >
-                      {acting ? (
+                      {inviteAction === "accept" ? (
                         <>
                           <Loader2 size={16} className="spin" /> Accepting…
                         </>
@@ -412,10 +522,16 @@ export function ContactDetailScreen() {
                     </button>
                     <button
                       className="btn btn--secondary grow"
-                      disabled={acting}
+                      disabled={inviteAction !== null}
                       onClick={handleDecline}
                     >
-                      Decline
+                      {inviteAction === "decline" ? (
+                        <>
+                          <Loader2 size={16} className="spin" /> Declining…
+                        </>
+                      ) : (
+                        "Decline"
+                      )}
                     </button>
                   </div>
                 </div>
@@ -439,10 +555,10 @@ export function ContactDetailScreen() {
                     {roomLive
                       ? "Chat session is live."
                       : contact.inviteStatus === "sent"
-                        ? "Invite sent. If the pending room stays offline after they accept, resend a new invite (new room id)."
+                        ? "Invite sent. You can open the pending room, or create another room (new room id) if needed."
                         : roomRelayActive
-                          ? "Invite accepted — chatting via blockchain relay while Holepunch connects. Only resend if messages truly are not delivering; resending ends this room for both sides."
-                          : "Invite was marked accepted but Holepunch is not connected. Resend a new invite to recover."}
+                          ? "Invite accepted — chatting via blockchain relay while Holepunch connects. Creating another room keeps this one open."
+                          : "Invite was marked accepted but Holepunch is not connected. You can open this room or create another."}
                   </div>
                   {contact.roomId && (
                     <button
@@ -556,28 +672,20 @@ export function ContactDetailScreen() {
               );
             })}
           </div>
-          <label className="stack stack--gap-1">
-            <span className="eyebrow">Invite expiry (hours)</span>
-            <input
-              type="number"
-              min={1}
-              max={168}
-              value={inviteExpiryHours}
-              onChange={(e) =>
-                setInviteExpiryHours(Number(e.target.value) || 24)
-              }
-            />
-          </label>
-          <label className="stack stack--gap-1">
-            <span className="eyebrow">Room TTL (days)</span>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={roomTtlDays}
-              onChange={(e) => setRoomTtlDays(Number(e.target.value) || 7)}
-            />
-          </label>
+          <PresetStepper
+            label="Invite expiry"
+            options={INVITE_EXPIRY_PRESETS}
+            value={inviteExpiryHours}
+            onChange={setInviteExpiryHours}
+            hint="How long the peer has to accept."
+          />
+          <PresetStepper
+            label="Room TTL"
+            options={ROOM_TTL_PRESETS}
+            value={roomTtlDays}
+            onChange={setRoomTtlDays}
+            hint="Room is destroyed locally after this period."
+          />
           {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"
@@ -649,13 +757,12 @@ export function ContactDetailScreen() {
         onClose={() => setConfirmBlock(false)}
       />
       <ConfirmModal
-        open={confirmResend}
-        title="Resend invite?"
-        body="Your contact already accepted this invite and is chatting via the blockchain relay while Holepunch connects. Resending creates a new room and ends their current one — they will see it as superseded. Only do this if messages truly are not delivering."
-        confirmLabel="Resend anyway"
-        destructive
-        onConfirm={() => void doResendInvite()}
-        onClose={() => setConfirmResend(false)}
+        open={confirmSameTopic}
+        title="Create another room?"
+        body="You already have an open room with the same topic. Are you sure you want to create a new one?"
+        confirmLabel="Create new room"
+        onConfirm={() => void submitInvite()}
+        onClose={() => setConfirmSameTopic(false)}
       />
     </div>
   );

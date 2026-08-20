@@ -21,6 +21,7 @@ import type {
   HolepunchBootstrapContract,
   InviteEnvelope,
   P2PSessionConfig,
+  TopicSuiteId,
 } from "@/types/protocol";
 
 // ---------- Wallet ----------
@@ -65,8 +66,9 @@ export type ImportWalletInput =
     }
   | {
       method: "qr";
-      /** Wallet envelope JSON decoded from a QR code. */
+      /** Wallet URI payload from a QR scan (`conceal.ccx7…?spend_key=…`). */
       qr: string;
+      /** Local encryption password for the imported wallet. */
       password: string;
       label?: string;
     };
@@ -103,6 +105,10 @@ export type WalletService = {
   }): Promise<{ address: string; viewKey: string }>;
   generatePaymentId(): string;
   resync(): Promise<void>;
+  /** Rewind scan to creation height and sync (keeps folded outputs/txs). */
+  resyncFromCreationHeight(): Promise<void>;
+  /** Wipe scanned history and re-sync from creation height. */
+  resetAndRescanFromCreationHeight(): Promise<void>;
   // TODO(conceal-wallet-sdk): wire the real engine methods through here.
   // Until then, ConcealWalletService simulates timing + balances.
 };
@@ -203,6 +209,7 @@ export type SmartMessageService = {
     inviteId: string;
     roomId: string;
     replayId?: string;
+    topicEpoch?: number;
   }): Promise<{ txHash: string }>;
   /** Scan received smart messages for chat.revoke. */
   fetchIncomingRevokes(): Promise<
@@ -238,6 +245,7 @@ export type RoomBootstrap = {
   inviteExpiry?: number;
   roomTtl?: number;
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
+  awaitingChainSync?: boolean;
 };
 
 export type ChatTransport = {
@@ -248,7 +256,10 @@ export type ChatTransport = {
   joinRoom(roomId: string): Promise<ChatRoom>;
   /** Join topic and establish peer channel from bootstrap contract. */
   connect(contract: HolepunchBootstrapContract): Promise<ChatRoom>;
-  disconnect(roomId: string): Promise<void>;
+  /** Leave forever: catalog/session removal (not temporary offline). */
+  leaveRoom(roomId: string, opts?: { skipEpochBump?: boolean }): Promise<void>;
+  /** Leave all Hyperswarm topics without revoking catalog/sessions (Exit). */
+  softLeaveAll(): Promise<void>;
   /** Retry after connect_failed. */
   retryConnect(roomId: string): Promise<ChatRoom>;
   sendMessage(roomId: string, text: string): Promise<ChatMessage>;
@@ -308,6 +319,7 @@ export type SmartMessageProtocolService = {
     roomId?: string;
     replayId?: string;
     reasonCode?: ChatRevokeReasonCode;
+    topicEpoch?: number;
   }): Promise<ChatRevokePayload>;
 
   /** @deprecated Use composeCreate. */
@@ -378,6 +390,8 @@ export type P2PEncryptionService = {
       roomId: string;
     };
     nonceSeed: string;
+    topicSuite?: TopicSuiteId;
+    topicEpoch?: number;
   }): Promise<P2PSessionConfig>;
 
   seal(input: {
@@ -398,20 +412,26 @@ export type P2PEncryptionService = {
   }): Promise<{ plaintext: Uint8Array; session: P2PSessionConfig } | null>;
 };
 
-// ---------- Local security ----------
+// ---------- Seed / key backup ----------
 
-export type LocalSecurityService = {
-  setPasscode(passcode: string): Promise<void>;
-  verifyPasscode(passcode: string): Promise<boolean>;
-  changePasscode(oldPasscode: string, newPasscode: string): Promise<boolean>;
-  isPasscodeSet(): Promise<boolean>;
-  // NOTE: conceptual only. Real device keystore is a React Native concern.
+export type WalletSecretsExport = {
+  address: string;
+  mnemonic: string;
+  spendKey: string;
+  viewKey: string;
+  viewOnly: boolean;
 };
 
-// ---------- Seed backup ----------
+export type WalletBackupDownload = {
+  filename: string;
+  payload: unknown;
+};
 
 export type SeedBackupService = {
-  revealSeed(passcode: string): Promise<string>;
-  confirmBackup(passcode: string): Promise<void>;
+  /** Seed + keys after wallet-password check (biometric may replace later). */
+  revealSecrets(password: string): Promise<WalletSecretsExport>;
+  /** Encrypted wallet .json after wallet-password check. */
+  downloadWalletBackup(password: string): Promise<WalletBackupDownload>;
+  confirmBackup(password: string): Promise<void>;
   isBackedUp(): Promise<boolean>;
 };

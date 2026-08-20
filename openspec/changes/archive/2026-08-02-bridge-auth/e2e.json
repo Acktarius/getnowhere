@@ -1,0 +1,18 @@
+{
+  "change": "bridge-auth",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Auth helpers unit",
+      "cmd": "node --test --test-force-exit holepunch-sidecar/test/auth.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 30000
+    },
+    {
+      "name": "Sidecar bridge auth policy",
+      "cmd": "node --test --test-force-exit holepunch-sidecar/test/bridge-auth.test.mjs",
+      "expect": "fail 0",
+      "timeoutMs": 60000
+    }
+  ]
+}

@@ -1,6 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { CatalogRoom } from "../../src/services/p2p/roomCatalogStore";
-import { shouldRetireCatalogRoom } from "../../src/services/p2p/roomCatalogStore";
+import {
+  findCatalogRetirements,
+  shouldRetireCatalogRoom,
+  upsertCatalogRoom,
+} from "../../src/services/p2p/roomCatalogStore";
+import { setActiveStorageAdapter } from "../../src/services/storage/StorageAdapter";
+
+const memory = new Map<string, string>();
+
+beforeEach(() => {
+  memory.clear();
+  setActiveStorageAdapter({
+    getItem: (k) => memory.get(k) ?? null,
+    setItem: (k, v) => {
+      memory.set(k, v);
+    },
+    removeItem: (k) => {
+      memory.delete(k);
+    },
+  });
+});
 
 function room(partial: Partial<CatalogRoom>): CatalogRoom {
   return {
@@ -67,5 +87,27 @@ describe("room catalog retirement rules", () => {
         now,
       ),
     ).toBe("room_ttl");
+  });
+
+  it("findCatalogRetirements lists expired catalog rows", () => {
+    upsertCatalogRoom(
+      room({
+        id: "expired-room",
+        inviteExpiry: now + 3600,
+        roomTtl: now - 1000,
+        lifecycleStatus: "connected",
+      }),
+    );
+    upsertCatalogRoom(
+      room({
+        id: "live-room",
+        inviteExpiry: now + 3600,
+        roomTtl: now + 86400,
+        lifecycleStatus: "connected",
+      }),
+    );
+    const due = findCatalogRetirements(now);
+    expect(due.map((d) => d.room.id)).toEqual(["expired-room"]);
+    expect(due[0]?.reason).toBe("room_ttl");
   });
 });

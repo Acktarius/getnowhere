@@ -1,0 +1,18 @@
+{
+  "change": "reset-app-data",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "delete-wallet-preserves-settings",
+      "cmd": "npm test -- tests/storage/app-data-lifecycle.test.ts -t \"deleteWalletData\"",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "reset-clears-settings",
+      "cmd": "npm test -- tests/storage/app-data-lifecycle.test.ts -t \"resetAppData\"",
+      "expect": "passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

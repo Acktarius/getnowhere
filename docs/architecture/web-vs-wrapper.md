@@ -43,6 +43,26 @@ Rules:
 storage partitions, and attaches to (or owns) the localhost Hyperswarm sidecar
 child. See `docs/architecture/electron-desktop.md`.
 
+## Local wipe (Settings)
+
+Settings exposes two wipe actions, both implemented in
+`src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
+`removeItem` (not a full storage clear). Confirms use shared `ConfirmModal`
+(not `window.confirm`).
+
+| Action | Clears | Keeps |
+|---|---|---|
+| **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |
+| **Reset app data** | Wallet-tied keys **plus** prefs and side channels (`ccx-*`) | Nothing local for this identity |
+
+**Nav Exit** (bottom bar) is **not** a wipe: it saves the wallet blob (and chat
+text when Local message retention is on), soft-leaves Holepunch, locks keys out
+of memory, and returns to welcome/open. Use `leaveRoom` for leave-forever.
+
+All hosts use the same UI path. Electron isolation is partition-scoped
+`localStorage` (Alice/Bob / packaged `persist:gnh`) — this change does not add
+a separate IPC wipe.
+
 ## Mobile wrapper
 
 `native-wrapper/` is the Expo shell for iOS/Android packaging (EAS Build /
@@ -74,7 +94,7 @@ Hyperswarm in the renderer. Details: `docs/builds/github-pages-and-desktop.md`.
 
 | Put it in… | When |
 |---|---|
-| `src/` | Product UX, domain logic, wallet, protocol, bridge client, encryption L1/L3 |
+| `src/` | Product UX, domain logic, wallet, protocol, bridge client, L1 crypto |
 | `holepunch-sidecar/` | Web-dev Hyperswarm host + WS bridge server |
 | `desktop-electron/` | Electron window lifecycle, Alice/Bob partitions, sidecar child ownership |
 | `native-wrapper/` | Expo/EAS packaging, Bare worklet host, store metadata |
@@ -88,8 +108,8 @@ Hyperswarm stays **out of the Vite / UI bundle**.
   (MVP) or main / Pear-end later — `electron-desktop.md`
 - **Mobile:** Expo UI ↔ same bridge ↔ Bare worklet — `mobile-p2p-runtime.md`
 
-Crypto (max security): L1 SmartMessage derive → L2 Hyperswarm Noise → L3
-ChaCha20-Poly1305 E2E before the bridge — `docs/security/encryption.md`.
+Crypto (max security): L1 SmartMessage derive + session seal → L2 Hyperswarm
+Noise; L1′ relay when L2 is down — `docs/security/encryption.md`. No L3.
 
 Further detail:
 
@@ -119,15 +139,19 @@ npm run desktop:alice
 npm run desktop:bob
 ```
 
-Mobile wrapper:
+Mobile wrapper (Android first — see `docs/builds/expo-eas-android-build.md`):
 
 ```bash
+npm run mobile:install
+npm run mobile:android          # sync dist + expo run:android (local debug APK)
+
 cd native-wrapper
-npm install
-npx eas build:configure
+npx eas build --platform android --profile preview   # cloud APK
 npx eas build --platform ios --profile production
 npx eas submit --platform ios
 ```
+
+Cordova and Capacitor are not used. Rejected paths: `docs/architecture/mobile-p2p-runtime.md`.
 
 ## Documentation rule
 
@@ -137,7 +161,7 @@ Any change that moves responsibility across `src/`, `holepunch-sidecar/`,
 
 ## Project wording
 
-> Get Now Here is developed as a web-first application. Local work happens with
+> Get NowHere is developed as a web-first application. Local work happens with
 > `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare.
 > Expo.dev / EAS covers store delivery.
 
@@ -148,7 +172,7 @@ Prefer:
 - “Vite UI plus a Pear-shaped Node Hyperswarm sidecar (web-dev).”
 - “Desktop: Electron shell; shared localhost sidecar for Alice/Bob testing.”
 - “Mobile: Expo UI plus a Bare Hyperswarm worklet behind the same bridge.”
-- “L1 SmartMessage secret → L2 Noise transport → L3 ChaCha E2E on frames.”
+- “L1 SmartMessage secret (+ session seal) → L2 Noise; L1′ when L2 is down.”
 - “Topics come only from `deriveTopicRef`.”
 
 Avoid:
@@ -156,6 +180,7 @@ Avoid:
 - Referring to a top-level `web/` folder (use `src/`)
 - “The UI / WebView / renderer joins Hyperswarm”
 - “Noise alone is enough for chat plaintext across the bridge”
+- Naming a separate “L3” layer (live AEAD is an L1 key use)
 - “React Native desktop” / “Nitro Hyperswarm”
 - Public room names as topics; trusting peers from topic join alone
 - Alternate `topicRef` formulas unless protocol + `ids.ts` change together

@@ -44,7 +44,7 @@ export function BrandMark({ size = 40, className }: Props) {
 export function Wordmark({ large = false }: { large?: boolean }) {
   return (
     <span className={`brand-wordmark ${large ? "brand-wordmark--lg" : ""}`}>
-      Get Now <span className="brand-wordmark__accent">Here</span>
+      Get <span className="brand-wordmark__accent">NowHere</span>
     </span>
   );
 }

@@ -1,0 +1,87 @@
+<!-- forge-brief-specs-hash:13932fdead59d10f -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Send contact recipient picker</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Send contact recipient picker</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    When you send CCX, you can pick a contact from a dropdown instead of
+    pasting their address. The app fills their Conceal address and, when you
+    have it, the payment ID they gave you so they can recognize the transfer.
+    Each contact row shows their name and a small round letter badge.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>A <strong>Contact</strong> control at the top of the Send sheet (hidden if you have no usable contacts).</li>
+    <li>Contacts listed A→Z by name, one line each: name on the left, round letter mark on the right.</li>
+    <li>Letter mark: two initials for multi-word names; up to three letters for a single name.</li>
+    <li>Pick → address filled; payment ID filled from their <code>paymentIdTo</code> when you have one, otherwise left blank.</li>
+    <li>Archived and blocked contacts do not appear.</li>
+    <li>You can still type or scan an address by hand.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    The list reads your local contacts (same ones as the Contacts screen).
+    Choosing a row copies address and optional payment ID into the send form.
+    Nothing about how the chain transaction is built changes — only how the
+    form is filled.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  A[Open Send] --> B{Eligible contacts?}
+  B -->|no| C[Address fields only]
+  B -->|yes| D[Contact dropdown]
+  D --> E[Pick contact]
+  E --> F[Fill address]
+  E --> G{Have PidTo?}
+  G -->|yes| H[Fill payment ID]
+  G -->|no| I[Leave payment ID empty]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>On Wallet → Send, look for <strong>Contact</strong> above the address field.</li>
+    <li>Pick a name to autofill; edit fields afterward if you need to.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Re-picking a contact overwrites address and payment ID (including anything you typed by hand).</li>
+    <li>Photo avatars are not in this change — letter badges only for now.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Custom contact photos or uploaded icons.</li>
+    <li>Search / typeahead filtering.</li>
+    <li>Autofill of amount.</li>
+    <li>Changes to spend / dust / chain building.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Helpers + tests (sort, letter mark, autofill) — 2 tasks</li>
+    <li>Send sheet dropdown UI — 2 tasks</li>
+    <li>Lite-wallet docs note — 1 task</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

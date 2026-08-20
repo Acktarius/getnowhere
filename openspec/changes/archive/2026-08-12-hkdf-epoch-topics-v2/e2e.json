@@ -1,0 +1,36 @@
+{
+  "change": "hkdf-epoch-topics-v2",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "hkdf-topic-derivation-vectors",
+      "cmd": "npm run test -- tests/p2p/ids-hkdf-v2.test.ts tests/p2p/relationship-topic-epoch.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "v2-create-wire-and-session-bootstrap",
+      "cmd": "npm run test -- tests/p2p/v2-create-wire-proof.test.ts tests/p2p/session-bootstrap-epoch.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "v2-proof-and-chat-aead",
+      "cmd": "npm run test -- tests/p2p/proof-seal-v2.test.ts tests/p2p/chat-seal-v2.test.ts tests/p2p/incoming-frame-aad.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "responder-connect-with-early-proof",
+      "cmd": "npm run test -- tests/p2p/responder-early-proof.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "v1-coexistence-after-upgrade",
+      "cmd": "npm run test -- tests/p2p/topic-derivation.test.ts tests/p2p/proof-aad.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

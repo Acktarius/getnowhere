@@ -1,0 +1,24 @@
+{
+  "change": "electron-ipc-sidecar",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "sidecar-ipc-transport",
+      "cmd": "cd holepunch-sidecar && node --test test/bridge-ipc.test.mjs",
+      "expect": "pass",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "desktop-ipc-client-and-preload",
+      "cmd": "cd desktop-electron && node --test test/sidecar-ipc-client.test.mjs test/preload-bridge.test.mjs",
+      "expect": "pass",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "typescript-check",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

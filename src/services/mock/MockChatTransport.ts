@@ -80,11 +80,23 @@ export const MockChatTransport: ChatTransport = {
     return room;
   },
 
-  async disconnect(roomId) {
+  async leaveRoom(roomId, _opts?) {
     const room = rooms.get(roomId);
     if (room) {
       room.lifecycleStatus = "closed";
       room.peerStatus = "offline";
+    }
+  },
+
+  async softLeaveAll() {
+    for (const room of rooms.values()) {
+      if (
+        room.lifecycleStatus === "connected" ||
+        room.lifecycleStatus === "connecting"
+      ) {
+        room.peerStatus = "offline";
+        room.lifecycleStatus = "accepted";
+      }
     }
   },
 
@@ -103,7 +115,12 @@ export const MockChatTransport: ChatTransport = {
       sendCounter: 0,
       recvCounter: 0,
       peerRole: "initiator",
-      transport: { kind: "holepunch", topicRef: roomId },
+      transport: {
+        kind: "holepunch",
+        topicRef: roomId,
+        topicSuite: "SHA256_V1",
+        topicEpoch: 0,
+      },
       roomTtl: Math.floor(Date.now() / 1000) + 86400,
       establishedAt: new Date().toISOString(),
     });

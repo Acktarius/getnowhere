@@ -1,0 +1,15 @@
+{
+  "change": "authorize-inbound-swarm-frames",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Inbound frame delivery requires connTopics membership",
+      "library": "holepunch-sidecar/src/swarm.mjs",
+      "runtimeOwner": "holepunch-sidecar process (npm run holepunch / Electron sidecar child) via createSwarmMesh conn.on(\"data\") frame branch",
+      "writes": "local client SidecarEvent frame fan-out only when topicRef ∈ connTopics for that connection",
+      "reads": "connTopics; topics map; inbound NDJSON frame topicRef",
+      "uiConsumer": "N/A (sidecar wire); ChatRoomScreen receives frames via HolepunchSidecarClient only after authorized fan-out",
+      "evidence": "holepunch-sidecar/test/sidecar.test.mjs inbound frame authorization regressions; forge e2e run"
+    }
+  ]
+}

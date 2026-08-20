@@ -1,0 +1,97 @@
+<!-- forge-brief-specs-hash:c171ae2e8e3fa788 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stronger chat discovery topics (HKDF v2)</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      code { background: #f1f3f4; padding: 0.1rem 0.3rem; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({ startOnLoad: true });</script>
+  </head>
+  <body>
+    <h1>Stronger chat discovery topics (HKDF v2)</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      New chats will derive Hyperswarm discovery topics from relationship keys
+      (HKDF + rotation epochs) instead of a plain hash of room ids. Existing
+      chats keep working until recreated. Strategy docs land for layer separation
+      and the local desktop bridge roadmap (ws → wss → IPC later).
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>Key-bound discovery topics — harder to grind from leaked id fragments.</li>
+      <li>Topic rotation on revoke or agreed bump (epoch), without widening invite message size.</li>
+      <li>Post-connect proof binds epoch so wrong-era peers fail closed.</li>
+      <li>Existing v1 rooms unchanged until destroyed or recreated.</li>
+      <li>Written security policy: Conceal distributes capabilities; Hyperswarm discovers; local bridge is control only.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      Conceal Smart Messages still deliver the invite (4-byte room id unchanged).
+      Both peers derive a relationship key from the existing handshake ECDH, then
+      HKDF produces the swarm topic for the current epoch. Join + L1 proof as today.
+    </p>
+    <pre class="mermaid">
+sequenceDiagram
+  participant A as Alice wallet
+  participant B as Bob wallet
+  participant D as Hyperswarm DHT
+  A->>B: Encrypted invite (Conceal L1)
+  Note over A,B: HKDF topic from shared secret + epoch 0
+  A->>D: Join topicRef
+  B->>D: Join topicRef
+  A->>B: Noise stream + L1 proof (epoch-bound)
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>New invites after upgrade use v2 topics automatically when both peers support it.</li>
+      <li>Old rooms reconnect with v1 topics until you leave and create fresh.</li>
+      <li>No UI change expected; Room diagnostics may show topic suite / epoch later.</li>
+      <li>Desktop still uses loopback WebSocket to the sidecar — wss and IPC are documented but not in this change.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Peer on old build + peer on new build need clear connect failure, not silent mismatch.</li>
+      <li>Epoch desync requires rare L1 sync message — watch diagnostics if connect fails after revoke.</li>
+      <li>Crypto/security independent review required before release.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Widening 4-byte room or invite ids (Conceal size budget).</li>
+      <li>wss:// sidecar, Unix socket / IPC migration, Ed25519 signed invites.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li><strong>1. Documentation</strong> — land strategy docs and cross-links (3 tasks, small).</li>
+      <li><strong>2. Protocol types</strong> — topic suite, HKDF helpers, tests (3 tasks, medium).</li>
+      <li><strong>3. Handshake path</strong> — v2 creates, bootstrap contract (3 tasks, medium).</li>
+      <li><strong>4. Epoch lifecycle</strong> — rotation, L1 sync, rejoin (4 tasks, medium).</li>
+      <li><strong>5. Post-connect proof</strong> — epoch in AAD (2 tasks, medium).</li>
+      <li><strong>6. v1 coexistence</strong> — legacy rooms (2 tasks, small).</li>
+      <li><strong>7. Verify and review</strong> — tests + security review (4 tasks, small).</li>
+    </ul>
+  </body>
+</html>

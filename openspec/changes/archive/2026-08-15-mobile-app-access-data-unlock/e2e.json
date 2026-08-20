@@ -1,0 +1,21 @@
+{
+  "change": "mobile-app-access-data-unlock",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "typecheck",
+      "cmd": "npm run typecheck",
+      "expect": "exit 0"
+    },
+    {
+      "name": "unit-mobile-auth",
+      "cmd": "npm test -- tests/auth/biometric-store.test.ts tests/mobile/gnh-biometric-unlock.test.ts tests/native-wrapper/inject-mobile-bridge.test.ts",
+      "expect": "exit 0"
+    },
+    {
+      "name": "unit-app-access",
+      "cmd": "npm test -- tests/mobile/app-access-controller.test.ts tests/hooks/use-wallet-live-sync-sleep.test.ts",
+      "expect": "exit 0"
+    }
+  ]
+}

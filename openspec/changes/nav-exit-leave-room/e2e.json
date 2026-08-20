@@ -1,0 +1,18 @@
+{
+  "change": "nav-exit-leave-room",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "App data lifecycle wipe contracts",
+      "cmd": "npx vitest run tests/storage/app-data-lifecycle.test.ts tests/screens/SettingsScreen.wipe-confirm.test.tsx",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Exit + chat room persistence",
+      "cmd": "npx vitest run tests/storage/walletSessionExit.test.ts tests/components/BottomNav.exit.test.tsx tests/components/ConfirmModal.test.tsx tests/p2p/chat-rooms-blob.test.ts tests/p2p/chat-rooms-wallet.test.ts tests/p2p/holepunch-chat-transport.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    }
+  ]
+}

@@ -1,62 +1,64 @@
 import { create } from "zustand";
-import { localSecurityService } from "@/services";
+import { PasskeyError } from "@/lib/auth/passkey-error";
+import { completeAppAccessUnlock } from "@/lib/mobile/completeAppAccessUnlock";
 import { getStorage } from "@/services/storage/StorageAdapter";
 
-// Tracks app-level unlock state and whether onboarding has completed.
-// Wallet initialization is tracked in walletStore; this store is about
-// app entry gating (passcode / unlock).
+/** App-access unlock state (biometric gate — not wallet data). */
 
 type AuthStore = {
-  passcodeSet: boolean;
   unlocked: boolean;
   busy: boolean;
   error: string | null;
   init: () => Promise<void>;
-  setPasscode: (code: string) => Promise<void>;
-  verify: (code: string) => Promise<boolean>;
+  unlockViaBiometric: () => Promise<boolean>;
   lock: () => void;
 };
 
 const ONBOARDED_KEY = "gnh.onboarded";
+const BIOMETRIC_UNLOCK_TIMEOUT_MS = 45_000;
 
 export const useAuthStore = create<AuthStore>((set) => ({
-  passcodeSet: false,
-  unlocked: false,
+  unlocked: true,
   busy: false,
   error: null,
 
   async init() {
-    const set1 = await localSecurityService.isPasscodeSet();
-    set({ passcodeSet: set1, unlocked: !set1 });
+    // Do not reset `unlocked` — mobile app-access lock owns that flag when enabled.
+    set({ error: null });
   },
 
-  async setPasscode(code) {
+  async unlockViaBiometric() {
     set({ busy: true, error: null });
     try {
-      await localSecurityService.setPasscode(code);
-      getStorage().setItem(ONBOARDED_KEY, "1");
-      set({ passcodeSet: true, unlocked: true, busy: false });
+      const { unlockAppAccessBiometric } = await import(
+        "@/lib/mobile/app-access-biometric"
+      );
+      await Promise.race([
+        unlockAppAccessBiometric(),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(
+              new PasskeyError(
+                "failed",
+                "Biometric unlock timed out — tap Require biometrics to try again.",
+              ),
+            );
+          }, BIOMETRIC_UNLOCK_TIMEOUT_MS);
+        }),
+      ]);
+      completeAppAccessUnlock();
+      set({ unlocked: true, busy: false });
+      return true;
     } catch (e) {
-      set({ busy: false, error: (e as Error).message });
-      throw e;
-    }
-  },
-
-  async verify(code) {
-    set({ busy: true, error: null });
-    try {
-      const ok = await localSecurityService.verifyPasscode(code);
-      if (ok) set({ unlocked: true, busy: false });
-      else set({ busy: false, error: "Incorrect passcode" });
-      return ok;
-    } catch (e) {
-      set({ busy: false, error: (e as Error).message });
+      const message =
+        e instanceof PasskeyError ? e.message : (e as Error).message;
+      set({ busy: false, error: message });
       return false;
     }
   },
 
   lock() {
-    set({ unlocked: false });
+    set({ unlocked: false, error: null });
   },
 }));
 
@@ -64,7 +66,7 @@ export function isOnboarded(): boolean {
   return getStorage().getItem(ONBOARDED_KEY) === "1";
 }
 
-/** Mark onboarding complete without setting an app passcode (e.g. after wallet import). */
+/** Mark onboarding complete (e.g. after wallet import or open). */
 export function markOnboarded() {
   getStorage().setItem(ONBOARDED_KEY, "1");
 }

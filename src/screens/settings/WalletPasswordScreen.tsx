@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { clearDataUnlockBiometricEnrollment } from "@/lib/auth/biometric-lifecycle";
 import { changeWalletPassword } from "@/services/conceal/ConcealWalletService";
+import { useSettingsStore } from "@/state/settingsStore";
 import {
   describePasswordFailure,
   WALLET_PASSWORD_HINTS,
@@ -9,6 +11,9 @@ import {
 } from "@/utils/walletPassword";
 
 export function WalletPasswordScreen() {
+  const setDataUnlockBiometric = useSettingsStore(
+    (s) => s.setDataUnlockBiometric,
+  );
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -27,7 +32,11 @@ export function WalletPasswordScreen() {
     setBusy(true);
     try {
       await changeWalletPassword(current, next);
-      setMsg("Wallet password updated.");
+      await clearDataUnlockBiometricEnrollment();
+      setDataUnlockBiometric(false);
+      setMsg(
+        "Wallet password updated. Re-enable biometric unlock in Security if needed.",
+      );
       setCurrent("");
       setNext("");
       setConfirm("");
@@ -51,8 +60,8 @@ export function WalletPasswordScreen() {
         style={{ padding: "16px 16px 40px" }}
       >
         <p className="muted" style={{ fontSize: 14 }}>
-          This is the password that encrypts your Conceal wallet backup on this
-          device — not your app unlock passcode.
+          This password encrypts and decrypts your Conceal wallet on this
+          device.
         </p>
         <SecureInput
           label="Current password"

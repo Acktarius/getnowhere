@@ -1,10 +1,16 @@
-import { Send } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
+import {
+  autofillFromContact,
+  contactLetterMark,
+  eligibleSendContacts,
+} from "@/lib/send-contact-recipient";
 import { walletService } from "@/services";
+import { useContactsStore } from "@/state/contactsStore";
 import { toastError } from "@/state/toastStore";
-import type { WalletState } from "@/types/models";
+import type { Contact, WalletState } from "@/types/models";
 import { formatCCX, generatePaymentId } from "@/utils/format";
 
 type Props = {
@@ -23,13 +29,56 @@ const scanBtnStyle: React.CSSProperties = {
   height: 34,
 };
 
+const markStyle: React.CSSProperties = {
+  width: 28,
+  height: 28,
+  fontSize: 11,
+};
+
 export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
+  const contacts = useContactsStore((s) => s.contacts);
+  const options = eligibleSendContacts(contacts);
+
   const [toAddress, setToAddress] = useState(prefillAddress ?? "");
   const [amount, setAmount] = useState("");
   const [paymentId, setPaymentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(
+    null,
+  );
+  const contactPickerRef = useRef<HTMLDivElement>(null);
+
+  const selectedContact =
+    options.find((c) => c.id === selectedContactId) ?? null;
+
+  useEffect(() => {
+    if (!contactOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!contactPickerRef.current?.contains(e.target as Node)) {
+        setContactOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setContactOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [contactOpen]);
+
+  function pickContact(contact: Contact) {
+    const { address, paymentId: pid } = autofillFromContact(contact);
+    setToAddress(address);
+    setPaymentId(pid);
+    setSelectedContactId(contact.id);
+    setContactOpen(false);
+  }
 
   const amt = Number(amount);
   const valid =
@@ -58,6 +107,112 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
 
   return (
     <div className="stack stack--gap-4">
+      {options.length > 0 && (
+        <div className="field" ref={contactPickerRef}>
+          <span className="field__label">Contact</span>
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="select"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+              aria-haspopup="listbox"
+              aria-expanded={contactOpen}
+              disabled={busy}
+              onClick={() => setContactOpen((o) => !o)}
+            >
+              {selectedContact ? (
+                <>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {selectedContact.alias}
+                  </span>
+                  <span className="row__avatar" style={markStyle}>
+                    {contactLetterMark(selectedContact.alias)}
+                  </span>
+                </>
+              ) : (
+                <span className="faint" style={{ flex: 1 }}>
+                  Select a contact…
+                </span>
+              )}
+              <ChevronDown
+                size={16}
+                className="faint"
+                style={{ flexShrink: 0 }}
+              />
+            </button>
+            {contactOpen && (
+              <div
+                role="listbox"
+                style={{
+                  position: "absolute",
+                  zIndex: 20,
+                  left: 0,
+                  right: 0,
+                  top: "calc(100% + 4px)",
+                  margin: 0,
+                  padding: 4,
+                  maxHeight: 220,
+                  overflowY: "auto",
+                  background: "var(--bg-elev)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.28)",
+                }}
+              >
+                {options.map((contact) => (
+                  <button
+                    key={contact.id}
+                    type="button"
+                    role="option"
+                    aria-selected={contact.id === selectedContactId}
+                    className="btn btn--ghost"
+                    style={{
+                      width: "100%",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      padding: "8px 10px",
+                      borderRadius: "var(--radius-sm)",
+                      fontWeight: 500,
+                    }}
+                    onClick={() => pickContact(contact)}
+                  >
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        textAlign: "left",
+                      }}
+                    >
+                      {contact.alias}
+                    </span>
+                    <span className="row__avatar" style={markStyle}>
+                      {contactLetterMark(contact.alias)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="field">
         <span className="field__label">Recipient CCX address</span>
         <div style={{ position: "relative" }}>

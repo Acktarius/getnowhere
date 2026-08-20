@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Electron shell for Get Now Here (embedded Vite UI + localhost Hyperswarm sidecar child)",
+  "description": "Electron shell for Get NowHere (embedded Vite UI + localhost Hyperswarm sidecar child)",
   "main": "main.mjs",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.mjs",
     "start": "electron .",
     "start:alice": "GNH_ROLE=alice electron .",
     "start:bob": "GNH_ROLE=bob electron .",
@@ -15,10 +15,11 @@
     "prepare:sidecar": "node scripts/prepare-sidecar.mjs",
     "package": "npm run prepare:sidecar && electron-forge package --platform=linux --arch=x64",
     "make": "npm run prepare:sidecar && electron-forge make --platform=linux --arch=x64",
+    "make:win": "npm run prepare:sidecar && electron-forge make --platform=win32 --arch=x64",
     "install:app": "npm install"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/cli": "^7.6.1",
     "@electron-forge/maker-deb": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
     "electron": "^40.10.6"

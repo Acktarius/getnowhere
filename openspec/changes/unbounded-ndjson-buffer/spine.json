@@ -1,0 +1,15 @@
+{
+  "change": "unbounded-ndjson-buffer",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "NDJSON reassembly is length-bounded",
+      "library": "holepunch-sidecar/src/swarm.mjs createLineReader; holepunch-sidecar/src/config.mjs",
+      "runtimeOwner": "holepunch-sidecar process (npm run holepunch / Electron sidecar child) via createSwarmMesh conn.on(\"data\")",
+      "writes": "clear line-reader buffer; destroy offending Hyperswarm connection on overflow",
+      "reads": "config.maxNdjsonLineBytes; pending NDJSON buffer length",
+      "uiConsumer": "N/A (sidecar wire); UI sealed frames remain under cap",
+      "evidence": "holepunch-sidecar/test/sidecar.test.mjs NDJSON cap regressions; forge e2e run"
+    }
+  ]
+}

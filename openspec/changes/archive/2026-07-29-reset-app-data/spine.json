@@ -1,0 +1,24 @@
+{
+  "change": "reset-app-data",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Delete wallet removes wallet-tied keys and keeps app prefs",
+      "library": "src/services/storage/appDataLifecycle.ts deleteWalletData",
+      "runtimeOwner": "src/screens/settings/SettingsScreen.tsx Delete wallet button",
+      "writes": "removes wallet-tied StorageAdapter keys; preserves gnh.settings; disconnect clears runtimes; reloads UI",
+      "reads": "active StorageAdapter keys listed as WALLET_TIED_KEYS",
+      "uiConsumer": "Settings danger actions; post-reload Welcome / Import",
+      "evidence": "tests/storage/app-data-lifecycle.test.ts; forge e2e step delete-wallet-preserves-settings"
+    },
+    {
+      "capability": "Reset app data removes wallet-tied keys and app preferences",
+      "library": "src/services/storage/appDataLifecycle.ts resetAppData",
+      "runtimeOwner": "src/screens/settings/SettingsScreen.tsx Reset app data button",
+      "writes": "removes wallet-tied + APP_PREF keys and side channels; disconnect; reload",
+      "reads": "active StorageAdapter + sessionStorage/localStorage side channels",
+      "uiConsumer": "Settings danger actions; post-reload Welcome / Import",
+      "evidence": "tests/storage/app-data-lifecycle.test.ts; forge e2e step reset-clears-settings"
+    }
+  ]
+}

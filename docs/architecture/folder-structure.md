@@ -2,7 +2,7 @@
 
 ## Product wording (architecture)
 
-Get Now Here uses a **Vite UI** with a **Hyperswarm runtime behind a typed bridge**.
+Get NowHere uses a **Vite UI** with a **Hyperswarm runtime behind a typed bridge**.
 
 | Surface | UI host | Hyperswarm host |
 |---|---|---|
@@ -27,10 +27,12 @@ getnowhere/
     src/
       swarm.mjs
       server.mjs
-  native-wrapper/           # Expo + Bare worklet host (mobile)
+  native-wrapper/           # Expo shell + Bare worklet host (mobile); WebView UI scaffold
   desktop-electron/         # Electron shell (Alice/Bob + localhost swarm child)
     main.mjs
-    preload.cjs
+    desktop-identity.mjs    # packaged vs Alice/Bob decision table
+    preload.cjs             # self-contained sandboxed preload → gnhDesktop
+    preload-bridge.cjs      # test mirror of preload normalize/resolve helpers
     forge.config.cjs        # Linux Forge package (sidecar as extraResource)
     scripts/prepare-sidecar.mjs
   docs/

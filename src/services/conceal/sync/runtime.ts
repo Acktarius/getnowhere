@@ -88,6 +88,7 @@ import {
 import { seedStateFromLegacyBlob } from "@/services/conceal/sync/legacy-state-seed";
 import {
   applyInboundScanToReceived,
+  clearReceivedRecords,
   dropExpiredTtl,
   minedHeightsFromState,
   patchSentMessageBlockHeights,
@@ -289,6 +290,12 @@ export function requireRuntime(): SdkRuntime {
 /** True when a wallet is unlocked and active. */
 export function isUnlocked(): boolean {
   return activeId !== null && runtimes.has(activeId);
+}
+
+/** True when the active wallet has a sync chain in flight. */
+export function isSyncInProgress(): boolean {
+  if (activeId === null) return false;
+  return coordinationFor(activeId).inFlightSync !== null;
 }
 
 /** True when the wallet `id` already has a cached (unlocked) runtime. */
@@ -574,6 +581,42 @@ export async function adopt(input: {
  */
 export async function sync(): Promise<number> {
   return syncRuntime(requireRuntime());
+}
+
+function creationHeightFromRaw(raw: RawWalletV1): number {
+  return Math.max(0, Number(raw.creationHeight ?? 0) || 0);
+}
+
+/**
+ * Rewind scan cursor to `creationHeight` and sync without wiping folded state.
+ * Folding is idempotent on re-scan. @see RESCAN_LAG_BLOCKS
+ */
+export async function resyncFromCreationHeight(
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const creationHeight = creationHeightFromRaw(rt.raw);
+  rt.state = { ...rt.state, scannedHeight: creationHeight };
+  await persistRuntime(rt);
+  return syncRuntime(rt);
+}
+
+/** Wipe scanned wallet history and re-sync from `creationHeight`. */
+export async function resetAndRescanFromCreationHeight(
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const creationHeight = creationHeightFromRaw(rt.raw);
+  rt.state = {
+    ...rt.state,
+    scannedHeight: creationHeight,
+    outputs: [],
+    spentKeyImages: [],
+    transactions: [],
+    deposits: [],
+    spentDepositRefs: [],
+  };
+  rt.raw = clearReceivedRecords(rt.raw);
+  await persistRuntime(rt);
+  return syncRuntime(rt);
 }
 
 /** Warn once per runtime when mempool RPC is unavailable (#109). */
@@ -1467,6 +1510,16 @@ export async function changeRuntimePassword(
   }
   if (currentPassword !== rt.password) {
     throw new Error("Current wallet password is incorrect.");
+  }
+  rt.password = nextPassword;
+  await persistRuntime(rt);
+}
+
+/** Set wallet password while runtime is already unlocked (e.g. onboarding create). */
+export async function setRuntimePassword(nextPassword: string): Promise<void> {
+  const rt = requireRuntime();
+  if (!nextPassword) {
+    throw new Error("A wallet password is required.");
   }
   rt.password = nextPassword;
   await persistRuntime(rt);

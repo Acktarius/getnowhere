@@ -1,0 +1,15 @@
+{
+  "change": "multi-room-per-contact",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Multiple rooms per contact without auto-supersede",
+      "library": "src/state/contactsStore.ts; src/screens/chats/ChatRoomScreen.tsx; src/screens/contacts/ContactDetailScreen.tsx",
+      "runtimeOwner": "ContactDetailScreen create/resend invite → contactsStore.createInvite; ChatRoomScreen render",
+      "writes": "new invite/room alongside existing rooms; confirm gate; no superseded banner",
+      "reads": "contact invites, room catalog lifecycle, selected roomTopic",
+      "uiConsumer": "Contact detail invite flow; Chat room screen; Chats list",
+      "evidence": "focused vitest; forge e2e run"
+    }
+  ]
+}

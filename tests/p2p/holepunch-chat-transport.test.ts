@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetHolepunchTransport,
   __setHolepunchConnectTimeoutMs,
@@ -80,6 +80,76 @@ function createUnreachableSidecarBackend(): HolepunchSidecarBackend {
     close() {},
   };
 }
+
+describe("softLeaveAll leaves swarm without revoking", () => {
+  beforeEach(() => {
+    __resetHolepunchTransport();
+  });
+
+  it("calls backend leave for joined topics but keeps catalog and room state", async () => {
+    const leave = vi.fn(async () => undefined);
+    const base = createAutoPeerSidecarBackend();
+    __setHolepunchSidecarBackend({
+      ...base,
+      leave: (topicRef, roomId) => leave(topicRef, roomId),
+    });
+    __setHolepunchSkipProof(true);
+
+    const roomId = "room-soft-leave";
+    const { handshake, session, contract } = await buildContract(
+      roomId,
+      "inv-soft-leave",
+    );
+    await HolepunchChatTransport.createRoom({
+      contactId: "c1",
+      bootstrap: {
+        roomId,
+        roomKeyRef: session.sessionId,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+        inviteId: "inv-soft-leave",
+        roomTtl: handshake.roomTtl,
+      },
+    });
+    await HolepunchChatTransport.connect(contract);
+
+    expect(typeof HolepunchChatTransport.softLeaveAll).toBe("function");
+    await HolepunchChatTransport.softLeaveAll();
+
+    expect(leave).toHaveBeenCalled();
+    expect(loadCatalogRoom(roomId)).toBeTruthy();
+    expect(await HolepunchChatTransport.getRoom(roomId)).toBeTruthy();
+  });
+});
+
+describe("leaveRoom is leave-forever", () => {
+  beforeEach(() => {
+    __resetHolepunchTransport();
+  });
+
+  it("exposes leaveRoom (not disconnect) and removes the room from the catalog", async () => {
+    const roomId = "room-leave-forever";
+    await HolepunchChatTransport.createRoom({
+      contactId: "c1",
+      bootstrap: {
+        roomId,
+        roomKeyRef: "key:room-leave-forever",
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+        inviteId: "inv-leave-forever",
+      },
+    });
+    expect(loadCatalogRoom(roomId)).toBeTruthy();
+
+    expect("disconnect" in HolepunchChatTransport).toBe(false);
+    expect(typeof HolepunchChatTransport.leaveRoom).toBe("function");
+
+    await HolepunchChatTransport.leaveRoom(roomId);
+
+    expect(loadCatalogRoom(roomId)).toBeUndefined();
+    expect(await HolepunchChatTransport.getRoom(roomId)).toBeNull();
+  });
+});
 
 describe("post-accept lifecycle survives stale bootstrap hydration", () => {
   beforeEach(() => {

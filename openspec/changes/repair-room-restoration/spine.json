@@ -1,0 +1,42 @@
+{
+  "change": "repair-room-restoration",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "File-import-only room replay with TTL gates",
+      "library": "src/services/p2p/roomChainRestore.ts; src/services/p2p/revokedRoomsStore.ts",
+      "runtimeOwner": "planRoomRestores when importWallet method is file",
+      "writes": "gnh.roomCatalog; gnh.revokedRooms tombstones",
+      "reads": "raw.sentMessages; raw.receivedMessages; raw.addressBook",
+      "uiConsumer": "ChatsScreen; ImportWalletScreen file tab",
+      "evidence": "tests/p2p/room-chain-restore.test.ts"
+    },
+    {
+      "capability": "Remove chain-scan room restore from 7e713a3",
+      "library": "src/state/contactsStore.ts; src/state/chatStore.ts; ConcealSmartMessageAdapter.ts",
+      "runtimeOwner": "refreshInvites / loadRooms / unlock — no restore unless file import",
+      "writes": "none on seed path",
+      "reads": "import method flag",
+      "uiConsumer": "ChatsScreen; Transactions history",
+      "evidence": "room-chain-restore + store tests"
+    },
+    {
+      "capability": "awaitingChainSync until near tip (accepted file replay)",
+      "library": "src/services/conceal/walletSyncTip.ts; composerGate; HolepunchChatTransport",
+      "runtimeOwner": "isWalletNearTip clears flag; revoke scan",
+      "writes": "catalog awaitingChainSync",
+      "reads": "scannedHeight vs daemon height",
+      "uiConsumer": "ChatsScreen disabled tile",
+      "evidence": "room-chain-restore tests"
+    },
+    {
+      "capability": "Settings resync without room restore",
+      "library": "src/services/conceal/sync/runtime.ts; SettingsScreen",
+      "runtimeOwner": "resyncFromCreationHeight unchanged scope",
+      "writes": "wallet tx state only",
+      "reads": "creation height",
+      "uiConsumer": "Settings Sync section",
+      "evidence": "manual / existing sync tests"
+    }
+  ]
+}

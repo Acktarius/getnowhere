@@ -1,0 +1,79 @@
+<!-- forge-brief-specs-hash:32a9286c7e74c498 -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Require join before sending Holepunch frames</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1, h2 { line-height: 1.2; }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+      pre.flow {
+        background: #f8f9fa;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Require join before sending Holepunch frames</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      Today any local app that opens the Holepunch WebSocket can push chat
+      frames into a room someone else already joined. After this change, you
+      must join that room on the bridge first — same rule the UI already
+      follows.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>A second local client cannot inject into a room it never joined.</li>
+      <li>Unauthorized frame attempts get a bridge error (not silent success).</li>
+      <li>Finding note updated with the fix.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <pre class="flow">
+Client must join(topic) first
+        ↓
+Only then frame(topic) fans out locally / to swarm
+        ↓
+Otherwise: error (WS) / no-op (mesh sendFrame)
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>No UI change if the app already joins before sending.</li>
+      <li>Misbehaving local scripts that skip join will stop working.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Alice and Bob sharing one sidecar can still both join any topic they know — product rule, not this fix.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>Token / auth hardening beyond this membership check.</li>
+      <li>Hyperswarm inbound path (already fixed).</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>Mesh sendFrame gate + tests (2 tasks)</li>
+      <li>WS joined check, docs, finding (1 task)</li>
+    </ul>
+  </body>
+</html>

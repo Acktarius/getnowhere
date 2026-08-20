@@ -1,0 +1,101 @@
+<!-- forge-brief-specs-hash:65d7fa7673bd9f1f -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Harden mobile P2P bridge</title>
+    <style>
+      body {
+        max-width: 48rem;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        color: #202124;
+        font: 16px/1.55 system-ui, sans-serif;
+      }
+      h1,
+      h2 {
+        line-height: 1.2;
+      }
+      .callout {
+        border-left: 4px solid #5965d8;
+        padding: 0.75rem 1rem;
+        background: #f7f7ff;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({ startOnLoad: true });
+    </script>
+  </head>
+  <body>
+    <h1>Harden mobile P2P bridge</h1>
+
+    <h2>TL;DR</h2>
+    <p class="callout">
+      Android chat runs a WebView UI talking to a Bare Hyperswarm worklet through
+      React Native. A security review found gaps: unbounded IPC buffering, weak
+      bridge tokens, exposed secrets, permissive WebView settings, and missing
+      rate limits. This change closes those holes to match desktop sidecar parity.
+    </p>
+
+    <h2>What you'll get</h2>
+    <ul>
+      <li>RN-side IPC line reassembly capped at 256 KiB; oversize kills the worklet.</li>
+      <li>Bridge tokens always from a CSPRNG; empty token refuses worklet start.</li>
+      <li>Bridge secret hidden from JavaScript on <code>window</code>.</li>
+      <li>WebView navigation locked to bundled asset URLs.</li>
+      <li>Rate limits on join/leave/frame with clear <code>rate_limited</code> errors.</li>
+      <li>Regression tests for auth and IPC caps.</li>
+    </ul>
+
+    <h2>How it works</h2>
+    <p>
+      WebView commands still use postMessage, but the native host holds the token
+      in a closure. Bare worklet enforces auth and rate limits on every IPC line.
+      RN caps incoming NDJSON the same way the sidecar caps Hyperswarm lines.
+    </p>
+    <pre class="mermaid">
+sequenceDiagram
+  participant WV as WebView UI
+  participant RN as GnhMobileBridge
+  participant BW as Bare worklet
+  WV->>RN: postMessage command (token in closure)
+  RN->>BW: NDJSON over BareKit IPC
+  BW->>RN: events (capped line reader)
+  RN->>WV: injectJavaScript event
+    </pre>
+
+    <h2>What changes for you</h2>
+    <ul>
+      <li>Normal chat behavior unchanged for valid frames under size limits.</li>
+      <li>Developers rebuild Android assets after bare bundle changes.</li>
+      <li>Tests run via <code>npm run mobile:test-bare</code> from repo root.</li>
+    </ul>
+
+    <h2>Risks and open questions</h2>
+    <ul>
+      <li>Tighter WebView flags may break asset loading — regression-test workers.</li>
+      <li>Hiding bridge token may require UI client updates if tests read <code>window.gnhMobile.bridgeToken</code>.</li>
+      <li>Rate limits must not block legitimate reconnect bursts during room open.</li>
+    </ul>
+
+    <h2>Out of scope</h2>
+    <ul>
+      <li>iOS Bare host (Android-only phase B today).</li>
+      <li>Replacing WebView with native RN UI.</li>
+      <li>Sidecar or Electron changes.</li>
+      <li>L1/L2 crypto or protocol payload changes.</li>
+    </ul>
+
+    <h2>Work overview</h2>
+    <ul>
+      <li>RN IPC line cap + tests (3 tasks) — finding 08</li>
+      <li>Fail-closed bridge token + CSPRNG (4 tasks) — findings 10–11</li>
+      <li>WebView hardening (3 tasks) — findings 09, 12</li>
+      <li>Rate limiting (3 tasks) — finding 13</li>
+      <li>Tests and docs cleanup (3 tasks) — findings 14–15</li>
+      <li>Verify (3 tasks)</li>
+    </ul>
+  </body>
+</html>

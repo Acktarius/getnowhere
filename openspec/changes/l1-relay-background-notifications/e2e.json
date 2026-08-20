@@ -1,0 +1,24 @@
+{
+  "change": "l1-relay-background-notifications",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Notification store unit tests",
+      "cmd": "npx vitest run tests/state/notification-store.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Wallet live sync hook tests",
+      "cmd": "npx vitest run tests/hooks/use-wallet-live-sync.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}
