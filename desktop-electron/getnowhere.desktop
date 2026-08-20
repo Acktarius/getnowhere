@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Get NowHere
+GenericName=Private messenger
+Comment=Conceal-native messenger (Electron + local Hyperswarm sidecar)
+Exec=getnowhere
+Icon=getnowhere
+Categories=Network;InstantMessaging;
+Terminal=false
+StartupWMClass=GetNowHere
