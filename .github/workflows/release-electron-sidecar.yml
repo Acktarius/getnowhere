@@ -75,7 +75,7 @@ jobs:
       - name: Build AppImage (linuxdeploy)
         working-directory: desktop-electron
         env:
-          VERSION: ${{ steps.ver.outputs.version }}
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ steps.ver.outputs.version }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           PACKAGED="out/GetNowHere-linux-x64"
@@ -105,16 +105,19 @@ jobs:
           cp icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
           cp icons/icon.png "$APPDIR/getnowhere.png"
 
-          # Download linuxdeploy + AppImage output plugin (both in same dir for discovery)
+          # Download linuxdeploy + AppImage output plugin into /tmp so they are
+          # never inside desktop-electron/ and never picked up by the artifact glob
+          mkdir -p /tmp/ld
           wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
-               -O linuxdeploy
+               -O /tmp/ld/linuxdeploy-x86_64.AppImage
           wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" \
-               -O linuxdeploy-plugin-appimage-x86_64.AppImage
-          chmod +x linuxdeploy linuxdeploy-plugin-appimage-x86_64.AppImage
+               -O /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage
+          chmod +x /tmp/ld/linuxdeploy-x86_64.AppImage /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage
 
           # Produce AppImage; Electron bundles its own libs so skip dep scanning
-          ARCH=x86_64 VERSION="$VERSION" \
-            ./linuxdeploy \
+          # linuxdeploy finds the plugin next to itself (/tmp/ld/)
+          ARCH=x86_64 \
+            /tmp/ld/linuxdeploy-x86_64.AppImage \
               --appdir "$APPDIR" \
               --desktop-file "$APPDIR/usr/share/applications/getnowhere.desktop" \
               --icon-file "$APPDIR/getnowhere.png" \
