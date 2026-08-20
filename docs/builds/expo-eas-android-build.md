@@ -350,24 +350,57 @@ adb install -r native-wrapper/builds/GetNowHere-v0.2.4-b1-java17-signed-test.apk
 Production / F-Droid: sign the unsigned APK with your release key via
 `apksigner` (same as conceal-wallet-cordova after `build-fdroid-reference.sh`).
 
-### TODO: de-Google for F-Droid
+### F-Droid de-Google cleanup
 
-The Expo/RN prebuild tree may pull **Google Maven** repos and transitive
-**Play Services / GMS** artifacts. Background sync itself uses **AndroidX
-WorkManager** only (`androidx.work:work-runtime-ktx`) — no Firebase, FCM, or
-proprietary sync SDKs — but the **whole** `native-wrapper/android/` graph still
-needs an F-Droid audit before submission.
+`scripts/fix-for-fdroid.py` strips `google()` Maven repos and transitive
+`com.google.*` dependencies from the generated `android/` tree so the APK is
+acceptable to F-Droid. The CI workflow runs it automatically after `expo prebuild`
+and before `assembleRelease`.
 
-Planned: a **Python post-prebuild script** (same idea as
-[acktarius/conceal-2fa](https://github.com/acktarius/conceal-2fa)) to:
+To audit manually after `expo prebuild`:
 
-- strip or rewrite `google()` / GMS Gradle deps where replaceable;
-- verify release `:app:dependencies` has no unwanted `com.google.android.gms` lines;
-- keep reproducible, unsigned release APK output compatible with F-Droid build
-  recipes.
+```bash
+python3 scripts/fix-for-fdroid.py
+cd native-wrapper && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+```
 
-Until that script lands, treat `./gradlew :app:dependencies --configuration releaseRuntimeClasspath`
-as the manual audit step after `expo prebuild`.
+## F-Droid GitHub Actions CI
+
+Trigger: push a tag matching `v*-f-droid` (for example `v0.3.3-f-droid`), or run the
+workflow manually via **Actions → Build signed APK (F-Droid) → Run workflow**.
+
+Workflow file: `.github/workflows/build-signed-apk.yml`
+
+What it does:
+1. Checks out the repo and installs Node.js 24.
+2. Sets up JDK 21 + Android SDK (platforms 35/36, build-tools 34/36).
+3. Runs `npx expo prebuild --platform android --clean` to generate the `android/` tree.
+4. Runs `scripts/fix-for-fdroid.py` to strip non-free Maven repos / Google deps.
+5. Runs `npm run mobile:android:release` → produces an **unsigned** release APK
+   under `native-wrapper/builds/`.
+6. Decodes the release keystore from GitHub Secrets
+   (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+   `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`).
+7. Signs the APK with `apksigner` and verifies the signature.
+8. Attaches the signed APK + `.sha256` to the GitHub Release.
+
+The unsigned build step is identical to local `npm run mobile:android:release`.
+Signing is injected **only** in CI from secrets; the repo never contains a
+release keystore.
+
+### F-Droid de-Google cleanup
+
+The workflow runs `scripts/fix-for-fdroid.py` automatically after `expo prebuild`
+and before `assembleRelease`. It strips `google()` Maven repos and transitive
+`com.google.*` dependencies from the generated `android/` tree so the APK is
+acceptable to F-Droid.
+
+To audit locally after `expo prebuild`:
+
+```bash
+python3 scripts/fix-for-fdroid.py
+cd native-wrapper && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
+```
 
 ## EAS cloud builds (later)
 
