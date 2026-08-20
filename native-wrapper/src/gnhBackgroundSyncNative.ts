@@ -5,6 +5,7 @@ type GnhBackgroundSyncNative = {
   registerWebViewInjector?: () => void;
   clearWebViewInjector?: () => void;
   resolveBackgroundSync?: (requestId: string, outcome: string) => void;
+  setAppInBackground?: (inBackground: boolean) => void;
 };
 
 const native: GnhBackgroundSyncNative | undefined =
@@ -43,4 +44,10 @@ export function resolveNativeBackgroundSync(
   outcome: string,
 ): void {
   native?.resolveBackgroundSync?.(requestId, outcome);
+}
+
+/** Android: chain 30s one-shot workers while backgrounded (WebView timers pause). */
+export function setNativeAppInBackground(inBackground: boolean): void {
+  if (Platform.OS !== "android") return;
+  native?.setAppInBackground?.(inBackground);
 }

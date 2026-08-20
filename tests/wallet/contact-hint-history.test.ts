@@ -151,4 +151,35 @@ describe("mapWalletTransactions", () => {
     expect(inn?.zeroConf).toBe(true);
     expect(inn?.contactHint?.action).toBe("revoke");
   });
+
+  it("keeps mined 0-amount relays in history even without SDK outputs", () => {
+    const raw = {
+      sentMessages: [],
+      receivedMessages: [
+        {
+          id: "relay-mined",
+          direction: "received",
+          counterpartyAddress: "ccx…",
+          counterpartyName: "Alice",
+          body: "hello",
+          hasBody: true,
+          paymentIdFrom: "pid",
+          paymentIdTo: null,
+          timestamp: "2026-08-17T12:00:00.000Z",
+          unread: true,
+          blockHeight: 1_234_567,
+          threadKey: "t",
+        },
+      ],
+      pendingTransactions: [],
+      incomingPending: [],
+    } as unknown as RawWalletV1;
+
+    const [tx] = mapWalletTransactions([], raw);
+    expect(tx.hash).toBe("relay-mined");
+    expect(tx.amount).toBe(0);
+    expect(tx.state).toBe("confirmed");
+    expect(tx.zeroConf).toBeUndefined();
+    expect(tx.type).toBe("incoming");
+  });
 });

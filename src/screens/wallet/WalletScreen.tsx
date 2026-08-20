@@ -47,15 +47,13 @@ export function WalletScreen() {
 
   useEffect(() => {
     if (!initialized) return;
-    if (transactions.length === 0 && !transactionsLoading) {
-      void refreshTransactions();
-    }
-  }, [
-    initialized,
-    transactions.length,
-    transactionsLoading,
-    refreshTransactions,
-  ]);
+    void refreshTransactions();
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refreshTransactions();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [initialized, refreshTransactions]);
 
   if (!initialized) {
     return (

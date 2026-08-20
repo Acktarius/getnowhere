@@ -1,4 +1,5 @@
 import {
+  Bell,
   ChevronRight,
   Database,
   Download,
@@ -20,6 +21,8 @@ import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { bridgeRequestNotificationPermissions } from "@/lib/mobile/nativeNotificationsBridge";
 import { refreshAutoNode } from "@/lib/network/auto-node";
 import { setPreferredNode } from "@/lib/network/node-preference";
 import {
@@ -36,6 +39,7 @@ import {
   updateWalletSyncSettings,
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
+import { onNotificationPrivacyChanged } from "@/services/notifications/publishBackgroundNotification";
 import {
   deleteWalletData,
   resetAppData,
@@ -136,6 +140,23 @@ export function SettingsScreen() {
     }
   }
 
+  /** User-gesture flow: persist setting, sync native, request OS permission. */
+  function applyNotificationsEnabled(on: boolean) {
+    s.setPrivacy({ notificationsEnabled: on });
+    onNotificationPrivacyChanged();
+    if (on && isMobileHost()) {
+      bridgeRequestNotificationPermissions({ badge: true, alert: false });
+    }
+  }
+
+  function applyNotificationBanners(on: boolean) {
+    s.setPrivacy({ notificationBannersEnabled: on });
+    onNotificationPrivacyChanged();
+    if (on && isMobileHost()) {
+      bridgeRequestNotificationPermissions({ badge: true, alert: true });
+    }
+  }
+
   async function runWipe(kind: WipeConfirm) {
     try {
       if (kind === "delete") await deleteWalletData();
@@ -193,6 +214,37 @@ export function SettingsScreen() {
               description="On Exit, save chat messages into the encrypted wallet. Off = do not save chat text."
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
+            />
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              icon={Bell}
+              title="Notifications"
+              description="Badge the app icon when invitations or chain messages arrive while the app is in the background."
+              on={s.privacy.notificationsEnabled}
+              onToggle={(v) => applyNotificationsEnabled(v)}
+            />
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              title="Notification banner"
+              description={
+                s.privacy.notificationsEnabled
+                  ? "Also show a system banner. Requires OS notification permission."
+                  : "Enable notifications to configure banners."
+              }
+              on={
+                s.privacy.notificationsEnabled &&
+                s.privacy.notificationBannersEnabled
+              }
+              onToggle={
+                s.privacy.notificationsEnabled
+                  ? (v) => applyNotificationBanners(v)
+                  : undefined
+              }
+              trailing={
+                s.privacy.notificationsEnabled ? undefined : (
+                  <span className="field__hint">Off</span>
+                )
+              }
             />
           </div>
         </div>

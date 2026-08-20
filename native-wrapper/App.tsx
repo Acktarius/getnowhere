@@ -21,7 +21,9 @@ import {
   isGnhBackgroundSyncNativeAvailable,
   registerBackgroundSyncWebViewInjector,
   resolveNativeBackgroundSync,
+  setNativeAppInBackground,
 } from "./src/gnhBackgroundSyncNative";
+import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
@@ -152,6 +154,7 @@ export default function App() {
     console.warn("[gnh-lifecycle] AppState background", {
       backgroundAtMs: backgroundAtMsRef.current,
     });
+    setNativeAppInBackground(true);
     injectLifecycle("background");
   }, [injectLifecycle]);
 
@@ -166,6 +169,7 @@ export default function App() {
       backgroundElapsedMs: elapsedMs,
       hasWebView: !!webViewRef.current,
     });
+    setNativeAppInBackground(false);
     schedulePendingForegroundFlush();
   }, [schedulePendingForegroundFlush]);
 
@@ -244,6 +248,9 @@ export default function App() {
       const bgSync = parseBackgroundSyncMessage(raw);
       if (bgSync) {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
+        return;
+      }
+      if (handleNotificationsWebViewMessage(raw)) {
         return;
       }
       const lifecycleMsg = parseLifecycleHostMessage(raw);

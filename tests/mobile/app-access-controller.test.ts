@@ -7,6 +7,7 @@ import {
   getAppAccessState,
   handleLifecycleEvent,
   isAppAccessLocked,
+  isAppInBackground,
   isSensitiveActionAllowed,
   lockAppAccess,
   noteUserActivity,
@@ -112,6 +113,20 @@ describe("AppAccessController", () => {
     vi.advanceTimersByTime(120_000);
     handleLifecycleEvent("foreground");
     expect(isAppAccessLocked()).toBe(false);
+  });
+
+  it("isAppInBackground follows native lifecycle even when lock is off", () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    setAppAccessLockEnabled(false);
+    expect(isAppInBackground()).toBe(false);
+    handleLifecycleEvent("background");
+    expect(isAppInBackground()).toBe(true);
+    expect(isAppAccessLocked()).toBe(false);
+    handleLifecycleEvent("foreground");
+    expect(isAppInBackground()).toBe(false);
   });
 
   it("foreground while locked does not auto-unlock", () => {

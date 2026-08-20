@@ -32,6 +32,8 @@ let appAccessLockEnabled = false;
 let backgroundSinceMs: number | null = null;
 let coldStartEngaged = false;
 let lastActivityAtMs = Date.now();
+/** Last native/WebView lifecycle type — independent of the app-access lock. */
+let lastLifecycleType: GnhLifecycleType = "foreground";
 const lockListeners = new Set<() => void>();
 
 function notifyLockListeners(): void {
@@ -95,6 +97,24 @@ export function getAppAccessState(): AppAccessState {
 
 export function isAppAccessLocked(): boolean {
   return locked;
+}
+
+/**
+ * True when the app is not interactively in the foreground.
+ * Uses native lifecycle when present; Page Visibility is a fallback.
+ * `getAppAccessState().reason === "background"` is a lock reason set on
+ * *return*, not a live background flag — do not use it for this.
+ */
+export function isAppInBackground(): boolean {
+  if (
+    typeof document !== "undefined" &&
+    document.visibilityState === "hidden"
+  ) {
+    return true;
+  }
+  return (
+    lastLifecycleType === "background" || lastLifecycleType === "screenOff"
+  );
 }
 
 /** True when sensitive wallet/chat UI actions may proceed. */
@@ -189,6 +209,8 @@ function dispatchLifecycle(
   type: GnhLifecycleType,
   backgroundElapsedMs?: number,
 ): void {
+  lastLifecycleType = type;
+
   for (const h of lifecycleHandlers) {
     try {
       h(type);
@@ -283,6 +305,7 @@ export function _resetAppAccessControllerForTests(): void {
   backgroundSinceMs = null;
   coldStartEngaged = false;
   lastActivityAtMs = Date.now();
+  lastLifecycleType = "foreground";
   lockListeners.clear();
 }
 

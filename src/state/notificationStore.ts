@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { getContactInviteActionCount } from "@/services/contacts/inviteQueue";
+import { markNotificationEventsRead } from "@/services/notifications/notificationEventLedger";
+import { syncNativeBadgeFromLedger } from "@/services/notifications/publishBackgroundNotification";
 import {
   contactRelayCount,
   isActiveRoomForRelayNav,
@@ -61,6 +63,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         [contactId]: true,
       },
     }));
+    if (markNotificationEventsRead({ contactId }) > 0) {
+      syncNativeBadgeFromLedger();
+    }
   },
 
   markRoomSeen: (roomId) => {
@@ -71,6 +76,9 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       },
       roomRelayUnread: { ...s.roomRelayUnread, [roomId]: 0 },
     }));
+    if (markNotificationEventsRead({ roomId }) > 0) {
+      syncNativeBadgeFromLedger();
+    }
   },
 
   pingRegister: (contactId) => {

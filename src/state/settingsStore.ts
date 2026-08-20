@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     blurInAppSwitcher: false,
     autoLockTimeoutSec: 300,
     clearClipboardWarnings: true,
+    notificationsEnabled: false,
+    notificationBannersEnabled: false,
   },
 };
 
@@ -95,7 +97,11 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     }),
   setPrivacy: (patch) =>
     set((s) => {
-      const next = { ...s, privacy: { ...s.privacy, ...patch } };
+      const privacy = { ...s.privacy, ...patch };
+      if (!privacy.notificationsEnabled) {
+        privacy.notificationBannersEnabled = false;
+      }
+      const next = { ...s, privacy };
       persist(next);
       return next;
     }),

@@ -378,6 +378,18 @@ function findPendingInitiator(inviteId: string): PendingKey | undefined {
   return undefined;
 }
 
+/** Initiator lookup for notification scan — inviteId + contactId only. */
+export function findPendingInitiatorForNotification(
+  registerInviteId: string,
+): { inviteId: string; contactId?: string } | undefined {
+  const pending = findPendingInitiator(registerInviteId);
+  if (!pending) return undefined;
+  return {
+    inviteId: pending.handshake.inviteId,
+    contactId: pending.contactId,
+  };
+}
+
 /** True when Alice still holds initiator material for this room. */
 export function hasPendingInitiatorForRoom(roomId: string): boolean {
   for (const pending of pendingPrivateKeys.values()) {

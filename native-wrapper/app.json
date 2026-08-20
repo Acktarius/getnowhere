@@ -25,7 +25,8 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "WAKE_LOCK",
-        "CAMERA"
+        "CAMERA",
+        "POST_NOTIFICATIONS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#161922",
@@ -41,6 +42,7 @@
     "plugins": [
       "./plugins/withGnhSecurity.js",
       "./plugins/withGnhBackgroundSync.js",
+      "./plugins/withGnhNotifications.js",
       [
         "expo-build-properties",
         {

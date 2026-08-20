@@ -200,15 +200,13 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   async refreshBalance() {
     const b = await walletService.getBalance();
-    const prevTotal = get().balanceTotal;
     set({
       balanceTotal: b.total,
       balanceAvailable: b.available,
       balancePending: b.pending,
     });
-    if (b.total !== prevTotal) {
-      void get().refreshTransactions();
-    }
+    // Always reload history: 0-amount L1′ txs do not change totals.
+    await get().refreshTransactions();
   },
 
   async refreshTransactions() {

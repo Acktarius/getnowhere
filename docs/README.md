@@ -31,6 +31,8 @@ No L3. UI never joins Hyperswarm.
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1′ fallback when L2 is down (grey bubbles)
+13b. `features/local-background-notifications.md` — mobile local L1/L1′ badges + banners
+13c. `background-remote-sync.md` — WorkManager / BGAppRefresh → wallet sync
 14. `features/app-access-and-data-unlock.md` — mobile biometrics (app vs data)
 15. `prompts/coding-constraints.md`
 

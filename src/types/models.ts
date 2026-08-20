@@ -226,6 +226,10 @@ export type PrivacySettings = {
   blurInAppSwitcher: boolean;
   autoLockTimeoutSec: number;
   clearClipboardWarnings: boolean;
+  /** Native badge + optional local banners for background L1/L1′ sync events. */
+  notificationsEnabled: boolean;
+  /** Requires notificationsEnabled; controls OS banner/alert presentation. */
+  notificationBannersEnabled: boolean;
 };
 
 export type AppSettings = {

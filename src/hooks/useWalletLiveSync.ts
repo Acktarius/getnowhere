@@ -4,8 +4,8 @@
  */
 import { useEffect, useRef } from "react";
 import {
-  getAppAccessState,
   isAppAccessLocked,
+  isAppInBackground,
   onAppAccessLifecycle,
 } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
@@ -44,6 +44,7 @@ function isCatchingUp(): boolean {
  */
 export function useWalletLiveSync(enabled: boolean): void {
   const refreshBalance = useWalletStore((s) => s.refreshBalance);
+  const refreshTransactions = useWalletStore((s) => s.refreshTransactions);
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
   const refreshRelays = useChatStore((s) => s.refreshRelays);
   const timerRef = useRef<number | null>(null);
@@ -71,12 +72,8 @@ export function useWalletLiveSync(enabled: boolean): void {
     };
 
     const isBackgrounded = () => {
-      if (document.visibilityState === "hidden") return true;
-      if (isMobileHost()) {
-        const reason = getAppAccessState().reason;
-        return reason === "background" || reason === "screenOff";
-      }
-      return false;
+      if (isMobileHost()) return isAppInBackground();
+      return document.visibilityState === "hidden";
     };
 
     const tick = async () => {
@@ -94,10 +91,23 @@ export function useWalletLiveSync(enabled: boolean): void {
       }
       runningRef.current = true;
       try {
-        void sync().catch(() => {});
+        // Await tip catch-up before ingest/UI refresh. Fire-and-forget left
+        // chat pins (mempool) ahead of wallet history (Zustand cache).
+        await sync().catch(() => {});
+        await refreshTransactions();
         if (!hidden) await refreshBalance();
         await refreshInvites();
         await refreshRelays();
+        if (isMobileHost() && hidden) {
+          try {
+            const { scanAndPublishSyncNotifications } = await import(
+              "@/services/notifications/scanSyncNotifications"
+            );
+            await scanAndPublishSyncNotifications();
+          } catch {
+            /* best-effort — never break the poll loop */
+          }
+        }
         schedule(resolveWalletPollMs(hidden, isCatchingUp()));
       } catch {
         schedule(hidden ? BACKGROUND_POLL_MS : WALLET_POLL_MS[0]);
@@ -114,7 +124,13 @@ export function useWalletLiveSync(enabled: boolean): void {
 
     const unsubLifecycle = isMobileHost()
       ? onAppAccessLifecycle((type) => {
-          if (type === "foreground") void tick();
+          if (
+            type === "foreground" ||
+            type === "background" ||
+            type === "screenOff"
+          ) {
+            void tick();
+          }
         })
       : () => {};
 
@@ -127,5 +143,11 @@ export function useWalletLiveSync(enabled: boolean): void {
       document.removeEventListener("visibilitychange", onVisibility);
       unsubLifecycle();
     };
-  }, [enabled, refreshBalance, refreshInvites, refreshRelays]);
+  }, [
+    enabled,
+    refreshBalance,
+    refreshTransactions,
+    refreshInvites,
+    refreshRelays,
+  ]);
 }

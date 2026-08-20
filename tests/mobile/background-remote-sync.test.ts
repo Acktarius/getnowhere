@@ -15,6 +15,12 @@ vi.mock("@/lib/mobile/AppAccessController", () => ({
   isAppAccessLocked: () => false,
 }));
 
+const scanAndPublishSyncNotifications = vi.fn();
+vi.mock("@/services/notifications/scanSyncNotifications", () => ({
+  scanAndPublishSyncNotifications: (...args: unknown[]) =>
+    scanAndPublishSyncNotifications(...args),
+}));
+
 vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
   isMobileHost: () => true,
 }));
@@ -24,16 +30,19 @@ describe("runBackgroundRemoteSync", () => {
     sync.mockReset();
     isSyncInProgress.mockReset();
     isUnlocked.mockReset();
+    scanAndPublishSyncNotifications.mockReset();
+    scanAndPublishSyncNotifications.mockResolvedValue(undefined);
     window.gnhMobile = {};
     window.ReactNativeWebView = { postMessage: vi.fn() };
   });
 
-  it("skips when sync already in progress", async () => {
+  it("skips when sync already in progress but still scans notifications", async () => {
     isUnlocked.mockReturnValue(true);
     isSyncInProgress.mockReturnValue(true);
     const outcome = await runBackgroundRemoteSync("req-1");
     expect(outcome).toBe("skipped_in_progress");
     expect(sync).not.toHaveBeenCalled();
+    expect(scanAndPublishSyncNotifications).toHaveBeenCalledOnce();
   });
 
   it("calls sync when unlocked and idle", async () => {

@@ -27,13 +27,26 @@ class RemoteNodeBackgroundSyncSchedulerTest {
     @Test
     fun uniquePeriodicWorkDoesNotDuplicate() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        RemoteNodeBackgroundSyncScheduler.scheduleRemoteNodeBackgroundSync(context)
-        RemoteNodeBackgroundSyncScheduler.scheduleRemoteNodeBackgroundSync(context)
-        val infos =
-            WorkManager.getInstance(context)
-                .getWorkInfosForUniqueWork(RemoteNodeBackgroundSyncConfig.UNIQUE_WORK_NAME)
-                .get()
-        assertEquals(1, infos.size)
-        assertEquals(WorkInfo.State.ENQUEUED, infos[0].state)
-    }
+    RemoteNodeBackgroundSyncScheduler.scheduleRemoteNodeBackgroundSync(context)
+    RemoteNodeBackgroundSyncScheduler.scheduleRemoteNodeBackgroundSync(context)
+    val infos =
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(RemoteNodeBackgroundSyncConfig.UNIQUE_WORK_NAME)
+            .get()
+    assertEquals(1, infos.size)
+    assertEquals(WorkInfo.State.ENQUEUED, infos[0].state)
+}
+
+@Test
+fun soonWorkReplacesWithoutDuplicating() {
+    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync(context)
+    RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync(context)
+    val infos =
+        WorkManager.getInstance(context)
+            .getWorkInfosForUniqueWork(RemoteNodeBackgroundSyncConfig.UNIQUE_SOON_WORK_NAME)
+            .get()
+    assertEquals(1, infos.size)
+    assertEquals(WorkInfo.State.ENQUEUED, infos[0].state)
+}
 }

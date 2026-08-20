@@ -1,10 +1,19 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const refreshRelays = vi.fn().mockResolvedValue(undefined);
-const refreshInvites = vi.fn().mockResolvedValue(undefined);
-const refreshBalance = vi.fn().mockResolvedValue(undefined);
-const resetSession = vi.fn();
+const {
+  refreshRelays,
+  refreshInvites,
+  refreshBalance,
+  refreshTransactions,
+  resetSession,
+} = vi.hoisted(() => ({
+  refreshRelays: vi.fn().mockResolvedValue(undefined),
+  refreshInvites: vi.fn().mockResolvedValue(undefined),
+  refreshBalance: vi.fn().mockResolvedValue(undefined),
+  refreshTransactions: vi.fn().mockResolvedValue(undefined),
+  resetSession: vi.fn(),
+}));
 
 vi.mock("../../src/services/conceal/sync/runtime", () => ({
   sync: vi.fn().mockResolvedValue(0),
@@ -22,20 +31,17 @@ vi.mock("../../src/state/contactsStore", () => ({
   ) => fn({ refreshInvites }),
 }));
 
-vi.mock("../../src/state/walletStore", () => ({
-  useWalletStore: (
-    fn: (s: {
-      refreshBalance: typeof refreshBalance;
-      syncStatus: string;
-      syncProgress: number;
-    }) => unknown,
-  ) =>
-    fn({
-      refreshBalance,
-      syncStatus: "idle",
-      syncProgress: 1,
-    }),
-}));
+vi.mock("../../src/state/walletStore", () => {
+  const state = {
+    refreshBalance,
+    refreshTransactions,
+    syncStatus: "idle",
+    syncProgress: 1,
+  };
+  const useWalletStore = (fn: (s: typeof state) => unknown) => fn(state);
+  useWalletStore.getState = () => state;
+  return { useWalletStore };
+});
 
 vi.mock("../../src/state/notificationStore", () => ({
   useNotificationStore: {
@@ -55,6 +61,7 @@ describe("useWalletLiveSync", () => {
     refreshRelays.mockClear();
     refreshInvites.mockClear();
     refreshBalance.mockClear();
+    refreshTransactions.mockClear();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
@@ -83,5 +90,20 @@ describe("useWalletLiveSync", () => {
     expect(refreshRelays).toHaveBeenCalled();
     expect(refreshInvites).toHaveBeenCalled();
     expect(refreshBalance).not.toHaveBeenCalled();
+    expect(refreshTransactions).toHaveBeenCalled();
+  });
+
+  it("awaits sync then refreshes balance when visible", async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "visible",
+    });
+    renderHook(() => useWalletLiveSync(true));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(refreshBalance).toHaveBeenCalled();
+    expect(refreshTransactions).toHaveBeenCalled();
   });
 });

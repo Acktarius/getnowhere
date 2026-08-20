@@ -10,7 +10,7 @@ add local validation, block processing, or a new sync engine.
 
 | Platform | Request | Actual cadence |
 |----------|---------|----------------|
-| Android | WorkManager `PeriodicWorkRequest`, 15-minute minimum interval | OS may defer (Doze, battery saver, no network) |
+| Android | WorkManager `PeriodicWorkRequest` (15-minute floor) plus a 0-delay one-shot that polls every 30s while backgrounded (`remote-node-background-sync-soon`) | Doze may still stop a long-running worker; a new one-shot is enqueued if the app is still backgrounded |
 | iOS | `BGAppRefreshTask`, `earliestBeginDate = now + 15 min` | iOS chooses when (not guaranteed every 15 min) |
 
 Background refresh is **not guaranteed** and is **not** a substitute for
@@ -104,6 +104,10 @@ npm test -- tests/mobile/background-remote-sync.test.ts
 - No wallet addresses, peer IDs, room IDs, or decrypted content in native logs.
 - No persistent sockets, foreground services, or push/telemetry SDKs.
 - App-access lock or locked wallet → background sync returns `no_op` (success).
+
+After a successful background sync, the WebView may also publish privacy-gated
+local notifications for newly ingested L1 / L1′ events. See
+[`docs/features/local-background-notifications.md`](./features/local-background-notifications.md).
 
 ## F-Droid
 

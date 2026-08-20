@@ -34,4 +34,12 @@ class GnhBackgroundSyncModule(reactContext: ReactApplicationContext) :
             RemoteNodeSyncBridgeHolder.parseOutcome(outcome),
         )
     }
+
+    @ReactMethod
+    fun setAppInBackground(inBackground: Boolean) {
+        RemoteNodeBackgroundSyncScheduler.setAppInBackground(
+            reactApplicationContext,
+            inBackground,
+        )
+    }
 }

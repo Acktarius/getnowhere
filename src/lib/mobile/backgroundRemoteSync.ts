@@ -9,6 +9,7 @@ import {
   isUnlocked,
   sync,
 } from "@/services/conceal/sync/runtime";
+import { scanAndPublishSyncNotifications } from "@/services/notifications/scanSyncNotifications";
 
 export type BackgroundRemoteSyncOutcome =
   | "completed"
@@ -60,11 +61,26 @@ export async function runBackgroundRemoteSync(
     return "no_op";
   }
   if (isSyncInProgress()) {
+    try {
+      await scanAndPublishSyncNotifications();
+    } catch {
+      /* already-ingested events only; do not fail the skip */
+    }
     postOutcome(requestId, "skipped_in_progress");
     return "skipped_in_progress";
   }
   try {
     await sync();
+    // Best-effort: notification publish must never fail the sync outcome.
+    try {
+      const { useContactsStore } = await import("@/state/contactsStore");
+      const { useChatStore } = await import("@/state/chatStore");
+      await useContactsStore.getState().refreshInvites();
+      await useChatStore.getState().refreshRelays();
+      await scanAndPublishSyncNotifications();
+    } catch {
+      /* sync succeeded; skip notifications this round */
+    }
     postOutcome(requestId, "completed");
     return "completed";
   } catch (error) {
