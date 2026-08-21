@@ -21,7 +21,14 @@ if (!existsSync(join(distDir, "index.html"))) {
 
 rmSync(targetDir, { recursive: true, force: true });
 mkdirSync(targetDir, { recursive: true });
-cpSync(distDir, targetDir, { recursive: true });
+cpSync(distDir, targetDir, {
+  recursive: true,
+  filter: (src) => {
+    if (src.endsWith(".map")) return false;
+    if (src.includes("node_modules")) return false;
+    return true;
+  },
+});
 
 const indexPath = join(targetDir, "index.html");
 let html = readFileSync(indexPath, "utf8");

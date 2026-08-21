@@ -57,6 +57,7 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     assetsDir: "assets",
+    sourcemap: false,
     // Main bundle + scan worker exceed 500 kB by design (codeSplitting: false, inlined WASM).
     chunkSizeWarningLimit: 2000,
     // Inline all assets (including the SDK's WASM) as base64 data URLs so the
