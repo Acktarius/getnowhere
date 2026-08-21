@@ -1,5 +1,10 @@
 /** Native bridge helpers for background remote-node sync inject/resolve. */
-import { NativeEventEmitter, NativeModules, Platform } from "react-native";
+import {
+  NativeEventEmitter,
+  type NativeModule,
+  NativeModules,
+  Platform,
+} from "react-native";
 
 type GnhBackgroundSyncNative = {
   registerWebViewInjector?: () => void;
@@ -24,7 +29,7 @@ export function registerBackgroundSyncWebViewInjector(
     return () => {};
   }
   const emitter = new NativeEventEmitter(
-    NativeModules.GnhBackgroundSync as object,
+    NativeModules.GnhBackgroundSync as NativeModule | undefined,
   );
   const sub = emitter.addListener(
     "gnhBackgroundSyncInject",

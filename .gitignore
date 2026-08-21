@@ -56,7 +56,7 @@ native-wrapper/assets/ui/*
 .forge/
 .kilo/
 .cursor/
-docs/
+
 
 # Build|related
-tsconfig.tsbuildinfo
+*.tsbuildinfo

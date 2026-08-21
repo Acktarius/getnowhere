@@ -12,7 +12,8 @@ export function randomBytes(n: number): Uint8Array {
 }
 
 export function getRandomValues<T extends ArrayBufferView>(array: T): T {
-  return webCrypto.getRandomValues(array);
+  webCrypto.getRandomValues(array as Parameters<Crypto["getRandomValues"]>[0]);
+  return array;
 }
 
 export default { randomBytes, getRandomValues };
