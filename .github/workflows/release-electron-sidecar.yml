@@ -53,20 +53,17 @@ jobs:
         working-directory: desktop-electron
         run: npm ci
 
-      # Tag v0.1.2 → package version 0.1.2 so Forge names include …-0.1.2-… / _0.1.2_
-      - name: Sync version from tag
+      - name: Sync version from version file
         id: ver
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            BASE="$(node -p "require('./desktop-electron/package.json').version")"
-            # Hyphen only — upload-artifact names disallow '+'
-            VERSION="${BASE}-ci.${GITHUB_SHA::7}"
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
           fi
+          FILE_VERSION="v${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file_version=${FILE_VERSION}" >> "$GITHUB_OUTPUT"
           npm version "${VERSION}" --prefix desktop-electron --no-git-tag-version --allow-same-version
-          echo "Desktop package version → ${VERSION}"
 
       - name: Make Linux package
         working-directory: desktop-electron
@@ -75,11 +72,13 @@ jobs:
       - name: Build AppImage (linuxdeploy)
         working-directory: desktop-electron
         env:
-          LINUXDEPLOY_OUTPUT_VERSION: ${{ steps.ver.outputs.version }}
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ steps.ver.outputs.file_version }}
           APPIMAGE_EXTRACT_AND_RUN: "1"
+          FILE_VERSION: ${{ steps.ver.outputs.file_version }}
         run: |
           PACKAGED="out/GetNowHere-linux-x64"
           APPDIR="$(pwd)/AppDir"
+          TARGET_APPIMAGE="Get_NowHere-${FILE_VERSION}-x86_64.AppImage"
 
           # Assemble AppDir from the Forge-packaged app
           mkdir -p "$APPDIR/usr/share/applications" \
@@ -123,9 +122,22 @@ jobs:
               --icon-file "$APPDIR/getnowhere.png" \
               --output appimage
 
-          ls -la ./*.AppImage
+          shopt -s nullglob
+          produced=( ./*.AppImage )
+          if ((${#produced[@]} != 1)); then
+            echo "ERROR: expected exactly one AppImage, found ${#produced[@]}"
+            ls -la ./*.AppImage || true
+            exit 1
+          fi
+          if [[ "${produced[0]}" != "./${TARGET_APPIMAGE}" && "${produced[0]}" != "${TARGET_APPIMAGE}" ]]; then
+            mv -v "${produced[0]}" "$TARGET_APPIMAGE"
+          fi
+          ls -la "$TARGET_APPIMAGE"
 
       - name: Collect artifacts
+        env:
+          FILE_VERSION: ${{ steps.ver.outputs.file_version }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           mkdir -p output
           # Forge nests: out/make/deb/x64/*.deb and out/make/zip/linux/x64/*.zip
@@ -133,10 +145,10 @@ jobs:
           files=(
             desktop-electron/out/make/deb/x64/*.deb
             desktop-electron/out/make/zip/linux/x64/*.zip
-            desktop-electron/*.AppImage
+            desktop-electron/Get_NowHere-${FILE_VERSION}-x86_64.AppImage
           )
           if ((${#files[@]} == 0)); then
-            mapfile -t files < <(find desktop-electron/out/make -type f \( -name '*.deb' -o -name '*.zip' \); find desktop-electron -maxdepth 1 -name '*.AppImage')
+            mapfile -t files < <(find desktop-electron/out/make -type f \( -name '*.deb' -o -name '*.zip' \); find desktop-electron -maxdepth 1 -name 'Get_NowHere-v*-x86_64.AppImage')
           fi
           if ((${#files[@]} == 0)); then
             echo "ERROR: no desktop artifacts under desktop-electron/out/make"
@@ -144,16 +156,27 @@ jobs:
             exit 1
           fi
           cp -v "${files[@]}" output/
-          ls -la output
+          # Canonical names from version file (never the git tag / -f-droid suffix)
           (
             cd output
+            for deb in *.deb; do
+              [[ -f "$deb" ]] || continue
+              target="Get_NowHere-${FILE_VERSION}-amd64.deb"
+              [[ "$deb" == "$target" ]] || mv -v "$deb" "$target"
+            done
+            for zip in *.zip; do
+              [[ -f "$zip" ]] || continue
+              target="Get_NowHere-${FILE_VERSION}-linux-x64.zip"
+              [[ "$zip" == "$target" ]] || mv -v "$zip" "$target"
+            done
+            ls -la
             sha256sum * > SHA256SUMS.txt
           )
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: getnowhere-linux-desktop-${{ steps.ver.outputs.version }}
+          name: getnowhere-linux-desktop-${{ steps.ver.outputs.file_version }}
           path: output/
           retention-days: 14
 
@@ -188,50 +211,55 @@ jobs:
         working-directory: desktop-electron
         run: npm ci
 
-      - name: Sync version from tag
+      - name: Sync version from version file
         id: ver
         shell: bash
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-          else
-            BASE="$(node -p "require('./desktop-electron/package.json').version")"
-            VERSION="${BASE}-ci.${GITHUB_SHA::7}"
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
           fi
+          FILE_VERSION="v${VERSION}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file_version=${FILE_VERSION}" >> "$GITHUB_OUTPUT"
           npm version "${VERSION}" --prefix desktop-electron --no-git-tag-version --allow-same-version
-          echo "Desktop package version → ${VERSION}"
 
       - name: Make Windows package
         working-directory: desktop-electron
         run: npm run make:win
 
       - name: Collect artifacts
-        shell: pwsh
+        shell: bash
+        env:
+          FILE_VERSION: ${{ steps.ver.outputs.file_version }}
         run: |
-          New-Item -ItemType Directory -Force -Path output | Out-Null
-          $files = Get-ChildItem -Path desktop-electron/out/make/zip/win32/x64 -Filter *.zip -ErrorAction SilentlyContinue
-          if (-not $files) {
-            $files = Get-ChildItem -Path desktop-electron/out/make -Recurse -Filter *.zip -ErrorAction SilentlyContinue
-          }
-          if (-not $files) {
-            Write-Error "ERROR: no Windows zip under desktop-electron/out/make"
-            Get-ChildItem -Path desktop-electron/out -Recurse -File | Select-Object -First 100
+          mkdir -p output
+          shopt -s nullglob
+          files=( desktop-electron/out/make/zip/win32/x64/*.zip )
+          if ((${#files[@]} == 0)); then
+            mapfile -t files < <(find desktop-electron/out/make -type f -name '*.zip')
+          fi
+          if ((${#files[@]} == 0)); then
+            echo "ERROR: no Windows zip under desktop-electron/out/make"
+            find desktop-electron/out -type f | head -100
             exit 1
-          }
-          $files | Copy-Item -Destination output -Verbose
-          Get-ChildItem output
-          Push-Location output
-          Get-ChildItem -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)"
-          } | Set-Content SHA256SUMS.txt
-          Pop-Location
+          fi
+          cp -v "${files[@]}" output/
+          (
+            cd output
+            for zip in *.zip; do
+              [[ -f "$zip" ]] || continue
+              target="Get_NowHere-${FILE_VERSION}-win32-x64.zip"
+              [[ "$zip" == "$target" ]] || mv -v "$zip" "$target"
+            done
+            ls -la
+            sha256sum * > SHA256SUMS.txt
+          )
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: getnowhere-windows-desktop-${{ steps.ver.outputs.version }}
+          name: getnowhere-windows-desktop-${{ steps.ver.outputs.file_version }}
           path: output/
           retention-days: 14
 
@@ -243,9 +271,18 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Resolve version
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve version from version file
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file_version=v${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download build artifacts
         uses: actions/download-artifact@v6
@@ -269,7 +306,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          name: Get NowHere v${{ steps.ver.outputs.version }}
+          name: Get NowHere ${{ steps.ver.outputs.file_version }}
           files: |
             release-assets/*.deb
             release-assets/*.AppImage
@@ -282,6 +319,7 @@ jobs:
             - **Linux:** `.AppImage` (Debian/Ubuntu + Arch), `.deb` + `.zip`
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
             - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
+            - **Artifact version:** from repo `version` file (`${{ steps.ver.outputs.file_version }}`), not the git tag name
 
             ### Checksums
             ```
