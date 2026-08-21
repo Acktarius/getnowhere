@@ -289,6 +289,11 @@ What `mobile:android` does:
 
 The WebView loads `file:///android_asset/ui/index.html`.
 
+`expo-build-properties` sets `android.buildArchs` to **`arm64-v8a` only** (writes
+`reactNativeArchitectures` in `gradle.properties`). Release APKs omit
+`armeabi-v7a` / `x86` / `x86_64`, which cuts most of the multi-ABI `libbare-kit.so`
+bloat. Bare pack uses `--host android-arm64` to match.
+
 ## Unsigned release APK (F-Droid path)
 
 Build an **unsigned** release APK locally (same flow as
@@ -378,11 +383,15 @@ What it does:
 4. Runs `scripts/fix-for-fdroid.py` to strip non-free Maven repos / Google deps.
 5. Runs `npm run mobile:android:release` → produces an **unsigned** release APK
    under `native-wrapper/builds/`.
-6. Decodes the release keystore from GitHub Secrets
+6. Reads `version` / `buildVersionAndroid` from the repo-root `version` file
+   (artifact names never use the git tag, e.g. not `…-f-droid…`).
+7. Decodes the release keystore from GitHub Secrets
    (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
    `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`).
-7. Signs the APK with `apksigner` and verifies the signature.
-8. Attaches the signed APK + `.sha256` to the GitHub Release.
+8. Signs the APK with `apksigner`, renames to `GetNowHere-v{version}.apk`, and
+   verifies the signature.
+9. Attaches the signed APK + `.sha256` to the GitHub Release (tag builds) or
+   uploads Actions artifact `getnowhere-signed-apk-v{version}` (manual dispatch).
 
 The unsigned build step is identical to local `npm run mobile:android:release`.
 Signing is injected **only** in CI from secrets; the repo never contains a
