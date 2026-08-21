@@ -101,9 +101,8 @@ jobs:
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          FILE_VERSION: ${{ steps.ver.outputs.file_version }}
         run: |
-          APK=$(find native-wrapper/builds -maxdepth 1 -name "GetNowHere-v*.apk" ! -name "*-signed.apk" | head -n 1)
+          APK=$(find native-wrapper/builds -maxdepth 1 -name "GetNowHere-v*-b*-java*.apk" ! -name "*-signed.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "Release APK not found in native-wrapper/builds/"
@@ -121,16 +120,11 @@ jobs:
             "$APK"
 
           mv "${APK}.signed" "$APK"
-          # Canonical release name from version file (never the git tag / -f-droid suffix)
-          CANONICAL="native-wrapper/builds/GetNowHere-${FILE_VERSION}.apk"
-          if [[ "$APK" != "$CANONICAL" ]]; then
-            mv -v "$APK" "$CANONICAL"
-          fi
-          sha256sum "$CANONICAL" | cut -d' ' -f1 > "$CANONICAL.sha256"
-          "$APKSIGNER" verify --verbose "$CANONICAL"
+          sha256sum "$APK" | cut -d' ' -f1 > "$APK.sha256"
+          "$APKSIGNER" verify --verbose "$APK"
 
-          echo "SIGNED_APK=$CANONICAL" >> "$GITHUB_ENV"
-          echo "SIGNED_APK_SHA=$CANONICAL.sha256" >> "$GITHUB_ENV"
+          echo "SIGNED_APK=$APK" >> "$GITHUB_ENV"
+          echo "SIGNED_APK_SHA=$APK.sha256" >> "$GITHUB_ENV"
 
       - name: Verify signed artifact
         run: |

@@ -388,8 +388,9 @@ What it does:
 7. Decodes the release keystore from GitHub Secrets
    (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
    `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`).
-8. Signs the APK with `apksigner`, renames to `GetNowHere-v{version}.apk`, and
-   verifies the signature.
+8. Signs the APK with `apksigner` and verifies the signature (keeps
+   `GetNowHere-v{version}-b{buildVersionAndroid}-java{major}.apk` from the
+   unsigned build — names come from the `version` file, not the git tag).
 9. Attaches the signed APK + `.sha256` to the GitHub Release (tag builds) or
    uploads Actions artifact `getnowhere-signed-apk-v{version}` (manual dispatch).
 
