@@ -7,7 +7,7 @@ import {
   Radio,
   ShieldCheck,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Contact } from "@/types/models";
 
 type Props = { contact: Contact };
@@ -25,6 +25,21 @@ export function RelationshipStateCard({ contact }: Props) {
     identityLinked && returnReceived && verified && p2pEligible;
 
   const [open, setOpen] = useState(!allRequirementsDone);
+  const ptrHandled = useRef(false);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return;
+    ptrHandled.current = true;
+    setOpen((v) => !v);
+  }
+
+  function handleClick() {
+    if (ptrHandled.current) {
+      ptrHandled.current = false;
+      return; // trailing synthesized click after pointerdown — skip
+    }
+    setOpen((v) => !v); // keyboard (Enter / Space) path
+  }
 
   const steps = [
     {
@@ -59,7 +74,7 @@ export function RelationshipStateCard({ contact }: Props) {
     <div className="card">
       <button
         type="button"
-        className="row-flex row-flex--between"
+        className="row-flex row-flex--between expander-btn"
         style={{
           width: "100%",
           background: "none",
@@ -70,7 +85,8 @@ export function RelationshipStateCard({ contact }: Props) {
           textAlign: "left",
         }}
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onPointerDown={handlePointerDown}
+        onClick={handleClick}
       >
         <div className="card__title" style={{ margin: 0 }}>
           Relationship state

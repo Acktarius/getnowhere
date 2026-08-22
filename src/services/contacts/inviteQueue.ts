@@ -53,3 +53,20 @@ export function hasPendingRoomInvite(
 ): boolean {
   return invites.some((i) => i.roomId === roomId && i.status === "received");
 }
+
+/**
+ * True when periodic refreshInvites polling should remain active.
+ * False once the contact is fully eligible with no pending inbound invite.
+ * @see docs/features/lite-wallet.md
+ */
+export function shouldPollContactInvites(
+  contact:
+    | Pick<Contact, "id" | "relationshipStatus" | "inviteStatus">
+    | undefined,
+  invites: SmartMessageInvite[],
+): boolean {
+  if (!contact) return true;
+  if (contact.relationshipStatus !== "eligible") return true;
+  if (contact.inviteStatus === "received") return true;
+  return getInviteQueue(contact.id, invites).inQueue;
+}

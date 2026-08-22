@@ -291,19 +291,31 @@ button {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+  touch-action: manipulation;
   transition:
     background var(--dur) var(--ease),
     color var(--dur) var(--ease),
     transform var(--dur) var(--ease);
 }
-.topbar__icon-btn:hover,
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .topbar__icon-btn:hover,
+  .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 .topbar__icon-btn:active,
 .icon-btn:active {
   transform: scale(0.92);
+}
+/** Expand-toggle buttons: instant press feedback, no transition delay on touch. */
+.expander-btn {
+  touch-action: manipulation;
+  transition: none;
+}
+.expander-btn:active {
+  background: var(--bg-press);
+  transform: scale(0.96);
 }
 .topbar__leave-btn {
   flex-shrink: 0;
@@ -313,9 +325,11 @@ button {
   color: var(--text-muted);
   padding-inline: 10px;
 }
-.topbar__leave-btn:hover:not(:disabled) {
-  color: var(--danger);
-  background: var(--danger-soft);
+@media (hover: hover) and (pointer: fine) {
+  .topbar__leave-btn:hover:not(:disabled) {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
 }
 .topbar__leave-btn:disabled {
   opacity: 0.55;
@@ -428,6 +442,7 @@ button {
   font-weight: 600;
   font-size: 15px;
   letter-spacing: -0.005em;
+  touch-action: manipulation;
   transition:
     background var(--dur) var(--ease),
     color var(--dur) var(--ease),
@@ -449,8 +464,10 @@ button {
   background: var(--primary);
   color: var(--primary-fg);
 }
-.btn--primary:hover {
-  background: var(--primary-press);
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover {
+    background: var(--primary-press);
+  }
 }
 
 .btn--secondary {
@@ -458,17 +475,21 @@ button {
   color: var(--text);
   border-color: var(--border);
 }
-.btn--secondary:hover {
-  background: var(--bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .btn--secondary:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .btn--ghost {
   background: transparent;
   color: var(--text-muted);
 }
-.btn--ghost:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .btn--ghost:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .btn--danger {
@@ -476,8 +497,10 @@ button {
   color: var(--danger);
   border-color: transparent;
 }
-.btn--danger:hover {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .btn--danger:hover {
+    background: color-mix(in srgb, var(--danger) 22%, transparent);
+  }
 }
 
 .btn--block {
@@ -518,8 +541,10 @@ button {
     transform var(--dur) var(--ease),
     opacity var(--dur) var(--ease);
 }
-.wallet-bio-unlock:hover {
-  background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+@media (hover: hover) and (pointer: fine) {
+  .wallet-bio-unlock:hover {
+    background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+  }
 }
 .wallet-bio-unlock:active {
   transform: scale(0.96);
@@ -723,9 +748,12 @@ button {
 }
 .row--clickable {
   cursor: pointer;
+  touch-action: manipulation;
 }
-.row--clickable:hover {
-  background: var(--bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .row--clickable:hover {
+    background: var(--bg-hover);
+  }
 }
 .row--clickable:active {
   background: var(--bg-press);
@@ -811,8 +839,10 @@ button {
   text-align: left;
   cursor: pointer;
 }
-.tx-row__hash:hover {
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .tx-row__hash:hover {
+    color: var(--text);
+  }
 }
 .row__avatar-wrap {
   position: relative;
@@ -1350,7 +1380,11 @@ button {
   opacity: 0.75;
 }
 
-.md-fence-wrap:hover .md-fence-copy,
+@media (hover: hover) and (pointer: fine) {
+  .md-fence-wrap:hover .md-fence-copy {
+    opacity: 1;
+  }
+}
 .md-fence-copy:focus-visible {
   opacity: 1;
 }
@@ -1479,9 +1513,11 @@ button {
   place-items: center;
   cursor: pointer;
 }
-.toast__close:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .toast__close:hover {
+    background: var(--bg-elev-2);
+    color: var(--text);
+  }
 }
 
 /* ===== Chat topic backdrop (Keet-style tiled mask) ===== */

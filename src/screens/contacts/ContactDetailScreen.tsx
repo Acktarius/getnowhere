@@ -12,7 +12,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
@@ -40,6 +40,7 @@ import {
 import {
   getContactInviteActionCount,
   getInviteQueue,
+  shouldPollContactInvites,
 } from "@/services/contacts/inviteQueue";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
@@ -128,9 +129,16 @@ export function ContactDetailScreen() {
     markContactSeen(id, actionCount);
   }, [id, markContactSeen]);
 
+  // Gate: keep polling only while waiting on invite or register state.
+  const shouldPoll = useMemo(
+    () => shouldPollContactInvites(contact, invites),
+    [contact, invites],
+  );
+
   // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
-  // Poll while waiting — mempool txs are near-instant; one-shot mount miss them.
+  // Always run once on mount; keep interval only while shouldPoll is true.
   useEffect(() => {
+    if (!id) return;
     let cancelled = false;
     let first = true;
     const run = async () => {
@@ -145,14 +153,18 @@ export function ContactDetailScreen() {
       }
     };
     void run();
-    const id = window.setInterval(() => {
+    if (!shouldPoll)
+      return () => {
+        cancelled = true;
+      };
+    const timerId = window.setInterval(() => {
       void run();
     }, 3000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearInterval(timerId);
     };
-  }, [id, refreshInvites]);
+  }, [id, refreshInvites, shouldPoll]);
 
   const inviteQueueForContact = getInviteQueue(id, invites);
   const incomingInviteRoomId =
@@ -779,17 +791,34 @@ function ShareRow({
 }) {
   const [copied, copy] = useCopy();
   const [qrOpen, setQrOpen] = useState(false);
+  const qrPtrHandled = useRef(false);
+
+  function handleQrPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return;
+    qrPtrHandled.current = true;
+    setQrOpen((o) => !o);
+  }
+
+  function handleQrClick() {
+    if (qrPtrHandled.current) {
+      qrPtrHandled.current = false;
+      return;
+    }
+    setQrOpen((o) => !o);
+  }
+
   return (
     <div className="card card--pad-md">
       <div className="row-flex row-flex--between" style={{ marginBottom: 6 }}>
         <div className="eyebrow">{label}</div>
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn expander-btn"
           style={{ width: 28, height: 28 }}
           aria-expanded={qrOpen}
           aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
-          onClick={() => setQrOpen((o) => !o)}
+          onPointerDown={handleQrPointerDown}
+          onClick={handleQrClick}
         >
           {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
