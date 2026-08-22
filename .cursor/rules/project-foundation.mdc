@@ -9,7 +9,7 @@ alwaysApply: true
 - Daily development happens with `npm run dev` (Vite UI in `src/`).
 - Expo is not the primary development environment; it is for mobile packaging.
 - Electron (`desktop-electron/`) is the desktop shell.
-- Expo.dev / EAS is used for mobile iOS/Android builds, signing, TestFlight, and store delivery.[web:14][web:35]
+- Expo.dev / EAS is used for mobile iOS/Android builds, signing, TestFlight, and store delivery.
 - Keep main product logic in `src/` unless a host truly requires native APIs.
 
 ## Folder intent
@@ -50,8 +50,8 @@ alwaysApply: true
 
 - Web/UI scripts: root `package.json`.
 - Electron scripts: `desktop-electron/package.json` (root may wrap them).
-- Expo/EAS: `native-wrapper/package.json` and `native-wrapper/eas.json`.[web:14]
-- Store/signing docs: `native-wrapper/` and `/docs/builds/`.[web:34][web:35]
+- Expo/EAS: `native-wrapper/package.json` and `native-wrapper/eas.json`.
+- Store/signing docs: `native-wrapper/` and `/docs/builds/`.
 
 ## Security and protocol rules
 

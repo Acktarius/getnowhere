@@ -7,7 +7,8 @@ import {
   Upload,
   Wallet as WalletIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
 import { ReceiveSheet } from "@/components/ReceiveSheet";
@@ -17,6 +18,16 @@ import { TopBar } from "@/components/TopBar";
 import { WalletBalanceCard } from "@/components/WalletBalanceCard";
 import { useCopy } from "@/hooks/useCopy";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { activeTabFromPath } from "@/layouts/mainTabPaths";
+import {
+  clampPage,
+  PAGE_SIZE,
+  sliceWalletHistoryPage,
+  totalPages,
+} from "@/lib/wallet-history-page";
+import { resolveRelayRoute } from "@/lib/wallet-relay-navigate";
+import { useChatStore } from "@/state/chatStore";
+import { useContactsStore } from "@/state/contactsStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 import { formatCCX, shortAddress, timeAgo } from "@/utils/format";
@@ -38,22 +49,65 @@ export function WalletScreen() {
   const resync = useWalletStore((s) => s.resync);
   const lock = useWalletStore((s) => s.lock);
   const unlock = useWalletStore((s) => s.unlock);
+  const rooms = useChatStore((s) => s.rooms);
+  const contacts = useContactsStore((s) => s.contacts);
+  const invites = useContactsStore((s) => s.invites);
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const walletTabActive = activeTabFromPath(pathname) === "wallet";
   const navBadges = useNavNotificationBadges();
   const hideBalances = useSettingsStore((s) => s.privacy.hideBalancesByDefault);
+
+  const handleRelayDotClick = useCallback(
+    (e: React.MouseEvent, roomId: string) => {
+      e.stopPropagation();
+      const result = resolveRelayRoute(
+        roomId,
+        rooms.map((r) => r.id),
+        contacts,
+        invites,
+      );
+      if (!result) return;
+      if (result.route === "chat") {
+        navigate(`/chats/${result.roomId}`);
+      } else {
+        navigate(`/contacts/${result.contactId}`);
+      }
+    },
+    [rooms, contacts, invites, navigate],
+  );
+
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const [copied, copy] = useCopy();
+  const [page, setPage] = useState(1);
 
+  // Clamp page when list length changes; do NOT reset to 1 if still in range
+  useEffect(() => {
+    setPage((p) => clampPage(p, transactions.length));
+  }, [transactions.length]);
+
+  // Pre-Zustand: remount + balanceTotal dep re-fetched history. Keep-alive tabs
+  // never remount — refresh txs when balances change, tab focuses, or visible.
   useEffect(() => {
     if (!initialized) return;
     void refreshTransactions();
+  }, [initialized, balanceTotal, balancePending, refreshTransactions]);
+
+  useEffect(() => {
+    if (!initialized || !walletTabActive) return;
+    void refreshBalance();
+  }, [initialized, walletTabActive, refreshBalance]);
+
+  useEffect(() => {
+    if (!initialized) return;
     const onVis = () => {
-      if (document.visibilityState === "visible") void refreshTransactions();
+      if (document.visibilityState === "visible") void refreshBalance();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
-  }, [initialized, refreshTransactions]);
+  }, [initialized, refreshBalance]);
 
   if (!initialized) {
     return (
@@ -254,141 +308,203 @@ export function WalletScreen() {
               body="Incoming and outgoing CCX transfers will appear here."
             />
           ) : (
-            <div className="card card--flush stagger">
-              {transactions.map((tx) => {
-                const open = expandedTxId === tx.id;
-                return (
-                  <div key={tx.id} className="tx-row">
-                    <button
-                      type="button"
-                      className="row row--clickable tx-row__main"
-                      onClick={() => setExpandedTxId(open ? null : tx.id)}
-                      aria-expanded={open}
-                    >
-                      <div
-                        className="row__avatar"
-                        style={{
-                          width: 36,
-                          height: 36,
-                          fontSize: 14,
-                          background:
-                            tx.type === "incoming"
-                              ? "var(--primary-soft)"
-                              : "var(--bg-elev-2)",
-                          color:
-                            tx.type === "incoming"
-                              ? "var(--primary)"
-                              : "var(--text-muted)",
-                        }}
+            <>
+              <div className="card card--flush stagger">
+                {sliceWalletHistoryPage(transactions, page).map((tx) => {
+                  const open = expandedTxId === tx.id;
+                  return (
+                    <div key={tx.id} className="tx-row">
+                      <button
+                        type="button"
+                        className="row row--clickable tx-row__main"
+                        onClick={() => setExpandedTxId(open ? null : tx.id)}
+                        aria-expanded={open}
                       >
-                        {tx.type === "incoming" ? (
-                          <Download size={15} />
-                        ) : (
-                          <Upload size={15} />
-                        )}
-                      </div>
-                      <div className="row__main">
-                        <div className="row__title">
-                          {tx.contactHint && (
-                            <span
-                              role="img"
-                              className={[
-                                "tx-contact-dot",
-                                `tx-contact-dot--${tx.contactHint.action}`,
-                                tx.zeroConf ? "tx-contact-dot--zeroconf" : "",
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                              title={
-                                tx.contactHint.action === "create"
-                                  ? "Contact create"
-                                  : tx.contactHint.action === "register"
-                                    ? "Contact register"
-                                    : "Contact revoke"
-                              }
-                              aria-label={
-                                tx.contactHint.action === "create"
-                                  ? "Contact create"
-                                  : tx.contactHint.action === "register"
-                                    ? "Contact register"
-                                    : "Contact revoke"
-                              }
-                            />
-                          )}
-                          {tx.kind === "miner"
-                            ? "Miner reward"
-                            : tx.kind === "deposit"
-                              ? "Deposit"
-                              : tx.kind === "withdrawal"
-                                ? "Withdrawal"
-                                : tx.kind === "fusion"
-                                  ? "Optimization"
-                                  : tx.type === "incoming"
-                                    ? "Received"
-                                    : "Sent"}
-                          {tx.state === "pending" && (
-                            <span
-                              className="pill pill--pending"
-                              style={{ marginLeft: 4 }}
-                            >
-                              pending
-                            </span>
-                          )}
-                          {tx.zeroConf && (
-                            <span
-                              className="pill pill--zeroconf"
-                              style={{ marginLeft: 4 }}
-                              title="Mempool preview — not final"
-                            >
-                              0-conf
-                            </span>
-                          )}
-                        </div>
-                        <div className="row__sub">
-                          {tx.counterparty
-                            ? shortAddress(tx.counterparty)
-                            : "—"}
-                        </div>
-                      </div>
-                      <div className="row__meta">
-                        <span
-                          className="mono"
+                        <div
+                          className="row__avatar"
                           style={{
+                            width: 36,
+                            height: 36,
+                            fontSize: 14,
+                            background:
+                              tx.type === "incoming"
+                                ? "var(--primary-soft)"
+                                : "var(--bg-elev-2)",
                             color:
                               tx.type === "incoming"
                                 ? "var(--primary)"
-                                : "var(--text)",
-                            fontSize: 13,
+                                : "var(--text-muted)",
                           }}
                         >
-                          {tx.type === "incoming" ? "+" : "−"}
-                          {formatCCX(tx.amount)}
-                        </span>
-                        <span className="faint" style={{ fontSize: 11 }}>
-                          {timeAgo(tx.timestamp)}
-                        </span>
-                      </div>
-                    </button>
-                    {open && tx.hash && (
-                      <div className="tx-row__detail">
-                        <span className="faint" style={{ fontSize: 11 }}>
-                          txHash
-                        </span>
-                        <button
-                          type="button"
-                          className="tx-row__hash mono"
-                          onClick={() => copy(tx.hash)}
-                          title="Copy transaction hash"
-                        >
-                          {tx.hash}
-                          {copied ? " · copied" : ""}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                          {tx.type === "incoming" ? (
+                            <Download size={15} />
+                          ) : (
+                            <Upload size={15} />
+                          )}
+                        </div>
+                        <div className="row__main">
+                          <div className="row__title">
+                            {tx.contactHint && (
+                              <span
+                                role="img"
+                                className={[
+                                  "tx-contact-dot",
+                                  `tx-contact-dot--${tx.contactHint.action}`,
+                                  tx.zeroConf ? "tx-contact-dot--zeroconf" : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                                title={
+                                  tx.contactHint.action === "create"
+                                    ? "Contact create"
+                                    : tx.contactHint.action === "register"
+                                      ? "Contact register"
+                                      : tx.contactHint.action === "relay"
+                                        ? "Contact relay"
+                                        : "Contact revoke"
+                                }
+                                aria-label={
+                                  tx.contactHint.action === "create"
+                                    ? "Contact create"
+                                    : tx.contactHint.action === "register"
+                                      ? "Contact register"
+                                      : tx.contactHint.action === "relay"
+                                        ? "Contact relay"
+                                        : "Contact revoke"
+                                }
+                              />
+                            )}
+                            {tx.contactHint?.action === "relay" ? (
+                              <button
+                                type="button"
+                                className="tx-relay-label"
+                                title="Open related chat or contact"
+                                onClick={(e) =>
+                                  handleRelayDotClick(
+                                    e,
+                                    (
+                                      tx.contactHint as {
+                                        action: "relay";
+                                        roomId: string;
+                                      }
+                                    ).roomId,
+                                  )
+                                }
+                              >
+                                {tx.type === "incoming" ? "Received" : "Sent"}
+                              </button>
+                            ) : tx.kind === "miner" ? (
+                              "Miner reward"
+                            ) : tx.kind === "deposit" ? (
+                              "Deposit"
+                            ) : tx.kind === "withdrawal" ? (
+                              "Withdrawal"
+                            ) : tx.kind === "fusion" ? (
+                              "Optimization"
+                            ) : tx.type === "incoming" ? (
+                              "Received"
+                            ) : (
+                              "Sent"
+                            )}
+                            {tx.state === "pending" && (
+                              <span
+                                className="pill pill--pending"
+                                style={{ marginLeft: 4 }}
+                              >
+                                pending
+                              </span>
+                            )}
+                            {tx.zeroConf && (
+                              <span
+                                className="pill pill--zeroconf"
+                                style={{ marginLeft: 4 }}
+                                title="Mempool preview — not final"
+                              >
+                                0-conf
+                              </span>
+                            )}
+                          </div>
+                          <div className="row__sub">
+                            {tx.counterparty
+                              ? shortAddress(tx.counterparty)
+                              : "—"}
+                          </div>
+                        </div>
+                        <div className="row__meta">
+                          <span
+                            className="mono"
+                            style={{
+                              color:
+                                tx.type === "incoming"
+                                  ? "var(--primary)"
+                                  : "var(--text)",
+                              fontSize: 13,
+                            }}
+                          >
+                            {tx.type === "incoming" ? "+" : "−"}
+                            {formatCCX(tx.amount)}
+                          </span>
+                          <span className="faint" style={{ fontSize: 11 }}>
+                            {timeAgo(tx.timestamp)}
+                          </span>
+                        </div>
+                      </button>
+                      {open && tx.hash && (
+                        <div className="tx-row__detail">
+                          <span className="faint" style={{ fontSize: 11 }}>
+                            txHash
+                          </span>
+                          <button
+                            type="button"
+                            className="tx-row__hash mono"
+                            onClick={() => copy(tx.hash)}
+                            title="Copy transaction hash"
+                          >
+                            {tx.hash}
+                            {copied ? " · copied" : ""}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {transactions.length > PAGE_SIZE && (
+                <div
+                  className="row-flex"
+                  style={{
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "10px 0 4px",
+                  }}
+                >
+                  <button
+                    className="btn btn--sm btn--secondary"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    aria-label="Previous page"
+                  >
+                    Prev
+                  </button>
+                  <span className="faint" style={{ fontSize: 13 }}>
+                    {page} / {totalPages(transactions.length)}
+                  </span>
+                  <button
+                    className="btn btn--sm btn--secondary"
+                    disabled={page >= totalPages(transactions.length)}
+                    onClick={() =>
+                      setPage((p) =>
+                        Math.min(totalPages(transactions.length), p + 1),
+                      )
+                    }
+                    aria-label="Next page"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

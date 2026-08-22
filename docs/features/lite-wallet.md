@@ -27,7 +27,9 @@ messages before they mine. Chat `create` / `register` from a **known** `paymentI
 Do not treat 0-conf as proof for establishing a *new* relationship.
 
 **Live poll (parity with next-wallet #112):** while the wallet is open, the app polls
-sync at ~2.5s while catching up and ~20s near tip (`useWalletLiveSync`). Invite fetch
+sync at ~2.5s while catching up and ~5s near tip (`useWalletLiveSync`). Each tick
+awaits sync then pushes **balance + history** into Zustand together (keep-alive
+wallet tab never remounts, so the store must stay current without Resync). Invite fetch
 uses a **mempool-first** path (`pollMempoolRuntime`) so L1 creates/registers do not wait
 on deep tip catch-up. Contact detail also refreshes invites every ~3s while open.
 0-conf received copies are kept for a **2h grace** after leaving the mempool so the
@@ -74,6 +76,10 @@ chat rooms. Settings **Resync** re-scans txs for balance integrity only.
   `paymentIdTo` (PidTo) when present; rows show a round letter mark (multi-word
   initials, or single-word ≤3 letters).
 - **History** — kinds: transfer, miner, deposit, withdrawal, fusion (display only).
+  Transactions publish into the store live during catch-up (throttled); no need to
+  mash the resync arrows to see new rows appear. When more than 25 transactions
+  exist, history paginates (page size 25) with **Prev / Next** controls; live
+  updates do not auto-jump off page > 1.
 - **Spend failures** (no funds, unmixable denominations, build/broadcast errors) surface
   as an in-app toast and inline error — invite create must not spin forever on deep sync.
 
@@ -83,11 +89,18 @@ Wallet history joins scanned txs with smartmessage bodies (`sentMessages` /
 `receivedMessages`) and shows a small colored dot when the body is module
 `contact`:
 
-| Action | Dot |
-|---|---|
-| `create` | blue (`--secondary`) |
-| `register` | green (`--success`) |
-| `revoke` | amber (`--accent`) |
+| Action | Dot | Clickable |
+|---|---|---|
+| `create` | blue (`--secondary`) | no |
+| `register` | green (`--success`) | no |
+| `revoke` | amber (`--accent`) | no |
+| `relay` / `execute` | purple (`#a855f7`) | no (label is) |
+
+**Relay navigation:** the purple dot is display-only (same size as other dots).
+Clicking the row’s **Received** / **Sent** label resolves the linked `roomId` and
+navigates to `/chats/:roomId` if the room is open, or `/contacts/:id` if a contact
+or pending invite holds that room. If neither matches, the click is a no-op.
+`create`, `register`, and `revoke` remain display-only with no navigation.
 
 **0-conf / mempool:** unconfirmed smartmessage rows also show a pulsing dot and a
 subtle `0-conf` mark (alongside the existing pending pill). After the tx mines,

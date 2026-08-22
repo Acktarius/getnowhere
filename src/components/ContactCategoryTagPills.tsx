@@ -28,11 +28,17 @@ export function ContactCategoryTagPills({
   showAll = false,
 }: Props) {
   const allActive = showAll && selected.length === 0;
+  /** Electron keeps a visible scrollbar; web/mobile hide it. */
+  const isDesktop = typeof window !== "undefined" && window.gnhDesktop != null;
 
   return (
     <div
-      className="row-flex"
-      style={{ gap: 6, overflowX: "auto", paddingBottom: 4 }}
+      className={`row-flex${isDesktop ? "" : " scroll-x-hidden"}`}
+      style={{
+        gap: 6,
+        overflowX: "auto",
+        ...(isDesktop ? { paddingBottom: 4 } : {}),
+      }}
     >
       {showAll ? (
         <TagButton

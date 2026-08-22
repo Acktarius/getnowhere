@@ -15,8 +15,8 @@ import { useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
 import { useWalletStore } from "@/state/walletStore";
 
-/** [whileCatchingUp, whenNearTip] ms — same cadence as next-wallet. */
-export const WALLET_POLL_MS = [2500, 20_000] as const;
+/** [whileCatchingUp, whenNearTip] ms — tip poll shortened so keep-alive wallet UI stays fresh. */
+export const WALLET_POLL_MS = [2500, 5_000] as const;
 
 /** Slower cadence when tab/window is hidden (battery). */
 export const BACKGROUND_POLL_MS = 30_000;
@@ -44,7 +44,6 @@ function isCatchingUp(): boolean {
  */
 export function useWalletLiveSync(enabled: boolean): void {
   const refreshBalance = useWalletStore((s) => s.refreshBalance);
-  const refreshTransactions = useWalletStore((s) => s.refreshTransactions);
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
   const refreshRelays = useChatStore((s) => s.refreshRelays);
   const timerRef = useRef<number | null>(null);
@@ -93,9 +92,22 @@ export function useWalletLiveSync(enabled: boolean): void {
       try {
         // Await tip catch-up before ingest/UI refresh. Fire-and-forget left
         // chat pins (mempool) ahead of wallet history (Zustand cache).
-        await sync().catch(() => {});
-        await refreshTransactions();
-        if (!hidden) await refreshBalance();
+        let networkHeight = 0;
+        try {
+          networkHeight = await sync();
+        } catch {
+          /* node blip — still push whatever runtime has */
+        }
+        const scanned = getRuntime()?.state.scannedHeight ?? 0;
+        const tip = Math.max(networkHeight, scanned, 1);
+        useWalletStore.setState({
+          syncProgress: Math.min(1, scanned / tip),
+          syncStatus: "synced",
+          lastSyncedAt: new Date().toISOString(),
+        });
+        // Always push balance+txs (not only when visible). Keep-alive wallet
+        // tab never remounts; Zustand must stay current without Resync.
+        await refreshBalance();
         await refreshInvites();
         await refreshRelays();
         if (isMobileHost() && hidden) {
@@ -143,11 +155,5 @@ export function useWalletLiveSync(enabled: boolean): void {
       document.removeEventListener("visibilitychange", onVisibility);
       unsubLifecycle();
     };
-  }, [
-    enabled,
-    refreshBalance,
-    refreshTransactions,
-    refreshInvites,
-    refreshRelays,
-  ]);
+  }, [enabled, refreshBalance, refreshInvites, refreshRelays]);
 }

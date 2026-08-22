@@ -80,6 +80,11 @@ import { probeNodes, rankNodes } from "@/lib/network/node-probe";
 import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
 import { syncProfileFromReadSpeed } from "@/lib/sync-speed";
 import {
+  notifyHistoryPossiblyChanged,
+  prepareRawForHistoryPublish,
+  shouldPublishHistory,
+} from "@/services/conceal/sync/history-publish";
+import {
   type IncomingPendingRecord,
   readIncomingPendingRecords,
   reconcileIncomingPending,
@@ -1024,6 +1029,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
     newScanned: number,
   ): void => {
     batchCount += 1;
+    // Track relay messages added THIS batch so notify fires on relay-only batches.
+    let receivedChangedThisBatch = false;
     for (const result of scanResults) {
       if (result === null) continue;
       state = applyScanResult(state, result);
@@ -1045,13 +1052,13 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
           applyInboundScanToReceived(received, txHash, inbound)
         ) {
           receivedChanged = true;
+          receivedChangedThisBatch = true;
         }
       }
     }
     scanned = newScanned;
-    // Publish progress after each batch (never backwards), but ONLY when something changed — the
-    // cursor advanced or a tx folded — so an idle at-tip re-scan never allocates a new state or
-    // triggers a persist (no per-poll write churn). In-memory only; the encrypted persist is once below.
+    // Advance rt.state when the cursor moved or a tx folded — never backwards.
+    // In-memory only; the encrypted persist is once below.
     const cursorAdvanced = scanned > rt.state.scannedHeight;
     const foldedThisBatch = state !== rt.state;
     if (cursorAdvanced || foldedThisBatch) {
@@ -1060,6 +1067,16 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
         scannedHeight: Math.max(rt.state.scannedHeight, scanned),
       };
       rt.state = state;
+    }
+    // Flush relay records into rt.raw before publishing so publishNow sees them mid-sync.
+    rt.raw = prepareRawForHistoryPublish(
+      rt.raw,
+      received,
+      receivedChangedThisBatch,
+    );
+    // Push to wallet store mid-sync (throttled, in-memory only) on tx-fold OR relay-only batch.
+    if (shouldPublishHistory(foldedThisBatch, receivedChangedThisBatch)) {
+      notifyHistoryPossiblyChanged(rt);
     }
   };
 

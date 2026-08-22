@@ -1,0 +1,33 @@
+{
+  "change": "wallet-history-live-relay-dots",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Live history during sync catch-up",
+      "library": "src/services/conceal/sync/runtime.ts; src/state/walletStore.ts; mapWalletTransactions",
+      "runtimeOwner": "sync() foldBatch → throttled publish → useWalletStore.transactions; useWalletLiveSync refreshTransactions",
+      "writes": "useWalletStore.transactions",
+      "reads": "runtime wallet state + sent/received message records",
+      "uiConsumer": "WalletScreen transaction list",
+      "evidence": "unit/smoke: history grows without manual resync; forge e2e run when authored"
+    },
+    {
+      "capability": "History pagination (25)",
+      "library": "src/lib/wallet-history-page.ts (or equivalent); WalletScreen",
+      "runtimeOwner": "WalletScreen page state → slice helper",
+      "writes": "none (UI page index only)",
+      "reads": "useWalletStore.transactions",
+      "uiConsumer": "WalletScreen history footer Prev/Next",
+      "evidence": "tests for page-slice helper"
+    },
+    {
+      "capability": "L1′ relay dots + navigate room/contact",
+      "library": "SmartMessageProtocolAdapter.peekContactHint; relay navigate resolver; WalletScreen; global.css",
+      "runtimeOwner": "WalletScreen relay-dot click → navigate /chats/:roomId or /contacts/:id",
+      "writes": "none (navigation only)",
+      "reads": "Transaction.contactHint; chat catalog; contacts/invites by roomId",
+      "uiConsumer": "WalletScreen history row dots",
+      "evidence": "tests for peekContactHint relay + navigate resolver"
+    }
+  ]
+}

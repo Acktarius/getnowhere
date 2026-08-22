@@ -134,10 +134,9 @@ export type TransactionKind =
   | "unknown";
 
 /** Wallet-history hint for L1 contact smartmessages (display only). */
-export type TransactionContactHint = {
-  module: "contact";
-  action: "create" | "register" | "revoke";
-};
+export type TransactionContactHint =
+  | { module: "contact"; action: "create" | "register" | "revoke" }
+  | { module: "contact"; action: "relay"; roomId: string };
 
 export type Transaction = {
   id: string;

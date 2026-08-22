@@ -13,7 +13,6 @@ import type { Contact } from "@/types/models";
 type Props = { contact: Contact };
 
 export function RelationshipStateCard({ contact }: Props) {
-  const [open, setOpen] = useState(true);
   const hasFrom = Boolean(contact.paymentIdFrom);
   const hasTo = Boolean(
     contact.paymentIdTo && contact.paymentIdTo.length >= 16,
@@ -22,6 +21,10 @@ export function RelationshipStateCard({ contact }: Props) {
   const returnReceived = hasTo;
   const verified = hasFrom && hasTo;
   const p2pEligible = verified && contact.relationshipStatus === "eligible";
+  const allRequirementsDone =
+    identityLinked && returnReceived && verified && p2pEligible;
+
+  const [open, setOpen] = useState(!allRequirementsDone);
 
   const steps = [
     {

@@ -57,17 +57,26 @@ function normalizeAction(action: string): string {
 
 /**
  * Lightweight contact-action peek for wallet history dots (no expiry/replay checks).
+ * Returns relay hints with roomId for L1′ relay smartmessages.
  * @see docs/features/lite-wallet.md
  */
 export function peekContactHint(
   body: string,
-): { module: "contact"; action: "create" | "register" | "revoke" } | null {
+):
+  | { module: "contact"; action: "create" | "register" | "revoke" }
+  | { module: "contact"; action: "relay"; roomId: string }
+  | null {
   if (!messages.isSmartMessage(body)) return null;
   const parsed = messages.parseSmartMessage(body);
   if (!parsed || parsed[0] !== MODULE_CONTACT) return null;
   const action = normalizeAction(String(parsed[1] ?? ""));
   if (action === "create" || action === "register" || action === "revoke") {
     return { module: "contact", action };
+  }
+  if (action === "relay") {
+    const roomId = String(parsed[2] ?? "").trim();
+    if (!roomId) return null;
+    return { module: "contact", action: "relay", roomId };
   }
   return null;
 }

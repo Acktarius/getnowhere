@@ -742,7 +742,7 @@ button {
   text-align: left;
   font: inherit;
 }
-/* L1 contact smartmessage dots — create blue, register green, revoke amber */
+/* L1 contact smartmessage dots — create blue, register green, revoke amber, relay purple */
 .tx-contact-dot {
   display: inline-block;
   width: 8px;
@@ -751,6 +751,7 @@ button {
   margin-right: 6px;
   vertical-align: middle;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 .tx-contact-dot--create {
   background: var(--secondary);
@@ -761,8 +762,24 @@ button {
 .tx-contact-dot--revoke {
   background: var(--accent);
 }
+.tx-contact-dot--relay {
+  background: #a855f7;
+}
 .tx-contact-dot--zeroconf {
   animation: tx-dot-pulse 1.4s ease-in-out infinite;
+}
+/** Clickable Received/Sent label for L1′ relay rows (dot stays display-only). */
+.tx-relay-label {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 @keyframes tx-dot-pulse {
   0%,
@@ -1222,6 +1239,15 @@ button {
 }
 .no-shrink {
   flex-shrink: 0;
+}
+/** Horizontal scroll without a visible scrollbar. */
+.scroll-x-hidden {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-x-hidden::-webkit-scrollbar {
+  display: none;
 }
 .full-w {
   width: 100%;
