@@ -1,5 +1,5 @@
 import { Eye, EyeOff, Lock, RefreshCw, Unlock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useWalletSyncHeights } from "@/hooks/useWalletSyncHeights";
 import type { WalletState } from "@/types/models";
 import { formatCCX } from "@/utils/format";
@@ -25,6 +25,10 @@ export function WalletBalanceCard({
   onToggleLock,
 }: Props) {
   const [hidden, setHidden] = useState(Boolean(hideByDefault));
+  // Wallet tab stays mounted (keep-alive); apply the setting when it changes.
+  useEffect(() => {
+    setHidden(Boolean(hideByDefault));
+  }, [hideByDefault]);
   const blur = hidden ? "privacy-blur" : "";
   const syncing = wallet.syncStatus === "syncing";
   const syncHeights = useWalletSyncHeights(syncing);

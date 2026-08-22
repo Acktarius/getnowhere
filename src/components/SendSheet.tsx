@@ -2,6 +2,7 @@ import { ChevronDown, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import {
   autofillFromContact,
   contactLetterMark,
@@ -50,6 +51,9 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
     null,
   );
   const contactPickerRef = useRef<HTMLDivElement>(null);
+  const contactExpand = bindPointerToggle(useRef(false), () =>
+    setContactOpen((o) => !o),
+  );
 
   const selectedContact =
     options.find((c) => c.id === selectedContactId) ?? null;
@@ -113,7 +117,7 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
           <div style={{ position: "relative" }}>
             <button
               type="button"
-              className="select"
+              className="select expander-btn"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -124,7 +128,8 @@ export function SendSheet({ wallet, onSent, onClose, prefillAddress }: Props) {
               aria-haspopup="listbox"
               aria-expanded={contactOpen}
               disabled={busy}
-              onClick={() => setContactOpen((o) => !o)}
+              onPointerDown={contactExpand.onPointerDown}
+              onClick={contactExpand.onClick}
             >
               {selectedContact ? (
                 <>

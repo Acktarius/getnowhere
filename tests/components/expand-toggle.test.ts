@@ -1,33 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { bindPointerToggle } from "../../src/lib/pointer-toggle";
 
-/**
- * Inline model of the pointerdown + click-guard pattern used in
- * RelationshipStateCard, PaymentIdField QR chevron, and ShareRow QR chevron.
- * Tests the toggle behaviour without a full React RTL mount.
- */
 function makeExpandHandlers(initial = false) {
   let open = initial;
-  const ptrHandled = { current: false };
-
-  const setOpen = (updater: (v: boolean) => boolean) => {
-    open = updater(open);
+  const { onPointerDown, onClick } = bindPointerToggle(
+    { current: false },
+    () => {
+      open = !open;
+    },
+  );
+  return {
+    getOpen: () => open,
+    handlePointerDown: onPointerDown,
+    handleClick: onClick,
   };
-
-  const handlePointerDown = (e: { button: number }) => {
-    if (e.button !== 0) return;
-    ptrHandled.current = true;
-    setOpen((v) => !v);
-  };
-
-  const handleClick = () => {
-    if (ptrHandled.current) {
-      ptrHandled.current = false;
-      return; // trailing synthesized click — skip
-    }
-    setOpen((v) => !v); // keyboard path
-  };
-
-  return { getOpen: () => open, handlePointerDown, handleClick };
 }
 
 describe("expand toggle handler", () => {
@@ -41,8 +27,8 @@ describe("expand toggle handler", () => {
     const { getOpen, handlePointerDown, handleClick } =
       makeExpandHandlers(false);
     handlePointerDown({ button: 0 });
-    handleClick(); // the browser's synthesized click
-    expect(getOpen()).toBe(true); // still open
+    handleClick();
+    expect(getOpen()).toBe(true);
   });
 
   it("second pointerdown collapses", () => {
@@ -50,7 +36,7 @@ describe("expand toggle handler", () => {
       makeExpandHandlers(false);
     handlePointerDown({ button: 0 });
     handleClick();
-    handlePointerDown({ button: 0 }); // second tap
+    handlePointerDown({ button: 0 });
     handleClick();
     expect(getOpen()).toBe(false);
   });
@@ -63,7 +49,7 @@ describe("expand toggle handler", () => {
 
   it("non-primary pointer button is ignored", () => {
     const { getOpen, handlePointerDown } = makeExpandHandlers(false);
-    handlePointerDown({ button: 2 }); // right-click
+    handlePointerDown({ button: 2 });
     expect(getOpen()).toBe(false);
   });
 });

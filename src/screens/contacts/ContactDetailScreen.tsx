@@ -31,6 +31,7 @@ import {
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { useCopy } from "@/hooks/useCopy";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import {
   DEFAULT_INVITE_EXPIRY_HOURS,
   DEFAULT_ROOM_TTL_DAYS,
@@ -791,21 +792,7 @@ function ShareRow({
 }) {
   const [copied, copy] = useCopy();
   const [qrOpen, setQrOpen] = useState(false);
-  const qrPtrHandled = useRef(false);
-
-  function handleQrPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    if (e.button !== 0) return;
-    qrPtrHandled.current = true;
-    setQrOpen((o) => !o);
-  }
-
-  function handleQrClick() {
-    if (qrPtrHandled.current) {
-      qrPtrHandled.current = false;
-      return;
-    }
-    setQrOpen((o) => !o);
-  }
+  const qrExpand = bindPointerToggle(useRef(false), () => setQrOpen((o) => !o));
 
   return (
     <div className="card card--pad-md">
@@ -817,8 +804,8 @@ function ShareRow({
           style={{ width: 28, height: 28 }}
           aria-expanded={qrOpen}
           aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
-          onPointerDown={handleQrPointerDown}
-          onClick={handleQrClick}
+          onPointerDown={qrExpand.onPointerDown}
+          onClick={qrExpand.onClick}
         >
           {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>

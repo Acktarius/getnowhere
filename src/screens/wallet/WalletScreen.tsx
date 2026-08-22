@@ -7,7 +7,7 @@ import {
   Upload,
   Wallet as WalletIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
@@ -19,6 +19,7 @@ import { WalletBalanceCard } from "@/components/WalletBalanceCard";
 import { useCopy } from "@/hooks/useCopy";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import { activeTabFromPath } from "@/layouts/mainTabPaths";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import {
   clampPage,
   PAGE_SIZE,
@@ -80,6 +81,7 @@ export function WalletScreen() {
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
+  const txExpandGuard = useRef(false);
   const [copied, copy] = useCopy();
   const [page, setPage] = useState(1);
 
@@ -312,12 +314,16 @@ export function WalletScreen() {
               <div className="card card--flush stagger">
                 {sliceWalletHistoryPage(transactions, page).map((tx) => {
                   const open = expandedTxId === tx.id;
+                  const txExpand = bindPointerToggle(txExpandGuard, () =>
+                    setExpandedTxId(open ? null : tx.id),
+                  );
                   return (
                     <div key={tx.id} className="tx-row">
                       <button
                         type="button"
                         className="row row--clickable tx-row__main"
-                        onClick={() => setExpandedTxId(open ? null : tx.id)}
+                        onPointerDown={txExpand.onPointerDown}
+                        onClick={txExpand.onClick}
                         aria-expanded={open}
                       >
                         <div

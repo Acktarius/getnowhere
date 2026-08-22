@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useRef, useState } from "react";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import type { Contact } from "@/types/models";
 
 type Props = { contact: Contact };
@@ -25,21 +26,7 @@ export function RelationshipStateCard({ contact }: Props) {
     identityLinked && returnReceived && verified && p2pEligible;
 
   const [open, setOpen] = useState(!allRequirementsDone);
-  const ptrHandled = useRef(false);
-
-  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    if (e.button !== 0) return;
-    ptrHandled.current = true;
-    setOpen((v) => !v);
-  }
-
-  function handleClick() {
-    if (ptrHandled.current) {
-      ptrHandled.current = false;
-      return; // trailing synthesized click after pointerdown — skip
-    }
-    setOpen((v) => !v); // keyboard (Enter / Space) path
-  }
+  const expand = bindPointerToggle(useRef(false), () => setOpen((v) => !v));
 
   const steps = [
     {
@@ -85,8 +72,8 @@ export function RelationshipStateCard({ contact }: Props) {
           textAlign: "left",
         }}
         aria-expanded={open}
-        onPointerDown={handlePointerDown}
-        onClick={handleClick}
+        onPointerDown={expand.onPointerDown}
+        onClick={expand.onClick}
       >
         <div className="card__title" style={{ margin: 0 }}>
           Relationship state

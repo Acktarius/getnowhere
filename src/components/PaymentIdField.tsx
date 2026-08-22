@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { useCopy } from "@/hooks/useCopy";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import { walletService } from "@/services";
 import { shortAddress } from "@/utils/format";
 
@@ -48,21 +49,7 @@ export function PaymentIdField({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [qrOpen, setQrOpen] = useState(false);
-  const qrPtrHandled = useRef(false);
-
-  function handleQrPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
-    if (e.button !== 0) return;
-    qrPtrHandled.current = true;
-    setQrOpen((o) => !o);
-  }
-
-  function handleQrClick() {
-    if (qrPtrHandled.current) {
-      qrPtrHandled.current = false;
-      return;
-    }
-    setQrOpen((o) => !o);
-  }
+  const qrExpand = bindPointerToggle(useRef(false), () => setQrOpen((o) => !o));
 
   const accent = direction === "from" ? "var(--primary)" : "var(--secondary)";
 
@@ -93,8 +80,8 @@ export function PaymentIdField({
               style={{ width: 28, height: 28 }}
               aria-expanded={qrOpen}
               aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
-              onPointerDown={handleQrPointerDown}
-              onClick={handleQrClick}
+              onPointerDown={qrExpand.onPointerDown}
+              onClick={qrExpand.onClick}
             >
               {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
