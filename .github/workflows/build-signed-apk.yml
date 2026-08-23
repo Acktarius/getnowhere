@@ -1,17 +1,40 @@
-name: Build signed APK (F-Droid)
+name: Build signed APK
+
+# Matrix: fdroid (de-Googled) vs gms (FCM-capable). Desktop releases stay in
+# release-electron-sidecar.yml — this workflow never bundles Electron artifacts.
 
 on:
   push:
     tags:
-      - "*-f-droid"
+      - "v*"
   workflow_dispatch:
+    inputs:
+      variant:
+        description: APK variant to build
+        required: true
+        type: choice
+        options:
+          - fdroid
+          - gms
 
 jobs:
   build:
+    name: build (${{ matrix.variant }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: write
+    concurrency:
+      group: build-signed-apk-${{ github.ref }}-${{ matrix.variant }}
+      cancel-in-progress: true
+    if: >-
+      github.event_name == 'workflow_dispatch' && github.event.inputs.variant == matrix.variant ||
+      github.event_name == 'push' && endsWith(github.ref_name, '-f-droid') && matrix.variant == 'fdroid' ||
+      github.event_name == 'push' && startsWith(github.ref_name, 'v') && !endsWith(github.ref_name, '-f-droid') && matrix.variant == 'gms'
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [fdroid, gms]
 
     steps:
       - name: Checkout
@@ -57,7 +80,22 @@ jobs:
         run: npx expo prebuild --platform android --clean
 
       - name: Apply F-Droid de-Google fixes
+        if: matrix.variant == 'fdroid'
         run: python3 scripts/fix-for-fdroid.py
+
+      - name: Install google-services.json (GMS / FCM)
+        if: matrix.variant == 'gms'
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64 secret is required for GMS APK builds."
+            echo "Add Firebase google-services.json for im.getnowhere.app (base64-encoded) in repo secrets."
+            exit 1
+          fi
+          mkdir -p native-wrapper/android/app
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' | base64 -d > native-wrapper/android/app/google-services.json
+          test -s native-wrapper/android/app/google-services.json
 
       - name: Build unsigned release APK
         run: npm run mobile:android:release
@@ -138,21 +176,40 @@ jobs:
         run: |
           rm -f keys/release-keystore.jks
 
-      - name: Create GitHub release
-        if: github.ref_type == 'tag' && endsWith(github.ref_name, '-f-droid')
+      - name: Create GitHub release (F-Droid)
+        if: matrix.variant == 'fdroid' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           name: Get NowHere ${{ steps.ver.outputs.file_version }} (F-Droid)
           files: |
             ${{ env.SIGNED_APK }}
             ${{ env.SIGNED_APK_SHA }}
           generate_release_notes: true
 
+      - name: Create GitHub release (GMS)
+        if: matrix.variant == 'gms' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Get NowHere ${{ steps.ver.outputs.file_version }}
+          files: |
+            ${{ env.SIGNED_APK }}
+            ${{ env.SIGNED_APK_SHA }}
+          body: |
+            **Get NowHere — Android (GMS / FCM-capable signed APK)**
+
+            Sideload release APK with Google Play Services / FCM wiring for push wake.
+            Desktop artifacts for this version are published separately by
+            `release-electron-sidecar.yml` on the same tag when both workflows run.
+
+            - **Artifact version:** from repo `version` file (`${{ steps.ver.outputs.file_version }}`), not the git tag name
+
       - name: Upload APK artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v6
         with:
-          name: getnowhere-signed-apk-${{ steps.ver.outputs.file_version }}
+          name: getnowhere-signed-apk-${{ matrix.variant }}-${{ steps.ver.outputs.file_version }}
           path: |
             ${{ env.SIGNED_APK }}
             ${{ env.SIGNED_APK_SHA }}

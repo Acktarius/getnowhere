@@ -369,43 +369,42 @@ python3 scripts/fix-for-fdroid.py
 cd native-wrapper && ./gradlew :app:dependencies --configuration releaseRuntimeClasspath
 ```
 
-## F-Droid GitHub Actions CI
+## Signed APK GitHub Actions CI
 
-Trigger: push a tag matching `v*-f-droid` (for example `v0.3.3-f-droid`), or run the
-workflow manually via **Actions → Build signed APK (F-Droid) → Run workflow**.
+Workflow file: `.github/workflows/build-signed-apk.yml` (matrix: `fdroid` | `gms`).
+Desktop packages are **only** in `release-electron-sidecar.yml` — this workflow
+never builds or attaches Electron artifacts.
 
-Workflow file: `.github/workflows/build-signed-apk.yml`
+| Trigger | Variant | GitHub Release |
+|---|---|---|
+| Tag `v*-f-droid` (e.g. `v0.3.3-f-droid`) | **fdroid** | Draft **Get NowHere vX.Y.Z (F-Droid)** — APK only |
+| Tag `v*` not ending in `-f-droid` (e.g. `v0.3.3`) | **gms** | Draft **Get NowHere vX.Y.Z** — APK only (desktop is a separate workflow) |
+| Manual **workflow_dispatch** | chosen variant | Actions artifact only |
 
-What it does:
-1. Checks out the repo and installs Node.js 24.
-2. Sets up JDK 21 + Android SDK (platforms 35/36, build-tools 34/36).
-3. Runs `npx expo prebuild --platform android --clean` to generate the `android/` tree.
-4. Runs `scripts/fix-for-fdroid.py` to strip non-free Maven repos / Google deps.
-5. Runs `npm run mobile:android:release` → produces an **unsigned** release APK
-   under `native-wrapper/builds/`.
-6. Reads `version` / `buildVersionAndroid` from the repo-root `version` file
-   (artifact names never use the git tag, e.g. not `…-f-droid…`).
-7. Decodes the release keystore from GitHub Secrets
-   (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
-   `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`).
-8. Signs the APK with `apksigner` and verifies the signature (keeps
-   `GetNowHere-v{version}-b{buildVersionAndroid}-java{major}.apk` from the
-   unsigned build — names come from the `version` file, not the git tag).
-9. Attaches the signed APK + `.sha256` to the GitHub Release (tag builds) or
-   uploads Actions artifact `getnowhere-signed-apk-v{version}` (manual dispatch).
+On `v0.3.3`, **two workflows** run in parallel: `release-electron-sidecar.yml`
+(desktop) and this workflow (`gms` APK). Tags ending in `-f-droid` run **only**
+the fdroid matrix job here — the Electron workflow skips those tags.
 
-The unsigned build step is identical to local `npm run mobile:android:release`.
-Signing is injected **only** in CI from secrets; the repo never contains a
-release keystore.
+### F-Droid variant (`fdroid`)
 
-### F-Droid de-Google cleanup
+1. `expo prebuild --platform android --clean`
+2. `scripts/fix-for-fdroid.py`
+3. `npm run mobile:android:release` → unsigned APK under `native-wrapper/builds/`
+4. Sign with `ANDROID_KEYSTORE_*` secrets
 
-The workflow runs `scripts/fix-for-fdroid.py` automatically after `expo prebuild`
-and before `assembleRelease`. It strips `google()` Maven repos and transitive
-`com.google.*` dependencies from the generated `android/` tree so the APK is
-acceptable to F-Droid.
+### GMS variant (`gms`) — FCM-capable sideload
 
-To audit locally after `expo prebuild`:
+Same pipeline **without** `fix-for-fdroid.py`. After prebuild, CI writes
+`native-wrapper/android/app/google-services.json` from secret
+`GOOGLE_SERVICES_JSON_BASE64` (Firebase console → base64 the JSON file).
+
+Required secrets for GMS tag builds: `ANDROID_KEYSTORE_*` and
+`GOOGLE_SERVICES_JSON_BASE64`.
+
+Artifact APK names come from the repo `version` file (never the git tag suffix).
+Signing is injected **only** in CI; the repo never contains a release keystore.
+
+### F-Droid de-Google cleanup (local audit)
 
 ```bash
 python3 scripts/fix-for-fdroid.py

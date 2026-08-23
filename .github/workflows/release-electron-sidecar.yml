@@ -6,7 +6,7 @@ name: Release Electron + sidecar
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*"] # *-f-droid tags match v* but desktop jobs skip them (F-Droid APK only).
   workflow_dispatch:
 
 concurrency:
@@ -16,6 +16,7 @@ concurrency:
 jobs:
   desktop-linux:
     name: Electron + sidecar (Linux)
+    if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
     runs-on: ubuntu-24.04
     env:
       GNH_BUNDLE_NODE_VERSION: "24.14.1"
@@ -182,6 +183,7 @@ jobs:
 
   desktop-windows:
     name: Electron + sidecar (Windows)
+    if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
     runs-on: windows-latest
     env:
       GNH_BUNDLE_NODE_VERSION: "24.14.1"
@@ -265,7 +267,7 @@ jobs:
 
   release:
     name: Draft GitHub Release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !endsWith(github.ref_name, '-f-droid')
     needs: [desktop-linux, desktop-windows]
     runs-on: ubuntu-24.04
     permissions:
