@@ -1,5 +1,5 @@
 import { ChevronLeft, MoreHorizontal } from "lucide-react";
-import { Link } from "react-router-dom";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import type { RoomTopicId } from "@/services/protocol/roomTopics";
 import type { Contact } from "@/types/models";
@@ -28,9 +28,13 @@ export function ChatRoomHeader({
 }: Props) {
   return (
     <header className="topbar topbar--bordered">
-      <Link to="/chats" className="topbar__icon-btn" aria-label="Back to chats">
+      <MobileInstantLink
+        to="/chats"
+        className="topbar__icon-btn"
+        aria-label="Back to chats"
+      >
         <ChevronLeft size={20} />
-      </Link>
+      </MobileInstantLink>
       <div
         className="row__avatar"
         style={{ width: 34, height: 34, fontSize: 13 }}

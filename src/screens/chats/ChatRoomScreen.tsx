@@ -1,6 +1,6 @@
 import { RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
@@ -521,9 +521,9 @@ export function ChatRoomScreen() {
           title="Room unavailable"
           body="This room could not be loaded."
           action={
-            <Link className="btn btn--sm btn--secondary" to="/chats">
+            <MobileInstantLink className="btn btn--sm btn--secondary" to="/chats">
               Back to chats
-            </Link>
+            </MobileInstantLink>
           }
         />
         <LoadingDiagnosticsSheet
