@@ -21,7 +21,14 @@ import {
 } from "@/services/p2p/HolepunchSidecarClient";
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
 import { resolveRoomTtl } from "@/services/p2p/resolveRoomTtl";
-import { loadCatalogRoom } from "@/services/p2p/roomCatalogStore";
+import {
+  loadCatalogRoom,
+  peekCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
+import {
+  canBroadcastRoomRevoke,
+  resolveRoomRevokeIds,
+} from "@/services/p2p/roomRevoke";
 import {
   canComposeMessages,
   composerDisabledReason,
@@ -65,24 +72,29 @@ function roomExpiryDiagnosticLine(roomTtl?: number): string {
 function LeaveRoomModal({
   open,
   revoking,
+  localOnly,
   onConfirm,
   onClose,
 }: {
   open: boolean;
   revoking: boolean;
+  localOnly?: boolean;
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }) {
+  const body = localOnly
+    ? "Could not leave this room properly. Confirm room retirement — the room will be removed locally; the peer will not be notified on-chain."
+    : "This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm.";
   return (
     <ConfirmModal
       open={open}
       title="Leave room?"
-      body="This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm."
+      body={body}
       confirmLabel="LEAVE ROOM"
       cancelLabel="Cancel"
       destructive
-      busyLabel="Leaving…"
-      busyStatus="Destroying room…"
+      busyLabel={localOnly ? "Retiring…" : "Leaving…"}
+      busyStatus={localOnly ? "Retiring room…" : "Destroying room…"}
       onConfirm={onConfirm}
       onClose={() => {
         if (!revoking) onClose();
@@ -200,7 +212,21 @@ export function ChatRoomScreen() {
     useNotificationStore.getState().markRoomSeen(roomId);
   }, [roomId]);
 
+  const invites = useContactsStore((s) => s.invites);
+  const contacts = useContactsStore((s) => s.contacts);
   const catalogRoom = useMemo(() => loadCatalogRoom(roomId), [roomId]);
+  // Use peekCatalogRoom (non-pruning) so a silently-pruned expired row's
+  // inviteId is still visible for ID resolution at modal-open time.
+  const leaveLocalOnly = useMemo(() => {
+    const ids = resolveRoomRevokeIds({
+      roomId,
+      invites,
+      contacts,
+      room,
+      catalog: peekCatalogRoom(roomId),
+    });
+    return !canBroadcastRoomRevoke(ids);
+  }, [roomId, room, invites, contacts]);
 
   const displayRoom: ChatRoom = useMemo(() => {
     if (room) return room;
@@ -461,8 +487,12 @@ export function ChatRoomScreen() {
     if (revoking) return;
     setRevoking(true);
     try {
-      await revokeRoom(roomId);
-      toastSuccess("Room left.");
+      const { l1Revoke } = await revokeRoom(roomId);
+      toastSuccess(
+        l1Revoke
+          ? "Room left."
+          : "Could not leave this room properly. Room retired locally.",
+      );
       navigate("/chats", { replace: true });
     } catch (e) {
       toastError((e as Error).message || "Leave failed.");
@@ -503,6 +533,7 @@ export function ChatRoomScreen() {
         <LeaveRoomModal
           open={leaveOpen}
           revoking={revoking}
+          localOnly={leaveLocalOnly}
           onConfirm={handleRevokeConfirm}
           onClose={() => setLeaveOpen(false)}
         />
@@ -845,6 +876,7 @@ export function ChatRoomScreen() {
       <LeaveRoomModal
         open={leaveOpen}
         revoking={revoking}
+        localOnly={leaveLocalOnly}
         onConfirm={handleRevokeConfirm}
         onClose={() => setLeaveOpen(false)}
       />

@@ -387,13 +387,17 @@ any → `expired`/`destroyed`/`closed` via TTL or teardown.
 **Room list durability:** the Chats room list is persisted (`gnh.roomCatalog`).
 A room **disappears from the list only when**:
 
-1. the user **leaves forever** (`leaveRoom`) — local destroy **immediately**, plus **L1
-   `chat.revoke` with `reasonCode=room_revoked`** fired in the background (do
-   **not** wait for broadcast/confirm before destroying); peer destroys when
-   the revoke is scanned. Wallet blob keeps `{ roomId, revoked: true }` only
-   so the same `roomId` cannot be re-seeded, or
+1. the user **leaves forever** (`leaveRoom`) — local destroy **immediately**, durable
+   revoke tombstone written; L1 `chat.revoke` (`room_revoked`) fired in the
+   background **only when both `contactId` and `inviteId` resolve**. When ids are
+   missing (legacy/incomplete rows), local retirement still completes — peer is
+   not notified on-chain. Wallet blob keeps `{ roomId, revoked: true }` so the
+   same `roomId` cannot be re-seeded, or
 2. the invite was **never accepted** and `inviteExpiry` has passed, or
-3. `roomTtl` has expired.
+3. `roomTtl` has expired, or
+4. the transport sets `lifecycleStatus: "expired"` (TTL detected at connect or send
+   time) — treated as `room_ttl` for retirement purposes and auto-removed on the
+   next `loadRooms`.
 
 Restart, `crypto_mismatch`, and temporary offline must **not** remove the room.
 

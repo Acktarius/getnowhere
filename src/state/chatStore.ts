@@ -73,6 +73,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     const { pruneRoomsForMissingContacts } = await import(
       "@/services/p2p/roomChainRestore"
     );
+    const { shouldRetireCatalogRoom, peekCatalogRoom } = await import(
+      "@/services/p2p/roomCatalogStore"
+    );
     // Seed catalog from persisted invites / contact.roomId (same-device session).
     try {
       const { useContactsStore } = await import("@/state/contactsStore");
@@ -89,6 +92,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (isRoomRevoked(inv.roomId) || isInviteRevoked(inv.inviteId)) {
           continue;
         }
+        // Skip rooms already due for retirement — retireExpiredRooms ran first.
+        const catalogEntry = peekCatalogRoom(inv.roomId);
+        if (catalogEntry && shouldRetireCatalogRoom(catalogEntry)) continue;
         try {
           await chatTransport.createRoom({
             contactId: inv.contactId,
@@ -112,6 +118,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         if (!c.roomId) continue;
         if (isRoomRevoked(c.roomId)) continue;
         const inv = invites.find((i) => i.roomId === c.roomId);
+        // Skip rooms already due for retirement.
+        const catalogEntry = peekCatalogRoom(c.roomId);
+        if (catalogEntry && shouldRetireCatalogRoom(catalogEntry)) continue;
         try {
           await chatTransport.createRoom({
             contactId: c.id,

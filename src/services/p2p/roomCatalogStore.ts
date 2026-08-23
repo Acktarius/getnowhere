@@ -64,6 +64,7 @@ export function shouldRetireCatalogRoom(
   room: CatalogRoom,
   nowSec: number = nowUnix(),
 ): "room_ttl" | "invite_expiry" | null {
+  if (room.lifecycleStatus === "expired") return "room_ttl";
   if (room.roomTtl && isRoomExpired(room.roomTtl, nowSec)) return "room_ttl";
   if (
     room.inviteExpiry &&
@@ -147,6 +148,15 @@ export function findCatalogRetirements(
     if (reason) due.push({ room, reason });
   }
   return due;
+}
+
+/**
+ * Peek at a catalog row without pruning it. Returns the row regardless of
+ * expiry — use `shouldRetireCatalogRoom` after to decide.
+ */
+export function peekCatalogRoom(roomId: string): CatalogRoom | undefined {
+  if (isRoomRevoked(roomId)) return undefined;
+  return readAll()[roomId];
 }
 
 /** User chose to leave forever — only permanent remove API besides TTL prune. */

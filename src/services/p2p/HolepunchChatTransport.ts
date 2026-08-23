@@ -528,8 +528,10 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       lifecycleStatus: "expired",
       peerStatus: "offline",
       lastConnectError: "expired",
+      roomTtl: contract.roomTtl,
     };
     rooms.set(state.room.id, state);
+    upsertCatalogRoom(state.room);
     return state.room;
   }
 
@@ -985,7 +987,9 @@ export const HolepunchChatTransport: ChatTransport = {
     );
     assertCanSendMessages(state.room.lifecycleStatus);
     if (state.room.roomTtl && isRoomExpired(state.room.roomTtl, nowUnix())) {
-      state.room.lifecycleStatus = "expired";
+      state.room = { ...state.room, lifecycleStatus: "expired" };
+      rooms.set(roomId, state);
+      upsertCatalogRoom(state.room);
       throw new Error("Room expired.");
     }
 

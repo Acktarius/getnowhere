@@ -94,10 +94,10 @@ type ContactsStore = {
   acceptInvite: (inviteId: string) => Promise<{ roomId: string }>;
   declineInvite: (inviteId: string) => Promise<void>;
   /**
-   * Leave forever: L1 chat.revoke (room_revoked), then destroy local room
-   * only after broadcast confirms. Peer destroys on scan.
+   * Leave forever: destroy local room immediately; L1 chat.revoke when ids resolve.
+   * Returns `l1Revoke: false` when contact/invite ids are missing (local retirement only).
    */
-  revokeRoom: (roomId: string) => Promise<void>;
+  revokeRoom: (roomId: string) => Promise<{ l1Revoke: boolean }>;
   /** Drop a dead sent invite so Alice can create again (optionally one topic only). */
   abandonPendingInvite: (
     contactId: string,
@@ -235,10 +235,17 @@ async function retireExpiredRoomsImpl(
       | ((s: ContactsStore) => Partial<ContactsStore>),
   ) => void,
 ): Promise<void> {
+  // Collect catalog inviteIds before any prune touches the rows.
+  const { findCatalogRetirements } = await import(
+    "@/services/p2p/roomCatalogStore"
+  );
+  const catalogInviteIds = new Map<string, string | undefined>(
+    findCatalogRetirements().map(({ room }) => [room.id, room.inviteId]),
+  );
   for (const [roomId] of collectRoomsDueForRetirement(get().invites)) {
     if (isRoomRevoked(roomId)) continue;
     const inv = get().invites.find((i) => i.roomId === roomId);
-    const inviteId = inv?.inviteId ?? loadCatalogRoom(roomId)?.inviteId;
+    const inviteId = inv?.inviteId ?? catalogInviteIds.get(roomId);
     try {
       await applyRoomDestroyLocally(get, set, roomId, inviteId);
     } catch {
@@ -1333,23 +1340,27 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 
   async revokeRoom(roomId) {
+    if (!roomId) throw new Error("Room id required.");
     const inv = get().invites.find((i) => i.roomId === roomId);
     const catalog = (
       await import("@/services/p2p/roomCatalogStore")
     ).loadCatalogRoom(roomId);
     const room = await chatTransport.getRoom(roomId);
-    const contactId =
-      inv?.contactId ||
-      room?.contactId ||
-      catalog?.contactId ||
-      get().contacts.find((c) => c.roomId === roomId)?.id;
-    const inviteId = inv?.inviteId || room?.inviteId || catalog?.inviteId;
+    const { canBroadcastRoomRevoke, resolveRoomRevokeIds } = await import(
+      "@/services/p2p/roomRevoke"
+    );
+    const { contactId, inviteId } = resolveRoomRevokeIds({
+      roomId,
+      invites: get().invites,
+      contacts: get().contacts,
+      room,
+      catalog,
+    });
     const replayId = inv?.replayId;
-    if (!contactId || !inviteId) {
-      throw new Error("Cannot leave room — missing contact or invite id.");
-    }
+    const l1Revoke = canBroadcastRoomRevoke({ contactId, inviteId });
     // Destroy immediately — do not wait for L1 broadcast/confirm.
     await applyRoomDestroyLocally(get, set, roomId, inviteId);
+    if (!l1Revoke) return { l1Revoke: false };
     let topicEpoch: number | undefined;
     const handshake = inviteId ? getHandshakeForInvite(inviteId) : undefined;
     const contact = get().contacts.find((c) => c.id === contactId);
@@ -1367,7 +1378,13 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     }
     // Notify counterpart on L1 in the background (best-effort).
     void smartMessageService
-      .revokeRoom({ contactId, inviteId, roomId, replayId, topicEpoch })
+      .revokeRoom({
+        contactId: contactId!,
+        inviteId: inviteId!,
+        roomId,
+        replayId,
+        topicEpoch,
+      })
       .catch(async (e) => {
         const { toastError } = await import("@/state/toastStore");
         toastError(
@@ -1375,6 +1392,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             "Room destroyed here, but revoke tx failed to send.",
         );
       });
+    return { l1Revoke: true };
   },
 
   async abandonPendingInvite(contactId, opts) {
