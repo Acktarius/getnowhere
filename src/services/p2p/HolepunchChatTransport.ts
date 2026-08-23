@@ -44,6 +44,7 @@ import {
   saveRoomSession,
   updateRoomSessionCounters,
 } from "@/services/p2p/roomSessionStore";
+import { sendPoke } from "@/services/poke/pokeGatewayClient";
 import {
   assertCanSendLive,
   assertCanSendMessages,
@@ -62,6 +63,7 @@ import {
   resolveIncomingLifecycle,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { ChatMessage, ChatRoom } from "@/types/models";
 import type {
   ChatContentEnvelopeV1,
@@ -621,11 +623,13 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         lifecycleStatus: "connected",
         peerStatus: "online",
         lastConnectError: undefined,
+        lastPokedAt: undefined,
       };
       rooms.set(state.room.id, state);
       patchCatalogRoom(state.room.id, {
         lifecycleStatus: "connected",
         lastConnectError: undefined,
+        lastPokedAt: undefined,
       });
       nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
@@ -735,12 +739,36 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     lastConnectError: catalog?.lastConnectError,
     createdAt: catalog?.createdAt ?? new Date().toISOString(),
     lastMessageAt: catalog?.lastMessageAt,
+    partnerPokeHandle: catalog?.partnerPokeHandle,
+    lastPokedAt: catalog?.lastPokedAt,
   };
   const state: RoomState = { room, peerId: uid("peer") };
   rooms.set(id, state);
   messagesByRoom.set(id, []);
   upsertCatalogRoom(room);
   return state;
+}
+
+/**
+ * Fire-and-forget peer-wake poke on the first L1′ relay after L2 was connected.
+ * No-op when pushWakeEnabled is false, no handle is known, or poke was already sent.
+ * @see docs/features/peer-wake-notification.md §4
+ */
+async function maybeSendPoke(state: RoomState): Promise<void> {
+  const { privacy } = useSettingsStore.getState();
+  if (!privacy.pushWakeEnabled) return;
+  if (!state.room.partnerPokeHandle) return;
+  if (state.room.lastPokedAt) return; // poke already sent this relay session
+
+  const nowSec = nowUnix();
+  try {
+    await sendPoke(state.room.partnerPokeHandle);
+  } catch {
+    return; // best-effort
+  }
+  state.room = { ...state.room, lastPokedAt: nowSec };
+  rooms.set(state.room.id, state);
+  patchCatalogRoom(state.room.id, { lastPokedAt: nowSec });
 }
 
 async function sendRelayText(
@@ -788,6 +816,7 @@ async function sendRelayText(
     notify(roomId, msg);
     state.room = { ...state.room, lastMessageAt: msg.createdAt };
     rooms.set(roomId, state);
+    maybeSendPoke(state).catch(() => undefined);
     return msg;
   } catch (e) {
     notify(roomId, { ...pending, status: "failed" });
@@ -1092,7 +1121,7 @@ export const HolepunchChatTransport: ChatTransport = {
     if (live) return live;
     const catalog = loadCatalogRoom(roomId);
     if (!catalog) return null;
-    return ensureRoom(catalog.contactId, {
+    const restored = ensureRoom(catalog.contactId, {
       roomId: catalog.id,
       roomKeyRef: catalog.roomKeyRef,
       bootstrapSource: catalog.bootstrapSource,
@@ -1102,7 +1131,17 @@ export const HolepunchChatTransport: ChatTransport = {
       roomTtl: catalog.roomTtl,
       roomTopic: catalog.roomTopic,
       awaitingChainSync: catalog.awaitingChainSync,
-    }).room;
+    });
+    // Poke fields come from catalog only; not in bootstrap union.
+    if (catalog.partnerPokeHandle && !restored.room.partnerPokeHandle) {
+      restored.room = {
+        ...restored.room,
+        partnerPokeHandle: catalog.partnerPokeHandle,
+        lastPokedAt: catalog.lastPokedAt,
+      };
+      rooms.set(catalog.id, restored);
+    }
+    return restored.room;
   },
 
   async listRooms() {
@@ -1142,6 +1181,23 @@ export const HolepunchChatTransport: ChatTransport = {
 
 export function getMessagesForRoom(roomId: string): ChatMessage[] {
   return [...(messagesByRoom.get(roomId) ?? [])];
+}
+
+/**
+ * Record the peer's pokeHandle for a room when first seen in a `chat.create`
+ * or `chat.register` payload. No-op if already set to the same value.
+ * Called by the chain-sync layer; safe to call multiple times.
+ * @see docs/features/peer-wake-notification.md
+ */
+export function storePartnerPokeHandle(roomId: string, handle: string): void {
+  if (!handle || !/^[A-Za-z0-9_-]{14}$/.test(handle)) return;
+  const state = rooms.get(roomId);
+  if (state) {
+    if (state.room.partnerPokeHandle === handle) return;
+    state.room = { ...state.room, partnerPokeHandle: handle };
+    rooms.set(roomId, state);
+  }
+  patchCatalogRoom(roomId, { partnerPokeHandle: handle });
 }
 
 /** Save in-memory room messages into the encrypted wallet blob. */

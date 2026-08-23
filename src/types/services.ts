@@ -312,6 +312,7 @@ export type SmartMessageProtocolService = {
     inviteId: string;
     receiverEphemeralPublicKey: string;
     replayId: string;
+    pokeHandle?: string;
   }): Promise<ChatRegisterPayload>;
 
   composeRevoke(input: {

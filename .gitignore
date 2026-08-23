@@ -60,3 +60,9 @@ native-wrapper/assets/ui/*
 
 # Build|related
 *.tsbuildinfo
+
+# poke-gateway local SQLite (OS push tokens)
+poke-gateway/*.db
+poke-gateway/*.db-wal
+poke-gateway/*.db-shm
+poke-gateway/secrets/

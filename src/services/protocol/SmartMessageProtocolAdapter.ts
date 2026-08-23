@@ -387,13 +387,18 @@ export function encodeCreateSmartBody(
   handshake: ChatInviteHandshake,
   _senderAlias?: string,
   _capabilities?: string[],
+  pokeHandle?: string,
 ): string {
   const pack = packCreateHandshake(handshake);
-  const body = messages.encodeSmartMessage(
+  const args: string[] = [
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.create,
     String(handshake.protocolVersion),
     pack,
+  ];
+  if (pokeHandle) args.push(pokeHandle);
+  const body = messages.encodeSmartMessage(
+    ...(args as [string, string, ...string[]]),
   );
   assertBodyFits(body);
   if (new TextEncoder().encode(body).length > MAX_CREATE_BODY_CHARS) {
@@ -453,12 +458,16 @@ function decodeVerboseCreate(data: string[]): ChatInviteHandshake | null {
 }
 
 export function encodeRegisterSmartBody(payload: ChatRegisterPayload): string {
-  const body = messages.encodeSmartMessage(
+  const args: string[] = [
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.register,
     payload.inviteId,
     hexToB64url(payload.receiverEphemeralPublicKey),
     hexToB64url(payload.replayId),
+  ];
+  if (payload.pokeHandle) args.push(payload.pokeHandle);
+  const body = messages.encodeSmartMessage(
+    ...(args as [string, string, ...string[]]),
   );
   assertBodyFits(body);
   return body;
@@ -523,7 +532,7 @@ export function parseChatSmartBody(
     // Packed (current): [pv, b64urlBlob]. Legacy compact: ≥10 parts. Verbose: suite string.
     let handshake: ChatInviteHandshake | null = null;
     let wireKind: "packed" | "compact" | "verbose" = "packed";
-    if (data.length === 2) {
+    if (data.length === 2 || data.length === 3) {
       handshake = unpackCreateHandshake(Number(data[0]), data[1]!);
       wireKind = "packed";
     } else {
@@ -549,6 +558,15 @@ export function parseChatSmartBody(
       wireKind === "verbose"
         ? (data[14] ?? "chat.v1").split("|").filter(Boolean)
         : ["chat.v1"];
+    // Packed format: optional ph at data[2]; verbose: data[15]
+    const senderPokeHandle =
+      wireKind === "packed"
+        ? data[2] && /^[A-Za-z0-9_-]{14}$/.test(data[2])
+          ? data[2]
+          : undefined
+        : data[15] && /^[A-Za-z0-9_-]{14}$/.test(data[15])
+          ? data[15]
+          : undefined;
     return {
       action: "create",
       payload: {
@@ -556,6 +574,7 @@ export function parseChatSmartBody(
         handshake,
         senderAlias,
         capabilities,
+        senderPokeHandle,
       },
     };
   }
@@ -577,6 +596,11 @@ export function parseChatSmartBody(
     } catch {
       return null;
     }
+    const pokeHandleRaw = String(parsed[5] ?? "").trim();
+    const pokeHandle =
+      pokeHandleRaw && /^[A-Za-z0-9_-]{14}$/.test(pokeHandleRaw)
+        ? pokeHandleRaw
+        : undefined;
     return {
       action: "register",
       payload: {
@@ -585,6 +609,7 @@ export function parseChatSmartBody(
         receiverEphemeralPublicKey,
         replayId,
         acceptedAt: new Date().toISOString(),
+        pokeHandle,
       },
     };
   }
@@ -696,6 +721,7 @@ export const SmartMessageProtocolAdapter: SmartMessageProtocolService = {
       receiverEphemeralPublicKey: input.receiverEphemeralPublicKey,
       replayId: input.replayId,
       acceptedAt: new Date().toISOString(),
+      ...(input.pokeHandle ? { pokeHandle: input.pokeHandle } : {}),
     };
   },
 

@@ -1,0 +1,510 @@
+# Peer-wake notification (fast L2 meet-up)
+
+**Status:** Planned. Phase 1 (UX) — ready to implement. Phase 2 (poke gateway) — pending spec approval.
+
+**Problem:** When Alice sends an L1′ relay message, Bob's mobile app is likely suspended.
+On **iOS**, `BGAppRefreshTask` fires at best every ~15 minutes (OS-scheduled, app cannot shorten
+this). On **Android**, the native wrapper already chains 30-second one-shot WorkManager tasks
+while backgrounded — but these are deferred by Doze when the phone is truly idle.
+The goal is to cut the worst-case gap (iOS ~15 min, Android idle/Doze: several minutes) to
+seconds so both parties can upgrade to a live L2 Hyperswarm session.
+
+**L1′ remains the message.** This feature only accelerates Bob's *wake-up* — it does not change
+the message transport, the crypto, or the room lifecycle.
+@see `docs/features/chat-relay.md`, `docs/security/p2pchatprotocol.md` §16.
+
+---
+
+## 1. Why standard background fetch cannot help
+
+iOS `BGAppRefreshTask` is scheduled entirely by the OS (typically ≥15 min; worse on Low Power
+Mode). The app has no API to shorten this window.
+
+Android WorkManager **periodic** tasks have a 15-min minimum. The native wrapper sidesteps this
+by chaining **one-shot** tasks back-to-back every 30 seconds while backgrounded. This works well
+while the phone is active, but Android Doze defers all WorkManager tasks during prolonged idle
+periods — so the 30-second chain stalls until the next Doze maintenance window.
+
+Apple Push Notification service (APNs) and Firebase Cloud Messaging (FCM) bypass this entirely:
+they route through a system-level daemon always connected to Apple's / Google's servers. An
+inbound alert push wakes the device's lock screen banner immediately — no background task needed.
+
+---
+
+## 2. Core concept: pokeHandle
+
+A **pokeHandle** is a random, opaque **10-byte** token (14 base64url chars) that maps to a
+device's push address at our gateway. The raw APNs or FCM token never leaves the gateway. The
+pokeHandle reveals no OS, no platform, no device fingerprint to the counterparty.
+
+```
+App install + notification permission granted
+  → POST /gateway/register { token, platform: "apns"|"fcm", env: "sandbox"|"production" }
+  ← { pokeHandle: "<10 random bytes, base64url, 14 chars>" }
+  → stored locally, included in the next invite handshake
+```
+
+The gateway stores only:
+
+```
+pokeHandle → { token, platform, environment, updatedAt }
+```
+
+No user identity, no room id, no payment address, no sender association.
+
+---
+
+## 3. Protocol change: pokeHandle in the invite handshake
+
+Each party announces their wake address in the L1 message they already originate. No new message
+types.
+
+```
+Alice                                                  Bob
+─────                                                  ───
+chat.create  ──────────────────────────────────────►
+  body includes: ph:<Alice's pokeHandle>  (optional, 10 bytes)
+
+              ◄────────────────────────── chat.register
+                  body includes: ph:<Bob's pokeHandle>  (optional, 10 bytes)
+```
+
+After accept:
+- **Alice holds Bob's pokeHandle** — she pokes him when the first relay send fires
+- **Bob holds Alice's pokeHandle** — he pokes her when the first relay send fires
+
+The field is **optional**. If absent (F-Droid / GrapheneOS build, push disabled, desktop), the
+counterparty skips the poke step silently. No protocol error, no UX divergence.
+
+### Byte budget
+
+| Message | Current body | + `ph:<14 chars>` field | Total | Target ceiling | Hard limit |
+|---|---|---|---|---|---|
+| `chat.create` | ≈102 chars | +17 chars | **≈119 chars** | ≤120 chars | 251 bytes |
+| `chat.register` | well under | +17 chars | comfortable | — | 251 bytes |
+
+The `chat.create` target ceiling is ≤120 chars (wallet UI display). 119 is within this with 1
+char to spare. If push is disabled the field is omitted and the body stays at ≈102 chars.
+
+### Handle scope: room-level, not account-level
+
+The pokeHandle is **room-scoped**. It is generated and exchanged once per invite handshake and
+lives for the lifetime of that room. Rooms have a TTL (`roomTtl`). When a room expires or is
+revoked, its pokeHandle is implicitly invalidated.
+
+When Bob reinstalls and starts a new room with Alice, his `chat.register` carries a fresh
+pokeHandle. There is no account-level rotation problem: the invite handshake is the natural
+renewal mechanism. No out-of-band handle rotation protocol is needed.
+
+---
+
+## 4. L1′ send → poke flow
+
+```
+Alice taps Send (L1′, relay channel)
+  1. buildMessageTransaction() → signed tx
+  2. broadcast to daemon → txHash returned         ← tx is in our remote node's mempool
+  3. poke decision (see § Poke trigger rule below)
+  4. if poke fires: POST /gateway/poke { to: Bob's pokeHandle }
+          │
+          ├── platform: apns  → POST https://api.push.apple.com/3/device/{token}
+          │     apns-push-type: alert, apns-priority: 10
+          │     { aps: { alert: { title: "Get NowHere", body: "New message" },
+          │               sound: "default" } }
+          │
+          └── platform: fcm   → POST https://fcm.googleapis.com/v1/projects/{id}/messages:send
+                { message: { token, notification: { title: "Get NowHere",
+                                                     body: "New message" } } }
+
+Bob sees lock screen banner → taps → app opens (foreground)
+  5. sync() runs — L1′ tx found in mempool, decrypted
+  6. existing local banner fires (§ blockchain sync caveat below)
+  7. room lifecycle: accepted → connecting → Bob joins Hyperswarm topic
+  8. L2 peer connect while Alice is still mounted in the room
+```
+
+### Poke trigger rule — one poke per relay session
+
+Each L1′ message costs 0.0111 CCX. Sending three consecutive relay messages is already a real
+user cost. Sending three pokes when one is sufficient would also create a recognizable timing
+pattern on the gateway (three HTTP calls closely following three chain transactions) that could
+link Alice's IP to the activity even without knowing the content.
+
+**Rule: poke fires only on the first L1′ message after L2 was last the active channel.**
+
+```
+Room lifecycle state       Previous channel    Current channel   Poke?
+───────────────────────────────────────────────────────────────────────
+connected → disconnected   live                relay (1st msg)   YES  ← wake Bob
+relay → relay              relay               relay (2nd msg)   NO   ← Bob already notified
+reconnected → disconnected live                relay (1st msg)   YES  ← Bob disconnected again
+```
+
+Implementation: each room tracks `lastPokedAt` (timestamp, persisted). A poke fires when:
+- `pokeHandle` is present for the contact
+- `pushWakeEnabled` is true in Settings → Privacy
+- `lastMessageChannel !== "relay"` OR `lastPokedAt` is absent for this room
+
+Once L2 is re-established (`channel === "live"`), `lastPokedAt` is cleared so the next relay
+transition triggers a fresh poke.
+
+The gateway applies its own backstop rate limit (1 poke per 5 min per handle) to absorb any edge
+case where the app-side rule fires more than expected.
+
+### Why alert push, not silent background push
+
+A silent `content-available` push gives the app ~30 s of background execution. If `sync()`
+finds nothing (tx propagation still in flight), iOS records a wasted wake and throttles future
+background pushes for the app. Repeated wasted wakes can silence background delivery permanently.
+
+An alert push shows a lock screen banner from the APNs payload itself — no background execution
+needed. By the time Bob reads the banner and taps (human latency: several seconds to a minute),
+the L1′ tx has propagated through the Conceal network.
+
+### Blockchain sync caveat on wake
+
+When Bob taps the banner and the app opens, his wallet sync may not have caught up yet. The app
+**must not** show an empty room without explanation. Required behaviour:
+
+- If `walletSyncStatus !== "synced"`: show "Syncing — new messages will appear shortly" in the
+  room header / status area. Do not show a blank thread that implies the poke was wrong.
+- Once sync completes, `refreshRelays()` runs and the L1′ message appears normally.
+- This is especially likely on Android after a cold start from a notification tap.
+
+---
+
+## 5. Platform matrix
+
+| Bob's device | Token at gateway | Wake path | Expected latency |
+|---|---|---|---|
+| iOS (App Store) | APNs | Apple daemon → lock screen banner | Seconds |
+| Android (Play Store) | FCM | Google daemon → lock screen banner | Seconds |
+| Android (F-Droid / GrapheneOS, no GMS, no UP) | none | 30s chained one-shot WorkManager (backgrounded, not Doze) | 30 s typical; minutes if phone idle/Doze |
+| Android (F-Droid / GrapheneOS + ntfy UP distributor) | UnifiedPush endpoint | ntfy → app via UP API | Seconds (Phase 3) |
+| Desktop (Electron) | none | Sidecar always running; L2 reconnects directly | When both are online |
+
+Alice's app never knows Bob's OS. She holds only an opaque `pokeHandle`. The gateway resolves
+the platform internally. If the gateway has no entry for a handle (deleted, expired, F-Droid
+peer), the `POST /poke` is a fast no-op.
+
+### GrapheneOS / F-Droid users
+
+A significant portion of Get NowHere's target audience runs F-Droid builds on GrapheneOS
+without Google Play Services. These devices have no FCM. **However, instant notifications are
+still achievable** — just through a different mechanism.
+
+#### How SimpleX does it (reference architecture)
+
+SimpleX Chat on F-Droid/GrapheneOS maintains a **persistent WebSocket** to its own SMP
+notification server. That server watches the user's message queues; when a message arrives it
+pushes a wake-up event down the already-open socket. No FCM is involved. This works well on
+GrapheneOS because the OS is more lenient about background processes than stock Android, provided
+the user grants a battery-optimization exemption to the app.
+
+The downside: the connection is proprietary and the process must survive. If Android kills the
+app entirely, reconnection depends on a WorkManager fallback.
+
+#### UnifiedPush — the open standard approach
+
+[UnifiedPush](https://unifiedpush.org/) generalises this into an open standard:
+
+```
+Messaging app  ←── distributor app (e.g. ntfy)  ←── ntfy server  ←── our poke gateway
+                         (persistent WS to ntfy)         (HTTP POST from gateway)
+```
+
+1. User installs a **distributor** such as the ntfy Android app.
+2. Get NowHere registers with the distributor via the UnifiedPush client API → receives a push endpoint URL.
+3. That URL is sent to the poke gateway in place of an FCM token.
+4. When Alice sends L1′, the gateway HTTP-POSTs to the ntfy endpoint; ntfy wakes Get NowHere.
+
+**Our poke gateway is already ~90% of what a UnifiedPush application server needs.** The
+`POST /poke` path only needs to support posting to a URL endpoint in addition to calling FCM.
+No platform-specific code is needed on the server side.
+
+#### Phase 3 priority note
+
+Phase 3 (UnifiedPush) is **deferred** — see §12. F-Droid users keep 30s poll + L1′ chain relay.
+
+---
+
+## 6. Privacy analysis
+
+| Party | Learns |
+|---|---|
+| **Apple (APNs)** | our bundle ID, device token, push timestamp — not room, not sender, not message content |
+| **Google (FCM)** | our app, device token, push timestamp — same constraints |
+| **Our gateway** | `pokeHandle → token`, Alice's IP on poke request, poke timestamp and frequency — not room, not sender, not message |
+| **Alice (sender)** | Bob's opaque `pokeHandle` only — not his OS, not his platform, not his token |
+| **Chain observers** | same as today — L1′ body encrypted by Conceal MESSAGE (ChaCha + DH) |
+
+**IP and timing correlation:** the gateway sees the IP address of Alice's device at poke time.
+If a passive observer can watch both the public blockchain mempool and the gateway logs, they
+could correlate a chain transaction timestamp with a poke timestamp and associate an IP with the
+transaction. This is a real, acknowledged metadata risk. It is the same trade-off that Session
+and SimpleX have accepted at the notification-server level.
+
+Mitigations:
+- The gateway must keep minimal logs (no poke→room linkage, short retention)
+- Poke fires once per relay session, not per message, reducing the number of observable events
+- Users who require stronger metadata protection can disable push wake in Settings → Privacy
+
+The gateway's trust surface is intentionally narrower than what the blockchain already reveals
+(ring sigs + stealth outputs do not hide timing or IP at the chain level either).
+
+---
+
+## 7. Handle lifecycle and reinstall
+
+pokeHandles are **room-scoped**, not account-scoped. Their lifecycle follows the room:
+
+```
+1. Bob grants notification permission (once, at install)
+2. App registers token at gateway → receives pokeHandle
+3. Bob accepts Alice's invite → chat.register carries pokeHandle
+4. Alice stores Bob's pokeHandle for this room
+5. Room expires (roomTtl) or is revoked → room destroyed → handle no longer used
+6. New room between Alice and Bob → new chat.register → new pokeHandle
+```
+
+**Reinstall:** old rooms are typically gone after reinstall. Bob creates a new room with Alice.
+The new `chat.register` carries a new pokeHandle. No stale-handle problem.
+
+**Token rotation:** APNs and FCM tokens can change (OS upgrade, reinstall) independently of the
+pokeHandle. The app calls `registerForRemoteNotifications()` on every launch and posts the
+current token to the gateway. The gateway upserts: same pokeHandle, new underlying token.
+Alice's stored pokeHandle keeps working transparently.
+
+**Invalid token cleanup:** APNs `410 Unregistered` or FCM `UNREGISTERED` → gateway deletes the
+handle entry. Future pokes for that handle are fast no-ops. Bob will re-register on next app
+open. Until he does, Alice's pokes silently do nothing — same UX as today (she already sees
+"via chain" and the room stays in relay mode).
+
+**Permission revocation:** if Bob revokes notification permission in OS settings, the next token
+registration attempt fails silently. No pokes until permission is re-granted. No error surfaces
+to Alice. Degraded to existing poll behaviour.
+
+---
+
+## 8. Abuse and rate limiting
+
+**Natural spam deterrent:** each L1′ message costs ≈0.0111 CCX in chain fees. A contact who
+spams Alice with chain messages pays real fees. Poke-spamming is therefore not free.
+
+**App-side rule eliminates most abuse:** the poke-per-relay-session rule means a normal
+conversation generates at most one poke per L2 disconnect event, not one per message.
+
+**Gateway rate limit:** 1 poke per 5 minutes per pokeHandle. This backstop covers edge cases
+where the app-side rule does not apply (e.g. unusual reconnect patterns, bugs).
+
+**Bearer capability:** a pokeHandle is a bearer token. Any party who holds it can poke that
+device. Alice holds Bob's handle by design (she accepted his invite). She cannot share it
+further without Bob knowing (it came from an encrypted L1 tx only Alice can read). The worst
+case is Alice spamming Bob — rate limiting at the gateway and the 0.0111 CCX-per-message send
+cost make this impractical.
+
+**APNs / FCM abuse quotas:** both providers enforce per-app rate limits. We operate well within
+normal chat app volumes given the one-poke-per-session rule.
+
+---
+
+## 9. Phase 1 — UX only (no new infra)
+
+Goal: make the current 15-minute wait less painful without any infrastructure or protocol change.
+
+- **Patience window:** extend how long Alice's room stays in `connecting` / `connect_failed`
+  before she is prompted to give up. The reconnect loop already retries with exponential backoff;
+  defer the "close room?" prompt.
+- **State copy:** the existing "connecting…" label and "via chain" composer hint are already
+  correct. Add framing: e.g. "Waiting for Bob — message delivered via relay. Bob will see it
+  when his app opens." No new state machine state; copy-only.
+- **Do not change** L1′ send logic, relay polling, or reconnect behaviour.
+
+Files likely touched: `ChatRoomScreen.tsx`, lifecycle label helpers, reconnect timeout constants.
+
+---
+
+## 10. Phase 2 — poke gateway
+
+### Gateway service
+
+Implementation lives in `poke-gateway/` (standalone Node process, not part of the Vite app).
+
+Minimal HTTP service (single Node process or serverless):
+
+| Endpoint | Input | Output | Notes |
+|---|---|---|---|
+| `POST /register` | `{ token, platform, env }` | `{ pokeHandle }` | upsert on token change |
+| `POST /poke` | `{ to: pokeHandle }` | `204` or error | rate-limited; no-op if handle unknown |
+| `DELETE /register` | `{ pokeHandle }` | `204` | called when push wake disabled |
+
+- APNs adapter: `.p8` key + ES256 JWT (1-hour cache), `apns-topic = im.getnowhere.app`
+- FCM adapter: service-account JSON + OAuth2 token (1-hour cache)
+- Token store: `pokeHandle TEXT PK, token TEXT, platform TEXT, env TEXT, updatedAt INT`
+- Rate limit: 1 poke per 5 min per `pokeHandle`
+- On APNs `410` / FCM `UNREGISTERED`: delete mapping
+- Logs: poke count and error rates only — no handle, no IP, no timestamp in persistent logs
+
+### Native-wrapper changes
+
+- iOS: `registerForRemoteNotifications()` result → `POST /gateway/register`; refresh on token
+  change; call `DELETE /gateway/register` when push wake disabled
+- Android (Play): FCM token via `FirebaseMessaging.getToken()` → `POST /gateway/register`;
+  conditionally compiled out in F-Droid build via `fix-for-fdroid.py` / build flag
+- Store `pokeHandle` in local settings alongside existing `privacy.*` keys
+
+### Protocol changes (p2pchatprotocol.md update required)
+
+- Add optional `ph` field (10 bytes, base64url, 14 chars) to `chat.create` and `chat.register`
+  slim-pack bodies
+- Parse `ph` on receive; store as `room.partnerPokeHandle` in room/contact store
+- On L1′ send: apply poke trigger rule; if poke fires → `POST /gateway/poke`
+- No poke if `pushWakeEnabled === false`, no `pokeHandle` for the room, or F-Droid build flag
+
+### Settings → Privacy
+
+New toggle adjacent to existing notification switches:
+
+- **Push wake** (`privacy.pushWakeEnabled`) — wired in Settings → Privacy (`SettingsScreen.tsx`)
+  - Default: **off** at first launch
+  - On enable: requests OS notification permission + refreshes push token for gateway registration
+  - Off → `deletePokeHandle()` at gateway, no poke calls (enforced in `settingsStore` + transport)
+
+### Build matrix
+
+| Build | FCM | APNs | pokeHandle |
+|---|---|---|---|
+| iOS (App Store / TestFlight) | no | yes | yes |
+| Android (Play Store) | yes | no | yes |
+| Android (F-Droid / GrapheneOS) | no | no | absent — honest in-app note |
+| Desktop (Electron / browser) | no | no | absent |
+
+---
+
+## 11. What this feature does not do
+
+- Does not change L1′ message format, encryption, or chain transport
+- Does not change L2 Hyperswarm connect logic or topic derivation
+- Does not add server-side message storage or relay
+- Does not enable background Hyperswarm connections on mobile
+- Does not replace existing BGAppRefresh / WorkManager background sync
+- Does not apply to pending rooms — poke only fires post-accept (relay-eligible rooms only)
+- Does not add a foreground service or persistent socket on iOS
+- Does not guarantee delivery — APNs and FCM are best-effort; the app always reconciles via
+  normal sync regardless of whether a poke was delivered
+
+---
+
+## 12. Open questions / future
+
+- **Phase 3 (deferred):** UnifiedPush / ntfy for F-Droid / GrapheneOS users. Deferred —
+  adds a second public service (or ntfy.sh third-party dependency) on top of the poke gateway,
+  with limited benefit over the existing 30s Android WorkManager poll + L1′ chain relay.
+  Revisit only if Doze-gap complaints justify it; prefer extending our own poke gateway with
+  a WebSocket wake path (SimpleX-style) over operating a separate ntfy instance.
+  See §5 GrapheneOS/F-Droid note for reference architecture.
+- **Multi-device:** current design is one pokeHandle per room per peer. If a user has multiple
+  devices, only the device used to accept the invite gets poked. Acceptable for v1.
+- **Protocol version bump:** adding `ph` to the slim-pack body is a minor protocol extension.
+  Needs a section in `p2pchatprotocol.md` and a `protocolVersion` bump consideration.
+
+### Gateway hosting cost
+
+**APNs and FCM themselves are free.** Apple Push Notification service and Firebase Cloud
+Messaging charge nothing per message. What you may pay for is hosting **your poke gateway**
+(the small server that maps opaque `pokeHandle` → device token and calls APNs/FCM APIs):
+
+| Option | Cost | Notes |
+|---|---|---|
+| Same VPS as other infra | $0 marginal if already running a server | Simplest |
+| Small VPS (Hetzner, etc.) | ~$5–10/mo | Only if you have no existing host |
+| PaaS free tier (Fly.io, Railway) | $0 at low volume | May sleep; check APNs h2 needs |
+| Local / dev only | $0 | `VITE_POKE_GATEWAY_URL` unset → poke calls no-op |
+
+You do **not** pay Apple or Google per poke. The gateway is optional at dev time; production
+store builds need it deployed somewhere with APNs credentials and (for Android) a Firebase project.
+
+---
+
+## 13. Testing
+
+### Assessment
+
+Three components have correctness-critical logic with no existing test coverage.
+The rest of the poke surface (catalog persistence, settings default, fetch wrapper) is
+either already covered by existing tests or has too little business logic to warrant a
+dedicated suite.
+
+### Required test suites
+
+#### `tests/protocol/poke-ph-wire.test.ts` — **wire format correctness (highest priority)**
+
+The `ph` field is the only load-bearing new wire field.
+If encoding or decoding is wrong, handles are never exchanged and the feature silently
+does nothing.
+
+Scenarios to cover:
+
+- `encodeCreateSmartBody` without `ph` → body round-trips to `senderPokeHandle: undefined`
+- `encodeCreateSmartBody` with a 14-char base64url handle → round-trips to correct `senderPokeHandle`
+- Body with `ph` still fits within `MAX_CREATE_BODY_CHARS` byte budget
+- `encodeRegisterSmartBody` without `ph` → round-trips to `pokeHandle: undefined`
+- `encodeRegisterSmartBody` with a handle → round-trips to correct `pokeHandle`
+- Old-style 2-field packed create (no `ph`) decoded by new parser → no crash, `senderPokeHandle` undefined
+- Invalid `ph` (wrong length, wrong charset) in a parsed body → treated as `undefined`, no throw
+- `buildPokeTokenDispatchScript` emits valid JS that calls `_dispatchPokeToken` with correct args
+
+Pattern: follow `tests/protocol/chat-relay.test.ts` — encode then `parseChatSmartBody`, assert fields.
+
+#### `tests/p2p/poke-trigger.test.ts` — **send-once-per-relay-session rule**
+
+The trigger rule is the product invariant that prevents spamming pokes.
+If broken, Alice either never wakes Bob or fires a poke on every relay message (leaking activity metadata).
+
+Scenarios to cover:
+
+- Relay send with `pushWakeEnabled=false` → `sendPoke` never called
+- Relay send with `pushWakeEnabled=true` but `partnerPokeHandle` unset → `sendPoke` never called
+- First relay send with `pushWakeEnabled=true` and handle set → `sendPoke` called once,
+  `lastPokedAt` written to room and catalog
+- Second relay send in the same session → `sendPoke` NOT called again (`lastPokedAt` guard)
+- Room transitions to `connected` → `lastPokedAt` cleared
+- Next relay send after `connected` clear → `sendPoke` called again (new relay session)
+
+Pattern: follow `tests/p2p/holepunch-chat-transport.test.ts` — use `__resetHolepunchTransport`,
+`createMemorySidecarBackend`, mock `sendPoke` from `@/services/poke/pokeGatewayClient` with
+`vi.mock`.  Mock `useSettingsStore.getState` to control `pushWakeEnabled`.
+
+#### Addition to `tests/native-wrapper/inject-mobile-bridge.test.ts`
+
+Add one new `it` block to the existing `describe("buildMobileBridgeInjection")`:
+
+- Injected bridge exposes `onPokeToken` (function) and `_dispatchPokeToken` (function)
+- After calling `onPokeToken(handler)`, calling `_dispatchPokeToken("apns", "tok123")`
+  invokes the handler with `("apns", "tok123")`
+- The unsubscribe function returned by `onPokeToken` stops future deliveries
+
+Pattern: identical to the existing `onBridgeEvent` / `_dispatchBridgeEvent` test.
+Also verify `buildPokeTokenDispatchScript` output calls `_dispatchPokeToken` when eval'd.
+
+### Not required now
+
+| Component | Reason to skip |
+|---|---|
+| `pokeGatewayClient` fetch wrapper | Thin pass-through; errors are network failures; gateway has its own tests |
+| `partnerPokeHandle` catalog persistence | Serialize/deserialize path identical to existing fields; covered by `tests/p2p/room-catalog.test.ts` patterns |
+| `pushWakeEnabled` settings default | `tests/state/settings-store-push-wake.test.ts` — default, persist, delete on opt-out |
+| Settings UI toggle | `tests/screens/SettingsScreen.push-wake.test.tsx` — renders on mobile, calls `applyPushWakeEnabled` |
+| `applyPushWakeEnabled` | `tests/services/poke/apply-push-wake-setting.test.ts` — permission + token refresh on enable |
+| Poke native bridge | `tests/native-wrapper/handle-poke-webview-message.test.ts` — `refreshToken` command |
+| `pushTokenBridge` / `usePushTokenBridge` | React hook wrapping `window.gnhMobile.onPokeToken`; covered by the bridge injection test above |
+
+---
+
+## Related docs
+
+- `docs/features/chat-relay.md` — L1′ channel and grey bubbles
+- `docs/features/local-background-notifications.md` — local banner system this feature wakes into
+- `docs/background-remote-sync.md` — BGAppRefresh / WorkManager cadence
+- `docs/security/p2pchatprotocol.md` §16 — L1′ wire format and relay rules
+- `docs/security/encryption.md` — L1 / L1′ / L2 layering

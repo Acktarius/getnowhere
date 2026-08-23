@@ -16,6 +16,12 @@ export const HOLEPUNCH_BACKOFF_CAP_MS = 60_000;
 /** Base delay for attempt 1 before exponential growth (ms). */
 export const HOLEPUNCH_BACKOFF_BASE_MS = 1_000;
 
+/** Relay-mode wait before a "give up?" prompt is appropriate.
+ * Sits above the ~15 min OS background-fetch floor with slack. Unused in Phase 1.
+ * @see docs/features/peer-wake-notification.md §9
+ */
+export const HOLEPUNCH_RELAY_PATIENCE_MS = 20 * 60_000;
+
 export function holepunchBackoffMs(attempt: number): number {
   const exp = Math.min(
     HOLEPUNCH_BACKOFF_CAP_MS,

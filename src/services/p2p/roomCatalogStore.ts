@@ -32,6 +32,8 @@ export type CatalogRoom = Pick<
   | "lastMessageAt"
   | "lastConnectError"
   | "awaitingChainSync"
+  | "partnerPokeHandle"
+  | "lastPokedAt"
 >;
 
 function readAll(): Record<string, CatalogRoom> {

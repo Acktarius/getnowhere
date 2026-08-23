@@ -6,9 +6,10 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { bindInstantNav } from "@/lib/instant-nav";
 import { EXIT_SESSION_TIP } from "@/lib/uxTips";
 import { runWalletSessionExit } from "@/services/storage/walletSessionExit";
 import { useSettingsStore } from "@/state/settingsStore";
@@ -39,22 +40,9 @@ export function BottomNav({
   return (
     <>
       <nav className="bottom-nav" role="navigation" aria-label="Primary">
-        {items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `bottom-nav__item ${isActive ? "active" : ""}`
-              }
-            >
-              <Icon size={22} strokeWidth={1.9} />
-              <span>{item.label}</span>
-              {item.badge && <span className="bottom-nav__badge" />}
-            </NavLink>
-          );
-        })}
+        {items.map((item) => (
+          <BottomNavLink key={item.to} item={item} />
+        ))}
         <button
           type="button"
           className="bottom-nav__item"
@@ -78,5 +66,27 @@ export function BottomNav({
         }}
       />
     </>
+  );
+}
+
+function BottomNavLink({ item }: { item: Item }) {
+  const navigate = useNavigate();
+  const guard = useRef(false);
+  const instant = bindInstantNav(guard, () => navigate(item.to));
+  const Icon = item.icon;
+
+  return (
+    <NavLink
+      to={item.to}
+      className={({ isActive }) =>
+        `bottom-nav__item ${isActive ? "active" : ""}`
+      }
+      onPointerDown={instant.onPointerDown}
+      onClick={instant.onClick}
+    >
+      <Icon size={22} strokeWidth={1.9} />
+      <span>{item.label}</span>
+      {item.badge && <span className="bottom-nav__badge" />}
+    </NavLink>
   );
 }

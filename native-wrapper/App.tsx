@@ -23,7 +23,9 @@ import {
   resolveNativeBackgroundSync,
   setNativeAppInBackground,
 } from "./src/gnhBackgroundSyncNative";
+import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
+import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
@@ -31,6 +33,7 @@ import {
 import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
+  buildPokeTokenDispatchScript,
 } from "./src/injectMobileBridge";
 import {
   buildSaveTextFileResolveScript,
@@ -173,10 +176,23 @@ export default function App() {
     schedulePendingForegroundFlush();
   }, [schedulePendingForegroundFlush]);
 
+  const injectPokeToken = useCallback(
+    (platform: "apns" | "fcm", token: string) => {
+      webViewRef.current?.injectJavaScript(
+        buildPokeTokenDispatchScript(platform, token),
+      );
+    },
+    [],
+  );
+
   const onWebViewReady = useCallback(() => {
     setLoading(false);
     void SplashScreen.hideAsync();
     flushPendingForeground();
+    // Best-effort: fetch push token and deliver to WebView for gateway registration.
+    void getPushTokenForPoke().then((result) => {
+      if (result) injectPokeToken(result.platform, result.token);
+    });
 
     if (
       Platform.OS !== "android" ||
@@ -227,6 +243,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    void onPushTokenRefresh((result) => {
+      injectPokeToken(result.platform, result.token);
+    }).then((fn) => {
+      cleanup = fn;
+    });
+    return () => cleanup?.();
+  }, [injectPokeToken]);
+
+  useEffect(() => {
     if (Platform.OS !== "android") return;
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
@@ -251,6 +277,15 @@ export default function App() {
         return;
       }
       if (handleNotificationsWebViewMessage(raw)) {
+        return;
+      }
+      if (
+        handlePokeWebViewMessage(raw, () => {
+          void getPushTokenForPoke().then((result) => {
+            if (result) injectPokeToken(result.platform, result.token);
+          });
+        })
+      ) {
         return;
       }
       const lifecycleMsg = parseLifecycleHostMessage(raw);
@@ -285,7 +320,7 @@ export default function App() {
       }
       bridgeRef.current?.handleWebViewMessage(raw);
     },
-    [clearForegroundFlushTimeouts, flushPendingForeground],
+    [clearForegroundFlushTimeouts, flushPendingForeground, injectPokeToken],
   );
 
   if (Platform.OS !== "android") {

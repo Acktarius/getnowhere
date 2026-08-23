@@ -6,6 +6,7 @@ import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
@@ -39,6 +40,7 @@ import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
 import { toastError, toastSuccess } from "@/state/toastStore";
+import { useWalletStore } from "@/state/walletStore";
 import type { ChatMessage, ChatRoom, Contact } from "@/types/models";
 import {
   type ConnectFailureCode,
@@ -214,6 +216,7 @@ export function ChatRoomScreen() {
 
   const invites = useContactsStore((s) => s.invites);
   const contacts = useContactsStore((s) => s.contacts);
+  const walletSyncStatus = useWalletStore((s) => s.syncStatus);
   const catalogRoom = useMemo(() => loadCatalogRoom(roomId), [roomId]);
   // Use peekCatalogRoom (non-pruning) so a silently-pruned expired row's
   // inviteId is still visible for ID resolution at modal-open time.
@@ -582,9 +585,18 @@ export function ChatRoomScreen() {
           <span
             className="muted"
             style={{ fontSize: 12 }}
-            title="Messages send over blockchain until Holepunch connects."
+            title="Delivered via blockchain relay. Live Holepunch starts when they open the app."
           >
-            Messages via chain fallback
+            Delivered — waiting for {displayContact.alias} to open the app
+          </span>
+        )}
+        {!holepunchLive && walletSyncStatus === "syncing" && (
+          <span
+            className="muted"
+            style={{ fontSize: 12 }}
+            title="Blockchain is syncing. New relay messages will appear when sync catches up."
+          >
+            Syncing — new messages will appear shortly
           </span>
         )}
         {displayRoom.lifecycleStatus === "connect_failed" &&
@@ -647,23 +659,29 @@ export function ChatRoomScreen() {
                   : holepunchLive
                     ? "Connected room"
                     : viaChain
-                      ? "Connected via chain fallback"
+                      ? `Waiting for ${displayContact.alias} to come online`
                       : "Room not live yet"
               }
               body={
-                openingRoom
-                  ? "Loading chat session."
-                  : holepunchLive
-                    ? "Encrypted Holepunch session is ready. Messages use ChaCha20-Poly1305."
-                    : viaChain
-                      ? "Holepunch hasn't connected yet. Messages send over the blockchain (Conceal-encrypted memo) until it does — this is not the Holepunch/ChaCha20-Poly1305 session."
-                      : displayRoom.lifecycleStatus === "accepted" &&
-                          (displayRoom.connectAttempts ?? 0) === 0
-                        ? "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
-                        : displayRoom.lifecycleStatus === "pending"
-                          ? (handoffHint ??
-                            "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
-                          : "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
+                openingRoom ? (
+                  "Loading chat session."
+                ) : holepunchLive ? (
+                  "Encrypted Holepunch session is ready. Messages use ChaCha20-Poly1305."
+                ) : viaChain ? (
+                  <span title="Holepunch hasn't connected yet. Messages send over the blockchain (Conceal-encrypted memo) until it does — this is not the Holepunch/ChaCha20-Poly1305 session.">
+                    {walletSyncStatus === "syncing"
+                      ? "Syncing blockchain — new messages will appear shortly."
+                      : "Message delivered. They'll see it when the app opens."}
+                  </span>
+                ) : displayRoom.lifecycleStatus === "accepted" &&
+                  (displayRoom.connectAttempts ?? 0) === 0 ? (
+                  "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
+                ) : displayRoom.lifecycleStatus === "pending" ? (
+                  (handoffHint ??
+                  "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
+                ) : (
+                  "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
+                )
               }
               action={
                 openingRoom ? undefined : displayRoom.lifecycleStatus ===
@@ -695,24 +713,24 @@ export function ChatRoomScreen() {
                       <RefreshCw size={13} /> Connect now
                     </button>
                     {displayContact.id && handoffProbe?.needsAccept && (
-                      <Link
+                      <MobileInstantLink
                         className="btn btn--sm btn--primary"
                         to={`/contacts/${displayContact.id}`}
                       >
                         Open contact to Accept
-                      </Link>
+                      </MobileInstantLink>
                     )}
                     {displayContact.id &&
                       handoffProbe &&
                       !handoffProbe.hasInitiatorKey &&
                       handoffProbe.role !== "responder" &&
                       !handoffProbe.needsAccept && (
-                        <Link
+                        <MobileInstantLink
                           className="btn btn--sm btn--primary"
                           to={`/contacts/${displayContact.id}`}
                         >
                           Resend invite from contact
-                        </Link>
+                        </MobileInstantLink>
                       )}
                   </div>
                 ) : undefined

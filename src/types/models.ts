@@ -95,6 +95,17 @@ export type ChatRoom = {
   awaitingChainSync?: boolean;
   createdAt: string;
   lastMessageAt?: string;
+  /**
+   * Peer's opaque 14-char pokeHandle from invite handshake (`ph` field).
+   * @see docs/features/peer-wake-notification.md
+   */
+  partnerPokeHandle?: string;
+  /**
+   * Unix seconds of the last peer-wake poke this room fired.
+   * Cleared when L2 reaches `connected` so the next relay transition pokes again.
+   * @see docs/features/peer-wake-notification.md
+   */
+  lastPokedAt?: number;
 };
 
 export type ChatMessageKind = "text" | "reaction" | "edit" | "delete";
@@ -229,6 +240,11 @@ export type PrivacySettings = {
   notificationsEnabled: boolean;
   /** Requires notificationsEnabled; controls OS banner/alert presentation. */
   notificationBannersEnabled: boolean;
+  /**
+   * Opt-in peer-wake poke on first L1′ send after L2 was live. Default off.
+   * @see docs/features/peer-wake-notification.md
+   */
+  pushWakeEnabled: boolean;
 };
 
 export type AppSettings = {

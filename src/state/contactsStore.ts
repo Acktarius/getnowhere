@@ -36,7 +36,6 @@ import {
   type CatalogRetirementReason,
   findCatalogRetirements,
   listCatalogRooms,
-  loadCatalogRoom,
   patchCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import {

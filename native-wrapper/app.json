@@ -44,6 +44,12 @@
       "./plugins/withGnhBackgroundSync.js",
       "./plugins/withGnhNotifications.js",
       [
+        "expo-notifications",
+        {
+          "mode": "production"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

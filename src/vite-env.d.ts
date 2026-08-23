@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_HOLEPUNCH_WS_URL?: string;
+  /** Base URL of the peer-wake poke gateway (e.g. https://poke.example.com). @see docs/features/peer-wake-notification.md */
+  readonly VITE_POKE_GATEWAY_URL?: string;
 }
 
 interface ImportMeta {
@@ -101,6 +103,16 @@ interface GnhMobileBridge {
   onLifecycle?(handler: (evt: { type: string }) => void): () => void;
   _dispatchLifecycleEvent?(evt: { type: string }): void;
   _runBackgroundRemoteSync?(requestId: string): void;
+  /**
+   * Subscribe to push token delivery from the native shell.
+   * Called once on app load and again on OS token rotation.
+   * @see docs/features/peer-wake-notification.md
+   */
+  onPokeToken?(
+    handler: (platform: "apns" | "fcm", token: string) => void,
+  ): () => void;
+  /** @internal Injected by native shell via buildPokeTokenDispatchScript. */
+  _dispatchPokeToken?(platform: "apns" | "fcm", token: string): void;
 }
 
 interface Window {

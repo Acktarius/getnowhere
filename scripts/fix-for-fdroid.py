@@ -25,6 +25,7 @@ if not ANDROID_DIR.exists():
 FORBIDDEN_KEYWORDS = [
     "com.google.android.gms",
     "com.google.firebase",
+    "com.google.gms",
     "com.google.mlkit",
     "play-services",
     "firebase",
@@ -95,6 +96,7 @@ def strip_google_dependencies(content: str) -> str:
             if any(stripped.startswith(prefix) for prefix in (
                 "implementation", "api", "compileOnly", "runtimeOnly",
                 "testImplementation", "debugImplementation",
+                "classpath",
             )):
                 log(f"    removed: {stripped[:90]}")
                 continue
@@ -143,6 +145,11 @@ def add_packaging_options(content: str) -> str:
     return content
 
 
+def strip_google_plugins(content: str) -> str:
+    """Remove apply plugin: 'com.google.gms.google-services' (injected by expo prebuild)."""
+    return re.sub(r"apply plugin:\s*['\"]com\.google\.gms\.google-services['\"]\n?", "", content)
+
+
 def remove_problematic_repos(content: str) -> str:
     content = re.sub(r"mavenLocal\(\)", "", content)
     content = re.sub(r"flatDir\s*\{[^}]*\}", "", content, flags=re.DOTALL)
@@ -168,6 +175,7 @@ def fix_gradle_files() -> None:
 
         content = remove_google_maven_repo(content)
         content = strip_google_dependencies(content)
+        content = strip_google_plugins(content)
         content = remove_problematic_repos(content)
 
         if gradle_path.name == "build.gradle" and gradle_path.parent.name == "app":

@@ -1,5 +1,4 @@
 import {
-  Bell,
   ChevronRight,
   Database,
   Download,
@@ -40,6 +39,7 @@ import {
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
 import { onNotificationPrivacyChanged } from "@/services/notifications/publishBackgroundNotification";
+import { applyPushWakeEnabled } from "@/services/poke/applyPushWakeSetting";
 import {
   deleteWalletData,
   resetAppData,
@@ -215,21 +215,53 @@ export function SettingsScreen() {
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
-            <hr className="divider divider--flush" />
+          </div>
+        </div>
+
+        <div className="section">
+          <div className="section__head">
+            <span className="section__title">Notifications</span>
+          </div>
+          <div className="card card--flush">
             <PrivacySettingItem
-              icon={Bell}
               title="Notifications"
-              description="Badge the app icon when invitations or chain messages arrive while the app is in the background."
+              description="Badge the icon when invites or chain messages arrive."
               on={s.privacy.notificationsEnabled}
               onToggle={(v) => applyNotificationsEnabled(v)}
             />
+            {isMobileHost() ? (
+              <>
+                <hr className="divider divider--flush" />
+                <PrivacySettingItem
+                  title="Wake contact on relay"
+                  description={
+                    s.privacy.notificationsEnabled
+                      ? "Uses Apple/Google push. Default off."
+                      : "Turn on Notifications first."
+                  }
+                  on={
+                    s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled
+                  }
+                  onToggle={
+                    s.privacy.notificationsEnabled
+                      ? (v) => applyPushWakeEnabled(v)
+                      : undefined
+                  }
+                  trailing={
+                    s.privacy.notificationsEnabled ? undefined : (
+                      <span className="field__hint">Off</span>
+                    )
+                  }
+                />
+              </>
+            ) : null}
             <hr className="divider divider--flush" />
             <PrivacySettingItem
               title="Notification banner"
               description={
                 s.privacy.notificationsEnabled
-                  ? "Also show a system banner. Requires OS notification permission."
-                  : "Enable notifications to configure banners."
+                  ? "Show a lock-screen banner."
+                  : "Turn on Notifications first."
               }
               on={
                 s.privacy.notificationsEnabled &&

@@ -15,10 +15,12 @@ import {
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
+import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
 import {
   getRelationshipTopicEpoch,
   syncRelationshipTopicEpoch,
 } from "@/services/p2p/relationshipTopicEpochStore";
+import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -217,6 +219,9 @@ async function inviteFromCreateBody(
     txHash: meta.txHash,
   };
   invitesById.set(invite.id, invite);
+  if (meta.status === "received" && parsed.payload.senderPokeHandle) {
+    storePartnerPokeHandle(hs.roomId, parsed.payload.senderPokeHandle);
+  }
   return invite;
 }
 
@@ -350,11 +355,12 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
   },
 
   async sendInviteMessage(contactId, payload, delivery) {
-    const { smartBody, composed } = decodeOutboundPayload(payload);
-    if (!messages.isKnownSmartMessage(smartBody)) {
+    const { smartBody: rawSmartBody, composed } =
+      decodeOutboundPayload(payload);
+    if (!messages.isKnownSmartMessage(rawSmartBody)) {
       throw new Error("Composed create is not a recognized smart message.");
     }
-    const parsed = parseChatSmartBody(smartBody);
+    const parsed = parseChatSmartBody(rawSmartBody);
     if (parsed?.action !== "create") {
       throw new Error("Invalid chat.create smart message.");
     }
@@ -363,6 +369,16 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       parsed.payload.handshake.inviteId,
       parsed.payload.handshake,
     );
+    // Append own pokeHandle if available — re-encode with ph field.
+    const ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    const smartBody = ownPokeHandle
+      ? encodeCreateSmartBody(
+          parsed.payload.handshake,
+          parsed.payload.senderAlias,
+          parsed.payload.capabilities,
+          ownPokeHandle,
+        )
+      : rawSmartBody;
 
     const inviteExpiry =
       composed?.inviteExpiry ?? parsed.payload.handshake.inviteExpiry;
@@ -473,6 +489,11 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "register") continue;
+        if (parsed.payload.pokeHandle) {
+          const hs = handshakesByInviteId.get(parsed.payload.inviteId);
+          if (hs?.roomId)
+            storePartnerPokeHandle(hs.roomId, parsed.payload.pokeHandle);
+        }
         out.push({ register: parsed.payload, txHash: record.id });
       }
       return out;
@@ -503,12 +524,17 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     if (inv.status !== "received" && inv.status !== "sent") {
       throw new Error("Invite cannot be accepted in current state.");
     }
+    const ownPokeHandle = getOwnPokeHandle() ?? undefined;
     const payload = register
-      ? await SmartMessageProtocolAdapter.composeRegister(register)
+      ? await SmartMessageProtocolAdapter.composeRegister({
+          ...register,
+          pokeHandle: ownPokeHandle,
+        })
       : await SmartMessageProtocolAdapter.composeRegister({
           inviteId: inv.inviteId,
           receiverEphemeralPublicKey: randomHex(32),
           replayId: inv.replayId,
+          pokeHandle: ownPokeHandle,
         });
     await broadcastSmartBody({
       contactId: inv.contactId,

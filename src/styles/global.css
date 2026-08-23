@@ -142,6 +142,7 @@ p {
 a {
   color: inherit;
   text-decoration: none;
+  touch-action: manipulation;
 }
 
 button,
@@ -396,6 +397,7 @@ button {
   padding: 0;
   cursor: pointer;
   font-family: inherit;
+  touch-action: manipulation;
 }
 .bottom-nav__item svg {
   width: 22px;
@@ -808,6 +810,7 @@ button {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+  touch-action: manipulation;
 }
 @keyframes tx-dot-pulse {
   0%,

@@ -19,7 +19,7 @@ const COMPOSER_DISABLED_REASON: Record<
   Exclude<RoomLifecycleStatus, "connected">,
   string
 > = {
-  pending: "Waiting for invite accept — messaging not allowed yet.",
+  pending: "Waiting for them to accept your invite.",
   accepted: "Invite accepted — Holepunch connecting to peer.",
   connecting: "Holepunch connecting…",
   connect_failed:
