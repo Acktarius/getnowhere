@@ -54,8 +54,10 @@ if (!existsSync(entryPath)) {
 
 console.log(`Packing Bare worklet (${entry}) → ${outMjs}`);
 
-/** Match `expo-build-properties` `android.buildArchs` (arm64-only APK). */
-const packArgs = `${entry} -o ../assets/bare/app.bundle.mjs --linked --host android-arm64`;
+/** Match Expo device arches: Android arm64 APK + iPhone arm64 (TestFlight/EAS). */
+const packArgs =
+  `${entry} -o ../assets/bare/app.bundle.mjs --linked ` +
+  `--host android-arm64 --host ios-arm64`;
 const packCmd = existsSync(barePackBin)
   ? `"${barePackBin}" ${packArgs}`
   : `npx --yes bare-pack@2.2.1 ${packArgs}`;

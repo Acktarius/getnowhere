@@ -29,6 +29,11 @@ F-Droid wake fails if poke-gateway is missing: the app never publishes to ntfy i
 - A hostname + TLS reverse proxy (same pattern as ntfy: listen on `127.0.0.1` only)
 - Optional for F-Droid-only: skip APNs keys. Required for iOS wake: Apple `.p8` key (`APNS_*`)
 
+**APNs operator checklist** (create App ID → Production AuthKey → VPS
+`secrets/AuthKey.p8` → `APNS_*`): see
+[`docs/builds/expo-eas-ios-build.md`](../docs/builds/expo-eas-ios-build.md)
+§ APNs AuthKey. The `.p8` never goes to EAS.
+
 ## Environment
 
 Copy `.env.example` to `.env` on the **server** (never commit `.env`).
@@ -101,9 +106,11 @@ The Vite UI calls this base URL. If unset, `sendPoke` is a no-op.
 |---|---|
 | Root `.env` (local) | `VITE_POKE_GATEWAY_URL=https://poke.getnowhere.im` |
 | GitHub Actions APK | Secret `VITE_POKE_GATEWAY_URL` on the `mobile:android:release` step |
-| iOS / EAS | Same `VITE_POKE_GATEWAY_URL` at bundle time |
+| iOS / EAS | Bake via `npm run mobile:sync-ui` **before** `eas build` (same `VITE_*` in root `.env`) |
 
-`VITE_NTFY_READ_TOKEN` stays in the **app** build (SSE). `NTFY_PUBLISH_TOKEN` stays **only** in poke-gateway `.env`.
+`VITE_NTFY_READ_TOKEN` stays in the **app** build (SSE). `NTFY_PUBLISH_TOKEN`
+and `APNS_*` stay **only** in poke-gateway `.env` (VPS). Do not upload the
+AuthKey to EAS.
 
 ## Local run (no Docker)
 

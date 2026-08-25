@@ -21,7 +21,7 @@ final class RemoteNodeSyncBridgeHolder {
     }
 
     func requestBackgroundSync(timeout: TimeInterval, completion: @escaping (RemoteNodeSyncOutcome) -> Void) {
-        let injector: ((String) -> Void)?
+        var injector: ((String) -> Void)?
         queue.sync { injector = injectScript }
         guard let injector else {
             completion(.noOp)

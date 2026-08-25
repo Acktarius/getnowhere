@@ -1,7 +1,8 @@
 {
   "cli": {
     "version": ">= 16.0.0",
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "promptToConfigurePushNotifications": false
   },
   "build": {
     "development": {
@@ -17,10 +18,32 @@
         "buildType": "apk"
       }
     },
+    "preview-ios": {
+      "distribution": "store",
+      "ios": {
+        "image": "sdk-55"
+      }
+    },
+    "adhoc-ios": {
+      "distribution": "internal",
+      "ios": {
+        "image": "sdk-55",
+        "simulator": false
+      }
+    },
+
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false,
+        "image": "sdk-55"
       }
     }
+  },
+  "submit": {
+    "preview-ios": {},
+    "production": {}
   }
 }

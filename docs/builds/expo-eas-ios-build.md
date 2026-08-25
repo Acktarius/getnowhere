@@ -1,176 +1,190 @@
 # Expo EAS iOS Build
 
-This document explains how Get NowHere uses Expo.dev / EAS for the iOS build and App Store delivery path. The project is developed locally as a web-first app, while EAS Build is used to create the iOS binary and EAS Submit is used to upload it to Apple.
+This document explains how Get NowHere uses Expo.dev / EAS for the iOS build
+and TestFlight / App Store delivery path. Day-to-day product work stays in the
+web app (`npm run dev`). Packaging lives in `native-wrapper/`.
+
+See also: [`expo-eas-android-build.md`](expo-eas-android-build.md),
+[`peer-wake-notification.md`](../features/peer-wake-notification.md),
+[`poke-gateway/README.md`](../../poke-gateway/README.md).
 
 ## Scope
 
-This document is `native-wrapper only`.
+`native-wrapper` only. Builds run on **EAS cloud from Linux** (no local Mac /
+Xcode required). Target is **iPhone only** (`supportsTablet: false`).
 
-It does not describe day-to-day feature development. Normal development belongs in the web app and runs through `npm run dev`.
+## Identifiers
 
-## Why this exists
-
-Expo documents EAS Build as a hosted service for creating Android and iOS app binaries in the cloud. Expo also documents EAS Submit as the recommended way to upload an iOS app to the Apple App Store, and notes that `eas submit` works on macOS, Linux, and Windows.
-
-For this project, that means:
-
-- Build the product in the web app for day-to-day work.
-- Keep the native wrapper focused on packaging + the mobile P2P host.
-- Use EAS for iOS packaging, signing, and store upload.
-- Hyperswarm on device runs in a **Bare worklet**, not in WebView JS — see
-  `docs/architecture/mobile-p2p-runtime.md`. Packaged desktop is **Electron**,
-  not React Native — see `docs/architecture/electron-desktop.md`. Do not use
-  Nitro / custom native modules as the Hyperswarm stack.
+| Field | Value |
+|-------|-------|
+| Display name | Get NowHere |
+| Expo slug | `get-nowhere-wrapper` |
+| iOS bundle ID | `im.getnowhere.app` |
+| Apple App ID | same bundle ID, Push Notifications enabled (**no** Broadcast) |
 
 ## Prerequisites
 
-Before running the iOS build flow, make sure the following exist:
+- Expo account + EAS CLI (`npm install -g eas-cli` then `eas login`)
+- Paid Apple Developer team that owns `im.getnowhere.app`
+- App Store Connect app for that bundle ID (needed for TestFlight submit)
+- Root `.env` with `VITE_POKE_GATEWAY_URL` and `VITE_NTFY_READ_TOKEN` before UI sync
+- For peer wake on device: poke-gateway on the VPS with APNs AuthKey (below)
 
-- An Expo account.
-- A paid Apple Developer account, which Expo documents as required for App Store submission.
-- A `native-wrapper/` Expo project.
-- A valid iOS bundle identifier in app config, which Expo requires before submission.
-- EAS CLI installed and authenticated.
+## Build profiles (`eas.json`)
+
+| Profile | Platform | Distribution | Use |
+|---------|----------|--------------|-----|
+| `preview` | Android | internal APK | Sideload / QA (unchanged) |
+| `preview-ios` | iOS | **store** | TestFlight from Linux |
+| `adhoc-ios` | iOS | **internal** (ad hoc) | Direct install on registered UDIDs (no TestFlight) |
+| `production` | iOS / Android | store / AAB | Later App Store / Play |
+
+`distribution` is profile-wide in EAS, so iOS TestFlight uses **`preview-ios`**
+instead of overloading Android `preview`. Direct phone install without TestFlight
+uses **`adhoc-ios`** (Apple ad hoc; device UDID must be registered first).
+
+## Bake UI env, then cloud-build (TestFlight)
+
+Root `VITE_*` values are compiled into the WebView bundle **on your machine**.
+The APNs AuthKey (`.p8`) is **never** sent to EAS — only poke-gateway on the VPS
+uses it.
+
+```bash
+# From repo root — requires root .env (VITE_POKE_GATEWAY_URL, VITE_NTFY_READ_TOKEN)
+npm run mobile:sync-ui
+
+cd native-wrapper
+npx eas build --platform ios --profile preview-ios
+npx eas submit --platform ios --profile preview-ios --latest
+```
+
+EAS runs `eas-build-post-install` → installs `holepunch-sidecar` deps and
+`pack-bare` (writes gitignored `assets/bare/app.bundle`). Without that hook,
+Metro fails resolving the Bare worklet asset.
+
+Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
+`expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
+in scope. iOS profiles pin `"image": "sdk-55"`.
+
+Swift 6 (Xcode 26): AppDelegate uses `internal import …`; GnhBackgroundSync
+must match (`internal import BackgroundTasks`). The background-sync config
+plugin must not rewrite `internal import Expo` into a plain `import Expo`.
+Do not override `applicationDidEnterBackground` on ExpoAppDelegate — schedule
+via `UIApplication.didEnterBackgroundNotification` instead.
+EAS will prompt for Apple credentials (signing / App Store Connect). That is
+separate from the poke-gateway `.p8`.
+
+Optional later:
+
+```bash
+npx eas build --platform ios --profile production --auto-submit
+```
+
+## Ad hoc install (no TestFlight)
+
+Register each iPhone UDID once, then build `adhoc-ios`. Safari install link from EAS works only for devices in that provisioning profile. Add a new phone later → register UDID → rebuild.
+
+```bash
+cd native-wrapper
+npx eas device:create
+# open the enrollment URL on the iPhone (or pass --udid)
+
+# From repo root after device is listed
+npm run mobile:sync-ui
+cd native-wrapper
+npx eas build --platform ios --profile adhoc-ios
+```
+
+When the build finishes, open the Expo install page / QR on the **same** registered iPhone → Install → if needed trust the cert under **Settings → General → VPN & Device Management**.
+
+## APNs AuthKey for poke-gateway (`.p8`, not `.pk8`)
+
+Peer wake on iOS: the app registers a device token with poke-gateway; the
+gateway signs APNs HTTP/2 requests with your AuthKey. **Do not commit the key.**
+
+### 1. Create the App ID (topic) if missing
+
+1. [Identifiers](https://developer.apple.com/account/resources/identifiers/list) → **+** → App IDs → App
+2. Description: `Get NowHere`
+3. Bundle ID **Explicit**: `im.getnowhere.app`
+4. Capability: **Push Notifications** only — leave **Broadcast** off
+5. Register
+
+### 2. Create the AuthKey
+
+1. [Keys](https://developer.apple.com/account/resources/authkeys/list) → **+**
+2. Name: `GetNowHere APNs`
+3. Enable Apple Push Notifications service (APNs)
+4. Environment: **Production** (TestFlight / App Store; gateway has one key path today)
+5. Restriction: topic **`im.getnowhere.app`** when offered
+6. Register → note **Key ID** and **Team ID** (Membership) → download `.p8` once
+
+### 3. Place on the VPS
+
+Compose mounts `./secrets` → `/secrets` and expects `AuthKey.p8`:
+
+```bash
+# On VPS
+sudo mkdir -p /opt/poke-gateway/secrets
+sudo chown "$USER:$USER" /opt/poke-gateway/secrets
+chmod 700 /opt/poke-gateway/secrets
+```
+
+```bash
+# From your laptop (rename Apple download to AuthKey.p8)
+scp AuthKey_XXXXXXXXXX.p8 user@YOUR_VPS:/opt/poke-gateway/secrets/AuthKey.p8
+```
+
+```bash
+# On VPS
+chmod 600 /opt/poke-gateway/secrets/AuthKey.p8
+```
+
+In `/opt/poke-gateway/.env`:
+
+```bash
+APNS_TEAM_ID=YOUR_TEAM_ID
+APNS_KEY_ID=YOUR_KEY_ID
+APNS_KEY_PATH=/secrets/AuthKey.p8
+APNS_BUNDLE_ID=im.getnowhere.app
+```
+
+```bash
+cd /opt/poke-gateway && docker compose up -d
+```
+
+`poke-gateway/secrets/` is gitignored. Never upload this key to EAS.
 
 ## Required files
 
-The iOS build flow depends on these files inside `native-wrapper/`:
-
 ```text
 native-wrapper/
-├─ app.json
-├─ eas.json
+├─ app.json      # ios.bundleIdentifier, supportsTablet: false
+├─ eas.json      # preview-ios → store / TestFlight
 ├─ package.json
 ├─ assets/
 └─ src/
 ```
 
-Rules:
-
-- `app.json` holds the Expo app configuration, including the iOS bundle identifier.
-- `eas.json` holds build and submit profiles.
-- `package.json` holds wrapper commands.
-- Icons, splash assets, and app metadata belong here, not in the main web app.
-
-## Minimal `app.json` expectations
-
-At minimum, define the iOS bundle identifier in `app.json`, because Expo documents it as a prerequisite for App Store submission.
-
-Example:
-
-```json
-{
-  "expo": {
-    "name": "Get NowHere",
-    "slug": "get-nowhere-wrapper",
-    "ios": {
-      "bundleIdentifier": "im.getnowhere.app"
-    }
-  }
-}
-```
-
-Replace the bundle identifier with the real production value used by your Apple developer setup.
-
-## Minimal `eas.json` expectations
-
-Expo documents `eas.json` as the configuration file for EAS Build profiles. Keep at least one production build profile and one production submit profile.
-
-Example:
-
-```json
-{
-  "build": {
-    "production": {
-      "ios": {
-        "simulator": false
-      }
-    }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID"
-      }
-    }
-  }
-}
-```
-
-Expo documents `ascAppId` as the App Store Connect app ID used for EAS Submit profiles.
-
-## Install and login
-
-Run these commands from the wrapper project when setting it up:
-
-```bash
-cd native-wrapper
-npm install
-npm install --global eas-cli
-eas login
-npx eas build:configure
-```
-
-Expo documents `eas build:configure` as part of the build setup flow and requires EAS CLI authentication before running cloud builds.
-
-## Production build
-
-To create the iOS production archive:
-
-```bash
-cd native-wrapper
-npx eas build --platform ios --profile production
-```
-
-Expo documents `eas build --platform ios --profile production` as the command to create the production `.ipa` needed for submission.
-
-## Submit to Apple
-
-After the production build is ready:
-
-```bash
-cd native-wrapper
-npx eas submit --platform ios --profile production
-```
-
-Expo documents `eas submit --platform ios` as the recommended command for uploading the build to App Store Connect. On first run, the command can prompt for Apple credentials and help you choose the build to upload.
-
-## Optional one-step build and submit
-
-Expo also documents automatic submission after a successful build with `--auto-submit`.
-
-Example:
-
-```bash
-cd native-wrapper
-npx eas build --platform ios --profile production --auto-submit
-```
-
-Use this only after the standard two-step process is already working reliably.
-
 ## Team rules
 
-Use these repo rules for iOS delivery:
+- Wrapper is packaging + Bare host — not core product logic.
+- Keep profiles in `native-wrapper/eas.json`.
+- Document identifier, signing, or APNs placement changes in this file.
+- Do not put `APNS_*` or `NTFY_PUBLISH_TOKEN` in the app / EAS env.
 
-- The wrapper is for packaging and release, not for core product development.
-- Keep build profiles in `native-wrapper/eas.json`.
-- Keep iOS identifiers, assets, and signing-related changes documented in `/docs/builds/`.
-- Any change to bundle identifier, signing setup, App Store Connect ID, or wrapper loading behavior must update this file in the same branch.
-- Do not move product logic from `src/` into `native-wrapper/` unless native APIs make it necessary.
+## Troubleshooting
 
-## Troubleshooting rules
-
-If the iOS build flow breaks:
-
-- Check `app.json` first for bundle identifier and metadata issues.
-- Check `eas.json` for the correct build and submit profile names.
-- Check Expo account login status with EAS CLI.
-- Check Apple account access and App Store Connect app configuration.
-
-If EAS Submit is unavailable, Expo notes that a manual App Store Connect upload can still be done from a Mac with Xcode.
+| Symptom | Check |
+|---------|--------|
+| EAS asks for Apple login | Expected for signing / submit |
+| Push never arrives (TestFlight) | VPS `.p8` + `APNS_*`; Production key; app registered token with `env: production` |
+| Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? |
+| Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
 
 ## Policy text
 
-Use this wording in project documentation:
-
-> Get NowHere is developed as a web-first application. Local work happens with `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS builds, signing, TestFlight, and App Store delivery. Desktop packaging uses Electron (`desktop-electron/`).
+> Get NowHere is developed as a web-first application. Local work happens with
+> `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS
+> builds, signing, TestFlight, and App Store delivery. Desktop packaging uses
+> Electron (`desktop-electron/`). APNs AuthKeys stay on the poke-gateway host.

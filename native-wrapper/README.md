@@ -3,7 +3,8 @@
 Expo shell for Android/iOS packaging. Loads the Vite UI from `assets/ui/` (synced
 from root `dist/`) and hosts a **Bare Hyperswarm worklet** for on-device P2P.
 
-Runbook: [`docs/builds/expo-eas-android-build.md`](../docs/builds/expo-eas-android-build.md)  
+Runbook: [`docs/builds/expo-eas-android-build.md`](../docs/builds/expo-eas-android-build.md) ·
+[`docs/builds/expo-eas-ios-build.md`](../docs/builds/expo-eas-ios-build.md)  
 Architecture: [`docs/architecture/mobile-p2p-runtime.md`](../docs/architecture/mobile-p2p-runtime.md)
 
 ```bash

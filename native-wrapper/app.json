@@ -2,7 +2,7 @@
   "expo": {
     "name": "Get NowHere",
     "slug": "get-nowhere-wrapper",
-    "version": "0.3.0",
+    "version": "0.3.8",
     "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,9 +13,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#0a0b0f"
     },
-    "assetBundlePatterns": ["assets/ui/**/*", "assets/bare/**/*"],
+    "assetBundlePatterns": [
+      "assets/ui/**/*",
+      "assets/bare/**/*"
+    ],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "im.getnowhere.app"
     },
     "android": {
@@ -54,7 +57,9 @@
         {
           "android": {
             "minSdkVersion": 29,
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
       ],
@@ -68,7 +73,14 @@
             "backgroundColor": "#0a0b0f"
           }
         }
-      ]
-    ]
+      ],
+      "expo-asset",
+      "expo-sharing"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ff9c2ffa-612f-4ea8-a878-e97b6ce1a3a3"
+      }
+    }
   }
 }

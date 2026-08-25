@@ -6,7 +6,7 @@
   "description": "Bare Hyperswarm worklet for Get NowHere mobile",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "pack": "bare-pack entry.mjs -o ../assets/bare/app.bundle.mjs --linked --host android-arm64 --host android-arm"
+    "pack": "bare-pack entry.mjs -o ../assets/bare/app.bundle.mjs --linked --host android-arm64 --host ios-arm64"
   },
   "dependencies": {
     "b4a": "^1.6.7",

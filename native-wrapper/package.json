@@ -15,17 +15,18 @@
     "android:release": "node scripts/build-android-release.mjs",
     "android:sign-test": "node scripts/sign-android-apk.mjs",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "eas-build-post-install": "npm --prefix ../holepunch-sidecar ci && node scripts/pack-bare.mjs"
   },
   "dependencies": {
-    "expo": "~55.0.23",
-    "expo-asset": "~55.0.18",
-    "expo-build-properties": "~55.0.16",
-    "expo-crypto": "~55.0.17",
-    "expo-file-system": "~55.0.24",
-    "expo-sharing": "~55.0.10",
-    "expo-notifications": "~0.32.17",
-    "expo-splash-screen": "~55.0.23",
+    "expo": "~55.0.29",
+    "expo-asset": "~55.0.19",
+    "expo-build-properties": "~55.0.17",
+    "expo-crypto": "~55.0.18",
+    "expo-file-system": "~55.0.25",
+    "expo-notifications": "~55.0.26",
+    "expo-sharing": "~55.0.23",
+    "expo-splash-screen": "~55.0.24",
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
     "react-native": "0.83.10",
@@ -36,7 +37,7 @@
     "@types/react": "~19.2.10",
     "bare-link": "3.0.1",
     "bare-pack": "2.2.1",
-    "typescript": "~6.0.3"
+    "typescript": "~5.9.3"
   },
   "overrides": {
     "nanoid": "^3.3.18",
