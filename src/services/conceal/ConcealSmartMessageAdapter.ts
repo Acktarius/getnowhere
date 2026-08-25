@@ -5,6 +5,7 @@
  */
 
 import { messages } from "conceal-wallet-sdk";
+import { generatePokeId } from "@/lib/crypto/pokeId";
 import {
   readReceivedRecords,
   readSentRecords,
@@ -20,6 +21,10 @@ import {
   getRelationshipTopicEpoch,
   syncRelationshipTopicEpoch,
 } from "@/services/p2p/relationshipTopicEpochStore";
+import {
+  patchCatalogRoom,
+  peekCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
 import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
@@ -369,16 +374,20 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       parsed.payload.handshake.inviteId,
       parsed.payload.handshake,
     );
-    // Append own pokeHandle if available — re-encode with ph field.
-    const ownPokeHandle = getOwnPokeHandle() ?? undefined;
-    const smartBody = ownPokeHandle
-      ? encodeCreateSmartBody(
-          parsed.payload.handshake,
-          parsed.payload.senderAlias,
-          parsed.payload.capabilities,
-          ownPokeHandle,
-        )
-      : rawSmartBody;
+    // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
+    let ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    if (!ownPokeHandle) {
+      const roomId = parsed.payload.handshake.roomId;
+      const existing = peekCatalogRoom(roomId)?.ownPokeId;
+      ownPokeHandle = existing ?? generatePokeId();
+      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+    }
+    const smartBody = encodeCreateSmartBody(
+      parsed.payload.handshake,
+      parsed.payload.senderAlias,
+      parsed.payload.capabilities,
+      ownPokeHandle,
+    );
 
     const inviteExpiry =
       composed?.inviteExpiry ?? parsed.payload.handshake.inviteExpiry;
@@ -524,7 +533,14 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     if (inv.status !== "received" && inv.status !== "sent") {
       throw new Error("Invite cannot be accepted in current state.");
     }
-    const ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
+    let ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    if (!ownPokeHandle) {
+      const roomId = inv.roomId;
+      const existing = peekCatalogRoom(roomId)?.ownPokeId;
+      ownPokeHandle = existing ?? generatePokeId();
+      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+    }
     const payload = register
       ? await SmartMessageProtocolAdapter.composeRegister({
           ...register,

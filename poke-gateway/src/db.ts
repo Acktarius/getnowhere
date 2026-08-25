@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import BetterSqlite3 from "better-sqlite3";
 
-export type Platform = "apns" | "fcm";
+export type Platform = "apns";
 export type PushEnv = "sandbox" | "production";
 
 export type HandleRow = {

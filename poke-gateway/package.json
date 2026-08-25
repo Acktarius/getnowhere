@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Opaque pokeHandle → APNs/FCM wake gateway for Get NowHere L1′ relay",
+  "description": "Opaque pokeHandle → APNs wake gateway for Get NowHere L1′ relay",
   "engines": {
     "node": ">=22"
   },
@@ -11,12 +11,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "types": "tsc --noEmit"
+    "types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
     "fastify": "^5.4.0",
-    "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
@@ -24,6 +24,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.13.14",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.11"
   }
 }

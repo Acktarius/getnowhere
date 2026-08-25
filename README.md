@@ -21,6 +21,28 @@ npm run holepunch:install
 npm run desktop:install
 ```
 
+## Environment setup
+
+Copy the example and fill in what you need:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VITE_HOLEPUNCH_WS_URL` | local P2P only | WS bridge address (`ws://127.0.0.1:7901`) |
+| `VITE_NTFY_READ_TOKEN` | F-Droid push wake | Bearer token for SSE subscribe on `ntfy.getnowhere.im` |
+
+**ntfy token setup (F-Droid / Android push wake):**
+Your ntfy server should run with `auth-default-access: deny-all` and two scoped users:
+- `gnh-publisher` → `write-only` on `gnh-*` (used by `poke-gateway`)
+- `gnh-reader` → `read-only` on `gnh-*` (token goes in `VITE_NTFY_READ_TOKEN`)
+
+Generate tokens with `sudo ntfy token add gnh-reader` on your VPS.
+See `poke-gateway/.env.example` for the server-side `NTFY_PUBLISH_TOKEN`.
+Full setup: `docs/features/peer-wake-notification.md`.
+
 ## Test scenarios
 
 Pick the scenario that matches what you are verifying. Always start Vite for

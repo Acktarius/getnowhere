@@ -25,6 +25,7 @@ import {
 } from "./src/gnhBackgroundSyncNative";
 import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
+import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
 import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
 import {
   buildSecurityResolveScript,
@@ -108,7 +109,13 @@ export default function App() {
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
 
   const injectedBeforeLoad = useMemo(
-    () => (bridgeToken ? buildMobileBridgeInjection(bridgeToken) : ""),
+    () =>
+      bridgeToken
+        ? buildMobileBridgeInjection(
+            bridgeToken,
+            Platform.OS === "android" ? "android" : "ios",
+          )
+        : "",
     [bridgeToken],
   );
 
@@ -176,14 +183,11 @@ export default function App() {
     schedulePendingForegroundFlush();
   }, [schedulePendingForegroundFlush]);
 
-  const injectPokeToken = useCallback(
-    (platform: "apns" | "fcm", token: string) => {
-      webViewRef.current?.injectJavaScript(
-        buildPokeTokenDispatchScript(platform, token),
-      );
-    },
-    [],
-  );
+  const injectPokeToken = useCallback((platform: "apns", token: string) => {
+    webViewRef.current?.injectJavaScript(
+      buildPokeTokenDispatchScript(platform, token),
+    );
+  }, []);
 
   const onWebViewReady = useCallback(() => {
     setLoading(false);
@@ -274,6 +278,9 @@ export default function App() {
       const bgSync = parseBackgroundSyncMessage(raw);
       if (bgSync) {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
+        return;
+      }
+      if (handleNtfyWakeWebViewMessage(raw)) {
         return;
       }
       if (handleNotificationsWebViewMessage(raw)) {

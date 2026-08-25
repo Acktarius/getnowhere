@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import {
   chatTransport,
   p2pEncryption,
@@ -267,9 +268,11 @@ async function applyRoomDestroyLocally(
   // Tombstone first so any concurrent openRoom/reconnect cannot re-upsert.
   rememberRevokedRoom(roomId, inviteId);
   try {
-    const { removeCatalogRoom } = await import(
+    const { clearPokeIds, removeCatalogRoom } = await import(
       "@/services/p2p/roomCatalogStore"
     );
+    ntfyUnsubscribeRoom(roomId);
+    clearPokeIds(roomId);
     removeCatalogRoom(roomId);
   } catch {
     /* ignore */

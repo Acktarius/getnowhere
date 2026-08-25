@@ -236,7 +236,7 @@ export function SettingsScreen() {
                   title="Wake contact on relay"
                   description={
                     s.privacy.notificationsEnabled
-                      ? "Uses Apple/Google push. Default off."
+                      ? "Uses ntfy / APNs wake. No Google."
                       : "Turn on Notifications first."
                   }
                   on={

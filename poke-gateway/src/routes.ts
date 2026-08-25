@@ -10,7 +10,6 @@ import {
   type PushEnv,
   updateHandleToken,
 } from "./db.js";
-import { sendFcm } from "./fcm.js";
 import { consumePokeSlot } from "./rateLimit.js";
 
 const HANDLE_RE = /^[A-Za-z0-9_-]{14}$/;
@@ -33,7 +32,7 @@ const registerSchema = {
     required: ["token", "platform", "env"],
     properties: {
       token: { type: "string", minLength: 1, maxLength: 4096 },
-      platform: { type: "string", enum: ["apns", "fcm"] },
+      platform: { type: "string", enum: ["apns"] },
       env: { type: "string", enum: ["sandbox", "production"] },
       pokeHandle: { type: "string", minLength: 14, maxLength: 14 },
     },
@@ -109,23 +108,38 @@ export function registerRoutes(app: FastifyInstance): void {
 
       const row = getHandle(to);
       if (!row) {
-        app.log.info({ event: "poke", result: "noop" });
-        return reply.code(204).send();
+        const base = process.env.NTFY_BASE_URL;
+        const token = process.env.NTFY_PUBLISH_TOKEN;
+        if (base && token) {
+          try {
+            await fetch(`${base}/gnh-${to}`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "text/plain",
+              },
+              body: "wake",
+            });
+            app.log.info({ event: "poke", result: "ntfy_sent" });
+          } catch {
+            app.log.info({ event: "poke", result: "ntfy_failed" });
+          }
+        } else {
+          app.log.info({ event: "poke", result: "ntfy_noop" });
+        }
+        return reply.code(202).send();
       }
 
       try {
-        const result =
-          row.platform === "apns"
-            ? await sendApns(row.token, row.env)
-            : await sendFcm(row.token);
+        const result = await sendApns(row.token, row.env);
         if (result.ok) {
           app.log.info({ event: "poke", result: "sent" });
-          return reply.code(204).send();
+          return reply.code(202).send();
         }
         if (result.unregistered) {
           deleteHandle(to);
           app.log.info({ event: "poke", result: "unregistered" });
-          return reply.code(204).send();
+          return reply.code(202).send();
         }
         app.log.error({ event: "poke", result: "push_failed" });
         return reply.code(502).send({ error: "push_failed" });

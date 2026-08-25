@@ -4,6 +4,7 @@
  * @see docs/security/p2pchatprotocol.md §16
  */
 
+import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
 import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
@@ -32,6 +33,7 @@ import {
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
 import {
+  clearPokeIds,
   listCatalogRooms,
   loadCatalogRoom,
   patchCatalogRoom,
@@ -926,6 +928,8 @@ export const HolepunchChatTransport: ChatTransport = {
         set?.delete(roomId);
         if (set && set.size === 0) topicRooms.delete(topicRef);
       }
+      ntfyUnsubscribeRoom(roomId);
+      clearPokeIds(roomId);
       removeCatalogRoom(roomId);
       removeRoomSession(roomId);
       rememberRevokedRoom(roomId);
@@ -958,6 +962,8 @@ export const HolepunchChatTransport: ChatTransport = {
     contractsByRoom.delete(roomId);
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
+    ntfyUnsubscribeRoom(roomId);
+    clearPokeIds(roomId);
     removeCatalogRoom(roomId);
     rememberRevokedRoom(roomId, state.room.inviteId);
     await persistChatRoomTombstone(roomId);

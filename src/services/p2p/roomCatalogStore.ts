@@ -34,6 +34,7 @@ export type CatalogRoom = Pick<
   | "awaitingChainSync"
   | "partnerPokeHandle"
   | "lastPokedAt"
+  | "ownPokeId"
 >;
 
 function readAll(): Record<string, CatalogRoom> {
@@ -114,6 +115,7 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
     lastMessageAt: room.lastMessageAt ?? prev?.lastMessageAt,
     lastConnectError: room.lastConnectError ?? prev?.lastConnectError,
     awaitingChainSync: room.awaitingChainSync ?? prev?.awaitingChainSync,
+    ownPokeId: room.ownPokeId ?? prev?.ownPokeId,
   };
   all[room.id] = next;
   writeAll(all);
@@ -159,6 +161,14 @@ export function findCatalogRetirements(
 export function peekCatalogRoom(roomId: string): CatalogRoom | undefined {
   if (isRoomRevoked(roomId)) return undefined;
   return readAll()[roomId];
+}
+
+/** Zero out poke capability for a room without removing the catalog row. */
+export function clearPokeIds(roomId: string): void {
+  patchCatalogRoom(roomId, {
+    ownPokeId: undefined,
+    partnerPokeHandle: undefined,
+  });
 }
 
 /** User chose to leave forever — only permanent remove API besides TTL prune. */

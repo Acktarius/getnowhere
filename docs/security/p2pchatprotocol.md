@@ -99,11 +99,18 @@ bidirectional Conceal relationship.
     advertises a fee address
 - Inbound bodies are reconstructed during wallet sync via
   `readMessageFromTransaction` into `raw.receivedMessages`.
-- Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤120 chars**
+-   Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤120 chars**
   (practical room for payment-id + fees in wallet UIs):
   `{contact,c,pv,<b64url>}` slim pack (64 bytes raw):
   `inviteId(4) | roomId(4) | eph(32) | nonceSeed(8) | inviteExpiry(u32) |
   roomTtl(u32) | replayId(8)`.
+  Optional **`ph`** field (10 bytes, base64url, 14 chars): the sender's `ownPokeId`
+  (wake capability). Omitted when push wake is disabled or unavailable.
+  `chat.register` carries the same optional `ph` field from the acceptor's side.
+  The `ph` field serves dual purpose: on iOS it is registered with the poke gateway to map
+  to an APNs device token; on F-Droid it is used directly as the ntfy topic capability
+  `gnh-<ph>`. The field name and wire format are identical — the routing decision is made
+  by the gateway (APNs token found → APNs push; DB miss → ntfy POST).
   **Not on wire:** `relationshipId` (from payment IDs) and `salt`
   (`deriveInviteSalt(rel, room, invite)`). Suite/kdf/strategy implied by
   `protocolVersion`; alias/caps local-only.

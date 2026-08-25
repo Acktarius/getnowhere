@@ -1,0 +1,126 @@
+<!-- forge-brief-specs-hash:740b035c5ca838f9 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ntfy F-Droid wake — operator brief</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #111; background: #fff; line-height: 1.6; }
+  h1 { font-size: 1.4rem; border-bottom: 2px solid #111; padding-bottom: .4rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; }
+  ul { padding-left: 1.4rem; }
+  li { margin: .3rem 0; }
+  code { background: #f3f3f3; padding: .1em .3em; border-radius: 3px; font-size: .92em; }
+  .tldr { background: #f9f9f9; border-left: 4px solid #555; padding: .8rem 1rem; border-radius: 0 4px 4px 0; }
+  .risk { background: #fffbe6; border-left: 4px solid #e6a817; padding: .6rem 1rem; border-radius: 0 4px 4px 0; }
+  .scope { color: #555; }
+</style>
+</head>
+<body>
+
+<h1>ntfy F-Droid wake</h1>
+
+<div class="tldr">
+<strong>TL;DR.</strong> F-Droid and GrapheneOS users (no Google) will now receive instant peer-wake
+signals via our own self-hosted <a href="https://ntfy.getnowhere.im">ntfy.getnowhere.im</a> server —
+the same way that, today, iOS users get poked via Apple push.
+All Google / Firebase code is deleted. One unified <em>pokeId</em> mechanism works for both
+F-Droid (ntfy) and iOS (APNs) with no platform information exposed on the wire.
+</div>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>F-Droid users get woken within seconds when their contact sends a relay message (L1′), cutting the current ~30-second WorkManager poll gap.</li>
+  <li>iOS users continue to get woken via Apple push — no change to that path.</li>
+  <li>No Google Play Services, no Firebase, no FCM — anywhere in the codebase.</li>
+  <li>The Settings → Privacy "Wake contact on relay" toggle now controls ntfy subscription (F-Droid) or APNs registration (iOS). Toggle description updated to reflect this.</li>
+  <li>CI simplified: <code>v*-f-droid</code> tags build the F-Droid APK only; other <code>v*</code> tags build Electron desktop only. No GMS variant exists.</li>
+  <li>If a wake is missed (phone killed, Doze), the existing WorkManager and BGAppRefresh recovery paths remain unchanged — the chat message is never lost.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+Each room generates a random 10-byte <strong>pokeId</strong> at invite time. Alice includes hers in
+<code>chat.create</code>; Bob includes his in <code>chat.register</code>. The pokeId becomes an
+ntfy topic capability (<code>gnh-&lt;pokeId&gt;</code>). Neither side learns the other's platform.
+</p>
+<p>
+When Alice sends the first relay message after a live session drops, her app calls
+<code>POST /poke { to: bobPokeId }</code> on our gateway.
+The gateway checks its registry: if Bob registered an APNs token (iOS), it fires Apple push.
+If not (F-Droid), it POSTs <code>wake</code> to Bob's ntfy topic.
+Bob's F-Droid app subscribes to its own ntfy topic and calls the existing WorkManager sync worker on receipt.
+</p>
+
+<pre class="mermaid">
+sequenceDiagram
+    participant A as Alice (any platform)
+    participant GW as poke-gateway
+    participant APNS as Apple APNs
+    participant NTFY as ntfy.getnowhere.im
+    participant B_iOS as Bob (iOS)
+    participant B_FD as Bob (F-Droid)
+
+    A->>GW: POST /poke { to: bobPokeId }
+    GW->>GW: DB lookup bobPokeId
+    alt iOS registered
+        GW->>APNS: push wake
+        APNS->>B_iOS: wakes app → sync
+    else F-Droid (not in DB)
+        GW->>NTFY: POST gnh-bobPokeId "wake"
+        NTFY->>B_FD: SSE message event → sync
+    end
+    GW-->>A: 202 Accepted (always)
+</pre>
+
+<p>
+One poke fires per L2-disconnect event (first L1′ after live drops), then a 5-minute cooldown.
+When the room ends (leave, expiry, invite timeout), both pokeIds are forgotten. No server-side revoke needed.
+</p>
+
+<h2>What changes for you</h2>
+<ul>
+  <li><strong>Settings toggle:</strong> "Wake contact on relay" description changes from "Uses Apple/Google push" to "Uses ntfy / APNs wake. No Google."</li>
+  <li><strong>Environment:</strong> poke-gateway needs two new env vars — <code>NTFY_BASE_URL</code> and <code>NTFY_PUBLISH_TOKEN</code> (write-only ntfy credential).</li>
+  <li><strong>ntfy server:</strong> must be configured with <code>auth-default-access: deny-all</code>; gateway gets a write-only credential for <code>gnh-*</code> topics.</li>
+  <li><strong>CI:</strong> no more GMS APK matrix. <code>v*-f-droid</code> → F-Droid APK; other <code>v*</code> → Electron only (already reverted in commit <code>d0c344e</code>).</li>
+  <li><strong>Secret removed:</strong> <code>GOOGLE_SERVICES_JSON_BASE64</code> is no longer used or documented.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<div class="risk">
+<ul>
+  <li><strong>F-Droid process killed by Doze:</strong> wake is missed. Recovery via existing WorkManager (30s chain). Chat is always eventually consistent.</li>
+  <li><strong>APNs silent push throttled by iOS:</strong> known and acknowledged. Poke is a hint, not the message.</li>
+  <li><strong>ntfy server outage:</strong> F-Droid wakes stop. WorkManager recovers. Same failure mode as the gateway being down for iOS.</li>
+  <li><strong>ntfy read credential management:</strong> per-topic read tokens for F-Droid devices are configured statically in this version. A per-device provisioning endpoint is deferred.</li>
+</ul>
+</div>
+
+<h2>Out of scope</h2>
+<ul class="scope">
+  <li>UnifiedPush distributor integration (user must install a separate app — not required here).</li>
+  <li>iOS ntfy subscribe path (iOS uses APNs; ntfy is Android-only in this change).</li>
+  <li>A per-device ntfy credential provisioning endpoint (static token in this version).</li>
+  <li>Wake for force-quit F-Droid processes (WorkManager is the recovery; this change does not add a foreground service).</li>
+  <li>Any Play Store / GMS APK build (deliberately removed).</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li><strong>Group 1 — CI revert</strong> (2 tasks) — already complete in commit <code>d0c344e</code></li>
+  <li><strong>Group 2 — Delete FCM/GMS</strong> (10 tasks) — remove all Firebase/Google code from gateway, client, and native modules</li>
+  <li><strong>Group 3 — Gateway ntfy fallback</strong> (5 tasks) — add ntfy POST on DB miss, SSRF guard, tests</li>
+  <li><strong>Group 4 — Local pokeId mint</strong> (5 tasks) — CSPRNG generate, store, clear on destroy</li>
+  <li><strong>Group 5 — Android ntfy SSE module</strong> (6 tasks) — Kotlin OkHttp SSE client → WorkManager trigger</li>
+  <li><strong>Group 6 — JS bridge + settings toggle</strong> (7 tasks) — wire subscribe/unsubscribe to toggle and room lifecycle</li>
+  <li><strong>Group 7 — Docs</strong> (3 tasks) — update peer-wake doc, platform matrix, protocol doc</li>
+  <li><strong>Group 8 — Tests</strong> (7 tasks) — unit + integration coverage aligned to architecture</li>
+</ul>
+
+<!-- forge-brief-specs-hash: pending-stamp -->
+</body>
+</html>

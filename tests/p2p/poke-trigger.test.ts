@@ -5,7 +5,11 @@ import {
   HolepunchChatTransport,
   storePartnerPokeHandle,
 } from "@/services/p2p/HolepunchChatTransport";
-import { loadCatalogRoom } from "@/services/p2p/roomCatalogStore";
+import {
+  clearPokeIds,
+  loadCatalogRoom,
+  patchCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
 import { setActiveStorageAdapter } from "@/services/storage/StorageAdapter";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
@@ -176,9 +180,6 @@ describe("maybeSendPoke — reset on connected", () => {
     // After a room goes connected (patchCatalogRoom sets lastPokedAt: undefined),
     // a fresh relay send should fire sendPoke again.
     // We directly invoke patchCatalogRoom to simulate the connected transition.
-    const { patchCatalogRoom } = await import(
-      "@/services/p2p/roomCatalogStore"
-    );
     patchCatalogRoom(ROOM_ID, { lastPokedAt: undefined });
 
     // Also reset the in-memory room state by re-creating it (simulates re-hydrate after connect)
@@ -194,5 +195,22 @@ describe("maybeSendPoke — reset on connected", () => {
     await HolepunchChatTransport.sendMessage(ROOM_ID, "after connect");
     await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
+  });
+});
+
+describe("clearPokeIds", () => {
+  it("zeroes out ownPokeId and partnerPokeHandle on the catalog room", async () => {
+    await setupRelayRoom();
+    patchCatalogRoom(ROOM_ID, {
+      ownPokeId: "aB3dEfGhIjKlMn",
+      partnerPokeHandle: PARTNER_HANDLE,
+    });
+    expect(loadCatalogRoom(ROOM_ID)?.ownPokeId).toBe("aB3dEfGhIjKlMn");
+    expect(loadCatalogRoom(ROOM_ID)?.partnerPokeHandle).toBe(PARTNER_HANDLE);
+
+    clearPokeIds(ROOM_ID);
+
+    expect(loadCatalogRoom(ROOM_ID)?.ownPokeId).toBeUndefined();
+    expect(loadCatalogRoom(ROOM_ID)?.partnerPokeHandle).toBeUndefined();
   });
 });

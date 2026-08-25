@@ -5,8 +5,12 @@
 import { securityBridgeInjectionJs } from "./securityBridgeInjection";
 
 /** Build injected JS: gnhMobile API with bridge token held in closure (not on window). */
-export function buildMobileBridgeInjection(bridgeToken: string): string {
+export function buildMobileBridgeInjection(
+  bridgeToken: string,
+  platform: "ios" | "android",
+): string {
   const tokenJson = JSON.stringify(bridgeToken);
+  const platformJson = JSON.stringify(platform);
   const securityJs = securityBridgeInjectionJs();
   return `(function(){
   if (window.gnhMobile) return;
@@ -14,6 +18,7 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
   var handlers = [];
   var saveHandlers = [];
   window.gnhMobile = {
+    platform: ${platformJson},
     saveTextFile: function(opts) {
       if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -81,7 +86,7 @@ export function buildBridgeEventDispatchScript(event: object): string {
 
 /** Dispatch a push token into the WebView for gateway registration. */
 export function buildPokeTokenDispatchScript(
-  platform: "apns" | "fcm",
+  platform: "apns",
   token: string,
 ): string {
   const p = JSON.stringify(platform);

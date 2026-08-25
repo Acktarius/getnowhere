@@ -101,6 +101,11 @@ export type ChatRoom = {
    */
   partnerPokeHandle?: string;
   /**
+   * F-Droid: locally minted 14-char base64url id sent to partner as our pokeHandle.
+   * @see docs/features/peer-wake-notification.md
+   */
+  ownPokeId?: string;
+  /**
    * Unix seconds of the last peer-wake poke this room fired.
    * Cleared when L2 reaches `connected` so the next relay transition pokes again.
    * @see docs/features/peer-wake-notification.md

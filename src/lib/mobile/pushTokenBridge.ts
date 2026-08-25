@@ -10,10 +10,7 @@ import { useSettingsStore } from "@/state/settingsStore";
 
 let cleanupFn: (() => void) | null = null;
 
-async function handleToken(
-  platform: "apns" | "fcm",
-  token: string,
-): Promise<void> {
+async function handleToken(platform: "apns", token: string): Promise<void> {
   const { privacy } = useSettingsStore.getState();
   if (!privacy.pushWakeEnabled) return;
   try {

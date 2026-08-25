@@ -85,7 +85,7 @@ describe("buildMobileBridgeInjection", () => {
 
     // Unsubscribe stops delivery.
     unsub();
-    bridge._dispatchPokeToken!("fcm", "new-token");
+    bridge._dispatchPokeToken!("apns", "new-token");
     expect(handler).toHaveBeenCalledOnce(); // still just once
   });
 
@@ -102,16 +102,16 @@ describe("buildMobileBridgeInjection", () => {
     bridge.onPokeToken!(handler);
 
     const dispatchScript = buildPokeTokenDispatchScript(
-      "fcm",
+      "apns",
       "device-token-xyz",
     );
     expect(dispatchScript).toContain("_dispatchPokeToken");
-    expect(dispatchScript).toContain('"fcm"');
+    expect(dispatchScript).toContain('"apns"');
     expect(dispatchScript).toContain('"device-token-xyz"');
 
     // Execute the script the same way the native shell would inject it.
     new Function(dispatchScript)();
     expect(handler).toHaveBeenCalledOnce();
-    expect(handler).toHaveBeenCalledWith("fcm", "device-token-xyz");
+    expect(handler).toHaveBeenCalledWith("apns", "device-token-xyz");
   });
 });

@@ -4,6 +4,8 @@ interface ImportMetaEnv {
   readonly VITE_HOLEPUNCH_WS_URL?: string;
   /** Base URL of the peer-wake poke gateway (e.g. https://poke.example.com). @see docs/features/peer-wake-notification.md */
   readonly VITE_POKE_GATEWAY_URL?: string;
+  /** Optional ntfy read token for gnh-* topics. Leave empty if topics are publicly readable. */
+  readonly VITE_NTFY_READ_TOKEN?: string;
 }
 
 interface ImportMeta {
@@ -51,6 +53,8 @@ interface GnhMobileSaveTextFileResult {
 
 /** Mobile Expo WebView bridge API surface injected before Vite UI loads. */
 interface GnhMobileBridge {
+  /** Platform of the hosting native shell. */
+  readonly platform?: "ios" | "android";
   sendCommand(cmd: {
     type: string;
     topicRef?: string;
@@ -108,11 +112,9 @@ interface GnhMobileBridge {
    * Called once on app load and again on OS token rotation.
    * @see docs/features/peer-wake-notification.md
    */
-  onPokeToken?(
-    handler: (platform: "apns" | "fcm", token: string) => void,
-  ): () => void;
+  onPokeToken?(handler: (platform: "apns", token: string) => void): () => void;
   /** @internal Injected by native shell via buildPokeTokenDispatchScript. */
-  _dispatchPokeToken?(platform: "apns" | "fcm", token: string): void;
+  _dispatchPokeToken?(platform: "apns", token: string): void;
 }
 
 interface Window {

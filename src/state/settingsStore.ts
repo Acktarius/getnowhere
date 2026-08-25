@@ -104,9 +104,20 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
         privacy.pushWakeEnabled = false;
       }
       if (!privacy.pushWakeEnabled && s.privacy.pushWakeEnabled) {
-        // Fire-and-forget: best-effort delete when user opts out.
-        import("@/services/poke/pokeGatewayClient").then(
-          ({ deletePokeHandle }) => deletePokeHandle().catch(() => undefined),
+        // Fire-and-forget: best-effort cleanup when user opts out.
+        void import("@/lib/mobile/gnhMobileBridgeTypes").then(
+          ({ isMobileAndroid }) => {
+            if (isMobileAndroid()) {
+              void import("@/lib/mobile/ntfyWakeBridge").then(
+                ({ unsubscribeAll }) => unsubscribeAll(),
+              );
+            } else {
+              void import("@/services/poke/pokeGatewayClient").then(
+                ({ deletePokeHandle }) =>
+                  deletePokeHandle().catch(() => undefined),
+              );
+            }
+          },
         );
       }
       const next = { ...s, privacy };

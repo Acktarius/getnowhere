@@ -29,12 +29,12 @@ function clearOwnPokeHandle(): void {
  * Mints a new pokeHandle if none is cached; otherwise updates the token for
  * the existing handle (handles OS token rotation).
  *
- * @param platform - "apns" | "fcm"
+ * @param platform - "apns"
  * @param deviceToken - raw OS push token
  * @returns the pokeHandle (14-char base64url) to share with peers
  */
 export async function registerPokeHandle(
-  platform: "apns" | "fcm",
+  platform: "apns",
   deviceToken: string,
 ): Promise<string> {
   const base = gatewayUrl();

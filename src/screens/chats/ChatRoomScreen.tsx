@@ -521,7 +521,10 @@ export function ChatRoomScreen() {
           title="Room unavailable"
           body="This room could not be loaded."
           action={
-            <MobileInstantLink className="btn btn--sm btn--secondary" to="/chats">
+            <MobileInstantLink
+              className="btn btn--sm btn--secondary"
+              to="/chats"
+            >
               Back to chats
             </MobileInstantLink>
           }

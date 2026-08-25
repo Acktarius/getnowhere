@@ -60,6 +60,8 @@ jobs:
         run: python3 scripts/fix-for-fdroid.py
 
       - name: Build unsigned release APK
+        env:
+          VITE_NTFY_READ_TOKEN: ${{ secrets.VITE_NTFY_READ_TOKEN }}
         run: npm run mobile:android:release
 
       - name: Resolve version from version file

@@ -80,3 +80,8 @@ export type GnhSecurePrefsResponse = GnhBridgeEnvelope & {
 export function isMobileHost(): boolean {
   return typeof window !== "undefined" && window.gnhMobile != null;
 }
+
+/** Returns true when the hosting native shell is Android. */
+export function isMobileAndroid(): boolean {
+  return isMobileHost() && window.gnhMobile?.platform === "android";
+}
