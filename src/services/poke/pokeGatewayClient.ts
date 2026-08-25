@@ -66,12 +66,8 @@ export async function sendPoke(partnerPokeHandle: string): Promise<void> {
   const res = await fetch(`${base}/poke`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pokeHandle: partnerPokeHandle }),
+    body: JSON.stringify({ to: partnerPokeHandle }),
   });
-  if (res.status === 410) {
-    // Handle revoked by gateway — nothing to do locally
-    return;
-  }
   if (!res.ok) throw new Error(`Gateway /poke failed: ${res.status}`);
 }
 
@@ -88,7 +84,11 @@ export async function deletePokeHandle(): Promise<void> {
     return;
   }
   try {
-    await fetch(`${base}/handle/${handle}`, { method: "DELETE" });
+    await fetch(`${base}/register`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pokeHandle: handle }),
+    });
   } finally {
     clearOwnPokeHandle();
   }

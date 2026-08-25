@@ -33,6 +33,7 @@ cp .env.example .env
 |---|---|---|
 | `VITE_HOLEPUNCH_WS_URL` | local P2P only | WS bridge address (`ws://127.0.0.1:7901`) |
 | `VITE_NTFY_READ_TOKEN` | F-Droid push wake | Bearer token for SSE subscribe on `ntfy.getnowhere.im` |
+| `VITE_POKE_GATEWAY_URL` | F-Droid / iOS poke | Public origin of `poke-gateway/` (see that folder’s README) |
 
 **ntfy token setup (F-Droid / Android push wake):**
 Your ntfy server should run with `auth-default-access: deny-all` and two scoped users:

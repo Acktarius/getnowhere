@@ -62,6 +62,7 @@ jobs:
       - name: Build unsigned release APK
         env:
           VITE_NTFY_READ_TOKEN: ${{ secrets.VITE_NTFY_READ_TOKEN }}
+          VITE_POKE_GATEWAY_URL: ${{ secrets.VITE_POKE_GATEWAY_URL }}
         run: npm run mobile:android:release
 
       - name: Resolve version from version file

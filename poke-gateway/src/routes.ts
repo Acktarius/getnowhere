@@ -62,8 +62,11 @@ const unregisterSchema = {
 } as const;
 
 export function registerRoutes(app: FastifyInstance): void {
-  app.setErrorHandler((error, _req, reply) => {
-    const status = error.statusCode ?? 500;
+  app.setErrorHandler((error: unknown, _req, reply) => {
+    const status =
+      error && typeof error === "object" && "statusCode" in error
+        ? Number((error as { statusCode?: number }).statusCode) || 500
+        : 500;
     if (status >= 400 && status < 500) {
       return reply.code(status).send({ error: "bad_request" });
     }
