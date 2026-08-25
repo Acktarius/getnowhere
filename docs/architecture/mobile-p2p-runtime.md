@@ -189,7 +189,7 @@ Controls match packaged desktop / sidecar where applicable:
 | Opaque L1-sealed frames | Unchanged app crypto path |
 | Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
 | RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
-| WebView navigation restricted to `file:///android_asset/ui/` | `App.tsx` → `webviewNavigation.ts` |
+| WebView navigation restricted to packaged `ui/` (Android `android_asset`, iOS app-bundle folder) | `App.tsx` → `webviewNavigation.ts` / `bundledUiUri.ts` |
 | Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
 | CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
 | `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
@@ -203,9 +203,10 @@ OpenSpec `openspec/changes/mobile-bridge-hardening/`.
 
 ### WebView trust model
 
-The bundled Vite UI runs inside an Android WebView loading only
-`file:///android_asset/ui/`. Top-level navigation to `http(s)://`, `intent://`,
-or other asset paths is blocked via `onShouldStartLoadWithRequest`. The per-launch
+The bundled Vite UI runs inside a mobile WebView loading only the packaged `ui/`
+tree (`file:///android_asset/ui/` on Android; `…/App.app/ui/` on iOS). Top-level
+navigation to `http(s)://`, `intent://`, or other asset paths is blocked via
+`onShouldStartLoadWithRequest`. The per-launch
 bridge token lives in the RN host and in the injected script closure — it is **not**
 published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
 still attaches the token in postMessage payloads validated by RN), but cannot read

@@ -43,6 +43,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withGnhIosUiBundle.js",
       "./plugins/withGnhSecurity.js",
       "./plugins/withGnhBackgroundSync.js",
       "./plugins/withGnhNotifications.js",

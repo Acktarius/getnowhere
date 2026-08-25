@@ -62,6 +62,11 @@ EAS runs `eas-build-post-install` → installs `holepunch-sidecar` deps and
 `pack-bare` (writes gitignored `assets/bare/app.bundle`). Without that hook,
 Metro fails resolving the Bare worklet asset.
 
+iOS WebView UI: config plugin `withGnhIosUiBundle` adds an Xcode Run Script that
+copies `assets/ui` into the app bundle as `ui/` at build time (no extra npm
+deps). Android still uses `prepare-android-assets` / `android_asset` (F-Droid
+unchanged).
+
 Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
 `expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
 in scope. iOS profiles pin `"image": "sdk-55"`.
@@ -179,7 +184,9 @@ native-wrapper/
 |---------|--------|
 | EAS asks for Apple login | Expected for signing / submit |
 | Push never arrives (TestFlight) | VPS `.p8` + `APNS_*`; Production key; app registered token with `env: production` |
-| Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? |
+| Forever spinner (old IPA) | Pre-shell stub; rebuild with WebView enabled |
+| Stuck on splash logo | Splash hides on iOS mount; need `mobile:sync-ui` so `assets/ui` exists (Xcode Copy GNH WebView UI phase) |
+| Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? Check EAS log for “Copied WebView UI” |
 | Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
 
 ## Policy text

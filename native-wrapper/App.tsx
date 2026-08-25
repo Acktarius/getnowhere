@@ -1,6 +1,7 @@
 /**
  * Expo shell: bundled Vite UI + Bare Hyperswarm worklet behind gnhMobile bridge.
  * @see docs/builds/expo-eas-android-build.md
+ * @see docs/builds/expo-eas-ios-build.md
  */
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -42,14 +43,16 @@ import {
 } from "./src/saveTextFileFromWebView";
 import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
 import {
-  ANDROID_UI_ASSET_PREFIX,
+  getBundledUiIndexUri,
+  getBundledUiReadAccessUrl,
+  getIosUiAssetPrefix,
+} from "./src/bundledUiUri";
+import {
+  getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
-  WEBVIEW_ORIGIN_WHITELIST,
 } from "./src/webviewNavigation";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
-
-const ANDROID_UI_URI = `${ANDROID_UI_ASSET_PREFIX}index.html`;
 
 /** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
 const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
@@ -198,12 +201,7 @@ export default function App() {
       if (result) injectPokeToken(result.platform, result.token);
     });
 
-    if (
-      Platform.OS !== "android" ||
-      !bridgeToken ||
-      bridgeRef.current ||
-      bridgeStartingRef.current
-    ) {
+    if (!bridgeToken || bridgeRef.current || bridgeStartingRef.current) {
       return;
     }
     bridgeStartingRef.current = true;
@@ -224,12 +222,9 @@ export default function App() {
         console.error("[gnh-mobile] Bare worklet start failed", err);
       }
     })();
-  }, [bridgeToken, flushPendingForeground]);
+  }, [bridgeToken, flushPendingForeground, injectPokeToken]);
 
   useEffect(() => {
-    if (Platform.OS !== "android") {
-      void SplashScreen.hideAsync();
-    }
     return () => {
       clearForegroundFlushTimeouts();
       bridgeRef.current?.destroy();
@@ -238,8 +233,13 @@ export default function App() {
     };
   }, [clearForegroundFlushTimeouts]);
 
+  // iOS: never block forever on the native splash logo while WebView loads.
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    if (Platform.OS !== "ios") return;
+    void SplashScreen.hideAsync();
+  }, []);
+
+  useEffect(() => {
     if (!isGnhBackgroundSyncNativeAvailable()) return;
     return registerBackgroundSyncWebViewInjector((script) => {
       webViewRef.current?.injectJavaScript(script);
@@ -257,7 +257,7 @@ export default function App() {
   }, [injectPokeToken]);
 
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    // Keep Android lifecycle wiring as before; also enable on iOS for lock/UI.
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
       if (state === "background" || state === "inactive") {
@@ -330,15 +330,23 @@ export default function App() {
     [clearForegroundFlushTimeouts, flushPendingForeground, injectPokeToken],
   );
 
-  if (Platform.OS !== "android") {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#c9a227" />
-      </View>
-    );
-  }
+  const uiUri = useMemo(() => getBundledUiIndexUri(), []);
+  const uiReadAccessUrl = useMemo(() => getBundledUiReadAccessUrl(), []);
+  const iosUiPrefix = useMemo(() => getIosUiAssetPrefix(), []);
+  const extraPrefixes = useMemo(
+    () => (iosUiPrefix ? [iosUiPrefix] : []),
+    [iosUiPrefix],
+  );
+  const originWhitelist = useMemo(
+    () => getWebViewOriginWhitelist(extraPrefixes),
+    [extraPrefixes],
+  );
+  const allowNav = useCallback(
+    (url: string) => isAllowedWebViewNavigationUrl(url, extraPrefixes),
+    [extraPrefixes],
+  );
 
-  if (!bridgeToken) {
+  if (!bridgeToken || !uiUri) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color="#c9a227" />
@@ -356,17 +364,16 @@ export default function App() {
       ) : null}
       <WebView
         ref={webViewRef}
-        source={{ uri: ANDROID_UI_URI }}
+        source={{ uri: uiUri }}
         style={styles.webview}
-        originWhitelist={WEBVIEW_ORIGIN_WHITELIST}
+        originWhitelist={originWhitelist}
         allowFileAccess
         allowFileAccessFromFileURLs
+        allowingReadAccessToURL={uiReadAccessUrl}
         javaScriptEnabled
         domStorageEnabled
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
-        onShouldStartLoadWithRequest={(event) =>
-          isAllowedWebViewNavigationUrl(event.url)
-        }
+        onShouldStartLoadWithRequest={(event) => allowNav(event.url)}
         onLoadEnd={onWebViewReady}
         onMessage={onWebViewMessage}
         onError={(e) => {

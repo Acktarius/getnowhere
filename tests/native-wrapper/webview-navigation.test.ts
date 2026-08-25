@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ANDROID_UI_ASSET_PREFIX,
+  getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
-  WEBVIEW_ORIGIN_WHITELIST,
 } from "../../native-wrapper/src/webviewNavigation";
 
 describe("isAllowedWebViewNavigationUrl", () => {
@@ -22,6 +22,19 @@ describe("isAllowedWebViewNavigationUrl", () => {
     ).toBe(true);
   });
 
+  it("allows an explicit iOS UI prefix when provided", () => {
+    const iosPrefix = "file:///var/containers/Bundle/Application/App.app/ui/";
+    expect(
+      isAllowedWebViewNavigationUrl(`${iosPrefix}index.html`, [iosPrefix]),
+    ).toBe(true);
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file:///var/containers/Bundle/Application/App.app/other/x.html",
+        [iosPrefix],
+      ),
+    ).toBe(false);
+  });
+
   it("blocks external and non-UI file schemes", () => {
     expect(isAllowedWebViewNavigationUrl("https://evil.example/")).toBe(false);
     expect(isAllowedWebViewNavigationUrl("http://evil.example/")).toBe(false);
@@ -39,8 +52,18 @@ describe("isAllowedWebViewNavigationUrl", () => {
   });
 });
 
-describe("WEBVIEW_ORIGIN_WHITELIST", () => {
+describe("getWebViewOriginWhitelist", () => {
   it("scopes origins to the packaged UI prefix", () => {
-    expect(WEBVIEW_ORIGIN_WHITELIST).toEqual(["file:///android_asset/ui/*"]);
+    expect(getWebViewOriginWhitelist()).toEqual([
+      "file:///android_asset/ui/*",
+    ]);
+    expect(
+      getWebViewOriginWhitelist([
+        "file:///var/containers/Bundle/Application/App.app/ui/",
+      ]),
+    ).toEqual([
+      "file:///android_asset/ui/*",
+      "file:///var/containers/Bundle/Application/App.app/ui/*",
+    ]);
   });
 });
