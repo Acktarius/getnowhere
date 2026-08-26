@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
 import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
+import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
 import { PasskeyError } from "@/lib/auth/passkey-error";
 import { _resetAppAccessControllerForTests } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
@@ -36,6 +37,7 @@ function MobileAppAccessHarness() {
   useEffect(() => {
     void init().then(async () => {
       if (isMobileHost()) {
+        await initMobileBiometricStorage();
         await reconcileBiometricSettingsWithEnrollments();
       }
       setReady(true);
@@ -123,8 +125,9 @@ describe("mobile app-access idle integration", () => {
       "utf8",
     );
     expect(src).toContain("reconcileBiometricSettingsWithEnrollments");
+    expect(src).toContain("initMobileBiometricStorage");
     expect(src).toMatch(
-      /isMobileHost\(\)[\s\S]*reconcileBiometricSettingsWithEnrollments[\s\S]*setReady\(true\)/,
+      /initMobileBiometricStorage[\s\S]*reconcileBiometricSettingsWithEnrollments[\s\S]*setReady\(true\)/,
     );
   });
 

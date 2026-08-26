@@ -54,6 +54,10 @@ function AppInner() {
     init().then(async () => {
       await hydrateContacts();
       if (isMobileHost()) {
+        const { initMobileBiometricStorage } = await import(
+          "@/lib/auth/biometric-storage"
+        );
+        await initMobileBiometricStorage();
         await reconcileBiometricSettingsWithEnrollments();
       }
       setReady(true);

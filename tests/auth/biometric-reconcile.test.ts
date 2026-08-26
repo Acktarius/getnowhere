@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
 import {
   clearMemoryBiometricStorage,
+  initMobileBiometricStorage,
   memoryBiometricStorage,
   setBiometricStorageAdapter,
 } from "@/lib/auth/biometric-storage";
@@ -18,6 +19,7 @@ const APP_ACCESS_CREDENTIAL_KEY = "gnh.appAccessCredentialId";
 
 function installGnhMobile(opts: {
   appAccessCredentialId: string | null;
+  enrollmentJson?: string | null;
 }) {
   window.gnhMobile = {
     sendCommand: vi.fn(),
@@ -31,10 +33,15 @@ function installGnhMobile(opts: {
       removeCredential: vi.fn(),
     },
     securePrefs: {
-      get: vi.fn(async (key: string) => ({
-        value:
-          key === APP_ACCESS_CREDENTIAL_KEY ? opts.appAccessCredentialId : null,
-      })),
+      get: vi.fn(async (key: string) => {
+        if (key === APP_ACCESS_CREDENTIAL_KEY) {
+          return { value: opts.appAccessCredentialId };
+        }
+        if (key === "gnh-biometric-enrollment") {
+          return { value: opts.enrollmentJson ?? null };
+        }
+        return { value: null };
+      }),
       set: vi.fn(async () => ({ ok: true })),
       remove: vi.fn(async () => ({ ok: true })),
     },
@@ -134,5 +141,29 @@ describe("reconcileBiometricSettingsWithEnrollments", () => {
     expect(persisted.dataUnlockBiometricEnabled).toBe(
       before.dataUnlockBiometricEnabled,
     );
+  });
+
+  it("keeps data unlock flag when securePrefs enrollment is read via mobile adapter", async () => {
+    const enrollmentJson = JSON.stringify({
+      version: 2,
+      credentials: [
+        {
+          credentialId: "data-cred-native",
+          label: "This device",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+    installGnhMobile({
+      appAccessCredentialId: "app-cred-present",
+      enrollmentJson,
+    });
+    await initMobileBiometricStorage();
+    seedBiometricFlagsOn();
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    expect(useSettingsStore.getState().dataUnlockBiometricEnabled).toBe(true);
+    expect(readPersistedBiometricFlags().dataUnlockBiometricEnabled).toBe(true);
   });
 });
