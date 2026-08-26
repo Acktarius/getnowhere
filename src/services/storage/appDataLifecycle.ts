@@ -1,10 +1,15 @@
 /**
- * Wallet / app-data wipe helpers (disconnect → key remove → reload).
+ * Wallet / app-data wipe helpers (disconnect → key remove → clear RAM → welcome reload).
  * @see docs/architecture/web-vs-wrapper.md
  */
 import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
 import { getStorage } from "@/services/storage/StorageAdapter";
+import { useAuthStore } from "@/state/authStore";
+import { useChatStore } from "@/state/chatStore";
+import { useContactsStore } from "@/state/contactsStore";
+import { useNotificationStore } from "@/state/notificationStore";
+import { useWalletStore } from "@/state/walletStore";
 
 /** Keys cleared by both delete-wallet and full reset. */
 export const WALLET_TIED_KEYS = [
@@ -40,18 +45,56 @@ function removeAdapterKeys(keys: readonly string[]): void {
 }
 
 /**
- * Remove wallet-tied persistence, keep app prefs, then reload.
+ * Drop in-memory session so RequireWallet / onboarding gate cannot keep serving tabs
+ * if reload is delayed or blocked (e.g. some WebViews).
+ */
+function clearSessionRam(): void {
+  useNotificationStore.getState().resetSession();
+  useWalletStore.setState({
+    initialized: false,
+    locked: true,
+    address: "",
+    seedRef: "",
+    seedPhrase: null,
+    syncStatus: "idle",
+    syncProgress: 0,
+    transactions: [],
+    transactionsLoading: false,
+  });
+  useContactsStore.setState({
+    contacts: [],
+    invites: [],
+    hydrated: false,
+  });
+  useChatStore.setState({
+    rooms: [],
+    messagesByRoom: {},
+    activeRoomId: null,
+    loadingRooms: false,
+  });
+  useAuthStore.getState().lock();
+}
+
+/** Land HashRouter on welcome before reload so remount is not stuck on #/settings. */
+function goWelcomeAndReload(): void {
+  window.location.hash = "#/welcome";
+  window.location.reload();
+}
+
+/**
+ * Remove wallet-tied persistence, keep app prefs, clear RAM, then reload to welcome.
  * @see docs/architecture/web-vs-wrapper.md
  */
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
   await clearAllMobileBiometricEnrollments();
   removeAdapterKeys(WALLET_TIED_KEYS);
-  location.reload();
+  clearSessionRam();
+  goWelcomeAndReload();
 }
 
 /**
- * Remove wallet-tied data plus prefs / side channels, then reload.
+ * Remove wallet-tied data plus prefs / side channels, clear RAM, then reload to welcome.
  * @see docs/architecture/web-vs-wrapper.md
  */
 export async function resetAppData(): Promise<void> {
@@ -65,5 +108,6 @@ export async function resetAppData(): Promise<void> {
   for (const key of APP_PREF_SESSION_KEYS) {
     sessionStorage.removeItem(key);
   }
-  location.reload();
+  clearSessionRam();
+  goWelcomeAndReload();
 }

@@ -17,6 +17,11 @@ import {
 import type { WebViewMessageEvent } from "react-native-webview";
 import { WebView } from "react-native-webview";
 import { createBridgeToken } from "./src/bridgeToken";
+import {
+  getBundledUiIndexUri,
+  getBundledUiReadAccessUrl,
+  getIosUiAssetPrefix,
+} from "./src/bundledUiUri";
 import type { GnhMobileBridge } from "./src/GnhMobileBridge";
 import {
   isGnhBackgroundSyncNativeAvailable,
@@ -42,11 +47,6 @@ import {
   handleSaveTextFileWebViewMessage,
 } from "./src/saveTextFileFromWebView";
 import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
-import {
-  getBundledUiIndexUri,
-  getBundledUiReadAccessUrl,
-  getIosUiAssetPrefix,
-} from "./src/bundledUiUri";
 import {
   getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
