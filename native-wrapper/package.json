@@ -31,8 +31,11 @@
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
     "react-native": "0.83.10",
+    "bare-type": "1.1.0",
+    "bare-url": "2.4.5",
     "react-native-bare-kit": "^0.13.3",
     "react-native-webview": "13.16.0",
+    "sodium-native": "5.1.0",
     "udx-native": "1.20.7"
   },
   "devDependencies": {
