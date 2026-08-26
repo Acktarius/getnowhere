@@ -147,7 +147,10 @@ export function ImportWalletScreen() {
   async function handleImagePicked(file: File) {
     setScanError(null);
     try {
-      const url = URL.createObjectURL(file);
+      // Use data: URL instead of blob: URL — WKWebView (file:// origin) treats
+      // blob: URLs as cross-origin, tainting the canvas so getImageData returns
+      // zeros. A data: URL is always same-origin. @see docs/builds/expo-eas-ios-build.md
+      const url = await fileToDataUrl(file);
       const img = new Image();
       img.src = url;
       await new Promise((res) => {
@@ -158,7 +161,6 @@ export function ImportWalletScreen() {
       if (detector) {
         try {
           const codes = await detector.detect(img);
-          URL.revokeObjectURL(url);
           if (codes.length > 0 && codes[0].rawValue) {
             setQrText(codes[0].rawValue);
             return;
@@ -167,9 +169,8 @@ export function ImportWalletScreen() {
           /* fall through to jsqr */
         }
       }
-      // jsqr fallback (next-wallet parity) when BarcodeDetector is missing/empty
+      // jsqr fallback when BarcodeDetector is missing or returns empty
       const decoded = await decodeQrWithJsQr(img);
-      URL.revokeObjectURL(url);
       if (decoded) {
         setQrText(decoded);
       } else {
@@ -1043,6 +1044,16 @@ function getBarcodeDetector(): BarcodeDetectorLike | null {
     }
   }
   return null;
+}
+
+/** Read a File as a data: URL (safe for WKWebView canvas — blob: taints the canvas). */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /** Decode a QR from an already-loaded image via jsqr (canvas sample). */

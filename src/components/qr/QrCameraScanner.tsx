@@ -1,6 +1,7 @@
 /**
  * Live camera QR scanner — rear camera + jsQR, same idea as conceal-next-wallet.
  * No Cordova bridge; web / WebView getUserMedia only.
+ * @see docs/builds/expo-eas-ios-build.md
  */
 import { useEffect, useRef, useState } from "react";
 import { decodeQrFromImageData } from "@/lib/qr-decode";
@@ -53,6 +54,17 @@ export function QrCameraScanner({
         video.setAttribute("playsinline", "true");
         video.muted = true;
         await video.play();
+
+        // iOS WKWebView resolves play() before the decoder reports frame dimensions.
+        // Wait for the first event that signals a valid size before scanning.
+        if (!video.videoWidth) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            video.addEventListener("loadedmetadata", done, { once: true });
+            video.addEventListener("resize", done, { once: true });
+          });
+        }
+
         if (cancelled) return;
 
         const canvas = document.createElement("canvas");
