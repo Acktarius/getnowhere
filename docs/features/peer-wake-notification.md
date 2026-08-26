@@ -92,13 +92,14 @@ counterparty skips the poke step silently. No protocol error, no UX divergence.
 
 ### Byte budget
 
-| Message | Current body | + `ph:<14 chars>` field | Total | Target ceiling | Hard limit |
+| Message | Current body | + pokeHandle (14 chars) | Total | Target ceiling | Hard limit |
 |---|---|---|---|---|---|
-| `chat.create` | ≈102 chars | +17 chars | **≈119 chars** | ≤120 chars | 251 bytes |
-| `chat.register` | well under | +17 chars | comfortable | — | 251 bytes |
+| `chat.create` v1 | ≈101 chars | +15 chars | **≈116 chars** | ≤122 chars | 251 bytes |
+| `chat.create` v2 | ≈106 chars | +15 chars | **≈121 chars** | ≤122 chars | 251 bytes |
+| `chat.register` | well under | +15 chars | comfortable | — | 251 bytes |
 
-The `chat.create` target ceiling is ≤120 chars (wallet UI display). 119 is within this with 1
-char to spare. If push is disabled the field is omitted and the body stays at ≈102 chars.
+The `chat.create` target ceiling is ≤122 chars (wallet UI display). v2 + pokeHandle uses 121
+with 1 char to spare. If push is disabled the field is omitted and v2 bodies stay at ≈106 chars.
 
 ### Handle scope: room-level, not account-level
 

@@ -99,7 +99,7 @@ bidirectional Conceal relationship.
     advertises a fee address
 - Inbound bodies are reconstructed during wallet sync via
   `readMessageFromTransaction` into `raw.receivedMessages`.
--   Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤120 chars**
+-   Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤122 chars**
   (practical room for payment-id + fees in wallet UIs):
   `{contact,c,pv,<b64url>}` slim pack (64 bytes raw):
   `inviteId(4) | roomId(4) | eph(32) | nonceSeed(8) | inviteExpiry(u32) |

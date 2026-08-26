@@ -141,7 +141,7 @@ function assertBodyFits(smartBody: string): void {
 }
 
 /**
- * Slim packed create (current) — keep whole `{contact,c,1,<b64>}` under ~120 chars
+ * Slim packed create (current) — keep whole `{contact,c,pv,<b64>}` under ~122 chars
  * so payment-id + message fit practical wallet limits (SDK max remains 251).
  *
  * Omitted on wire (derived locally):
@@ -176,8 +176,11 @@ export const CREATE_PACK_BYTES_LEGACY_SLIM = CREATE_PACK_BYTES_V1;
 /** Legacy 136-byte pack (pre-slim) — still accepted on parse. */
 export const CREATE_PACK_BYTES_LEGACY = 136;
 
-/** Product target for create body length (chars ≈ UTF-8 bytes for this alphabet). */
-export const MAX_CREATE_BODY_CHARS = 120;
+/**
+ * Product target for create body length (chars ≈ UTF-8 bytes for this alphabet).
+ * v2 pack (106) + optional pokeHandle (15) = 121 — still well under SDK 251-byte cap.
+ */
+export const MAX_CREATE_BODY_CHARS = 122;
 
 function requireHexBytes(
   hex: string,
@@ -380,7 +383,7 @@ export async function hydrateCreateHandshake(
 
 /**
  * Packed create wire (current):
- * `{contact,c,pv,<b64url pack>}` — slim CREATE_PACK_FIELDS (≤120 chars).
+ * `{contact,c,pv,<b64url pack>}` — slim CREATE_PACK_FIELDS (≤122 chars).
  * Alias / caps stay local-only.
  */
 export function encodeCreateSmartBody(

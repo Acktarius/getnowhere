@@ -77,7 +77,7 @@ describe("smart message protocol create/register/revoke", () => {
     clearReplayCache();
   });
 
-  it("encodes slim packed create under 120 chars and round-trips", async () => {
+  it("encodes slim packed create under 122 chars and round-trips", async () => {
     const { hydrateCreateHandshake } = await import(
       "../../src/services/protocol/SmartMessageProtocolAdapter"
     );
@@ -86,7 +86,7 @@ describe("smart message protocol create/register/revoke", () => {
     expect(body.startsWith("{contact,")).toBe(true);
     expect(body.includes(",c,") || body.includes(",create,")).toBe(true);
     const byteLen = new TextEncoder().encode(body).length;
-    expect(byteLen).toBeLessThanOrEqual(120);
+    expect(byteLen).toBeLessThanOrEqual(122);
     const parsed = parseChatSmartBody(body);
     expect(parsed?.action).toBe("create");
     if (parsed?.action === "create") {

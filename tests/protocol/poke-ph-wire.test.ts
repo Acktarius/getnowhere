@@ -6,9 +6,10 @@ import {
   MAX_CREATE_BODY_CHARS,
   parseChatSmartBody,
 } from "../../src/services/protocol/SmartMessageProtocolAdapter";
-import type {
-  ChatInviteHandshake,
-  ChatRegisterPayload,
+import {
+  CHAT_PROTOCOL_VERSION,
+  type ChatInviteHandshake,
+  type ChatRegisterPayload,
 } from "../../src/types/protocol";
 
 const VALID_POKE_HANDLE = "aB3dEfGhIjKlMn"; // 14 base64url chars
@@ -81,7 +82,7 @@ describe("chat.create ph field encode/decode", () => {
   });
 
   it("body with ph still fits within MAX_CREATE_BODY_CHARS byte budget", () => {
-    const hs = sampleHandshake();
+    const hs = sampleHandshake({ protocolVersion: CHAT_PROTOCOL_VERSION });
     const body = encodeCreateSmartBody(
       hs,
       undefined,
@@ -89,6 +90,7 @@ describe("chat.create ph field encode/decode", () => {
       VALID_POKE_HANDLE,
     );
     const byteLen = new TextEncoder().encode(body).length;
+    expect(byteLen).toBe(121);
     expect(byteLen).toBeLessThanOrEqual(MAX_CREATE_BODY_CHARS);
     expect(byteLen).toBeLessThanOrEqual(MAX_MESSAGE_BODY_BYTES);
   });
