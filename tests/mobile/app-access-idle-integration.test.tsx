@@ -120,10 +120,7 @@ describe("mobile app-access idle integration", () => {
   });
 
   it("App.tsx awaits reconcileBiometricSettingsWithEnrollments before ready", () => {
-    const src = readFileSync(
-      resolve(__dirname, "../../src/App.tsx"),
-      "utf8",
-    );
+    const src = readFileSync(resolve(__dirname, "../../src/App.tsx"), "utf8");
     expect(src).toContain("reconcileBiometricSettingsWithEnrollments");
     expect(src).toContain("initMobileBiometricStorage");
     expect(src).toMatch(

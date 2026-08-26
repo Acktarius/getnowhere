@@ -1,0 +1,24 @@
+{
+  "change": "ios-sync-checkpoint",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "wallet-sync-checkpoint — mid-sync periodic persist during deep catch-up",
+      "library": "src/services/conceal/sync/runtime.ts :: maybeCheckpoint",
+      "runtimeOwner": "syncOnce (called by runSyncChain → syncRuntime → useWalletLiveSync hook)",
+      "writes": "encrypted wallet blob via persistRuntime → persistNow → saveStoredWallet",
+      "reads": "rt.state.scannedHeight, coord.lastCheckpointHeight, SYNC_CHECKPOINT_BLOCKS",
+      "uiConsumer": "N/A (persist is background durable write; scannedHeight drives progress display next open)",
+      "evidence": "tests/conceal/sync/runtime-checkpoint.test.ts — 6 tests; full suite 443/443 green"
+    },
+    {
+      "capability": "wallet-sync-checkpoint — background lifecycle flush",
+      "library": "src/lib/mobile/syncLifecycleCheckpoint.ts :: installSyncLifecycleCheckpoint + runtime.ts :: flushSyncCheckpoint",
+      "runtimeOwner": "App.tsx useEffect cleanup + onAppAccessLifecycle background/screenOff handler",
+      "writes": "encrypted wallet blob via persistRuntime → persistNow → saveStoredWallet",
+      "reads": "rt.state.scannedHeight, rt.raw.lastHeight (last-persisted sentinel)",
+      "uiConsumer": "N/A (best-effort flush on app background; resume picks up persisted scannedHeight next open)",
+      "evidence": "tests/mobile/sync-lifecycle-checkpoint.test.ts — 5 tests; full suite 443/443 green"
+    }
+  ]
+}

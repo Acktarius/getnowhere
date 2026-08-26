@@ -19,6 +19,7 @@ import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { installBackgroundRemoteSyncHook } from "@/lib/mobile/backgroundRemoteSync";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { installSyncLifecycleCheckpoint } from "@/lib/mobile/syncLifecycleCheckpoint";
 import { AppLockScreen } from "@/screens/AppLockScreen";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
@@ -51,6 +52,7 @@ function AppInner() {
   useEffect(() => {
     scrubLeftoverDaemonCaches();
     if (isMobileHost()) installBackgroundRemoteSyncHook();
+    const unsubCheckpoint = installSyncLifecycleCheckpoint();
     init().then(async () => {
       await hydrateContacts();
       if (isMobileHost()) {
@@ -62,6 +64,7 @@ function AppInner() {
       }
       setReady(true);
     });
+    return unsubCheckpoint;
   }, [init, hydrateContacts]);
 
   const onboarded = isOnboarded();

@@ -1,0 +1,5 @@
+{
+  "change": "ios-sync-checkpoint",
+  "notApplicable": "This change is sync-persistence infrastructure inside the wallet runtime (no new UI surface, no worker/job kind). The product loop (WebView JS freeze → persist → SDK re-open from checkpoint) requires a native Expo/iOS runtime and cannot be exercised by the Playwright harness or any CLI command. The unit-test suite (443/443 green) verifies all guard conditions and caller wiring. integrity.requireE2E=when-jobs-or-workers and no new job kind is introduced.",
+  "steps": []
+}

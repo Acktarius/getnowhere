@@ -1,0 +1,97 @@
+<!-- forge-brief-specs-hash:a534b2a17ab10c53 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iOS Sync Checkpoint — Operator Brief</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; line-height: 1.6; }
+  h1 { font-size: 1.5rem; border-bottom: 2px solid #ddd; padding-bottom: .5rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; color: #333; }
+  ul { padding-left: 1.4rem; }
+  li { margin-bottom: .35rem; }
+  code { background: #f4f4f4; padding: .1em .35em; border-radius: 3px; font-size: .9em; }
+  .mermaid { background: #f9f9f9; border-radius: 6px; padding: 1rem; margin: 1rem 0; }
+  .note { background: #fffbe6; border-left: 4px solid #e6c200; padding: .6rem 1rem; border-radius: 0 4px 4px 0; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</head>
+<body>
+
+<h1>iOS Sync Checkpoint</h1>
+
+<h2>TL;DR</h2>
+<p>
+  When an iOS phone sleeps mid-sync, the wallet currently forgets all progress and rescans from
+  scratch next time you open the app. This change makes the sync engine save its position every
+  ~1000 blocks during a long catch-up, and also flushes the saved position the moment the app
+  goes to background — so a restart after sleep picks up roughly where it left off instead of
+  starting over.
+</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>After an interrupted deep sync on iOS, reopening the app resumes near the last saved block instead of restarting from the wallet's creation height.</li>
+  <li>Regular incremental syncs (already near the chain tip) are unchanged — no extra work happens on a phone that's up to date.</li>
+  <li>Android behaviour is identical to today — the same code runs; the extra saves are just additional idempotent writes during long catch-ups.</li>
+  <li>No new native iOS code, no native module changes, no App Store submission required for this fix.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+  The wallet sync runs inside a WebView on iOS. When iOS suspends the app, WebView JavaScript
+  timers freeze immediately. Previously, the sync only saved progress once at the very end of
+  each full scan pass — so a freeze between "started" and "finished" lost all progress.
+</p>
+<p>
+  Two complementary fixes are added:
+</p>
+<ul>
+  <li><strong>Mid-sync checkpoint:</strong> During a long catch-up, the sync now saves progress to encrypted storage every ~1000 blocks. If iOS kills the WebView before the scan finishes, the next open resumes from the last checkpoint rather than from zero.</li>
+  <li><strong>Background flush:</strong> When the app signals it is moving to background, a best-effort flush writes whatever progress has happened since the last save — protecting the most recent partial batch.</li>
+</ul>
+
+<pre class="mermaid">
+sequenceDiagram
+  participant Sync as Sync engine
+  participant Store as Encrypted storage
+  participant OS as iOS
+
+  Sync->>Sync: scan batch 1..1000
+  Sync->>Store: checkpoint save (scannedHeight=1000)
+  Sync->>Sync: scan batch 1001..2000
+  Sync->>Store: checkpoint save (scannedHeight=2000)
+  OS-->>Sync: background signal
+  Sync->>Store: flush (scannedHeight=2347)
+  OS->>Sync: WebView frozen / process killed
+  Note over Sync,Store: Next open: resume from 2347
+</pre>
+
+<h2>What changes for you</h2>
+<p>Nothing changes in the UI or any workflow. The wallet resumes faster after iOS interruptions — that's the only visible effect.</p>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li>The background flush is best-effort: if iOS freezes the WebView before the flush JS executes, the last partial batch (up to ~1000 blocks) is still lost — but the checkpoint before that is safe. This is a best-effort improvement, not a guarantee.</li>
+  <li>Extra encrypt+write calls during deep catch-up add a small overhead (one save per ~1000 blocks). On a wallet that is 100 000 blocks behind, that's ~100 extra writes during catch-up — negligible compared to the hours of sync time.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>iOS native <code>beginBackgroundTask</code> extension (would buy ~30s extra time; deferred as future hardening).</li>
+  <li>Any change to the Android WorkManager chain.</li>
+  <li>Changing how frequently progress is saved during normal (near-tip) sync.</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li><strong>Groups 1–3 — Runtime checkpoint (7 tasks):</strong> add the checkpoint constant, coordination state, helper function, and hook it into both sync loop paths; export a flush function.</li>
+  <li><strong>Groups 4–5 — Lifecycle wiring (2 tasks):</strong> new lifecycle subscriber file + wire it into App.tsx.</li>
+  <li><strong>Group 6 — Tests (4 tasks):</strong> unit tests for checkpoint boundary, flush no-op, lifecycle events, and light-path regression.</li>
+</ul>
+
+<!-- forge-brief-specs-hash: pending -->
+</body>
+</html>

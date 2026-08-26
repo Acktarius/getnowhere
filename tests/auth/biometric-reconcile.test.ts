@@ -51,9 +51,7 @@ function installGnhMobile(opts: {
 function seedBiometricFlagsOn() {
   const appAccessBiometricEnabled = true;
   const dataUnlockBiometricEnabled = true;
-  useSettingsStore
-    .getState()
-    .setAppAccessBiometric(appAccessBiometricEnabled);
+  useSettingsStore.getState().setAppAccessBiometric(appAccessBiometricEnabled);
   useSettingsStore
     .getState()
     .setDataUnlockBiometric(dataUnlockBiometricEnabled);
@@ -95,7 +93,9 @@ describe("reconcileBiometricSettingsWithEnrollments", () => {
     await reconcileBiometricSettingsWithEnrollments();
 
     const store = useSettingsStore.getState();
-    expect(store.appAccessBiometricEnabled).toBe(!before.appAccessBiometricEnabled);
+    expect(store.appAccessBiometricEnabled).toBe(
+      !before.appAccessBiometricEnabled,
+    );
     expect(store.dataUnlockBiometricEnabled).toBe(
       !before.dataUnlockBiometricEnabled,
     );

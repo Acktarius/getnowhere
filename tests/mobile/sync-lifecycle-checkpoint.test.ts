@@ -1,0 +1,91 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const isMobileHostMock = vi.fn<() => boolean>();
+const onAppAccessLifecycleMock = vi.fn<[(type: string) => void], () => void>();
+const flushSyncCheckpointMock = vi.fn<[], Promise<void>>();
+
+vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
+  isMobileHost: () => isMobileHostMock(),
+}));
+
+vi.mock("@/lib/mobile/AppAccessController", () => ({
+  onAppAccessLifecycle: (handler: (type: string) => void) =>
+    onAppAccessLifecycleMock(handler),
+}));
+
+vi.mock("@/services/conceal/sync/runtime", () => ({
+  flushSyncCheckpoint: () => flushSyncCheckpointMock(),
+}));
+
+describe("installSyncLifecycleCheckpoint", () => {
+  beforeEach(() => {
+    isMobileHostMock.mockReset();
+    onAppAccessLifecycleMock.mockReset();
+    flushSyncCheckpointMock.mockReset();
+    flushSyncCheckpointMock.mockResolvedValue(undefined);
+  });
+
+  async function load() {
+    vi.resetModules();
+    const mod = await import("@/lib/mobile/syncLifecycleCheckpoint");
+    return mod.installSyncLifecycleCheckpoint;
+  }
+
+  it("returns no-op and skips onAppAccessLifecycle on non-mobile host", async () => {
+    isMobileHostMock.mockReturnValue(false);
+    const install = await load();
+    const unsub = install();
+    expect(onAppAccessLifecycleMock).not.toHaveBeenCalled();
+    expect(typeof unsub).toBe("function");
+    unsub(); // must not throw
+  });
+
+  it("calls onAppAccessLifecycle and returns the unsubscribe on mobile host", async () => {
+    isMobileHostMock.mockReturnValue(true);
+    const fakeUnsub = vi.fn();
+    onAppAccessLifecycleMock.mockReturnValue(fakeUnsub);
+    const install = await load();
+    const unsub = install();
+    expect(onAppAccessLifecycleMock).toHaveBeenCalledOnce();
+    expect(unsub).toBe(fakeUnsub);
+  });
+
+  it("calls flushSyncCheckpoint when lifecycle type is 'background'", async () => {
+    isMobileHostMock.mockReturnValue(true);
+    let capturedHandler: ((type: string) => void) | undefined;
+    onAppAccessLifecycleMock.mockImplementation((h) => {
+      capturedHandler = h;
+      return vi.fn();
+    });
+    const install = await load();
+    install();
+    capturedHandler!("background");
+    expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+  });
+
+  it("calls flushSyncCheckpoint when lifecycle type is 'screenOff'", async () => {
+    isMobileHostMock.mockReturnValue(true);
+    let capturedHandler: ((type: string) => void) | undefined;
+    onAppAccessLifecycleMock.mockImplementation((h) => {
+      capturedHandler = h;
+      return vi.fn();
+    });
+    const install = await load();
+    install();
+    capturedHandler!("screenOff");
+    expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT call flushSyncCheckpoint when lifecycle type is 'foreground'", async () => {
+    isMobileHostMock.mockReturnValue(true);
+    let capturedHandler: ((type: string) => void) | undefined;
+    onAppAccessLifecycleMock.mockImplementation((h) => {
+      capturedHandler = h;
+      return vi.fn();
+    });
+    const install = await load();
+    install();
+    capturedHandler!("foreground");
+    expect(flushSyncCheckpointMock).not.toHaveBeenCalled();
+  });
+});

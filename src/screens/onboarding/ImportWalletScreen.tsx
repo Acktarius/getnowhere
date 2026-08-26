@@ -12,9 +12,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
-import { decodeQrFromImageData } from "@/lib/qr-decode";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { decodeQrFromImageData } from "@/lib/qr-decode";
 import { walletService } from "@/services";
 import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter";
 import { markOnboarded } from "@/state/authStore";
