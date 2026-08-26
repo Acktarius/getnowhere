@@ -19,6 +19,7 @@
       "bundleIdentifier": "im.getnowhere.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Get NowHere uses Face ID or Touch ID to unlock the app and your wallet.",
         "NSCameraUsageDescription": "Get NowHere uses the camera to scan QR codes.",
         "NSMicrophoneUsageDescription": "Get NowHere may use the microphone for future voice features.",
         "NSPhotoLibraryUsageDescription": "Get NowHere can read a QR code image or photo to share in chat.",
