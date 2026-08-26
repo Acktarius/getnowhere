@@ -54,15 +54,13 @@ describe("isAllowedWebViewNavigationUrl", () => {
 
 describe("getWebViewOriginWhitelist", () => {
   it("scopes origins to the packaged UI prefix", () => {
-    expect(getWebViewOriginWhitelist()).toEqual([
-      "file:///android_asset/ui/*",
-    ]);
+    expect(getWebViewOriginWhitelist()).toEqual(["file://*"]);
     expect(
       getWebViewOriginWhitelist([
         "file:///var/containers/Bundle/Application/App.app/ui/",
       ]),
     ).toEqual([
-      "file:///android_asset/ui/*",
+      "file://*",
       "file:///var/containers/Bundle/Application/App.app/ui/*",
     ]);
   });

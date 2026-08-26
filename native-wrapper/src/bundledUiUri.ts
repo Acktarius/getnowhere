@@ -25,9 +25,14 @@ export function getIosUiAssetPrefix(): string | null {
   return `${bundleDirectory}ui/`;
 }
 
-/** iOS WKWebView allowingReadAccessToURL (ui directory). */
+/**
+ * iOS WKWebView allowingReadAccessToURL.
+ * Use the .app bundle root (not just ui/) so iOS grants access even after
+ * WKWebView resolves the /var → /private/var symlink.
+ */
 export function getBundledUiReadAccessUrl(): string | undefined {
-  const prefix = getIosUiAssetPrefix();
-  if (!prefix) return undefined;
-  return prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
+  if (Platform.OS !== "ios" || !bundleDirectory) return undefined;
+  return bundleDirectory.endsWith("/")
+    ? bundleDirectory.slice(0, -1)
+    : bundleDirectory;
 }

@@ -13,7 +13,9 @@ export const ANDROID_UI_ASSET_PREFIX = "file:///android_asset/ui/";
 export function getWebViewOriginWhitelist(
   extraPrefixes: readonly string[] = [],
 ): string[] {
-  const list = [`${ANDROID_UI_ASSET_PREFIX}*`];
+  // WebView originWhitelist matches origins (scheme/host), not full file paths.
+  // Allow local file origin; onShouldStartLoadWithRequest enforces path scope.
+  const list = ["file://*"];
   for (const prefix of extraPrefixes) {
     if (prefix) list.push(`${prefix}*`);
   }

@@ -16,7 +16,8 @@
     "android:sign-test": "node scripts/sign-android-apk.mjs",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "eas-build-post-install": "npm --prefix ../holepunch-sidecar ci && node scripts/pack-bare.mjs"
+    "eas-build-pre-install": "npm --prefix ../holepunch-sidecar ci && node scripts/prepare-bare-deps.mjs",
+    "eas-build-post-install": "node scripts/pack-bare.mjs"
   },
   "dependencies": {
     "expo": "~55.0.29",

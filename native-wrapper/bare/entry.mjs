@@ -3,6 +3,16 @@
  * @see docs/architecture/mobile-p2p-runtime.md
  */
 
+// Bare's default behavior is to abort() on any unhandled rejection (like
+// Node --unhandled-rejections=throw). Guard here so a DHT bootstrap failure
+// or any other async error surfaces as a log line instead of a process crash.
+process.on("unhandledRejection", (err) => {
+  console.error(
+    "[gnh-bare] unhandledRejection:",
+    err instanceof Error ? err.stack ?? err.message : String(err),
+  );
+});
+
 import b4a from "b4a";
 import { createBridgeSession } from "./bridge.mjs";
 import { config } from "./config.mjs";

@@ -58,9 +58,20 @@ npx eas build --platform ios --profile preview-ios
 npx eas submit --platform ios --profile preview-ios --latest
 ```
 
-EAS runs `eas-build-post-install` → installs `holepunch-sidecar` deps and
-`pack-bare` (writes gitignored `assets/bare/app.bundle`). Without that hook,
-Metro fails resolving the Bare worklet asset.
+**EAS build lifecycle (iOS):**
+
+1. `eas-build-pre-install` — installs `holepunch-sidecar` deps and creates
+   `bare/node_modules → holepunch-sidecar/node_modules` symlink **before**
+   CocoaPods runs. This is required so `pod install` → `BareKit/link.mjs` can
+   find `udx-native` prebuilds and emit `udx-native.xcframework` into
+   `react-native-bare-kit/ios/addons/`. Without this step the app crashes at
+   launch with `ADDON_NOT_FOUND: Cannot find addon '.' from udx-native/binding.js`.
+2. CocoaPods (`pod install`) — runs `BareKit` podspec `prepare_command` which
+   calls `link.mjs`, discovers every native addon under `native-wrapper/`
+   (including via the symlink) and writes their XCFrameworks to `ios/addons/`.
+3. `eas-build-post-install` — packs the Bare JS bundle into
+   `assets/bare/app.bundle` (symlink already exists; no re-linking needed).
+4. Xcode build — picks up `addons/*.xcframework` vendored by BareKit podspec.
 
 iOS WebView UI: config plugin `withGnhIosUiBundle` adds an Xcode Run Script that
 copies `assets/ui` into the app bundle as `ui/` at build time (no extra npm
@@ -188,6 +199,7 @@ native-wrapper/
 | Stuck on splash logo | Splash hides on iOS mount; need `mobile:sync-ui` so `assets/ui` exists (Xcode Copy GNH WebView UI phase) |
 | Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? Check EAS log for “Copied WebView UI” |
 | Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
+| Crash: `ADDON_NOT_FOUND udx-native` | `eas-build-pre-install` must create `bare/node_modules` symlink before `pod install`; verify EAS log shows "Linking bare/node_modules" in phase 1 |
 
 ## Policy text
 

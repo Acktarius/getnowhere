@@ -341,8 +341,18 @@ export default function App() {
     () => getWebViewOriginWhitelist(extraPrefixes),
     [extraPrefixes],
   );
+  // iOS WKWebView resolves /var → /private/var symlink, so the URL fired in
+  // onShouldStartLoadWithRequest won't match a prefix built from bundleDirectory.
+  // Allow all file:// on iOS; external URLs are already blocked by originWhitelist.
+  // Android keeps strict path-based filtering unchanged. @see docs/builds/expo-eas-ios-build.md
   const allowNav = useCallback(
-    (url: string) => isAllowedWebViewNavigationUrl(url, extraPrefixes),
+    (url: string) => {
+      if (Platform.OS === "ios") {
+        const lower = url.toLowerCase();
+        return lower === "about:blank" || lower.startsWith("file://");
+      }
+      return isAllowedWebViewNavigationUrl(url, extraPrefixes);
+    },
     [extraPrefixes],
   );
 
