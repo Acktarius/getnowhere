@@ -200,6 +200,7 @@ native-wrapper/
 | Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? Check EAS log for “Copied WebView UI” |
 | Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
 | Crash: `ADDON_NOT_FOUND udx-native` | `eas-build-pre-install` must create `bare/node_modules` symlink before `pod install`; verify EAS log shows "Linking bare/node_modules" in phase 1 |
+| Crash: `ReferenceError: process is not defined` (BareKit) | BareKit 0.13.x does not expose `process` as a global. `entry.mjs` must guard `process.on` with `typeof process !== 'undefined'`. |
 
 ## Policy text
 
