@@ -382,6 +382,7 @@ export default function App() {
         allowingReadAccessToURL={uiReadAccessUrl}
         javaScriptEnabled
         domStorageEnabled
+        mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
         onShouldStartLoadWithRequest={(event) => allowNav(event.url)}
         onLoadEnd={onWebViewReady}

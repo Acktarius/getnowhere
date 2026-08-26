@@ -2,7 +2,7 @@
   "expo": {
     "name": "Get NowHere",
     "slug": "get-nowhere-wrapper",
-    "version": "0.3.8",
+    "version": "0.4.0",
     "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,7 +18,11 @@
       "supportsTablet": false,
       "bundleIdentifier": "im.getnowhere.app",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Get NowHere uses the camera to scan QR codes.",
+        "NSMicrophoneUsageDescription": "Get NowHere may use the microphone for future voice features.",
+        "NSPhotoLibraryUsageDescription": "Get NowHere can read a QR code image or photo to share in chat.",
+        "NSPhotoLibraryAddUsageDescription": "Get NowHere can save images received in chat to your photo library."
       }
     },
     "android": {
