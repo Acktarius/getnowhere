@@ -9,15 +9,23 @@ const PHASE_NAME = "Copy GNH WebView UI";
 /** Shell script body (newlines escaped for pbxproj). */
 const COPY_UI_SCRIPT = [
   "set -e",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'UI_SRC="${SRCROOT}/../assets/ui"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'UI_DST="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/ui"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'if [ ! -f "${UI_SRC}/index.html" ]; then',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   '  echo "error: missing ${UI_SRC}/index.html — run npm run mobile:sync-ui before eas build" >&2',
   "  exit 1",
   "fi",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'rm -rf "${UI_DST}"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'mkdir -p "${UI_DST}"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'cp -R "${UI_SRC}/." "${UI_DST}/"',
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: shell variable, not a JS template literal
   'echo "Copied WebView UI → ${UI_DST}"',
 ].join("\\n");
 
