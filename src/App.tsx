@@ -15,6 +15,7 @@ import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { MainTabShell } from "@/layouts/MainTabShell";
+import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { installBackgroundRemoteSyncHook } from "@/lib/mobile/backgroundRemoteSync";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
@@ -52,6 +53,9 @@ function AppInner() {
     if (isMobileHost()) installBackgroundRemoteSyncHook();
     init().then(async () => {
       await hydrateContacts();
+      if (isMobileHost()) {
+        await reconcileBiometricSettingsWithEnrollments();
+      }
       setReady(true);
     });
   }, [init, hydrateContacts]);

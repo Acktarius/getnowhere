@@ -7,6 +7,7 @@ import {
 import { useAuthStore } from "@/state/authStore";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 vi.mock("@/services/conceal/sync/runtime", () => ({
@@ -127,13 +128,55 @@ describe("app-data lifecycle", () => {
     for (const key of WALLET_TIED_KEYS) {
       expect(adapter.getItem(key)).toBeNull();
     }
-    expect(adapter.getItem("gnh.settings")).toBe('{"theme":"dark"}');
+    expect(adapter.getItem("gnh.settings")).not.toBeNull();
+    const keptSettings = JSON.parse(
+      adapter.getItem("gnh.settings") as string,
+    ) as {
+      theme?: string;
+      appAccessBiometricEnabled?: boolean;
+      dataUnlockBiometricEnabled?: boolean;
+    };
+    expect(keptSettings.theme).toBe("dark");
+    expect(keptSettings.appAccessBiometricEnabled).toBe(false);
+    expect(keptSettings.dataUnlockBiometricEnabled).toBe(false);
     expect(useWalletStore.getState().initialized).toBe(false);
     expect(useContactsStore.getState().contacts).toEqual([]);
     expect(useChatStore.getState().rooms).toEqual([]);
     expect(useAuthStore.getState().unlocked).toBe(false);
     expect(locationStub.hash).toBe("#/welcome");
     expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("deleteWalletData resets biometric flags in gnh.settings while keeping theme", async () => {
+    // Non-default theme (DEFAULT_SETTINGS.theme is "dark") + both biometric flags on.
+    const theme = "light";
+    const appAccessBiometricEnabled = true;
+    const dataUnlockBiometricEnabled = true;
+    const settingsBefore = {
+      theme,
+      appAccessBiometricEnabled,
+      dataUnlockBiometricEnabled,
+    };
+    adapter.setItem("gnh.settings", JSON.stringify(settingsBefore));
+    useSettingsStore.setState(settingsBefore);
+
+    await deleteWalletData();
+
+    const raw = adapter.getItem("gnh.settings");
+    expect(raw).not.toBeNull();
+    const persisted = JSON.parse(raw as string) as typeof settingsBefore;
+    expect(persisted.theme).toBe(theme);
+    expect(persisted.appAccessBiometricEnabled).toBe(
+      !appAccessBiometricEnabled,
+    );
+    expect(persisted.dataUnlockBiometricEnabled).toBe(
+      !dataUnlockBiometricEnabled,
+    );
+
+    const store = useSettingsStore.getState();
+    expect(store.theme).toBe(theme);
+    expect(store.appAccessBiometricEnabled).toBe(!appAccessBiometricEnabled);
+    expect(store.dataUnlockBiometricEnabled).toBe(!dataUnlockBiometricEnabled);
   });
 
   it("resetAppData removes wallet-tied and app-pref keys and disconnects", async () => {

@@ -92,6 +92,16 @@ vault re-encryption under biometrics.
 Password always remains valid. Clearing enrollment on password change, wallet delete,
 and panic wipe matches conceal-next-wallet rules.
 
+### Delete wallet and stale biometric flags
+
+**Delete wallet** (`deleteWalletData`) clears biometric enrollments **and** sets
+`appAccessBiometricEnabled` and `dataUnlockBiometricEnabled` to false. Other settings
+(theme, auto-lock, sleep, etc.) are kept. Full app reset still wipes `gnh.settings`.
+
+**Cold-start self-heal:** if either biometric flag is on but the matching enrollment is
+missing, reconcile clears that flag and skips App Lock so a stale toggle cannot force a
+biometric gate with nothing enrolled.
+
 Reference implementation: `conceal-next-wallet` (`lib/auth/platform-unlock.ts`,
 `lib/auth/biometric-store.ts`, `lib/cordova/biometric-unlock.ts`).
 

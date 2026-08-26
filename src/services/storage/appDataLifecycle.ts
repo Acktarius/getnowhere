@@ -9,6 +9,7 @@ import { useAuthStore } from "@/state/authStore";
 import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 /** Keys cleared by both delete-wallet and full reset. */
@@ -88,6 +89,9 @@ function goWelcomeAndReload(): void {
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
   await clearAllMobileBiometricEnrollments();
+  const settings = useSettingsStore.getState();
+  settings.setAppAccessBiometric(false);
+  settings.setDataUnlockBiometric(false);
   removeAdapterKeys(WALLET_TIED_KEYS);
   clearSessionRam();
   goWelcomeAndReload();

@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
 import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
+import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { PasskeyError } from "@/lib/auth/passkey-error";
 import { _resetAppAccessControllerForTests } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
@@ -31,7 +34,12 @@ function MobileAppAccessHarness() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    void init().then(() => setReady(true));
+    void init().then(async () => {
+      if (isMobileHost()) {
+        await reconcileBiometricSettingsWithEnrollments();
+      }
+      setReady(true);
+    });
   }, [init]);
 
   if (!ready) return <div data-testid="booting">booting</div>;
@@ -48,7 +56,11 @@ function MobileAppAccessHarness() {
   return <div data-testid="main-app">Main app</div>;
 }
 
-function installGnhMobile() {
+function installGnhMobile(opts?: { appAccessCredentialId?: string | null }) {
+  const appAccessCredentialId =
+    opts && "appAccessCredentialId" in opts
+      ? opts.appAccessCredentialId
+      : "test-cred";
   window.gnhMobile = {
     onLifecycle: vi.fn(() => () => {}),
     setLockGeneration: vi.fn(),
@@ -61,7 +73,10 @@ function installGnhMobile() {
       removeCredential: vi.fn(async () => ({ ok: true })),
     },
     securePrefs: {
-      get: vi.fn(async () => ({ value: null })),
+      get: vi.fn(async (key: string) => ({
+        value:
+          key === "gnh.appAccessCredentialId" ? appAccessCredentialId : null,
+      })),
       set: vi.fn(async () => ({ ok: true })),
       remove: vi.fn(async () => ({ ok: true })),
     },
@@ -100,6 +115,32 @@ describe("mobile app-access idle integration", () => {
     cleanup();
     delete window.gnhMobile;
     _resetAppAccessControllerForTests();
+  });
+
+  it("App.tsx awaits reconcileBiometricSettingsWithEnrollments before ready", () => {
+    const src = readFileSync(
+      resolve(__dirname, "../../src/App.tsx"),
+      "utf8",
+    );
+    expect(src).toContain("reconcileBiometricSettingsWithEnrollments");
+    expect(src).toMatch(
+      /isMobileHost\(\)[\s\S]*reconcileBiometricSettingsWithEnrollments[\s\S]*setReady\(true\)/,
+    );
+  });
+
+  it("skips App lock after boot when flag is stale and enrollment is missing", async () => {
+    installGnhMobile({ appAccessCredentialId: null });
+    unlockAppAccessBiometric.mockRejectedValue(
+      new PasskeyError("cancelled", "Biometric unlock was cancelled."),
+    );
+
+    render(<MobileAppAccessHarness />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("main-app")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("App lock")).toBeNull();
+    expect(useSettingsStore.getState().appAccessBiometricEnabled).toBe(false);
   });
 
   it("keeps App lock after init when biometrics fail (no init bypass)", async () => {
