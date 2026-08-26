@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
+import { decodeQrFromImageData } from "@/lib/qr-decode";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { walletService } from "@/services";
@@ -95,9 +96,20 @@ export function ImportWalletScreen() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        await video.play();
+        // iOS WKWebView resolves play() before the decoder reports frame dimensions.
+        // Wait for the first event that signals a valid size before scanning.
+        // @see docs/builds/expo-eas-ios-build.md
+        if (!video.videoWidth) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            video.addEventListener("loadedmetadata", done, { once: true });
+            video.addEventListener("resize", done, { once: true });
+          });
+        }
       }
       scanLoop();
     } catch {
@@ -133,15 +145,26 @@ export function ImportWalletScreen() {
   async function detectQrFromVideo(
     video: HTMLVideoElement,
   ): Promise<string | null> {
+    // Try hardware BarcodeDetector first (iOS 17+ / Chrome).
     const detector = getBarcodeDetector();
-    if (!detector) return null;
-    try {
-      const codes = await detector.detect(video);
-      if (codes.length > 0) return codes[0].rawValue ?? null;
-    } catch {
-      // transient frame errors — keep scanning
+    if (detector) {
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length > 0) return codes[0].rawValue ?? null;
+      } catch {
+        // transient frame errors — fall through to jsQR
+      }
     }
-    return null;
+    // jsQR fallback — required on iOS < 17 where BarcodeDetector is unavailable.
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return decodeQrFromImageData(frame.data, frame.width, frame.height) ?? null;
   }
 
   async function handleImagePicked(file: File) {
