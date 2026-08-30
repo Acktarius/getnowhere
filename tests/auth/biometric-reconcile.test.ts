@@ -146,9 +146,9 @@ describe("reconcileBiometricSettingsWithEnrollments", () => {
   it("preserves both flags when securePrefs read throws (simulates locked iOS Keychain)", async () => {
     installGnhMobile({ appAccessCredentialId: null });
     // Override securePrefs.get to throw, simulating errSecInteractionNotAllowed
-    window.gnhMobile!.securePrefs!.get = vi.fn().mockRejectedValue(
-      new Error("unavailable"),
-    );
+    window.gnhMobile!.securePrefs!.get = vi
+      .fn()
+      .mockRejectedValue(new Error("unavailable"));
     seedBiometricFlagsOn();
 
     await reconcileBiometricSettingsWithEnrollments();

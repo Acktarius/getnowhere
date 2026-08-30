@@ -54,7 +54,9 @@ export function SecuritySettingsScreen() {
       return;
     }
     if (!appAccessAvailable) {
-      setAppAccessError("Biometric app unlock is not available on this device.");
+      setAppAccessError(
+        "Biometric app unlock is not available on this device.",
+      );
       return;
     }
     setAppAccessBusy(true);

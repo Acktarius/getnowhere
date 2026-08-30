@@ -102,7 +102,9 @@ export async function hasBiometricEnrollment(
 export async function hasBiometricEnrollmentStrict(
   walletId: string = DEFAULT_WALLET_ID,
 ): Promise<boolean> {
-  const raw = await getBiometricStorageAdapter().getItem(storageKeyFor(walletId));
+  const raw = await getBiometricStorageAdapter().getItem(
+    storageKeyFor(walletId),
+  );
   return raw !== null;
 }
 
