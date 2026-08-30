@@ -186,7 +186,50 @@ chat together.
 | Background poll / sleep | `src/hooks/useWalletLiveSync.ts` |
 | Onboarding biometric step | `src/screens/onboarding/CreateWalletScreen.tsx` |
 
-## Device verification checklist
+## iOS background restart — biometric flags must survive
+
+**Symptom (iOS only):** after leaving the app in background long enough for iOS to
+terminate the WKWebView process (memory pressure), returning to the app shows both
+biometric toggles set to OFF, forcing the user to re-authenticate with their password
+and re-configure biometrics.
+
+**Root cause:** `GnhSecurePrefs` previously stored Keychain items with
+`kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`. When iOS terminates the WKWebView
+and the native shell restarts it while the device screen is locked, the Keychain items
+are inaccessible (`errSecInteractionNotAllowed`). `reconcileBiometricSettingsWithEnrollments`
+ran, got null for both credential lookups, and treated "unreadable" as "missing" —
+incorrectly clearing both flags.
+
+**Why Android is unaffected:** `GnhSecurePrefs.kt` uses `EncryptedSharedPreferences`
+backed by an AES-256-GCM master key from the Android Keystore. This key does not
+require an active unlock session for reads — only "after first boot unlock" — so the
+metadata is always readable after the device has been used once since reboot.
+
+**Fix (two layers):**
+
+1. **Native iOS — `GnhSecurePrefs.swift`**:
+   - Changed accessibility from `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`
+     to `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Items are now readable
+     whenever the device has been unlocked at least once since boot — even when the
+     screen locks again.
+   - Added `migrateKnownKeys()` (called from `GnhSecurityModule.init()`) to upgrade
+     existing items via `SecItemUpdate` the first time the app runs with new code
+     while the device is unlocked. Only the two stable metadata keys are migrated
+     (`gnh.appAccessCredentialId`, `gnh-biometric-enrollment`).
+   - Added `getDetailed()` that distinguishes `errSecItemNotFound` (key absent, not
+     an error) from other Keychain errors (unavailable), allowing the module to
+     `reject` the promise on genuine errors rather than resolving with nil.
+
+2. **JS — `reconcileBiometricSettingsWithEnrollments`**:
+   - The `catch` for `gnhSecurePrefsGet` and `hasBiometricEnrollmentStrict` now
+     returns early from the whole function instead of falling through to clear the
+     flag. A storage read error means "cannot confirm status" — never "enrollment
+     missing".
+   - `hasBiometricEnrollmentStrict` (new export from `biometric-store.ts`) reads
+     the enrollment raw string directly via the storage adapter, propagating errors
+     rather than swallowing them.
+
+**Device verification checklist
 
 Manual checks before store ship (Android first; iOS when WebView shell enabled):
 
@@ -198,6 +241,7 @@ Manual checks before store ship (Android first; iOS when WebView shell enabled):
 - [ ] Change app passcode → app-access biometric cleared
 - [ ] Delete wallet / reset app → native credentials cleared
 - [ ] Biometric enrollment invalidated after OS biometric change (re-enroll prompt)
+- [ ] Both biometric toggles remain ON after app is backgrounded long enough for iOS to reclaim the WKWebView (simulate: background app, lock screen, wait 5+ minutes, foreground — toggles must still be ON)
 - [ ] Background sleep: wallet poll pauses after `backgroundSleepSec`, resumes after unlock
 
 Run automated bridge/unit tests: `npm test -- tests/mobile/ tests/auth/ tests/native-wrapper/`
@@ -215,5 +259,6 @@ Run automated bridge/unit tests: `npm test -- tests/mobile/ tests/auth/ tests/na
 - [x] Native secure storage module (Android Keystore + iOS Swift Keychain)
 - [x] Data-unlock enroll/unlock/remove (native-only decrypt)
 - [x] Separate settings: app access biometrics vs data unlock biometrics (independent busy/error state, visual divider)
+- [x] iOS Keychain accessibility fix — biometric flags survive long background / WKWebView restart
 - [x] **Sleep** setting + background poll cutoff (`backgroundSleepSec`)
 - [ ] Physical-device tests (enroll, unlock, biometric change invalidation, fallback passwords)

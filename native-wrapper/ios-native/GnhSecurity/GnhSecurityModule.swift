@@ -8,8 +8,20 @@ class GnhSecurityModule: NSObject {
 
   @objc static func requiresMainQueueSetup() -> Bool { true }
 
+  override init() {
+    super.init()
+    // Migrate any existing items to AfterFirstUnlock accessibility at startup
+    // (device is always unlocked when the user opens the app).
+    prefs.migrateKnownKeys()
+  }
+
   @objc func securePrefsGet(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    resolver(prefs.get(key: key))
+    let (value, error) = prefs.getDetailed(key: key)
+    if let error = error {
+      rejecter("ERR_KEYCHAIN_UNAVAILABLE", error, nil)
+    } else {
+      resolver(value)
+    }
   }
 
   @objc func securePrefsSet(_ key: String, value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {

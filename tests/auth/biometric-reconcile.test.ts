@@ -143,6 +143,25 @@ describe("reconcileBiometricSettingsWithEnrollments", () => {
     );
   });
 
+  it("preserves both flags when securePrefs read throws (simulates locked iOS Keychain)", async () => {
+    installGnhMobile({ appAccessCredentialId: null });
+    // Override securePrefs.get to throw, simulating errSecInteractionNotAllowed
+    window.gnhMobile!.securePrefs!.get = vi.fn().mockRejectedValue(
+      new Error("unavailable"),
+    );
+    seedBiometricFlagsOn();
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    const store = useSettingsStore.getState();
+    expect(store.appAccessBiometricEnabled).toBe(true);
+    expect(store.dataUnlockBiometricEnabled).toBe(true);
+
+    const persisted = readPersistedBiometricFlags();
+    expect(persisted.appAccessBiometricEnabled).toBe(true);
+    expect(persisted.dataUnlockBiometricEnabled).toBe(true);
+  });
+
   it("keeps data unlock flag when securePrefs enrollment is read via mobile adapter", async () => {
     const enrollmentJson = JSON.stringify({
       version: 2,

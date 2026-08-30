@@ -93,6 +93,19 @@ export async function hasBiometricEnrollment(
   return (await getBiometricEnrollment(walletId)) !== null;
 }
 
+/**
+ * Check enrollment existence without swallowing storage errors.
+ * Returns false when the key is definitively absent.
+ * Throws when storage is unavailable (e.g. Keychain locked on iOS).
+ * Use this in reconcile paths where an error must not be treated as "missing".
+ */
+export async function hasBiometricEnrollmentStrict(
+  walletId: string = DEFAULT_WALLET_ID,
+): Promise<boolean> {
+  const raw = await getBiometricStorageAdapter().getItem(storageKeyFor(walletId));
+  return raw !== null;
+}
+
 export function addBiometricCredential(
   existing: BiometricEnrollment | null,
   credential: BiometricCredential,

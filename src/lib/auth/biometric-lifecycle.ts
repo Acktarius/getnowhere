@@ -6,6 +6,7 @@ import {
   clearBiometricEnrollment,
   DEFAULT_WALLET_ID,
   getBiometricEnrollment,
+  hasBiometricEnrollmentStrict,
 } from "@/lib/auth/biometric-store";
 import { signalUnlockRemoved } from "@/lib/auth/platform-unlock";
 import { clearAppAccessBiometric } from "@/lib/mobile/app-access-biometric";
@@ -34,7 +35,10 @@ export async function clearAllMobileBiometricEnrollments(): Promise<void> {
 }
 
 /**
- * Clear biometric settings flags when matching enrollments are missing.
+ * Clear biometric settings flags when matching enrollments are definitively missing.
+ * Bails without touching flags when storage is unavailable (e.g. iOS Keychain locked
+ * while WKWebView restarts in background) — an unavailable read must not be treated
+ * as a missing enrollment.
  * @see docs/features/app-access-and-data-unlock.md
  */
 export async function reconcileBiometricSettingsWithEnrollments(): Promise<void> {
@@ -45,7 +49,7 @@ export async function reconcileBiometricSettingsWithEnrollments(): Promise<void>
     try {
       credentialId = await gnhSecurePrefsGet(APP_ACCESS_CREDENTIAL_KEY);
     } catch {
-      credentialId = null;
+      return;
     }
     if (!credentialId) {
       settings.setAppAccessBiometric(false);
@@ -53,13 +57,13 @@ export async function reconcileBiometricSettingsWithEnrollments(): Promise<void>
   }
 
   if (settings.dataUnlockBiometricEnabled) {
-    let enrollment = null;
+    let hasEnrollment: boolean;
     try {
-      enrollment = await getBiometricEnrollment();
+      hasEnrollment = await hasBiometricEnrollmentStrict();
     } catch {
-      enrollment = null;
+      return;
     }
-    if (!enrollment) {
+    if (!hasEnrollment) {
       settings.setDataUnlockBiometric(false);
     }
   }
