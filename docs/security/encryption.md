@@ -379,11 +379,15 @@ Rules:
   `p2pchatprotocol.md`.
 - Prefer the active `StorageAdapter`; do not scatter secrets into ad hoc
   `localStorage` calls.
-- **Room transcripts (optional):** when Settings privacy `localMessageRetention`
-  is on, Exit **saves** in-memory chat messages into the encrypted wallet blob
-  field `chatRooms` (wallet password). Off = do not save chat text on Exit.
-  Leave-forever / revoke replaces a room entry with `{ roomId, revoked: true }`
-  only (no message bodies). Hydrate from the blob after unlock.
+- **Room transcripts:** L2 is sealed frames, not a shared Hypercore log. Persist
+  what this device already saw in the encrypted wallet blob (`chatRooms`) when
+  Settings **P2P message retention** is on: background write ~1s after live
+  send/receive (UI never waits), immediately on hide and Exit. Off = do not
+  write or hydrate L2; L1′ sent still lives in `sentMessages` while the room
+  is available. Rooms are TTL-bounded (default 7d, max 30d). Leave / expire /
+  revoke tombstones `chatRooms` and drops matching L1′ `e` rows. No peer
+  catch-up in this model — a later change if we add a request protocol or a
+  log. @see `openspec/changes/p2p-message-retention/design.md`
 
 ## Implementation boundaries
 

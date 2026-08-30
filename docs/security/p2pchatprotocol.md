@@ -242,6 +242,12 @@ and do not add a third ad hoc stream cipher on Noise.
 (view-key / chain) than live — see §16. Mixing L1′ and live in one `roomId`
 thread is intentional UX.
 
+**Live history is local, not a shared log.** L2 carries sealed frames. This
+device may persist what it already saw (wallet blob). There is no Hypercore
+replica to request missed live messages. Room TTL / leave-forever wipe local
+copies. Peer catch-up is a later protocol change. @see `docs/security/encryption.md`
+(local storage rules).
+
 Library note: `@noble/ciphers` exposes both ChaCha and XChaCha helpers. The
 product cipher suite id `CHACHA20_POLY1305_V1` binds to **ChaCha20-Poly1305
 only**. Switching to XChaCha requires a new suite id, doc update, and

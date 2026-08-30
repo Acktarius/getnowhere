@@ -103,8 +103,10 @@ loads it with `loadFile` (no runtime Pages fetch). See
 
 ## Storage and sync
 
-If replicated history is added later, keep replication in the runtime and expose
-state through the bridge. The UI must not import Hypercore/Hyperswarm primitives.
+Live chat is sealed frames on the swarm, not a Hypercore log. The UI persists
+what this device already saw in the encrypted wallet blob. If replicated history
+is added later, keep replication in the runtime and expose state through the
+bridge. The UI must not import Hypercore/Hyperswarm primitives.
 
 ## Layout
 

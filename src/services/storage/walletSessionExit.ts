@@ -8,7 +8,6 @@ import { saveChatRoomsToWallet } from "@/services/p2p/HolepunchChatTransport";
 import { useAuthStore } from "@/state/authStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
-import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
 
 export type WalletSessionExitDeps = {
@@ -39,13 +38,11 @@ export async function walletSessionExit(
 export async function runWalletSessionExit(
   navigate: (path: string) => void,
 ): Promise<void> {
-  const retentionOn =
-    useSettingsStore.getState().privacy.localMessageRetention === true;
   await walletSessionExit({
     persistContacts: async () => {
       await persistContacts(useContactsStore.getState().contacts);
     },
-    saveChatRooms: retentionOn ? () => saveChatRoomsToWallet() : undefined,
+    saveChatRooms: () => saveChatRoomsToWallet(),
     softLeaveAll: () => chatTransport.softLeaveAll(),
     lockWallet: () => walletService.lockWallet(),
     clearSession: () => {

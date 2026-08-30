@@ -1,0 +1,91 @@
+<!-- forge-brief-specs-hash:879f850e42eb067c -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>P2P message retention</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>P2P message retention</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Chats should still be there after you leave the app — whether you tap Exit
+    or just hop out like Telegram. Live (Holepunch) history is saved when
+    <strong>P2P message retention</strong> is on (default). Messages you paid to
+    send on chain always come back while the room is still open.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Settings rename: <strong>P2P message retention</strong>, on by default.</li>
+    <li>Off means live chats are session-only. Paid chain sends still show in the room.</li>
+    <li>Leaving via home / app switcher still keeps live chats (if the setting is on), even if the OS later kills the app.</li>
+    <li>Exit still locks the wallet; next unlock restores the same history rules.</li>
+    <li>When a room expires or is revoked, live history and local chain-relay copies for that room are removed.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Live bubbles stay instant. In the background we rewrite the encrypted
+    wallet about a second after live send or receive (so a burst does not
+    encrypt the file on every message). Hide and Exit save immediately.
+    Paid chain sends are stored at send time. Incoming chain messages are
+    rescanned. Unlock rebuilds the thread from both sources.
+    We keep sealed live frames on this device — not a shared Keet-style log —
+    so a room that expires or is left can actually drop its local copy.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  A[Unlocked chat] -->|L2 send or receive| B[Save live history if retention on]
+  A -->|Home / hide| B
+  A -->|Exit| C[Save then lock wallet]
+  B -->|OS kills app| D[Unlock]
+  C --> D
+  D --> E[Show live history if retention on]
+  D --> F[Always show paid chain sends]
+  A -->|Room expires or revoke| G[Wipe that room's local chat copies]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>You do not need to tap Exit just to keep a live chat.</li>
+    <li>Exit still means lock and unlock next time.</li>
+    <li>The privacy toggle only controls live (P2P) history, not paid chain sends.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Live text history stays small and is wiped when the room ends (default 7 days, at most 30).</li>
+    <li>Turning the setting off does not instantly delete old live copies; they just stop showing. They go away when the room ends.</li>
+    <li>If you were offline, this phone cannot pull missed live messages from the other phone. That is a later change. Paid chain fallback still works.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>A second place to store chats besides the encrypted wallet.</li>
+    <li>Changing how chain messages are formatted or what they cost.</li>
+    <li>Catching up history from the peer over the network.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Failing tests for persist, hydrate, and wipe (2 tasks)</li>
+    <li>Live-history save on send, hide, and Exit (3 tasks)</li>
+    <li>Rebuild chain messages + wipe on room end (2 tasks)</li>
+    <li>Settings copy, docs, and acceptance run (3 tasks)</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

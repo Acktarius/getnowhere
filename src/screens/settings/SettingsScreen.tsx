@@ -210,8 +210,8 @@ export function SettingsScreen() {
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem
-              title="Local message retention"
-              description="On Exit, save chat messages into the encrypted wallet. Off = do not save chat text."
+              title="P2P message retention"
+              description="Keep live (Holepunch) chats after Exit or when the app is killed. Off = live chats are session-only. Messages you paid to send on chain still show while the room is open."
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />

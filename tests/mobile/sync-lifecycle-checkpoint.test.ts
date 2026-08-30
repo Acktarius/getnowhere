@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const isMobileHostMock = vi.fn<() => boolean>();
 const onAppAccessLifecycleMock = vi.fn<[(type: string) => void], () => void>();
 const flushSyncCheckpointMock = vi.fn<[], Promise<void>>();
+const flushChatTranscriptsOnHideMock = vi.fn<[], Promise<void>>();
 
 vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
   isMobileHost: () => isMobileHostMock(),
@@ -17,12 +18,18 @@ vi.mock("@/services/conceal/sync/runtime", () => ({
   flushSyncCheckpoint: () => flushSyncCheckpointMock(),
 }));
 
+vi.mock("@/services/p2p/HolepunchChatTransport", () => ({
+  flushChatTranscriptsOnHide: () => flushChatTranscriptsOnHideMock(),
+}));
+
 describe("installSyncLifecycleCheckpoint", () => {
   beforeEach(() => {
     isMobileHostMock.mockReset();
     onAppAccessLifecycleMock.mockReset();
     flushSyncCheckpointMock.mockReset();
     flushSyncCheckpointMock.mockResolvedValue(undefined);
+    flushChatTranscriptsOnHideMock.mockReset();
+    flushChatTranscriptsOnHideMock.mockResolvedValue(undefined);
   });
 
   async function load() {
@@ -61,6 +68,7 @@ describe("installSyncLifecycleCheckpoint", () => {
     install();
     capturedHandler!("background");
     expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
   });
 
   it("calls flushSyncCheckpoint when lifecycle type is 'screenOff'", async () => {
@@ -74,6 +82,30 @@ describe("installSyncLifecycleCheckpoint", () => {
     install();
     capturedHandler!("screenOff");
     expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+  });
+
+  it("on non-mobile host flushes transcripts when the tab becomes hidden", async () => {
+    isMobileHostMock.mockReturnValue(false);
+    const install = await load();
+    const unsub = install();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+    expect(flushSyncCheckpointMock).not.toHaveBeenCalled();
+    unsub();
+  });
+
+  it("on non-mobile host flushes transcripts on pagehide", async () => {
+    isMobileHostMock.mockReturnValue(false);
+    const install = await load();
+    const unsub = install();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+    unsub();
   });
 
   it("does NOT call flushSyncCheckpoint when lifecycle type is 'foreground'", async () => {
@@ -87,5 +119,6 @@ describe("installSyncLifecycleCheckpoint", () => {
     install();
     capturedHandler!("foreground");
     expect(flushSyncCheckpointMock).not.toHaveBeenCalled();
+    expect(flushChatTranscriptsOnHideMock).not.toHaveBeenCalled();
   });
 });

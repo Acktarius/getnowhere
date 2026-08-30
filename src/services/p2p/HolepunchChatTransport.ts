@@ -4,8 +4,16 @@
  * @see docs/security/p2pchatprotocol.md §16
  */
 
+import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
+import {
+  readReceivedRecords,
+  readSentRecords,
+  type SdkMessageRecord,
+  withReceivedRecords,
+  withSentRecords,
+} from "@/services/conceal/sync/messages-store";
 import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
 import {
@@ -65,6 +73,7 @@ import {
   resolveIncomingLifecycle,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
+import { parseChatSmartBody } from "@/services/protocol/SmartMessageProtocolAdapter";
 import { useSettingsStore } from "@/state/settingsStore";
 import type { ChatMessage, ChatRoom } from "@/types/models";
 import type {
@@ -267,6 +276,7 @@ function notify(roomId: string, msg: ChatMessage): void {
   const next = mergeContentMessage(list, msg);
   messagesByRoom.set(roomId, next);
   for (const h of subscribers.get(roomId) ?? []) h(msg);
+  if (msg.channel === "live") scheduleLiveTranscriptFlush();
 }
 
 /** Stable id for L1 relay rows (dedupe on rescan). */
@@ -1206,8 +1216,13 @@ export function storePartnerPokeHandle(roomId: string, handle: string): void {
   patchCatalogRoom(roomId, { partnerPokeHandle: handle });
 }
 
+function localMessageRetentionOn(): boolean {
+  return useSettingsStore.getState().privacy.localMessageRetention === true;
+}
+
 /** Save in-memory room messages into the encrypted wallet blob. */
 export async function saveChatRoomsToWallet(): Promise<void> {
+  if (!localMessageRetentionOn()) return;
   const rt = getRuntime();
   if (!rt) return;
   const bag: Record<string, ChatMessage[]> = {};
@@ -1219,13 +1234,14 @@ export async function saveChatRoomsToWallet(): Promise<void> {
 }
 
 /**
- * Load non-revoked transcripts from the wallet blob into memory.
- * Revoked stubs sync into gnh.revokedRooms.
+ * Load chatRooms (skip live bodies when retention off) then merge L1′ relays.
+ * @see openspec/changes/p2p-message-retention/specs/chat-room-persistence/spec.md
  */
 export function hydrateChatRoomsFromWallet(): void {
   const rt = getRuntime();
   if (!rt) return;
   const roomsMap = readChatRooms(rt.raw);
+  const restoreBodies = localMessageRetentionOn();
   for (const [roomId, entry] of Object.entries(roomsMap)) {
     if (entry.revoked === true) {
       rememberRevokedRoom(roomId);
@@ -1233,16 +1249,107 @@ export function hydrateChatRoomsFromWallet(): void {
       continue;
     }
     if (isRoomRevoked(roomId)) continue;
+    if (!restoreBodies) continue;
     const existing = messagesByRoom.get(roomId) ?? [];
     if (existing.length > 0) continue;
     messagesByRoom.set(roomId, [...entry.messages]);
   }
+  mergeL1RelayTranscripts(rt.raw);
+}
+
+function isRoomBlockedForL1Hydrate(
+  raw: RawWalletV1,
+  roomId: string,
+): boolean {
+  if (isRoomRevoked(roomId)) return true;
+  return readChatRooms(raw)[roomId]?.revoked === true;
+}
+
+/** Merge parsed L1′ relay rows; existing live id wins. */
+function mergeL1RelayTranscripts(raw: RawWalletV1): void {
+  const rows: Array<{ record: SdkMessageRecord; direction: "out" | "in" }> = [
+    ...readSentRecords(raw).map((record) => ({
+      record,
+      direction: "out" as const,
+    })),
+    ...readReceivedRecords(raw).map((record) => ({
+      record,
+      direction: "in" as const,
+    })),
+  ];
+  for (const { record, direction } of rows) {
+    const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
+    if (parsed?.action !== "relay") continue;
+    const { roomId, sentAt, text } = parsed.payload;
+    if (isRoomBlockedForL1Hydrate(raw, roomId)) continue;
+    const id = relayMessageId(roomId, sentAt, text);
+    const existing = messagesByRoom.get(roomId) ?? [];
+    if (existing.some((m) => m.id === id)) continue;
+    messagesByRoom.set(roomId, [
+      ...existing,
+      {
+        id,
+        roomId,
+        direction,
+        text,
+        createdAt: new Date(sentAt * 1000).toISOString(),
+        status: "delivered",
+        channel: "relay",
+        kind: "text",
+      },
+    ]);
+  }
+}
+
+const LIVE_FLUSH_COALESCE_MS = 1000;
+let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearLiveTranscriptFlushTimer(): void {
+  if (liveFlushTimer == null) return;
+  clearTimeout(liveFlushTimer);
+  liveFlushTimer = null;
+}
+
+/** Hide checkpoint: same gated write as Exit. No-op if locked or retention off. */
+export async function flushChatTranscriptsOnHide(): Promise<void> {
+  try {
+    await saveChatRoomsToWallet();
+  } catch {
+    /* hide must not throw into UI */
+  }
+}
+
+/** Coalesce L2 persist after live send/receive (~1s). */
+export function scheduleLiveTranscriptFlush(): void {
+  clearLiveTranscriptFlushTimer();
+  liveFlushTimer = setTimeout(() => {
+    liveFlushTimer = null;
+    void saveChatRoomsToWallet();
+  }, LIVE_FLUSH_COALESCE_MS);
+}
+
+/** True when body is chat.relay for this room (fail closed: keep unparsed). */
+function isRelayBodyForRoom(body: string, roomId: string): boolean {
+  const parsed = parseChatSmartBody(body, { allowSeenReplay: true });
+  return parsed?.action === "relay" && parsed.payload.roomId === roomId;
+}
+
+function pruneRelayRecordsForRoom(
+  raw: RawWalletV1,
+  roomId: string,
+): RawWalletV1 {
+  const keep = (record: SdkMessageRecord) =>
+    !isRelayBodyForRoom(record.body, roomId);
+  return withReceivedRecords(
+    withSentRecords(raw, readSentRecords(raw).filter(keep)),
+    readReceivedRecords(raw).filter(keep),
+  );
 }
 
 async function persistChatRoomTombstone(roomId: string): Promise<void> {
   const rt = getRuntime();
   if (!rt) return;
-  rt.raw = tombstoneChatRoom(rt.raw, roomId);
+  rt.raw = pruneRelayRecordsForRoom(tombstoneChatRoom(rt.raw, roomId), roomId);
   try {
     await persistRuntime(rt);
   } catch {
@@ -1269,6 +1376,7 @@ export function getTopicRefForRoom(roomId: string): string | undefined {
 }
 
 export function __resetHolepunchTransport(): void {
+  clearLiveTranscriptFlushTimer();
   for (const u of backendUnsubs) u();
   backendUnsubs = [];
   backendWired = false;

@@ -1,0 +1,24 @@
+{
+  "change": "p2p-message-retention",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "P2P retention gates L2 persist/hydrate",
+      "library": "src/services/p2p/HolepunchChatTransport.ts; src/services/p2p/chatRoomsBlob.ts; src/services/storage/walletSessionExit.ts",
+      "runtimeOwner": "BottomNav Exit; hide checkpoint; L2 send/receive debounce; wallet unlock hydrate",
+      "writes": "raw.chatRooms live rows when privacy.localMessageRetention is on",
+      "reads": "messagesByRoom; privacy.localMessageRetention; wallet raw chatRooms",
+      "uiConsumer": "Chat room thread; Settings P2P message retention toggle",
+      "evidence": "tests/p2p/chat-rooms-wallet.test.ts; tests/storage/walletSessionExit.test.ts; forge e2e run"
+    },
+    {
+      "capability": "L1′ hydrate merge + destroy-path prune",
+      "library": "src/services/conceal/sync/messages-store.ts; src/services/protocol/SmartMessageProtocolAdapter.ts; HolepunchChatTransport hydrate/leaveRoom",
+      "runtimeOwner": "wallet unlock hydrate; leaveRoom / retireExpiredRooms / revoke",
+      "writes": "messagesByRoom merge; sentMessages/receivedMessages minus matching relay rows; chatRooms tombstone",
+      "reads": "raw.sentMessages; raw.receivedMessages; parseChatSmartBody roomId",
+      "uiConsumer": "Chat room thread after unlock; Chats list after expire/revoke",
+      "evidence": "tests/p2p/chat-rooms-wallet.test.ts; focused hydrate/housekeep vitest; forge e2e run"
+    }
+  ]
+}
