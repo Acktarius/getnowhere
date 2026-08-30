@@ -39,7 +39,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.12/conceal-wallet-sdk-0.2.12.tgz",
+    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.14/conceal-wallet-sdk-0.2.14.tgz",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "qrcode-generator": "^2.0.4",
