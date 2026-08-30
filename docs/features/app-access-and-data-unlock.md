@@ -27,12 +27,16 @@ See `docs/features/lite-wallet.md` and `docs/security/p2pchatprotocol.md`.
 
 ## Two independent settings
 
-| Setting | User label (draft) | When it applies |
+| Setting | User label | When it applies |
 |---|---|---|
 | App access biometrics | Unlock app with biometrics | Resume, idle auto-lock, screen off |
 | Data unlock biometrics | Unlock data with biometrics | Whenever data was locked and user must open wallet |
 
 Either toggle may be ON without the other (e.g. data biometric ON, app biometric OFF).
+
+Each toggle has its own busy and error state in `SecuritySettingsScreen`. An enrollment
+attempt on one toggle does not disable the other, and errors display below the
+relevant toggle only.
 
 Passcode remains the fallback for app access (“Use passcode instead”). Wallet
 encryption password remains the fallback for data unlock when biometrics fail or are
@@ -210,6 +214,6 @@ Run automated bridge/unit tests: `npm test -- tests/mobile/ tests/auth/ tests/na
 - [x] Wire `autoLockTimeoutSec` → app access lock + blur (`AppAccessController`, `useMobileAppAccess`)
 - [x] Native secure storage module (Android Keystore + iOS Swift Keychain)
 - [x] Data-unlock enroll/unlock/remove (native-only decrypt)
-- [x] Separate settings: app access biometrics vs data unlock biometrics
+- [x] Separate settings: app access biometrics vs data unlock biometrics (independent busy/error state, visual divider)
 - [x] **Sleep** setting + background poll cutoff (`backgroundSleepSec`)
 - [ ] Physical-device tests (enroll, unlock, biometric change invalidation, fallback passwords)

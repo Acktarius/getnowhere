@@ -27,8 +27,10 @@ export function SecuritySettingsScreen() {
   const [appAccessAvailable, setAppAccessAvailable] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [walletPassword, setWalletPassword] = useState("");
-  const [enrollError, setEnrollError] = useState<string | null>(null);
-  const [enrollBusy, setEnrollBusy] = useState(false);
+  const [appAccessError, setAppAccessError] = useState<string | null>(null);
+  const [dataUnlockError, setDataUnlockError] = useState<string | null>(null);
+  const [appAccessBusy, setAppAccessBusy] = useState(false);
+  const [dataEnrollBusy, setDataEnrollBusy] = useState(false);
 
   useEffect(() => {
     if (isMobileHost()) {
@@ -45,38 +47,40 @@ export function SecuritySettingsScreen() {
   }
 
   async function handleAppAccessToggle(on: boolean) {
-    setEnrollError(null);
+    setAppAccessError(null);
     if (!on) {
       await clearAppAccessBiometric();
       s.setAppAccessBiometric(false);
       return;
     }
     if (!appAccessAvailable) {
-      setEnrollError("Biometric app unlock is not available on this device.");
+      setAppAccessError("Biometric app unlock is not available on this device.");
       return;
     }
-    setEnrollBusy(true);
+    setAppAccessBusy(true);
     try {
       await enrollAppAccessBiometric();
       s.setAppAccessBiometric(true);
     } catch (e) {
-      setEnrollError(
+      setAppAccessError(
         e instanceof PasskeyError ? e.message : (e as Error).message,
       );
     } finally {
-      setEnrollBusy(false);
+      setAppAccessBusy(false);
     }
   }
 
   async function handleDataUnlockToggle(on: boolean) {
-    setEnrollError(null);
+    setDataUnlockError(null);
     if (!on) {
       await clearDataUnlockBiometricEnrollment();
       s.setDataUnlockBiometric(false);
       return;
     }
     if (!dataUnlockAvailable) {
-      setEnrollError("Biometric data unlock is not available on this device.");
+      setDataUnlockError(
+        "Biometric data unlock is not available on this device.",
+      );
       return;
     }
     setWalletPassword("");
@@ -84,12 +88,12 @@ export function SecuritySettingsScreen() {
   }
 
   async function handleEnrollDataUnlock() {
-    setEnrollError(null);
+    setDataUnlockError(null);
     if (!(await verifyWalletPassword(walletPassword))) {
-      setEnrollError("Wallet password is incorrect.");
+      setDataUnlockError("Wallet password is incorrect.");
       return;
     }
-    setEnrollBusy(true);
+    setDataEnrollBusy(true);
     try {
       await enrollUnlockCredential(
         "default",
@@ -100,11 +104,11 @@ export function SecuritySettingsScreen() {
       setEnrollOpen(false);
       setWalletPassword("");
     } catch (e) {
-      setEnrollError(
+      setDataUnlockError(
         e instanceof PasskeyError ? e.message : (e as Error).message,
       );
     } finally {
-      setEnrollBusy(false);
+      setDataEnrollBusy(false);
     }
   }
 
@@ -155,11 +159,17 @@ export function SecuritySettingsScreen() {
             }
             on={appAccessAvailable ? s.appAccessBiometricEnabled : false}
             onToggle={
-              appAccessAvailable
+              appAccessAvailable && !appAccessBusy
                 ? (v) => void handleAppAccessToggle(v)
                 : undefined
             }
           />
+          {appAccessError && (
+            <div className="field__error" style={{ padding: "0 16px 12px" }}>
+              {appAccessError}
+            </div>
+          )}
+          <hr className="divider divider--flush" />
           <PrivacySettingItem
             title="Unlock data with biometrics"
             description={
@@ -169,14 +179,14 @@ export function SecuritySettingsScreen() {
             }
             on={dataUnlockAvailable ? s.dataUnlockBiometricEnabled : false}
             onToggle={
-              dataUnlockAvailable
+              dataUnlockAvailable && !dataEnrollBusy
                 ? (v) => void handleDataUnlockToggle(v)
                 : undefined
             }
           />
-          {enrollError && !enrollOpen && (
+          {dataUnlockError && !enrollOpen && (
             <div className="field__error" style={{ padding: "0 16px 12px" }}>
-              {enrollError}
+              {dataUnlockError}
             </div>
           )}
         </div>
@@ -186,10 +196,10 @@ export function SecuritySettingsScreen() {
         open={enrollOpen}
         title="Enable data unlock"
         onClose={() => {
-          if (enrollBusy) return;
+          if (dataEnrollBusy) return;
           setEnrollOpen(false);
           setWalletPassword("");
-          setEnrollError(null);
+          setDataUnlockError(null);
         }}
       >
         <div className="stack stack--gap-3">
@@ -204,14 +214,16 @@ export function SecuritySettingsScreen() {
             revealable
             autoFocus
           />
-          {enrollError && <div className="field__error">{enrollError}</div>}
+          {dataUnlockError && (
+            <div className="field__error">{dataUnlockError}</div>
+          )}
           <button
             type="button"
             className="btn btn--block btn--primary"
-            disabled={enrollBusy || walletPassword.length < 1}
+            disabled={dataEnrollBusy || walletPassword.length < 1}
             onClick={() => void handleEnrollDataUnlock()}
           >
-            {enrollBusy ? "Enrolling…" : "Enable biometric unlock"}
+            {dataEnrollBusy ? "Enrolling…" : "Enable biometric unlock"}
           </button>
         </div>
       </Sheet>
