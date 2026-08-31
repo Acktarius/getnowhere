@@ -77,7 +77,12 @@ describe("accepted vs connected composer gate", () => {
       composerPreferredChannelWithGrace("connect_failed", blipStarted, now),
     ).toBe("live");
     expect(
-      composerPreferredChannelWithGrace("connecting", now - 7_000, now, now - 500),
+      composerPreferredChannelWithGrace(
+        "connecting",
+        now - 7_000,
+        now,
+        now - 500,
+      ),
     ).toBe("live");
     expect(preferredChannel("connect_failed")).toBe("relay");
     expect(preferredChannel("accepted")).toBe("relay");
