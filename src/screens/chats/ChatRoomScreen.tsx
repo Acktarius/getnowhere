@@ -1,4 +1,4 @@
-import { RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
+import { Link2, RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
@@ -13,6 +13,7 @@ import { useCopy } from "@/hooks/useCopy";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
+  getL2BlipStartedAt,
   getLastSidecarDetail,
   getMessagesForRoom,
   getTopicRefForRoom,
@@ -441,7 +442,10 @@ export function ChatRoomScreen() {
     !openingRoom &&
     canComposeMessages(displayRoom.lifecycleStatus) &&
     !displayRoom.awaitingChainSync;
-  const sendChannel = composerPreferredChannel(displayRoom.lifecycleStatus);
+  const sendChannel = composerPreferredChannel(
+    displayRoom.lifecycleStatus,
+    getL2BlipStartedAt(roomId),
+  );
   const viaChain = composeAllowed && sendChannel === "relay";
   /** True Holepunch L2; relay compose is separate. @see docs/security/encryption.md */
   const holepunchLive = displayRoom.lifecycleStatus === "connected";
@@ -837,8 +841,16 @@ export function ChatRoomScreen() {
           disabled={!composeAllowed || sending || !draft.trim()}
           onClick={() => void handleSend()}
           aria-label="Send"
+          style={viaChain ? { position: "relative" } : undefined}
         >
           <Send size={16} />
+          {viaChain && (
+            <Link2
+              aria-hidden
+              size={11}
+              style={{ position: "absolute", right: 4, bottom: 4 }}
+            />
+          )}
         </button>
       </div>
 

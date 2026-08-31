@@ -29,6 +29,7 @@ import {
 import {
   HOLEPUNCH_CONNECT_TIMEOUT_MS,
   holepunchBackoffMs,
+  L2_RECONNECT_GRACE_MS,
 } from "@/services/p2p/holepunchPolicy";
 import {
   exportKeyHex,
@@ -69,8 +70,8 @@ import {
   isRelayEligibleStatus,
   isRoomExpired,
   nowUnix,
-  preferredChannel,
   resolveIncomingLifecycle,
+  shouldDeferRelayForL2Grace,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
 import { parseChatSmartBody } from "@/services/protocol/SmartMessageProtocolAdapter";
@@ -122,6 +123,31 @@ let lastSidecarDetail: string | undefined;
 const inFlightConnects = new Map<string, Promise<ChatRoom>>();
 /** Earliest time an *automatic* retry (poll-driven restore) may start a new attempt. */
 const nextAutoRetryAt = new Map<string, number>();
+/** Last live (L2) send/receive. */
+const lastLiveAtMsByRoom = new Map<string, number>();
+/** When L2 dropped from `connected` — grace anchor for L1′ deferral. */
+const l2BlipStartedAtByRoom = new Map<string, number>();
+
+function touchLastLiveAt(roomId: string, atMs = Date.now()): void {
+  lastLiveAtMsByRoom.set(roomId, atMs);
+}
+
+function noteL2Blip(roomId: string, atMs = Date.now()): void {
+  l2BlipStartedAtByRoom.set(roomId, atMs);
+}
+
+function clearL2Blip(roomId: string): void {
+  l2BlipStartedAtByRoom.delete(roomId);
+}
+
+/** @see composerPreferredChannel grace window */
+export function getL2BlipStartedAt(roomId: string): number | undefined {
+  return l2BlipStartedAtByRoom.get(roomId);
+}
+
+export function getLastLiveAtMs(roomId: string): number | undefined {
+  return lastLiveAtMsByRoom.get(roomId);
+}
 
 /**
  * Run `run` as the sole active connection attempt for `roomId`. A concurrent
@@ -180,12 +206,15 @@ function wireBackendOnce(): void {
             state.room.lifecycleStatus === "connected" ||
             state.room.lifecycleStatus === "connecting"
           ) {
+            if (state.room.lifecycleStatus === "connected") {
+              noteL2Blip(state.room.id);
+            }
             state.room = {
               ...state.room,
               peerStatus: "offline",
               lifecycleStatus:
                 state.room.lifecycleStatus === "connected"
-                  ? "connect_failed"
+                  ? "connecting"
                   : state.room.lifecycleStatus,
               lastConnectError: "unreachable",
             };
@@ -413,15 +442,33 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
   for (const roomId of topicRooms.get(topicRef) ?? []) {
     const state = rooms.get(roomId);
     if (!state) continue;
-    // Only refresh peer presence for rooms that already finished proof.
-    if (state.room.lifecycleStatus !== "connected") continue;
-    state.room = {
-      ...state.room,
-      peerStatus: "online",
-      lastConnectError: undefined,
-    };
-    rooms.set(roomId, state);
-    persistLiveSession(state);
+    if (state.room.lifecycleStatus === "connected") {
+      state.room = {
+        ...state.room,
+        peerStatus: "online",
+        lastConnectError: undefined,
+      };
+      rooms.set(roomId, state);
+      persistLiveSession(state);
+      continue;
+    }
+    // Brief peer blip: session still valid — skip full proof round-trip.
+    if (state.room.lifecycleStatus === "connecting" && state.session) {
+      state.room = {
+        ...state.room,
+        lifecycleStatus: "connected",
+        peerStatus: "online",
+        lastConnectError: undefined,
+      };
+      rooms.set(roomId, state);
+      patchCatalogRoom(state.room.id, {
+        lifecycleStatus: "connected",
+        lastConnectError: undefined,
+      });
+      clearL2Blip(roomId);
+      touchLastLiveAt(roomId);
+      persistLiveSession(state);
+    }
   }
 }
 
@@ -430,6 +477,7 @@ function maybeMarkPeerLost(topicRef: string): void {
     const state = rooms.get(roomId);
     if (!state) continue;
     if (state.room.lifecycleStatus !== "connected") continue;
+    noteL2Blip(roomId);
     state.room = {
       ...state.room,
       peerStatus: "connecting",
@@ -525,6 +573,21 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         deletedAt: msgKind === "delete" ? new Date().toISOString() : undefined,
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
+      touchLastLiveAt(roomId);
+      if (state.room.lifecycleStatus === "connecting") {
+        state.room = {
+          ...state.room,
+          lifecycleStatus: "connected",
+          peerStatus: "online",
+          lastConnectError: undefined,
+        };
+        rooms.set(roomId, state);
+        patchCatalogRoom(roomId, {
+          lifecycleStatus: "connected",
+          lastConnectError: undefined,
+        });
+        clearL2Blip(roomId);
+      }
       notify(roomId, msg);
     } catch {
       /* fail closed */
@@ -643,6 +706,8 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         lastConnectError: undefined,
         lastPokedAt: undefined,
       });
+      touchLastLiveAt(state.room.id);
+      clearL2Blip(state.room.id);
       nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
       return state.room;
@@ -781,6 +846,20 @@ async function maybeSendPoke(state: RoomState): Promise<void> {
   state.room = { ...state.room, lastPokedAt: nowSec };
   rooms.set(state.room.id, state);
   patchCatalogRoom(state.room.id, { lastPokedAt: nowSec });
+}
+
+/** Wait for L2 reconnect within grace before falling back to L1′ relay. */
+async function waitForLiveChannel(roomId: string): Promise<"live" | "relay"> {
+  const blipStartedAtMs = l2BlipStartedAtByRoom.get(roomId);
+  if (!blipStartedAtMs) return "relay";
+  const deadline = blipStartedAtMs + L2_RECONNECT_GRACE_MS;
+  while (Date.now() < deadline) {
+    const state = rooms.get(roomId);
+    if (!state) return "relay";
+    if (state.room.lifecycleStatus === "connected") return "live";
+    await sleep(50);
+  }
+  return "relay";
 }
 
 async function sendRelayText(
@@ -1039,20 +1118,34 @@ export const HolepunchChatTransport: ChatTransport = {
       throw new Error("Room expired.");
     }
 
-    const channel = preferredChannel(state.room.lifecycleStatus);
-    if (channel === "relay") {
-      return sendRelayText(state, text);
+    const blipStartedAtMs = l2BlipStartedAtByRoom.get(roomId);
+    if (state.room.lifecycleStatus === "connected") {
+      const envelope: ChatContentEnvelopeV1 = {
+        schemaVersion: 1,
+        messageId: uid("m"),
+        clientId: uid("c"),
+        sentAt: new Date().toISOString(),
+        kind: "text",
+        text,
+      };
+      return this.sendContent!(roomId, envelope);
     }
-
-    const envelope: ChatContentEnvelopeV1 = {
-      schemaVersion: 1,
-      messageId: uid("m"),
-      clientId: uid("c"),
-      sentAt: new Date().toISOString(),
-      kind: "text",
-      text,
-    };
-    return this.sendContent!(roomId, envelope);
+    if (
+      shouldDeferRelayForL2Grace(state.room.lifecycleStatus, blipStartedAtMs)
+    ) {
+      if ((await waitForLiveChannel(roomId)) === "live") {
+        const envelope: ChatContentEnvelopeV1 = {
+          schemaVersion: 1,
+          messageId: uid("m"),
+          clientId: uid("c"),
+          sentAt: new Date().toISOString(),
+          kind: "text",
+          text,
+        };
+        return this.sendContent!(roomId, envelope);
+      }
+    }
+    return sendRelayText(state, text);
   },
 
   async sendContent(roomId, envelope) {
@@ -1106,6 +1199,7 @@ export const HolepunchChatTransport: ChatTransport = {
       deletedAt: outKind === "delete" ? envelope.sentAt : undefined,
       editedAt: outKind === "edit" ? envelope.sentAt : undefined,
     };
+    touchLastLiveAt(roomId);
     notify(roomId, msg);
     state.room = { ...state.room, lastMessageAt: msg.createdAt };
     rooms.set(roomId, state);
@@ -1388,6 +1482,8 @@ export function __resetHolepunchTransport(): void {
   contractsByRoom.clear();
   inFlightConnects.clear();
   nextAutoRetryAt.clear();
+  lastLiveAtMsByRoom.clear();
+  l2BlipStartedAtByRoom.clear();
   __setHolepunchSidecarBackend(null);
 }
 

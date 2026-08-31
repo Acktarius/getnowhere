@@ -22,6 +22,9 @@ export const HOLEPUNCH_BACKOFF_BASE_MS = 1_000;
  */
 export const HOLEPUNCH_RELAY_PATIENCE_MS = 20 * 60_000;
 
+/** L2 grace from disconnect blip before L1′ relay (covers proof round-trip). */
+export const L2_RECONNECT_GRACE_MS = 6_000;
+
 export function holepunchBackoffMs(attempt: number): number {
   const exp = Math.min(
     HOLEPUNCH_BACKOFF_CAP_MS,

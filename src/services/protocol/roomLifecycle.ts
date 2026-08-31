@@ -4,6 +4,7 @@
  * @see docs/security/p2pchatprotocol.md §9 / §16
  */
 
+import { L2_RECONNECT_GRACE_MS } from "@/services/p2p/holepunchPolicy";
 import type { RoomLifecycleStatus } from "@/types/models";
 
 const CLOCK_SKEW_SEC = 120;
@@ -52,10 +53,36 @@ export function isRelayEligibleStatus(status: RoomLifecycleStatus): boolean {
   );
 }
 
+/** Post-L2 disconnect blip — not pre-connect `accepted`. */
+export function isTransientL2Blip(status: RoomLifecycleStatus): boolean {
+  return status === "connecting" || status === "connect_failed";
+}
+
+/** True while an L2 blip is within grace (measured from disconnect, not last msg). */
+export function shouldDeferRelayForL2Grace(
+  status: RoomLifecycleStatus,
+  blipStartedAtMs: number | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!blipStartedAtMs || !isTransientL2Blip(status)) return false;
+  return nowMs - blipStartedAtMs < L2_RECONNECT_GRACE_MS;
+}
+
 export function preferredChannel(
   status: RoomLifecycleStatus,
 ): "live" | "relay" {
   return status === "connected" ? "live" : "relay";
+}
+
+/** UI hint — may show live during brief L2 reconnect grace. */
+export function composerPreferredChannelWithGrace(
+  status: RoomLifecycleStatus,
+  blipStartedAtMs?: number,
+  nowMs = Date.now(),
+): "live" | "relay" {
+  if (status === "connected") return "live";
+  if (shouldDeferRelayForL2Grace(status, blipStartedAtMs, nowMs)) return "live";
+  return "relay";
 }
 
 /** Live when connected; L1 relay when post-accept (no session keys required). */

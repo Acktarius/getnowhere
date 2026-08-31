@@ -16,6 +16,7 @@ import {
 import {
   canSendLiveMessages,
   canSendMessages,
+  composerPreferredChannelWithGrace,
   isPostAcceptStatus,
   isRelayEligibleStatus,
   preferredChannel,
@@ -58,6 +59,24 @@ describe("accepted vs connected composer gate", () => {
     expect(preferredChannel("connected")).toBe("live");
     expect(composerPreferredChannel("connected")).toBe("live");
     expect(canComposeMessages("connected")).toBe(true);
+  });
+
+  it("defers relay briefly on transient connecting after recent L2", () => {
+    const now = Date.now();
+    const blipStarted = now - 500;
+    expect(
+      composerPreferredChannelWithGrace("connecting", blipStarted, now),
+    ).toBe("live");
+    expect(composerPreferredChannel("connecting", blipStarted)).toBe("live");
+    expect(preferredChannel("connecting")).toBe("relay");
+    expect(
+      composerPreferredChannelWithGrace("connecting", now - 7_000, now),
+    ).toBe("relay");
+    expect(
+      composerPreferredChannelWithGrace("connect_failed", blipStarted, now),
+    ).toBe("live");
+    expect(preferredChannel("connect_failed")).toBe("relay");
+    expect(preferredChannel("accepted")).toBe("relay");
   });
 
   it("surfaces connect_failed codes when composer blocked for other reasons", () => {

@@ -9,6 +9,7 @@ import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   canSendLiveMessages,
   canSendMessages,
+  composerPreferredChannelWithGrace,
   isRelayEligibleStatus,
   preferredChannel,
 } from "@/services/protocol/roomLifecycle";
@@ -54,8 +55,9 @@ export function canComposeMessages(status: RoomLifecycleStatus): boolean {
 
 export function composerPreferredChannel(
   status: RoomLifecycleStatus,
+  blipStartedAtMs?: number,
 ): MessageChannel {
-  return preferredChannel(status);
+  return composerPreferredChannelWithGrace(status, blipStartedAtMs);
 }
 
 export function connectFailureHint(code: string | undefined): string | null {
@@ -116,6 +118,7 @@ export function assertRoomInteractive(
 export {
   canSendLiveMessages,
   canSendMessages,
+  composerPreferredChannelWithGrace,
   isRelayEligibleStatus,
   preferredChannel,
 };
