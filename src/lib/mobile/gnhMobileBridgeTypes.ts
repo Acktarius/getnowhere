@@ -17,7 +17,8 @@ export type GnhSecurePrefsAction = "get" | "set" | "remove";
 export type GnhSecurityChannel =
   | "gnh-lifecycle"
   | "gnh-biometric"
-  | "gnh-secure-prefs";
+  | "gnh-secure-prefs"
+  | "gnh-privacy";
 
 export type GnhMessageDirection = "command" | "response" | "event";
 
