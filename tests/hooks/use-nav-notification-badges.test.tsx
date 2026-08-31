@@ -49,9 +49,12 @@ describe("useNavNotificationBadges", () => {
     });
     expect(result.current.contactsUnread).toBe(true);
 
-    const { result: onContacts } = renderHook(() => useNavNotificationBadges(), {
-      wrapper: shell("/contacts"),
-    });
+    const { result: onContacts } = renderHook(
+      () => useNavNotificationBadges(),
+      {
+        wrapper: shell("/contacts"),
+      },
+    );
     expect(onContacts.current.contactsUnread).toBe(false);
   });
 

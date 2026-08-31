@@ -17,14 +17,12 @@ import {
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
 import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
-import {
-  getRelationshipTopicEpoch,
-  syncRelationshipTopicEpoch,
-} from "@/services/p2p/relationshipTopicEpochStore";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   patchCatalogRoom,
   peekCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
+import { syncAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
 import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
@@ -198,9 +196,10 @@ async function inviteFromCreateBody(
     hs = await hydrateCreateHandshake(hs, relationshipId);
   }
   if (resolveTopicSuite(hs) === "HKDF_EPOCH_V1") {
-    syncRelationshipTopicEpoch(
+    await syncAndMirrorRelationshipTopicEpoch(
       hs.relationshipId,
       hs.topicEpoch ?? getRelationshipTopicEpoch(hs.relationshipId),
+      meta.contactId,
     );
   }
   handshakesByInviteId.set(hs.inviteId, hs);

@@ -136,6 +136,9 @@ topic_epoch = HKDF-SHA256(
   suspected topic compromise.
 - Rotation is **local** — peers agree epoch out-of-band via L1 SmartMessage
   when needed; do not write every rotation to chain by default.
+- **Shipped behavior:** invite `topicEpoch` on the create pack is authoritative
+  for that session; the value is mirrored on the contact row and wallet
+  `addressBook` (export/import). Local store is seeded from contacts on unlock.
 - Prefer HKDF over plain SHA256 for topic binding so offline grinding on
   leaked id fragments does not directly yield join topics — the main v2
   improvement over v1, without widening on-wire ids.

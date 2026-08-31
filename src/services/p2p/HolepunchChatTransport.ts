@@ -35,7 +35,6 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
-import { bumpRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isRoomRevoked,
   rememberRevokedRoom,
@@ -54,6 +53,7 @@ import {
   saveRoomSession,
   updateRoomSessionCounters,
 } from "@/services/p2p/roomSessionStore";
+import { bumpAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
 import { sendPoke } from "@/services/poke/pokeGatewayClient";
 import {
   assertCanSendLive,
@@ -923,7 +923,8 @@ export const HolepunchChatTransport: ChatTransport = {
       topicSuite === "HKDF_EPOCH_V1" &&
       relationshipId
     ) {
-      bumpRelationshipTopicEpoch(relationshipId);
+      const contactId = state?.room.contactId ?? persisted?.contactId;
+      await bumpAndMirrorRelationshipTopicEpoch(relationshipId, contactId);
     }
 
     if (!state) {
@@ -1257,10 +1258,7 @@ export function hydrateChatRoomsFromWallet(): void {
   mergeL1RelayTranscripts(rt.raw);
 }
 
-function isRoomBlockedForL1Hydrate(
-  raw: RawWalletV1,
-  roomId: string,
-): boolean {
+function isRoomBlockedForL1Hydrate(raw: RawWalletV1, roomId: string): boolean {
   if (isRoomRevoked(roomId)) return true;
   return readChatRooms(raw)[roomId]?.revoked === true;
 }

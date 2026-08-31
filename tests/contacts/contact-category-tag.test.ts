@@ -64,4 +64,16 @@ describe("contact categoryTags persistence", () => {
     ]) as Array<{ categoryTags: string[] }>;
     expect(payload[0]?.categoryTags).toEqual(["colleague", "friend"]);
   });
+
+  it("round-trips topicEpoch through wallet addressBook and export", () => {
+    const tagged = { ...baseContact, topicEpoch: 3 };
+    const entry = contactToAddressEntry(tagged);
+    expect(entry.topicEpoch).toBe(3);
+    const restored = addressEntryToContact(entry);
+    expect(restored.topicEpoch).toBe(3);
+    const payload = contactsExportPayload([tagged]) as Array<{
+      topicEpoch: number;
+    }>;
+    expect(payload[0]?.topicEpoch).toBe(3);
+  });
 });

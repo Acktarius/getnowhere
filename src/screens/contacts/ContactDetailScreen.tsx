@@ -45,6 +45,10 @@ import {
 } from "@/services/contacts/inviteQueue";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import {
+  detectTopicEpochSkew,
+  topicEpochSkewMessage,
+} from "@/services/p2p/topicEpochSkew";
 import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
@@ -97,6 +101,7 @@ export function ContactDetailScreen() {
   const [roomTtlDays, setRoomTtlDays] = useState(DEFAULT_ROOM_TTL_DAYS);
   const [roomTopic, setRoomTopic] =
     useState<import("@/services/protocol/roomTopics").RoomTopicId>("general");
+  const [epochSkewHint, setEpochSkewHint] = useState<string | null>(null);
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -179,6 +184,47 @@ export function ContactDetailScreen() {
   );
   const acceptAwaitingSync = Boolean(inviteRoom?.awaitingChainSync);
 
+  const eligible = contact?.relationshipStatus === "eligible";
+  const incomingInvite = eligible ? inviteQueueForContact.newest : undefined;
+  const showAccept = Boolean(
+    contact &&
+      incomingInvite &&
+      (contact.inviteStatus === "received" ||
+        contact.roomId !== incomingInvite.roomId),
+  );
+
+  useEffect(() => {
+    if (!contact) {
+      setEpochSkewHint(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const hint = await detectTopicEpochSkew(
+        contact,
+        showAccept ? incomingInvite : undefined,
+      );
+      if (cancelled) return;
+      if (!hint) {
+        if (createSheet) {
+          const createHint = await detectTopicEpochSkew(contact);
+          setEpochSkewHint(
+            createHint
+              ? topicEpochSkewMessage(createHint, contact.alias)
+              : null,
+          );
+        } else {
+          setEpochSkewHint(null);
+        }
+        return;
+      }
+      setEpochSkewHint(topicEpochSkewMessage(hint, contact.alias));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contact, incomingInvite, showAccept, createSheet]);
+
   if (!contact) {
     return (
       <div className="screen">
@@ -196,16 +242,8 @@ export function ContactDetailScreen() {
     );
   }
 
-  const eligible = contact.relationshipStatus === "eligible";
   const inviteQueue = inviteQueueForContact;
-  const incomingInvite = eligible ? inviteQueue.newest : undefined;
   const queuedOthers = inviteQueue.others;
-  /** Newer create must show Accept even if an older invite was already accepted. */
-  const showAccept = Boolean(
-    incomingInvite &&
-      (contact.inviteStatus === "received" ||
-        contact.roomId !== incomingInvite.roomId),
-  );
   const canInvite =
     eligible && !showAccept && contact.inviteStatus !== "received";
   /** Create another room with this contact (topic is chosen in the sheet). */
@@ -519,6 +557,11 @@ export function ContactDetailScreen() {
                       {roomTopicLabel(incomingInvite.roomTopic)}) first.
                     </div>
                   )}
+                  {epochSkewHint && (
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {epochSkewHint}
+                    </div>
+                  )}
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
                       className="btn btn--primary grow"
@@ -699,6 +742,11 @@ export function ContactDetailScreen() {
             onChange={setRoomTtlDays}
             hint="Room is destroyed locally after this period."
           />
+          {epochSkewHint && (
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {epochSkewHint}
+            </div>
+          )}
           {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"

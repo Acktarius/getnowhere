@@ -3,11 +3,10 @@
  */
 
 import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
-import {
-  getRelationshipTopicEpoch,
-  syncRelationshipTopicEpoch,
-} from "@/services/p2p/relationshipTopicEpochStore";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
+import { applyRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
 import type {
+  ChatInviteHandshake,
   HolepunchBootstrapContract,
   TopicSuiteId,
 } from "@/types/protocol";
@@ -16,6 +15,19 @@ import {
   resolveTopicSuite,
 } from "@/types/protocol";
 import type { SessionBootstrapService } from "@/types/services";
+
+/** Invite wire epoch wins for this session; legacy packs fall back to local store. */
+function resolveSessionTopicEpoch(
+  handshake: ChatInviteHandshake,
+  topicSuite: TopicSuiteId,
+): number {
+  if (topicSuite !== "HKDF_EPOCH_V1") {
+    return handshake.topicEpoch ?? 0;
+  }
+  return handshake.topicEpoch !== undefined
+    ? handshake.topicEpoch
+    : getRelationshipTopicEpoch(handshake.relationshipId);
+}
 
 export const SessionBootstrapAdapter: SessionBootstrapService = {
   async deriveSession({ invite, acceptance, peerRole, localPrivateKeyRef }) {
@@ -38,18 +50,10 @@ export const SessionBootstrapAdapter: SessionBootstrapService = {
     };
 
     const topicSuite = resolveTopicSuite(completed);
+    const topicEpoch = resolveSessionTopicEpoch(completed, topicSuite);
     if (topicSuite === "HKDF_EPOCH_V1") {
-      if (completed.topicEpoch !== undefined) {
-        syncRelationshipTopicEpoch(
-          completed.relationshipId,
-          completed.topicEpoch,
-        );
-      }
+      await applyRelationshipTopicEpoch(completed.relationshipId, topicEpoch);
     }
-    const topicEpoch =
-      topicSuite === "HKDF_EPOCH_V1"
-        ? getRelationshipTopicEpoch(completed.relationshipId)
-        : (completed.topicEpoch ?? 0);
 
     return P2PEncryptionAdapter.deriveSessionConfig({
       senderEphemeralPublicKey: completed.senderEphemeralPublicKey,

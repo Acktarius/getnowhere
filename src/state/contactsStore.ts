@@ -24,10 +24,7 @@ import {
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
-import {
-  getRelationshipTopicEpoch,
-  syncRelationshipTopicEpoch,
-} from "@/services/p2p/relationshipTopicEpochStore";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isInviteRevoked,
   isRoomRevoked,
@@ -44,6 +41,10 @@ import {
   planRoomRestores,
   pruneRoomsForMissingContacts,
 } from "@/services/p2p/roomChainRestore";
+import {
+  applyRelationshipTopicEpoch,
+  syncAndMirrorRelationshipTopicEpoch,
+} from "@/services/p2p/topicEpochContactSync";
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import {
@@ -786,7 +787,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           }
         }
         if (relationshipId) {
-          syncRelationshipTopicEpoch(relationshipId, revoke.topicEpoch);
+          await syncAndMirrorRelationshipTopicEpoch(
+            relationshipId,
+            revoke.topicEpoch,
+            contactId,
+          );
           syncedEpochFromPeer = true;
         }
       }
@@ -1073,6 +1078,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     });
     rememberHandshake(composed.handshake);
 
+    const inviteEpoch =
+      composed.handshake.topicEpoch ??
+      getRelationshipTopicEpoch(relationshipId);
+    await applyRelationshipTopicEpoch(relationshipId, inviteEpoch, contactId);
+
     // Local envelope for the adapter (tx encryption is on-chain). Pass smartBody
     // directly so unicode aliases cannot break btoa.
     const sent = await smartMessageService.sendInviteMessage(
@@ -1182,6 +1192,13 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       );
     }
 
+    const localEpochBefore =
+      handshake.relationshipId &&
+      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+        ? getRelationshipTopicEpoch(handshake.relationshipId)
+        : 0;
+    const wireEpoch = handshake.topicEpoch ?? 0;
+
     const keypair = await p2pEncryption.generateEphemeralKeypair();
     const register = await smartMessageProtocol.composeRegister({
       inviteId: inv.inviteId,
@@ -1225,6 +1242,16 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       peerRole: "responder",
       localPrivateKeyRef: keypair.privateKeyRef,
     });
+    if (
+      localEpochBefore > wireEpoch &&
+      handshake.relationshipId &&
+      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+    ) {
+      const { toastInfo } = await import("@/state/toastStore");
+      toastInfo(
+        `Discovery generation aligned to invite (${wireEpoch}; was ${localEpochBefore}).`,
+      );
+    }
     const contract = await sessionBootstrap.buildHolepunchContract({
       session,
       invite: {

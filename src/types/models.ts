@@ -68,6 +68,8 @@ export type Contact = {
   chatStatus: ChatStatus;
   /** Active or pending room id for this contact, if any. */
   roomId?: string;
+  /** Hyperswarm discovery generation for this relationship (HKDF_EPOCH_V1). */
+  topicEpoch?: number;
   createdAt: string;
   updatedAt: string;
   lastInteractionAt?: string;
