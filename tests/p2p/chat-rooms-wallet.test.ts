@@ -220,6 +220,40 @@ describe("chat room wallet save / hydrate", () => {
     expect(isRoomRevoked("room-dead")).toBe(true);
   });
 
+  it("listRooms after hydrate keeps restored L2 (iOS WebView restart path)", async () => {
+    const roomId = "room-ios-restart";
+    const liveText = "survives-ensureRoom";
+
+    // Seed durable catalog, then drop in-memory shells (WKWebView process kill).
+    await HolepunchChatTransport.createRoom({
+      contactId: "c-ios",
+      bootstrap: {
+        roomId,
+        roomKeyRef: `key:${roomId}`,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+      },
+    });
+    __resetHolepunchTransport();
+    __setHolepunchSidecarBackend(createMemorySidecarBackend());
+
+    raw = {
+      ...raw,
+      chatRooms: {
+        [roomId]: {
+          roomId,
+          revoked: false,
+          messages: [liveMessage(roomId, "m-live-ios", liveText)],
+        },
+      },
+    };
+    hydrateChatRoomsFromWallet();
+    expect(getMessagesForRoom(roomId).map((m) => m.text)).toEqual([liveText]);
+
+    await HolepunchChatTransport.listRooms();
+    expect(getMessagesForRoom(roomId).map((m) => m.text)).toEqual([liveText]);
+  });
+
   it("leaveRoom writes revoked tombstone only", async () => {
     const room = await HolepunchChatTransport.createRoom({
       contactId: "c1",

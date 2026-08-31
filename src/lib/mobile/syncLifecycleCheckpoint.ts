@@ -26,13 +26,29 @@ function installWebTranscriptFlush(): () => void {
   };
 }
 
+/**
+ * Flush L2 transcripts first, then sync height — one chain so iOS can finish
+ * the wallet write before WKWebView freezes. @see docs/background-remote-sync.md
+ */
+async function flushHideCheckpoints(): Promise<void> {
+  try {
+    await flushChatTranscriptsOnHide();
+  } catch {
+    /* hide must not throw */
+  }
+  try {
+    await flushSyncCheckpoint();
+  } catch {
+    /* hide must not throw */
+  }
+}
+
 /** Subscribe to hide events and flush sync + transcripts. Returns unsubscribe. */
 export function installSyncLifecycleCheckpoint(): () => void {
   if (!isMobileHost()) return installWebTranscriptFlush();
   return onAppAccessLifecycle((type) => {
     if (type === "background" || type === "screenOff") {
-      void flushSyncCheckpoint();
-      void flushChatTranscriptsOnHide();
+      void flushHideCheckpoints();
     }
   });
 }

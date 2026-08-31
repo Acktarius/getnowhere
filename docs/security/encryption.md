@@ -385,9 +385,11 @@ Rules:
   send/receive (UI never waits), immediately on hide and Exit. Off = do not
   write or hydrate L2; L1′ sent still lives in `sentMessages` while the room
   is available. Rooms are TTL-bounded (default 7d, max 30d). Leave / expire /
-  revoke tombstones `chatRooms` and drops matching L1′ `e` rows. No peer
-  catch-up in this model — a later change if we add a request protocol or a
-  log. @see `openspec/changes/p2p-message-retention/design.md`
+  revoke tombstones `chatRooms` and drops matching L1′ `e` rows. After unlock
+  hydrate, re-creating in-memory room shells (`listRooms` / `ensureRoom`) MUST
+  NOT clear an existing transcript bag — required after iOS WKWebView process
+  death. No peer catch-up in this model — a later change if we add a request
+  protocol or a log. @see `openspec/changes/p2p-message-retention/design.md`
 
 ## Implementation boundaries
 

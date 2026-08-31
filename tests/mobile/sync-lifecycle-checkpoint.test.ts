@@ -57,21 +57,31 @@ describe("installSyncLifecycleCheckpoint", () => {
     expect(unsub).toBe(fakeUnsub);
   });
 
-  it("calls flushSyncCheckpoint when lifecycle type is 'background'", async () => {
+  it("calls flushChat then flushSync when lifecycle type is 'background'", async () => {
     isMobileHostMock.mockReturnValue(true);
     let capturedHandler: ((type: string) => void) | undefined;
     onAppAccessLifecycleMock.mockImplementation((h) => {
       capturedHandler = h;
       return vi.fn();
     });
+    const order: string[] = [];
+    flushChatTranscriptsOnHideMock.mockImplementation(async () => {
+      order.push("chat");
+    });
+    flushSyncCheckpointMock.mockImplementation(async () => {
+      order.push("sync");
+    });
     const install = await load();
     install();
     capturedHandler!("background");
-    expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
-    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+      expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+    });
+    expect(order).toEqual(["chat", "sync"]);
   });
 
-  it("calls flushSyncCheckpoint when lifecycle type is 'screenOff'", async () => {
+  it("calls flushChat then flushSync when lifecycle type is 'screenOff'", async () => {
     isMobileHostMock.mockReturnValue(true);
     let capturedHandler: ((type: string) => void) | undefined;
     onAppAccessLifecycleMock.mockImplementation((h) => {
@@ -81,8 +91,10 @@ describe("installSyncLifecycleCheckpoint", () => {
     const install = await load();
     install();
     capturedHandler!("screenOff");
-    expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
-    expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(flushChatTranscriptsOnHideMock).toHaveBeenCalledOnce();
+      expect(flushSyncCheckpointMock).toHaveBeenCalledOnce();
+    });
   });
 
   it("on non-mobile host flushes transcripts when the tab becomes hidden", async () => {
