@@ -30,6 +30,7 @@ import {
   setNativeAppInBackground,
 } from "./src/gnhBackgroundSyncNative";
 import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
+import { nativeClearBadge } from "./src/gnhNotificationsNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
 import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
@@ -183,6 +184,11 @@ export default function App() {
       hasWebView: !!webViewRef.current,
     });
     setNativeAppInBackground(false);
+    // iOS icon badge is independent of Notification Center dismissals; clear
+    // when the user returns to the app. Android badges follow notifications.
+    if (Platform.OS === "ios") {
+      void nativeClearBadge();
+    }
     schedulePendingForegroundFlush();
   }, [schedulePendingForegroundFlush]);
 

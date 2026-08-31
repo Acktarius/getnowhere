@@ -92,6 +92,12 @@ Permission requests happen only from the Settings toggle gesture:
 - Badge clears via existing read semantics: `markRoomSeen` (room opened) and
   `markContactSeen` (contact detail opened) mark matching ledger events read
   and re-sync the native badge; delivery alone never clears it.
+- **iOS foreground clear:** dismissing banners from Notification Center does
+  not clear `applicationIconBadgeNumber`. On AppState `active`, the native
+  shell calls `clearBadge` (badge → 0 + remove delivered/pending) so the icon
+  pin drops when the user returns to the app. In-app `NotifyPin` badges still
+  follow the JS ledger / room-seen path. Android launcher badges track
+  notifications and need no equivalent.
 
 ## Platform limitations
 
