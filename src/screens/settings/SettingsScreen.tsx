@@ -211,7 +211,11 @@ export function SettingsScreen() {
             <hr className="divider divider--flush" />
             <PrivacySettingItem
               title="P2P message retention"
-              description="Keep live (Holepunch) chats after Exit or when the app is killed. Off = live chats are session-only. Messages you paid to send on chain still show while the room is open."
+              description={
+                s.showTips
+                  ? "Keep live (Holepunch) chats after Exit or when the app is killed. Off = live chats are session-only. Messages you paid to send on chain still show while the room is open."
+                  : "Toggle off: P2P chat won't be retained"
+              }
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
