@@ -34,6 +34,7 @@ import { nativeClearBadge } from "./src/gnhNotificationsNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
 import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
+import { handlePrivacyWebViewMessage } from "./src/handlePrivacyWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
@@ -104,6 +105,10 @@ function parseBackgroundSyncMessage(raw: string): {
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [blurInAppSwitcher, setBlurInAppSwitcher] = useState(false);
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
   const bridgeRef = useRef<GnhMobileBridge | null>(null);
   const bridgeStartingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
@@ -111,6 +116,10 @@ export default function App() {
   const pendingForegroundRef = useRef<PendingForeground | null>(null);
   const flushTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
+  /** Native cover for OS app-switcher snapshots (critical on iOS). */
+  const obscureInSwitcher =
+    blurInAppSwitcher &&
+    (appState === "inactive" || appState === "background");
 
   const injectedBeforeLoad = useMemo(
     () =>
@@ -266,6 +275,7 @@ export default function App() {
     // Keep Android lifecycle wiring as before; also enable on iOS for lock/UI.
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
+      setAppState(state);
       if (state === "background" || state === "inactive") {
         noteBackground();
         return;
@@ -284,6 +294,9 @@ export default function App() {
       const bgSync = parseBackgroundSyncMessage(raw);
       if (bgSync) {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
+        return;
+      }
+      if (handlePrivacyWebViewMessage(raw, setBlurInAppSwitcher)) {
         return;
       }
       if (handleNtfyWakeWebViewMessage(raw)) {
@@ -398,6 +411,14 @@ export default function App() {
           onWebViewReady();
         }}
       />
+      {obscureInSwitcher ? (
+        <View
+          pointerEvents="none"
+          style={styles.appSwitcherObscure}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
     </View>
   );
 }
@@ -423,5 +444,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#0a0b0f",
     zIndex: 1,
+  },
+  appSwitcherObscure: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#0a0b0f",
+    zIndex: 2,
   },
 });

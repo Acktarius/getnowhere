@@ -22,10 +22,17 @@ import { useSettingsStore } from "@/state/settingsStore";
 /** Call after successful biometric app-access unlock. */
 export { completeAppAccessUnlock } from "@/lib/mobile/completeAppAccessUnlock";
 
+function syncBlurInAppSwitcher(enabled: boolean): void {
+  window.gnhMobile?.setBlurInAppSwitcher?.(enabled);
+}
+
 /** Mobile-only: native lifecycle + idle auto-lock → authStore.lock(). */
 export function useMobileAppAccess(): void {
   const lockAuth = useAuthStore((s) => s.lock);
   const autoLockSec = useSettingsStore((s) => s.privacy.autoLockTimeoutSec);
+  const blurInAppSwitcher = useSettingsStore(
+    (s) => s.privacy.blurInAppSwitcher,
+  );
   const appAccessBiometricEnabled = useSettingsStore(
     (s) => s.appAccessBiometricEnabled,
   );
@@ -35,6 +42,11 @@ export function useMobileAppAccess(): void {
     const gen = getAppAccessLockGeneration();
     window.gnhMobile?.setLockGeneration?.(gen);
   };
+
+  useEffect(() => {
+    if (!isMobileHost()) return;
+    syncBlurInAppSwitcher(blurInAppSwitcher);
+  }, [blurInAppSwitcher]);
 
   useEffect(() => {
     if (!isMobileHost()) return;

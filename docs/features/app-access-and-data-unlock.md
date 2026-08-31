@@ -54,6 +54,9 @@ disabled.
 ### Normal background (not Exit, not killed)
 
 - Show **blur** overlay (`blurInAppSwitcher` setting — reuse/extend for mobile).
+  Mobile hosts sync the preference via `gnhMobile.setBlurInAppSwitcher`; the Expo
+  shell covers the WebView on `inactive`/`background` so iOS app-switcher
+  snapshots stay obscure (Android also uses `FLAG_SECURE`).
 - **Do not** data-lock. User resumes where they left off after app access succeeds.
 - Wallet sync and L1 background poll continue per **Background poll** / **Sleep**
   below.

@@ -76,6 +76,14 @@ Injected via `_dispatchLifecycleEvent`. No response.
 Values are JSON strings. Used for enrollment envelopes and app passcode hash —
 not WebView `localStorage` on device.
 
+### `gnh-privacy` (WebView → native events)
+
+| `type` | Payload | Notes |
+|--------|---------|-------|
+| `setBlurInAppSwitcher` | `{ enabled: boolean }` | Native shell covers the WebView on `inactive`/`background` so iOS app-switcher snapshots stay obscure. Android also uses activity `FLAG_SECURE`. |
+
+Injected as `gnhMobile.setBlurInAppSwitcher(enabled)`. No response.
+
 ## JS types
 
 Shared TS definitions: `src/lib/mobile/gnhMobileBridgeTypes.ts`.

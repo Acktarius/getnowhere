@@ -8,6 +8,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppAccessBlurOverlay } from "@/components/AppAccessBlurOverlay";
+import { AppSwitcherBlurOverlay } from "@/components/AppSwitcherBlurOverlay";
 import { ToastHost } from "@/components/ToastHost";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
@@ -140,6 +141,7 @@ export default function App() {
         <AppInner />
       </HashRouter>
       <AppAccessBlurOverlay />
+      <AppSwitcherBlurOverlay />
       <ToastHost />
     </div>
   );

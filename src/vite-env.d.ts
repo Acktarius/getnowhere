@@ -104,6 +104,8 @@ interface GnhMobileBridge {
     set(key: string, value: string): Promise<Record<string, unknown>>;
     remove(key: string): Promise<Record<string, unknown>>;
   };
+  /** Tell native shell to obscure content in the OS app switcher. */
+  setBlurInAppSwitcher?(enabled: boolean): void;
   onLifecycle?(handler: (evt: { type: string }) => void): () => void;
   _dispatchLifecycleEvent?(evt: { type: string }): void;
   _runBackgroundRemoteSync?(requestId: string): void;

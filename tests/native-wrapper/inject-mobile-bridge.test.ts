@@ -57,11 +57,23 @@ describe("buildMobileBridgeInjection", () => {
     expect(bridge.biometric?.isAvailable).toBeTypeOf("function");
     expect(bridge.securePrefs?.get).toBeTypeOf("function");
     expect(bridge.onLifecycle).toBeTypeOf("function");
+    expect(bridge.setBlurInAppSwitcher).toBeTypeOf("function");
     void bridge.biometric?.isAvailable("data");
     expect(postMessage).toHaveBeenCalled();
     const payload = JSON.parse(postMessage.mock.calls[0][0] as string);
     expect(payload.channel).toBe("gnh-biometric");
     expect(payload.action).toBe("isAvailable");
+
+    postMessage.mockClear();
+    bridge.setBlurInAppSwitcher?.(true);
+    expect(postMessage).toHaveBeenCalledOnce();
+    const privacy = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(privacy).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "event",
+      type: "setBlurInAppSwitcher",
+      enabled: true,
+    });
   });
 
   it("exposes onPokeToken / _dispatchPokeToken and dispatches correctly", () => {
