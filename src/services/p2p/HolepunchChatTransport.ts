@@ -850,7 +850,11 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   };
   const state: RoomState = { room, peerId: uid("peer") };
   rooms.set(id, state);
-  messagesByRoom.set(id, []);
+  // Preserve hydrated transcripts across room-shell rebuild (iOS WKWebView restart).
+  // @see docs/security/encryption.md (Room transcripts)
+  if (!messagesByRoom.has(id)) {
+    messagesByRoom.set(id, []);
+  }
   upsertCatalogRoom(room);
   return state;
 }
@@ -1450,6 +1454,7 @@ function clearLiveTranscriptFlushTimer(): void {
 
 /** Hide checkpoint: same gated write as Exit. No-op if locked or retention off. */
 export async function flushChatTranscriptsOnHide(): Promise<void> {
+  clearLiveTranscriptFlushTimer();
   try {
     await saveChatRoomsToWallet();
   } catch {

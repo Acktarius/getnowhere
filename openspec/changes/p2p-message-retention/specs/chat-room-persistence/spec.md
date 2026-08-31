@@ -76,6 +76,13 @@ sent and received copies for that room id. Duplicate ids SHALL appear once.
 - **THEN** the room shows both channels
 - **AND** no message id is listed twice
 
+#### Scenario: Catalog rehydrate after process death keeps live transcript
+- **GIVEN** P2P message retention is ON
+- **AND** live messages were hydrated from the wallet blob
+- **AND** the in-memory room map is empty (process restart)
+- **WHEN** the chats list rebuilds room shells from the durable catalog
+- **THEN** those hydrated live messages remain in the room thread
+
 ### Requirement: Destroy path erases L2 transcript and L1′ relay copies
 
 When a room expires, is revoked, or is left forever, the system SHALL replace
