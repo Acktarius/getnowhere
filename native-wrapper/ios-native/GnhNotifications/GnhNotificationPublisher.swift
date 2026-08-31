@@ -39,10 +39,11 @@ final class SystemNotificationCenterAdapter: GnhNotificationCenterAdapter {
   func setBadgeCount(_ count: Int) {
     if #available(iOS 16.0, *) {
       center.setBadgeCount(count)
-    } else {
-      DispatchQueue.main.async {
-        UIApplication.shared.applicationIconBadgeNumber = count
-      }
+    }
+    // Dual-write: some iOS builds leave the icon badge sticky if only one API
+    // is used; applicationIconBadgeNumber remains the reliable fallback.
+    DispatchQueue.main.async {
+      UIApplication.shared.applicationIconBadgeNumber = count
     }
   }
 
@@ -178,8 +179,11 @@ final class GnhNotificationPublisher {
     center.setBadgeCount(count)
   }
 
+  /// Clears the icon badge and removes this feature's delivered/pending items
+  /// (Android `clearBadge` cancels notifications the same way).
   func clearBadge() {
     center.setBadgeCount(0)
+    center.removeAllPendingAndDelivered()
   }
 
   func cancelAllFeatureNotifications() {
