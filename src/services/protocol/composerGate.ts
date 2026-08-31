@@ -56,8 +56,14 @@ export function canComposeMessages(status: RoomLifecycleStatus): boolean {
 export function composerPreferredChannel(
   status: RoomLifecycleStatus,
   blipStartedAtMs?: number,
+  lastLiveAtMs?: number,
 ): MessageChannel {
-  return composerPreferredChannelWithGrace(status, blipStartedAtMs);
+  return composerPreferredChannelWithGrace(
+    status,
+    blipStartedAtMs,
+    Date.now(),
+    lastLiveAtMs,
+  );
 }
 
 export function connectFailureHint(code: string | undefined): string | null {

@@ -585,8 +585,8 @@ Same fee shape as other mined contact smart messages (§2). Fee + ~block latency
 ### Send
 
 1. If `connected` → live Holepunch frame (L1 session seal over L2).
-2. Else if post-accept and within **6s** of an L2 disconnect blip while
-   `connecting` / retryable `connect_failed` → wait for L2 reconnect, then live; else L1′.
+2. Else if this session was live (L2) → show `queued` (no checkmarks), wait
+   **6s** for L2, then live; if still down → L1′ (`chat.relay`, may poke).
 3. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay` (L1′).
 4. Else (`pending` / terminal) → composer blocked.
 

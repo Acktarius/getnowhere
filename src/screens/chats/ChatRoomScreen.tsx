@@ -14,6 +14,7 @@ import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomIns
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   getL2BlipStartedAt,
+  getLastLiveAtMs,
   getLastSidecarDetail,
   getMessagesForRoom,
   getTopicRefForRoom,
@@ -35,7 +36,7 @@ import {
 import {
   canComposeMessages,
   composerDisabledReason,
-  composerPreferredChannel,
+  composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
 import { isRoomExpired } from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
@@ -176,11 +177,11 @@ export function ChatRoomScreen() {
   });
 
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [openingRoom, setOpeningRoom] = useState(
     () => !useChatStore.getState().rooms.some((r) => r.id === roomId),
   );
@@ -438,13 +439,22 @@ export function ChatRoomScreen() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [visibleMessages.length]);
 
+  useEffect(() => {
+    const status = displayRoom.lifecycleStatus;
+    if (status !== "connecting" && status !== "connect_failed") return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 400);
+    return () => window.clearInterval(id);
+  }, [displayRoom.lifecycleStatus]);
+
   const composeAllowed =
     !openingRoom &&
     canComposeMessages(displayRoom.lifecycleStatus) &&
     !displayRoom.awaitingChainSync;
-  const sendChannel = composerPreferredChannel(
+  const sendChannel = composerPreferredChannelWithGrace(
     displayRoom.lifecycleStatus,
     getL2BlipStartedAt(roomId),
+    nowMs,
+    getLastLiveAtMs(roomId),
   );
   const viaChain = composeAllowed && sendChannel === "relay";
   /** True Holepunch L2; relay compose is separate. @see docs/security/encryption.md */
@@ -464,25 +474,19 @@ export function ChatRoomScreen() {
     getUfwAdvisoryState() === "active";
 
   async function handleSend() {
-    if (!draft.trim() || !composeAllowed || sending) return;
+    if (!draft.trim() || !composeAllowed) return;
     if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
       toastError(
         `Via-chain messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
       );
       return;
     }
-    setSending(true);
     const text = draft.trim();
     setDraft("");
     composerRef.current?.focus({ preventScroll: mobileHost });
-    try {
-      await send(roomId, text);
-    } catch (e) {
+    void send(roomId, text).catch((e) => {
       toastError((e as Error).message || "Send failed.");
-    } finally {
-      setSending(false);
-      composerRef.current?.focus({ preventScroll: mobileHost });
-    }
+    });
   }
 
   async function handleRetry() {
@@ -838,7 +842,7 @@ export function ChatRoomScreen() {
         <button
           type="button"
           className="btn btn--primary"
-          disabled={!composeAllowed || sending || !draft.trim()}
+          disabled={!composeAllowed || !draft.trim()}
           onClick={() => void handleSend()}
           aria-label="Send"
           style={viaChain ? { position: "relative" } : undefined}

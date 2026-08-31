@@ -5,6 +5,7 @@ import {
   getMessagesForRoom,
   ingestChatRelay,
   relayMessageId,
+  subscribeRoomState,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   assertCanSendLive,
@@ -320,6 +321,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       rooms: s.rooms.map((r) =>
         r.id === roomId ? { ...r, lastMessageAt: msg.createdAt } : r,
       ),
+      messagesByRoom: {
+        ...s.messagesByRoom,
+        [roomId]: getMessagesForRoom(roomId),
+      },
     }));
   },
 
@@ -434,7 +439,17 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         };
       });
     });
-    return unsub;
+    const unsubRoom = subscribeRoomState(roomId, (room) => {
+      set((s) => ({
+        rooms: s.rooms.some((r) => r.id === roomId)
+          ? s.rooms.map((r) => (r.id === roomId ? room : r))
+          : [...s.rooms, room],
+      }));
+    });
+    return () => {
+      unsub();
+      unsubRoom();
+    };
   },
 
   setMessages(roomId, msgs) {

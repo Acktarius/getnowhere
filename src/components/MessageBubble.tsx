@@ -256,6 +256,9 @@ export function MessageBubble({
             <span style={{ fontSize: 10, opacity: 0.7 }}>
               {formatTime(message.createdAt)}
             </span>
+            {out && message.status === "queued" && (
+              <span style={{ fontSize: 10, opacity: 0.7 }}>queued</span>
+            )}
             {out && message.status === "delivered" && <CheckCheck size={11} />}
             {out && message.status === "sending" && <Check size={11} />}
             {out && message.status === "failed" && <AlertCircle size={11} />}

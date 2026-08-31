@@ -22,6 +22,7 @@ import {
   preferredChannel,
   resolveIncomingLifecycle,
   shouldAwaitChainSyncForInvite,
+  shouldDeferRelayForL2Grace,
 } from "../../src/services/protocol/roomLifecycle";
 import type { RoomLifecycleStatus } from "../../src/types/models";
 
@@ -75,8 +76,14 @@ describe("accepted vs connected composer gate", () => {
     expect(
       composerPreferredChannelWithGrace("connect_failed", blipStarted, now),
     ).toBe("live");
+    expect(
+      composerPreferredChannelWithGrace("connecting", now - 7_000, now, now - 500),
+    ).toBe("live");
     expect(preferredChannel("connect_failed")).toBe("relay");
     expect(preferredChannel("accepted")).toBe("relay");
+    expect(
+      shouldDeferRelayForL2Grace("connecting", now - 8_000, now, now - 1_000),
+    ).toBe(true);
   });
 
   it("surfaces connect_failed codes when composer blocked for other reasons", () => {

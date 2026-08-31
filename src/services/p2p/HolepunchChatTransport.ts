@@ -71,7 +71,6 @@ import {
   isRoomExpired,
   nowUnix,
   resolveIncomingLifecycle,
-  shouldDeferRelayForL2Grace,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
 import { parseChatSmartBody } from "@/services/protocol/SmartMessageProtocolAdapter";
@@ -100,6 +99,12 @@ export function __setHolepunchSkipProof(skip: boolean): void {
   skipPostConnectProofForTests = skip;
 }
 
+/** Test hook: shorten L2 hold before L1′ fallback. */
+let l2SendHoldMs = L2_RECONNECT_GRACE_MS;
+export function __setL2SendHoldMs(ms: number | null): void {
+  l2SendHoldMs = ms ?? L2_RECONNECT_GRACE_MS;
+}
+
 type RoomState = {
   room: ChatRoom;
   contract?: HolepunchBootstrapContract;
@@ -111,6 +116,7 @@ type RoomState = {
 const rooms = new Map<string, RoomState>();
 const messagesByRoom = new Map<string, ChatMessage[]>();
 const subscribers = new Map<string, Set<(m: ChatMessage) => void>>();
+const roomStateSubscribers = new Map<string, Set<(room: ChatRoom) => void>>();
 const contractsByRoom = new Map<string, HolepunchBootstrapContract>();
 /** topicRef → room ids joined on that topic */
 const topicRooms = new Map<string, Set<string>>();
@@ -147,6 +153,23 @@ export function getL2BlipStartedAt(roomId: string): number | undefined {
 
 export function getLastLiveAtMs(roomId: string): number | undefined {
   return lastLiveAtMsByRoom.get(roomId);
+}
+
+function emitRoom(room: ChatRoom): void {
+  for (const h of roomStateSubscribers.get(room.id) ?? []) h(room);
+}
+
+/** UI sync when L2 drops/returns mid-chat (store otherwise stays stale). */
+export function subscribeRoomState(
+  roomId: string,
+  handler: (room: ChatRoom) => void,
+): () => void {
+  const set = roomStateSubscribers.get(roomId) ?? new Set();
+  set.add(handler);
+  roomStateSubscribers.set(roomId, set);
+  return () => {
+    set.delete(handler);
+  };
 }
 
 /**
@@ -219,6 +242,7 @@ function wireBackendOnce(): void {
               lastConnectError: "unreachable",
             };
             rooms.set(state.room.id, state);
+            emitRoom(state.room);
           }
         }
       } else {
@@ -450,6 +474,7 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
       };
       rooms.set(roomId, state);
       persistLiveSession(state);
+      emitRoom(state.room);
       continue;
     }
     // Brief peer blip: session still valid — skip full proof round-trip.
@@ -468,6 +493,7 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
       clearL2Blip(roomId);
       touchLastLiveAt(roomId);
       persistLiveSession(state);
+      emitRoom(state.room);
     }
   }
 }
@@ -484,6 +510,7 @@ function maybeMarkPeerLost(topicRef: string): void {
       lifecycleStatus: "connecting",
     };
     rooms.set(roomId, state);
+    emitRoom(state.room);
   }
 }
 
@@ -587,6 +614,7 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
           lastConnectError: undefined,
         });
         clearL2Blip(roomId);
+        emitRoom(state.room);
       }
       notify(roomId, msg);
     } catch {
@@ -710,6 +738,7 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       clearL2Blip(state.room.id);
       nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
+      emitRoom(state.room);
       return state.room;
     }
     await sleep(50);
@@ -848,23 +877,35 @@ async function maybeSendPoke(state: RoomState): Promise<void> {
   patchCatalogRoom(state.room.id, { lastPokedAt: nowSec });
 }
 
-/** Wait for L2 reconnect within grace before falling back to L1′ relay. */
-async function waitForLiveChannel(roomId: string): Promise<"live" | "relay"> {
-  const blipStartedAtMs = l2BlipStartedAtByRoom.get(roomId);
-  if (!blipStartedAtMs) return "relay";
-  const deadline = blipStartedAtMs + L2_RECONNECT_GRACE_MS;
+/** Wait up to `ms` from now for L2. @see docs/security/p2pchatprotocol.md §16 */
+async function waitForLiveUpTo(
+  roomId: string,
+  ms: number,
+): Promise<"live" | "relay"> {
+  const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     const state = rooms.get(roomId);
     if (!state) return "relay";
     if (state.room.lifecycleStatus === "connected") return "live";
     await sleep(50);
   }
-  return "relay";
+  return rooms.get(roomId)?.room.lifecycleStatus === "connected"
+    ? "live"
+    : "relay";
+}
+
+function dropMessage(roomId: string, id: string): void {
+  const list = messagesByRoom.get(roomId) ?? [];
+  messagesByRoom.set(
+    roomId,
+    list.filter((m) => m.id !== id),
+  );
 }
 
 async function sendRelayText(
   state: RoomState,
   text: string,
+  replaceId?: string,
 ): Promise<ChatMessage> {
   if (!isRelayEligibleStatus(state.room.lifecycleStatus)) {
     throw new Error("Relay only after invite accepted.");
@@ -881,6 +922,7 @@ async function sendRelayText(
   }
   const sentAt = nowUnix();
   const roomId = state.room.id;
+  if (replaceId) dropMessage(roomId, replaceId);
   const id = relayMessageId(roomId, sentAt, trimmed);
   const pending: ChatMessage = {
     id,
@@ -1118,32 +1160,36 @@ export const HolepunchChatTransport: ChatTransport = {
       throw new Error("Room expired.");
     }
 
-    const blipStartedAtMs = l2BlipStartedAtByRoom.get(roomId);
+    const lastLiveAtMs = lastLiveAtMsByRoom.get(roomId);
+    const envelope: ChatContentEnvelopeV1 = {
+      schemaVersion: 1,
+      messageId: uid("m"),
+      clientId: uid("c"),
+      sentAt: new Date().toISOString(),
+      kind: "text",
+      text,
+    };
     if (state.room.lifecycleStatus === "connected") {
-      const envelope: ChatContentEnvelopeV1 = {
-        schemaVersion: 1,
-        messageId: uid("m"),
-        clientId: uid("c"),
-        sentAt: new Date().toISOString(),
-        kind: "text",
-        text,
-      };
       return this.sendContent!(roomId, envelope);
     }
-    if (
-      shouldDeferRelayForL2Grace(state.room.lifecycleStatus, blipStartedAtMs)
-    ) {
-      if ((await waitForLiveChannel(roomId)) === "live") {
-        const envelope: ChatContentEnvelopeV1 = {
-          schemaVersion: 1,
-          messageId: uid("m"),
-          clientId: uid("c"),
-          sentAt: new Date().toISOString(),
-          kind: "text",
-          text,
-        };
+    // Were live this session: show queued, try L2, then L1′ (poke only on fallback).
+    if (state.session && lastLiveAtMs) {
+      const queued: ChatMessage = {
+        id: envelope.messageId,
+        roomId,
+        direction: "out",
+        text,
+        createdAt: envelope.sentAt,
+        status: "queued",
+        channel: "live",
+        clientId: envelope.clientId,
+        kind: "text",
+      };
+      notify(roomId, queued);
+      if ((await waitForLiveUpTo(roomId, l2SendHoldMs)) === "live") {
         return this.sendContent!(roomId, envelope);
       }
+      return sendRelayText(state, text, envelope.messageId);
     }
     return sendRelayText(state, text);
   },
@@ -1475,9 +1521,11 @@ export function __resetHolepunchTransport(): void {
   lastSidecarDetail = undefined;
   connectTimeoutMs = HOLEPUNCH_CONNECT_TIMEOUT_MS;
   skipPostConnectProofForTests = false;
+  l2SendHoldMs = L2_RECONNECT_GRACE_MS;
   rooms.clear();
   messagesByRoom.clear();
   subscribers.clear();
+  roomStateSubscribers.clear();
   topicRooms.clear();
   contractsByRoom.clear();
   inFlightConnects.clear();

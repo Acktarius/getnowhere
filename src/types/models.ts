@@ -126,7 +126,7 @@ export type ChatMessage = {
   direction: "out" | "in";
   text: string;
   createdAt: string;
-  status: "sending" | "delivered" | "failed";
+  status: "queued" | "sending" | "delivered" | "failed";
   /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
   channel?: MessageChannel;
   /** Client-generated id for idempotent send / edit / delete. */

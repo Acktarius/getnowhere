@@ -22,8 +22,11 @@ export const HOLEPUNCH_BACKOFF_BASE_MS = 1_000;
  */
 export const HOLEPUNCH_RELAY_PATIENCE_MS = 20 * 60_000;
 
-/** L2 grace from disconnect blip before L1′ relay (covers proof round-trip). */
+/** Wait this long for L2 to return before L1′ (covers proof + holepunch blip). */
 export const L2_RECONNECT_GRACE_MS = 6_000;
+
+/** If L2 traffic was this recent, each send gets a fresh grace wait. */
+export const L2_RECENT_LIVE_HOLD_MS = 30_000;
 
 export function holepunchBackoffMs(attempt: number): number {
   const exp = Math.min(

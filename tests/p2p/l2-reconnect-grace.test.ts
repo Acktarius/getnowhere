@@ -4,6 +4,7 @@ import {
   __resetHolepunchTransport,
   __setHolepunchConnectTimeoutMs,
   __setHolepunchSkipProof,
+  __setL2SendHoldMs,
   HolepunchChatTransport,
 } from "../../src/services/p2p/HolepunchChatTransport";
 import {
@@ -194,6 +195,29 @@ describe("L2 reconnect grace", () => {
 
     expect(msg.channel).toBe("live");
     expect(relaySpy).not.toHaveBeenCalled();
+    relaySpy.mockRestore();
+  });
+
+  it("falls back to L1′ only after the L2 hold, and not before", async () => {
+    __setL2SendHoldMs(80);
+    const relaySpy = vi
+      .spyOn(ConcealSmartMessageAdapter, "sendChatRelay")
+      .mockResolvedValue(undefined as never);
+
+    const { backend, setPeerCount } = createControllablePeerBackend();
+    __setHolepunchSidecarBackend(backend);
+    const { contract } = await buildContract("room-hold", "inv-hold");
+    await HolepunchChatTransport.connect(contract);
+    await HolepunchChatTransport.sendMessage("room-hold", "hello live");
+
+    setPeerCount(contract.transport.topicRef, 0);
+    const msg = await HolepunchChatTransport.sendMessage(
+      "room-hold",
+      "after hold",
+    );
+
+    expect(msg.channel).toBe("relay");
+    expect(relaySpy).toHaveBeenCalledOnce();
     relaySpy.mockRestore();
   });
 });
