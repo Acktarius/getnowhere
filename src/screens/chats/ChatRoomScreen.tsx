@@ -9,7 +9,6 @@ import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
-import { useCopy } from "@/hooks/useCopy";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
@@ -49,7 +48,7 @@ import {
   type ConnectFailureCode,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
-import { formatUnixDateTime, shortAddress } from "@/utils/format";
+import { formatUnixDateTime, shortTopicRef } from "@/utils/format";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -193,7 +192,6 @@ export function ChatRoomScreen() {
     matchingRegister: boolean;
     needsAccept?: boolean;
   } | null>(null);
-  const [topicCopied, copyTopic] = useCopy();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const composerBarRef = useRef<HTMLDivElement>(null);
@@ -868,26 +866,9 @@ export function ChatRoomScreen() {
           {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
           <div>
             Topic:{" "}
-            {discoveryTopicRef ? (
-              <button
-                type="button"
-                className="btn btn--ghost"
-                style={{
-                  font: "inherit",
-                  padding: 0,
-                  minHeight: 0,
-                  textDecoration: "underline",
-                }}
-                title={discoveryTopicRef}
-                aria-label="Copy full discovery topic"
-                onClick={() => copyTopic(discoveryTopicRef)}
-              >
-                {shortAddress(discoveryTopicRef, 5, 5)}
-                {topicCopied ? " (copied)" : ""}
-              </button>
-            ) : (
-              "— not joined yet —"
-            )}
+            {discoveryTopicRef
+              ? shortTopicRef(discoveryTopicRef)
+              : "— not joined yet —"}
           </div>
           <div>Lifecycle: {displayRoom.lifecycleStatus}</div>
           <div>{roomExpiryDiagnosticLine(diagnosticRoomTtl)}</div>

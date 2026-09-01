@@ -1,6 +1,6 @@
 {
   "name": "gnh-native-wrapper",
-  "version": "0.4.2",
+  "version": "0.4.6",
   "private": true,
   "main": "index.ts",
   "scripts": {
