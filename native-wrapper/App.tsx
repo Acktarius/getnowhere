@@ -29,8 +29,8 @@ import {
   resolveNativeBackgroundSync,
   setNativeAppInBackground,
 } from "./src/gnhBackgroundSyncNative";
-import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
 import { nativeClearBadge } from "./src/gnhNotificationsNative";
+import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
 import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
@@ -118,8 +118,7 @@ export default function App() {
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
   /** Native cover for OS app-switcher snapshots (critical on iOS). */
   const obscureInSwitcher =
-    blurInAppSwitcher &&
-    (appState === "inactive" || appState === "background");
+    blurInAppSwitcher && (appState === "inactive" || appState === "background");
 
   const injectedBeforeLoad = useMemo(
     () =>
