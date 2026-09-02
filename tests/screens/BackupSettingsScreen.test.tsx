@@ -9,6 +9,7 @@ const SECRETS = {
   spendKey: "spendhex",
   viewKey: "viewhex",
   viewOnly: false,
+  creationHeight: 0,
 };
 
 const revealSecrets = vi.fn(async (_password: string) => SECRETS);
@@ -42,8 +43,17 @@ vi.mock("@/state/walletStore", () => ({
   }),
 }));
 
+vi.mock("@/components/qr/WalletQrCode", async () => {
+  const { createElement } = await import("react");
+  return {
+    WalletQrCode: ({ value }: { value: string }) =>
+      createElement("span", { "data-testid": "wallet-qr-value" }, value),
+  };
+});
+
 import { downloadJson } from "@/lib/downloadJson";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
+import { encodeWalletKeys } from "@/services/conceal/walletQr";
 
 const mockedDownloadJson = vi.mocked(downloadJson);
 
@@ -171,5 +181,128 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     expect(
       await screen.findByText(/Saved wallet\.json to Files/i),
     ).toBeInTheDocument();
+  });
+
+  it("places Show export QR code after Reveal and before Download", () => {
+    renderBackup();
+
+    const buttons = screen.getAllByRole("button");
+    const labels = buttons.map((b) => b.textContent ?? "");
+    const revealIdx = labels.findIndex((t) => /Reveal seed & keys/i.test(t));
+    const exportIdx = labels.findIndex((t) => /Show export QR code/i.test(t));
+    const downloadIdx = labels.findIndex((t) =>
+      /Download wallet \.json/i.test(t),
+    );
+
+    expect(exportIdx).toBeGreaterThan(-1);
+    expect(revealIdx).toBeLessThan(exportIdx);
+    expect(exportIdx).toBeLessThan(downloadIdx);
+  });
+
+  it("requires password before export QR", async () => {
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(
+      await screen.findByText(/Enter your wallet password/i),
+    ).toBeInTheDocument();
+    expect(revealSecrets).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows error on incorrect password for export QR", async () => {
+    const user = userEvent.setup();
+    revealSecrets.mockRejectedValue(new Error("Incorrect password"));
+    renderBackup();
+
+    await user.type(passwordInput(), "wrong");
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(await screen.findByText(/Incorrect password/i)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens export QR dialog after correct password without confirmBackup", async () => {
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Got it/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Need more time/i }),
+    ).toBeInTheDocument();
+    expect(revealSecrets).toHaveBeenCalledWith("correct-password");
+    expect(confirmBackup).not.toHaveBeenCalled();
+  });
+
+  it("encodes the export QR from the reveal fixture", async () => {
+    const user = userEvent.setup();
+    const expected = encodeWalletKeys(
+      SECRETS.address,
+      SECRETS.spendKey,
+      SECRETS.viewKey,
+      SECRETS.creationHeight,
+    );
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(await screen.findByTestId("wallet-qr-value")).toHaveTextContent(
+      expected,
+    );
+  });
+
+  it("shows error and no dialog when the wallet is view-only", async () => {
+    const user = userEvent.setup();
+    revealSecrets.mockResolvedValue({
+      ...SECRETS,
+      viewOnly: true,
+      spendKey: "spendhex",
+    });
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(
+      await screen.findByText(/Export QR needs a spend key/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows error and no dialog when spend key is empty", async () => {
+    const user = userEvent.setup();
+    revealSecrets.mockResolvedValue({
+      ...SECRETS,
+      viewOnly: false,
+      spendKey: "",
+    });
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Show export QR code/i }),
+    );
+
+    expect(
+      await screen.findByText(/Export QR needs a spend key/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

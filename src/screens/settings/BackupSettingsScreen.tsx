@@ -1,10 +1,12 @@
-import { Download, Eye, Lock } from "lucide-react";
+import { Download, Eye, Lock, QrCode } from "lucide-react";
 import { useState } from "react";
+import { ExportQrModal } from "@/components/ExportQrModal";
 import { SecureInput } from "@/components/SecureInput";
 import { SeedRevealModal } from "@/components/SeedRevealModal";
 import { BackLink, TopBar } from "@/components/TopBar";
 import { downloadJson } from "@/lib/downloadJson";
 import { seedBackupService } from "@/services";
+import { encodeWalletKeys } from "@/services/conceal/walletQr";
 import { useWalletStore } from "@/state/walletStore";
 import type { WalletSecretsExport } from "@/types/services";
 
@@ -15,6 +17,8 @@ export function BackupSettingsScreen() {
   const [msg, setMsg] = useState<string | null>(null);
   const [revealOpen, setRevealOpen] = useState(false);
   const [secrets, setSecrets] = useState<WalletSecretsExport | null>(null);
+  const [exportQrOpen, setExportQrOpen] = useState(false);
+  const [exportQrUri, setExportQrUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   function requirePassword(): boolean {
@@ -35,6 +39,31 @@ export function BackupSettingsScreen() {
       const data = await seedBackupService.revealSecrets(password);
       setSecrets(data);
       setRevealOpen(true);
+    } catch (e) {
+      setError((e as Error).message || "Could not reveal secrets.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function showExportQr() {
+    if (!requirePassword()) return;
+    setBusy(true);
+    try {
+      const data = await seedBackupService.revealSecrets(password);
+      if (data.viewOnly || !data.spendKey) {
+        setError("Export QR needs a spend key.");
+        return;
+      }
+      setExportQrUri(
+        encodeWalletKeys(
+          data.address,
+          data.spendKey,
+          data.viewKey,
+          data.creationHeight,
+        ),
+      );
+      setExportQrOpen(true);
     } catch (e) {
       setError((e as Error).message || "Could not reveal secrets.");
     } finally {
@@ -64,6 +93,12 @@ export function BackupSettingsScreen() {
   function closeReveal() {
     setRevealOpen(false);
     setSecrets(null);
+    setPassword("");
+  }
+
+  function closeExportQr() {
+    setExportQrOpen(false);
+    setExportQrUri(null);
     setPassword("");
   }
 
@@ -128,6 +163,13 @@ export function BackupSettingsScreen() {
           </button>
           <button
             className="btn btn--block btn--secondary"
+            onClick={showExportQr}
+            disabled={busy}
+          >
+            <QrCode size={15} /> Show export QR code
+          </button>
+          <button
+            className="btn btn--block btn--secondary"
             onClick={downloadBackup}
             disabled={busy}
           >
@@ -143,6 +185,11 @@ export function BackupSettingsScreen() {
         viewKey={secrets?.viewKey ?? ""}
         viewOnly={secrets?.viewOnly}
         onClose={closeReveal}
+      />
+      <ExportQrModal
+        open={exportQrOpen && Boolean(exportQrUri)}
+        uri={exportQrUri ?? ""}
+        onClose={closeExportQr}
       />
     </div>
   );

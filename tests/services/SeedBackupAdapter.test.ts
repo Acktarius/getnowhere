@@ -1,5 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+type RuntimeMock = {
+  password: string;
+  viewOnly: boolean;
+  account: {
+    address: string;
+    keys: { spend: { sec: string }; view: { sec: string } };
+  };
+  raw: { version: number; creationHeight?: unknown };
+};
+
 const getInternalWalletState = vi.fn(
   () => null as { seedPhrase: string } | null,
 );
@@ -16,15 +26,7 @@ const getRuntime = vi.fn(
         },
       },
       raw: { version: 1 },
-    }) as {
-      password: string;
-      viewOnly: boolean;
-      account: {
-        address: string;
-        keys: { spend: { sec: string }; view: { sec: string } };
-      };
-      raw: { version: number };
-    } | null,
+    }) as RuntimeMock | null,
 );
 const mnemonicFromSpendKey = vi.fn(
   () => "alpha bravo charlie delta echo foxtrot",
@@ -93,7 +95,47 @@ describe("SeedBackupAdapter", () => {
       spendKey: "deadbeef",
       viewKey: "cafebabe",
       viewOnly: false,
+      creationHeight: 0,
     });
+  });
+
+  it("revealSecrets returns creationHeight from raw", async () => {
+    const fixtureHeight = 2_847_331;
+    getRuntime.mockReturnValue({
+      password: "wallet-secret",
+      viewOnly: false,
+      account: {
+        address: "ccx1test",
+        keys: {
+          spend: { sec: "deadbeef" },
+          view: { sec: "cafebabe" },
+        },
+      },
+      raw: { version: 1, creationHeight: fixtureHeight },
+    });
+
+    const secrets = await SeedBackupAdapter.revealSecrets("wallet-secret");
+    expect(secrets.creationHeight).toBe(fixtureHeight);
+  });
+
+  it("revealSecrets maps missing or invalid creationHeight to 0", async () => {
+    for (const creationHeight of ["not-a-height", -12, Number.NaN] as const) {
+      getRuntime.mockReturnValue({
+        password: "wallet-secret",
+        viewOnly: false,
+        account: {
+          address: "ccx1test",
+          keys: {
+            spend: { sec: "deadbeef" },
+            view: { sec: "cafebabe" },
+          },
+        },
+        raw: { version: 1, creationHeight },
+      });
+
+      const secrets = await SeedBackupAdapter.revealSecrets("wallet-secret");
+      expect(secrets.creationHeight).toBe(0);
+    }
   });
 
   it("downloadWalletBackup rejects bad password", async () => {

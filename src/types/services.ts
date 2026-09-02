@@ -421,6 +421,8 @@ export type WalletSecretsExport = {
   spendKey: string;
   viewKey: string;
   viewOnly: boolean;
+  /** Scan floor from the wallet blob; 0 when missing or invalid. */
+  creationHeight: number;
 };
 
 export type WalletBackupDownload = {

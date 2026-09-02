@@ -306,7 +306,7 @@ export function SettingsScreen() {
               to="/settings/backup"
               icon={Download}
               title="Backup"
-              sub="Reveal seed & keys, download encrypted wallet"
+              sub="Reveal seed & keys, export QR, download encrypted wallet"
             />
           </div>
         </div>

@@ -1,0 +1,24 @@
+{
+  "change": "backup-export-qr",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Password-gated export QR dialog",
+      "library": "src/services/conceal/walletQr.ts; src/services/conceal/SeedBackupAdapter.ts",
+      "runtimeOwner": "BackupSettingsScreen Show export QR code → revealSecrets → encodeWalletKeys → ExportQrModal",
+      "writes": "none (in-memory modal payload only; secrets cleared on close)",
+      "reads": "wallet runtime keys; rt.raw.creationHeight",
+      "uiConsumer": "Settings → Backup export QR modal",
+      "evidence": "tests/services/walletQr.test.ts; tests/screens/BackupSettingsScreen.test.tsx; forge e2e run"
+    },
+    {
+      "capability": "Export QR dialog dismissal and timer",
+      "library": "shared Got it / Need more time hook used by SeedRevealModal and export QR modal",
+      "runtimeOwner": "Export QR modal Got it / Need more time / auto-close",
+      "writes": "none (clears password and QR state on close)",
+      "reads": "N/A",
+      "uiConsumer": "Settings → Backup export QR modal",
+      "evidence": "tests/components/SeedRevealModal.test.tsx; tests/screens/BackupSettingsScreen.test.tsx; forge e2e run"
+    }
+  ]
+}

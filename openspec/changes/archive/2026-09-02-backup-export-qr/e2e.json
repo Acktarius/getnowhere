@@ -1,0 +1,24 @@
+{
+  "change": "backup-export-qr",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Wallet QR encode/decode",
+      "cmd": "npx vitest run tests/services/walletQr.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Backup settings export QR",
+      "cmd": "npx vitest run tests/screens/BackupSettingsScreen.test.tsx tests/components/SeedRevealModal.test.tsx",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

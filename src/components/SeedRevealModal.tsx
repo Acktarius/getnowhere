@@ -1,7 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-
-const FADE_MS = 30_000;
-const GRACE_MS = 5_000;
+import { useSecretsModalTimer } from "@/hooks/useSecretsModalTimer";
 
 type Props = {
   open: boolean;
@@ -21,42 +18,8 @@ export function SeedRevealModal({
   viewOnly,
   onClose,
 }: Props) {
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  const [cycle, setCycle] = useState(0);
-  const [needMoreEnabled, setNeedMoreEnabled] = useState(false);
-  const [needMoreOpacity, setNeedMoreOpacity] = useState(0);
-
-  useEffect(() => {
-    if (!open) {
-      setNeedMoreEnabled(false);
-      setNeedMoreOpacity(0);
-      return;
-    }
-
-    setNeedMoreEnabled(false);
-    setNeedMoreOpacity(0);
-
-    const kickFade = setTimeout(() => {
-      setNeedMoreOpacity(1);
-    }, 0);
-
-    const enableTimer = setTimeout(() => {
-      setNeedMoreEnabled(true);
-      setNeedMoreOpacity(1);
-    }, FADE_MS);
-
-    const graceTimer = setTimeout(() => {
-      onCloseRef.current();
-    }, FADE_MS + GRACE_MS);
-
-    return () => {
-      clearTimeout(kickFade);
-      clearTimeout(enableTimer);
-      clearTimeout(graceTimer);
-    };
-  }, [open, cycle]);
+  const { needMoreEnabled, needMoreOpacity, requestMoreTime, fadeMs } =
+    useSecretsModalTimer({ open, onClose });
 
   if (!open) return null;
 
@@ -92,7 +55,7 @@ export function SeedRevealModal({
             >
               {words.map((w, i) => (
                 <div
-                  key={`${cycle}-${i}`}
+                  key={i}
                   className="mono"
                   style={{
                     fontSize: 12.5,
@@ -163,12 +126,9 @@ export function SeedRevealModal({
               disabled={!needMoreEnabled}
               style={{
                 opacity: needMoreOpacity,
-                transition: `opacity ${FADE_MS}ms linear`,
+                transition: `opacity ${fadeMs}ms linear`,
               }}
-              onClick={() => {
-                if (!needMoreEnabled) return;
-                setCycle((c) => c + 1);
-              }}
+              onClick={requestMoreTime}
             >
               Need more time
             </button>

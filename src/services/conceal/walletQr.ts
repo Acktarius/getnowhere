@@ -1,5 +1,5 @@
 /**
- * Decode Conceal wallet-QR payloads (CoinUri.encodeWalletKeys format).
+ * Conceal wallet-QR encode/decode (CoinUri.encodeWalletKeys format).
  * @see conceal-next-wallet lib/services/real-sdk/wallet-qr.ts
  */
 
@@ -12,6 +12,18 @@ export interface DecodedWalletQr {
   viewKey?: string;
   mnemonicSeed?: string;
   height?: number;
+}
+
+/** Build a keys-only wallet QR (`conceal.<addr>?spend_key=…?view_key=…`). */
+export function encodeWalletKeys(
+  address: string,
+  spendKey: string,
+  viewKey: string,
+  height?: number | null,
+): string {
+  let encoded = `${WALLET_PREFIX}${address}?spend_key=${spendKey}?view_key=${viewKey}`;
+  if (height != null) encoded += `?height=${height}`;
+  return encoded;
 }
 
 /** Parse a wallet-QR payload string into its parts (no validation/crypto). */
