@@ -58,7 +58,11 @@ validation, replay/dedup checks, and persistence. Never from raw tx data.
 
 ## Settings and permissions
 
-Settings → Privacy adds two persisted switches (defaults **off**):
+Settings → **Notifications** section is shown only on the mobile host
+(`isMobileHost()` / `window.gnhMobile`). Desktop Electron and plain web omit
+the section; privacy keys still exist in storage with defaults **off**.
+
+Persisted switches:
 
 - **Notifications** (`privacy.notificationsEnabled`) — badge/unread tracking.
 - **Notification banner** (`privacy.notificationBannersEnabled`) — system

@@ -222,68 +222,67 @@ export function SettingsScreen() {
           </div>
         </div>
 
-        <div className="section">
-          <div className="section__head">
-            <span className="section__title">Notifications</span>
+        {/* OS notifications + poke wake: native-wrapper only (no desktop/web host). */}
+        {isMobileHost() ? (
+          <div className="section">
+            <div className="section__head">
+              <span className="section__title">Notifications</span>
+            </div>
+            <div className="card card--flush">
+              <PrivacySettingItem
+                title="Notifications"
+                description="Badge the icon when invites or chain messages arrive."
+                on={s.privacy.notificationsEnabled}
+                onToggle={(v) => applyNotificationsEnabled(v)}
+              />
+              <hr className="divider divider--flush" />
+              <PrivacySettingItem
+                title="Wake contact on relay"
+                description={
+                  s.privacy.notificationsEnabled
+                    ? "Uses ntfy / APNs wake. No Google."
+                    : "Turn on Notifications first."
+                }
+                on={
+                  s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled
+                }
+                onToggle={
+                  s.privacy.notificationsEnabled
+                    ? (v) => applyPushWakeEnabled(v)
+                    : undefined
+                }
+                trailing={
+                  s.privacy.notificationsEnabled ? undefined : (
+                    <span className="field__hint">Off</span>
+                  )
+                }
+              />
+              <hr className="divider divider--flush" />
+              <PrivacySettingItem
+                title="Notification banner"
+                description={
+                  s.privacy.notificationsEnabled
+                    ? "Show a lock-screen banner."
+                    : "Turn on Notifications first."
+                }
+                on={
+                  s.privacy.notificationsEnabled &&
+                  s.privacy.notificationBannersEnabled
+                }
+                onToggle={
+                  s.privacy.notificationsEnabled
+                    ? (v) => applyNotificationBanners(v)
+                    : undefined
+                }
+                trailing={
+                  s.privacy.notificationsEnabled ? undefined : (
+                    <span className="field__hint">Off</span>
+                  )
+                }
+              />
+            </div>
           </div>
-          <div className="card card--flush">
-            <PrivacySettingItem
-              title="Notifications"
-              description="Badge the icon when invites or chain messages arrive."
-              on={s.privacy.notificationsEnabled}
-              onToggle={(v) => applyNotificationsEnabled(v)}
-            />
-            {isMobileHost() ? (
-              <>
-                <hr className="divider divider--flush" />
-                <PrivacySettingItem
-                  title="Wake contact on relay"
-                  description={
-                    s.privacy.notificationsEnabled
-                      ? "Uses ntfy / APNs wake. No Google."
-                      : "Turn on Notifications first."
-                  }
-                  on={
-                    s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled
-                  }
-                  onToggle={
-                    s.privacy.notificationsEnabled
-                      ? (v) => applyPushWakeEnabled(v)
-                      : undefined
-                  }
-                  trailing={
-                    s.privacy.notificationsEnabled ? undefined : (
-                      <span className="field__hint">Off</span>
-                    )
-                  }
-                />
-              </>
-            ) : null}
-            <hr className="divider divider--flush" />
-            <PrivacySettingItem
-              title="Notification banner"
-              description={
-                s.privacy.notificationsEnabled
-                  ? "Show a lock-screen banner."
-                  : "Turn on Notifications first."
-              }
-              on={
-                s.privacy.notificationsEnabled &&
-                s.privacy.notificationBannersEnabled
-              }
-              onToggle={
-                s.privacy.notificationsEnabled
-                  ? (v) => applyNotificationBanners(v)
-                  : undefined
-              }
-              trailing={
-                s.privacy.notificationsEnabled ? undefined : (
-                  <span className="field__hint">Off</span>
-                )
-              }
-            />
-          </div>
-        </div>
+        ) : null}
 
         <div className="section">
           <div className="section__head">
