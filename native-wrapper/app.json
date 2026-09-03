@@ -2,7 +2,7 @@
   "expo": {
     "name": "Get NowHere",
     "slug": "get-nowhere-wrapper",
-    "version": "0.4.7",
+    "version": "0.4.8",
     "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
