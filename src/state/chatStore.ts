@@ -6,6 +6,7 @@ import {
   ingestChatRelay,
   relayMessageId,
   subscribeRoomState,
+  subscribeRoomTranscript,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   assertCanSendLive,
@@ -33,7 +34,11 @@ type ChatStore = {
       roomTopic?: ChatRoom["roomTopic"];
     },
   ) => Promise<ChatRoom>;
-  send: (roomId: string, text: string) => Promise<void>;
+  send: (
+    roomId: string,
+    text: string,
+    ttlUnixSeconds?: number,
+  ) => Promise<void>;
   sendReaction: (
     roomId: string,
     targetMessageId: string,
@@ -268,8 +273,8 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       if (shouldSuppressRelayBadge(roomId, activeRoomId, pathname)) return;
       noteRelayIngested(messageId, roomId);
     };
-    for (const { relay } of inbound) {
-      const msg = await ingestChatRelay(relay);
+    for (const { relay, ttlExpiresAt } of inbound) {
+      const msg = await ingestChatRelay(relay, ttlExpiresAt);
       if (msg) {
         touched.add(msg.roomId);
         maybeNoteRelay(msg.id, msg.roomId);
@@ -309,14 +314,14 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  async send(roomId, text) {
+  async send(roomId, text, ttlUnixSeconds) {
     const room =
       get().rooms.find((r) => r.id === roomId) ??
       (await chatTransport.getRoom(roomId));
     if (!room) throw new Error("Room not found.");
     assertCanSendMessages(room.lifecycleStatus);
     // Transport notify → subscribeRoom appends; do not append here (avoids doubles).
-    const msg = await chatTransport.sendMessage(roomId, text);
+    const msg = await chatTransport.sendMessage(roomId, text, ttlUnixSeconds);
     set((s) => ({
       rooms: s.rooms.map((r) =>
         r.id === roomId ? { ...r, lastMessageAt: msg.createdAt } : r,
@@ -446,9 +451,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
           : [...s.rooms, room],
       }));
     });
+    const unsubTranscript = subscribeRoomTranscript(roomId, (msgs) => {
+      set((s) => ({
+        messagesByRoom: { ...s.messagesByRoom, [roomId]: msgs },
+      }));
+    });
     return () => {
       unsub();
       unsubRoom();
+      unsubTranscript();
     };
   },
 

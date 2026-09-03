@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Check,
   CheckCheck,
+  Hourglass,
   Pencil,
   Trash2,
   X,
@@ -253,6 +254,12 @@ export function MessageBubble({
                 chain
               </span>
             )}
+            {typeof message.ttlExpiresAt === "number" &&
+              message.ttlExpiresAt > 0 && (
+                <span title="TTL" style={{ display: "inline-flex" }}>
+                  <Hourglass size={11} aria-hidden style={{ opacity: 0.65 }} />
+                </span>
+              )}
             <span style={{ fontSize: 10, opacity: 0.7 }}>
               {formatTime(message.createdAt)}
             </span>

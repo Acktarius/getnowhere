@@ -44,6 +44,20 @@ export const RING_SIZE = MIXIN + 1;
 /** Standard transaction network fee, atomic units. */
 export const FEE_ATOMIC = MINIMUM_FEE_V2;
 
+/** TTL relay skips network + node fee; mixin stays {@link MIXIN}. */
+export function smartMessageSpendPolicy(ttlUnixSeconds: number): {
+  feeForSelect: number;
+  attachNodeFee: boolean;
+  mixin: number;
+} {
+  const hasTtl = ttlUnixSeconds > 0;
+  return {
+    feeForSelect: hasTtl ? 0 : FEE_ATOMIC,
+    attachNodeFee: !hasTtl,
+    mixin: MIXIN,
+  };
+}
+
 /** `{1..9} × 10^k` ladder — only these denominations are selected for spends. */
 const PRETTY_SET = new Set(PRETTY_AMOUNTS);
 
@@ -485,6 +499,7 @@ async function sendSmartMessageInner(
   const paymentId = resolveOutboundPaymentId(input.paymentId, recipient);
   const ttlUnixSeconds =
     input.ttlUnixSeconds && input.ttlUnixSeconds > 0 ? input.ttlUnixSeconds : 0;
+  const policy = smartMessageSpendPolicy(ttlUnixSeconds);
   const hasTtl = ttlUnixSeconds > 0;
 
   let nodeFee: {
@@ -492,7 +507,7 @@ async function sendSmartMessageInner(
     viewPublicKey: string;
     amount: number;
   } | null = null;
-  if (!hasTtl) {
+  if (policy.attachNodeFee) {
     const feeAddress = await safeNodeFeeAddress(runtime.daemon);
     if (feeAddress && feeAddress !== runtime.account.address) {
       const decoded = decodeFeeRecipient(feeAddress);
@@ -511,7 +526,7 @@ async function sendSmartMessageInner(
     );
   }
   const messageAmount = MESSAGE_TX_AMOUNT_ATOMIC;
-  const feeForSelect = hasTtl ? 0 : FEE_ATOMIC;
+  const feeForSelect = policy.feeForSelect;
   const nodeFeeAtomic = nodeFee ? REMOTE_NODE_FEE_ATOMIC : 0;
   const { selected } = selectSpendInputs(
     outputs,
@@ -538,7 +553,7 @@ async function sendSmartMessageInner(
       unspentOutputs: selected,
       decoys,
       fee: FEE_ATOMIC,
-      mixin: MIXIN,
+      mixin: policy.mixin,
       ttlUnixSeconds,
       nodeFee,
       messageAmount,

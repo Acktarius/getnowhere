@@ -129,6 +129,8 @@ export type ChatMessage = {
   status: "queued" | "sending" | "delivered" | "failed";
   /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
   channel?: MessageChannel;
+  /** Mempool TTL unix seconds when this L1′ row is not mined. */
+  ttlExpiresAt?: number;
   /** Client-generated id for idempotent send / edit / delete. */
   clientId?: string;
   kind?: ChatMessageKind;

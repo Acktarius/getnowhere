@@ -63,9 +63,14 @@ and L2 are documented separately below.
 
 L1 signaling (`create` / `register` / `revoke`) and L1′ relay (`chat.relay`) use
 **async Conceal transactions** — not a direct network session between Alice and
-Bob. Bob learns an invite or relay by **scanning the chain** with view keys and
-matching `paymentId`; he does **not** learn Alice's IP or geolocation from this
-path.
+Bob. Bob learns an invite or relay by **scanning the chain** (or mempool) with
+view keys and matching `paymentId`; he does **not** learn Alice's IP or
+geolocation from this path.
+
+Create / register / revoke stay mined (`ttlUnixSeconds: 0`). L1′ `chat.relay`
+**may** use Conceal mempool TTL (`tx_extra` `0x05`) so the tx is not mined and
+incurs no network or node fee. TTL L1′ still uses the same mixin / decoys and
+Conceal MESSAGE encryption as mined L1′. It is **not** a dust or no-decoy path.
 
 **Delivery shape:** wallet builds `buildMessageTransaction` with ring mixin +
 decoys, stealth recipient outputs, change back to sender, encrypted payment ID,
@@ -82,7 +87,8 @@ and Conceal MESSAGE encryption for the smart-message body
 | Remote daemon at **broadcast** | Sees raw tx blob + sender **network** IP — **not Bob** |
 
 Do **not** describe L1/L1′ like a public-ledger chat receipt. Conceal privacy
-mechanics apply; the product still records encrypted smart messages on-chain.
+mechanics apply; signaling and tap L1′ still record encrypted smart messages
+on-chain. Mempool-TTL L1′ does not mine.
 
 @see `p2pchatprotocol.md` §1–2, §16; `docs/features/chat-relay.md`
 
@@ -192,7 +198,8 @@ seal on live frames — same material, different *use* of L1, not a new layer.
 
 - SMS-class text when Hyperswarm is not `connected`, after invite accept.
 - Wire: `{contact,e,<roomId>,<sentAtUnix>,<text>}` — see `p2pchatprotocol.md` §16.
-- App body is plain smart-message fields; Conceal MESSAGE encrypts on chain.
+- App body is plain smart-message fields; Conceal MESSAGE encrypts (mined or
+  mempool-TTL). Mixin / decoys stay; TTL L1′ is not dust.
 - **Never** while `pending`. Does **not** replace L2. Prefer live whenever
   `lifecycleStatus === "connected"`.
 
@@ -383,9 +390,10 @@ Rules:
   what this device already saw in the encrypted wallet blob (`chatRooms`) when
   Settings **P2P message retention** is on: background write ~1s after live
   send/receive (UI never waits), immediately on hide and Exit. Off = do not
-  write or hydrate L2; L1′ sent still lives in `sentMessages` while the room
-  is available. Rooms are TTL-bounded (default 7d, max 30d). Leave / expire /
-  revoke tombstones `chatRooms` and drops matching L1′ `e` rows. After unlock
+  write or hydrate L2; mined L1′ sent still lives in `sentMessages` while the
+  room is available. Mempool-TTL L1′ is never written to `chatRooms`. Rooms are
+  TTL-bounded (default 7d, max 30d). Leave / expire / revoke tombstones
+  `chatRooms` and drops matching L1′ `e` rows. After unlock
   hydrate, re-creating in-memory room shells (`listRooms` / `ensureRoom`) MUST
   NOT clear an existing transcript bag — required after iOS WKWebView process
   death. No peer catch-up in this model — a later change if we add a request

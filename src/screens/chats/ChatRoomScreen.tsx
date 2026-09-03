@@ -1,4 +1,4 @@
-import { Link2, RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
@@ -11,6 +11,10 @@ import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import {
+  ChainSendFlyout,
+  ttlUnixFromDuration,
+} from "@/screens/chats/chainSendFlyout";
 import {
   getL2BlipStartedAt,
   getLastLiveAtMs,
@@ -37,7 +41,7 @@ import {
   composerDisabledReason,
   composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
-import { isRoomExpired } from "@/services/protocol/roomLifecycle";
+import { isRoomExpired, nowUnix } from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
@@ -471,7 +475,7 @@ export function ChatRoomScreen() {
     ) &&
     getUfwAdvisoryState() === "active";
 
-  async function handleSend() {
+  function handleSend(durationSeconds = 0) {
     if (!draft.trim() || !composeAllowed) return;
     if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
       toastError(
@@ -480,9 +484,10 @@ export function ChatRoomScreen() {
       return;
     }
     const text = draft.trim();
+    const ttlUnixSeconds = ttlUnixFromDuration(durationSeconds, nowUnix());
     setDraft("");
     composerRef.current?.focus({ preventScroll: mobileHost });
-    void send(roomId, text).catch((e) => {
+    void send(roomId, text, ttlUnixSeconds).catch((e) => {
       toastError((e as Error).message || "Send failed.");
     });
   }
@@ -837,23 +842,11 @@ export function ChatRoomScreen() {
             });
           }}
         />
-        <button
-          type="button"
-          className="btn btn--primary"
+        <ChainSendFlyout
+          viaChain={viaChain}
           disabled={!composeAllowed || !draft.trim()}
-          onClick={() => void handleSend()}
-          aria-label="Send"
-          style={viaChain ? { position: "relative" } : undefined}
-        >
-          <Send size={16} />
-          {viaChain && (
-            <Link2
-              aria-hidden
-              size={11}
-              style={{ position: "absolute", right: 4, bottom: 4 }}
-            />
-          )}
-        </button>
+          onSend={(durationSeconds) => handleSend(durationSeconds)}
+        />
       </div>
 
       <Sheet

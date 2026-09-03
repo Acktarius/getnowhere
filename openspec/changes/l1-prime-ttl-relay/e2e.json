@@ -1,0 +1,30 @@
+{
+  "change": "l1-prime-ttl-relay",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Relay TTL send path and no mined fallback",
+      "cmd": "npx vitest run tests/p2p/l1-prime-ttl-relay.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "Erase, no chatRooms persist, no hydrate restore",
+      "cmd": "npx vitest run tests/p2p/l1-prime-ttl-erase.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "Composer flyout 60 / 6 / 0",
+      "cmd": "npx vitest run tests/screens/ChatRoomTtlFlyout.test.tsx",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "TTL spend keeps full rings",
+      "cmd": "npx vitest run tests/conceal/smart-message-spend-policy.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    }
+  ]
+}

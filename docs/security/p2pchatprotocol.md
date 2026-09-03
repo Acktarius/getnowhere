@@ -21,7 +21,7 @@ bidirectional Conceal relationship.
   MESSAGE record (type `0x04`).
 - **Chat contact signaling does not use Conceal tx_extra TTL (`0x05`).**
   `inviteExpiry` and `roomTtl` are app-layer fields inside the body only.
-  On-chain TTL is a separate mempool feature (used elsewhere, e.g. pulse) —
+  On-chain TTL is a separate mempool feature (pulse; L1′ relay MAY use it) —
   not for create / register / revoke.
 - They provide store-and-forward signaling without a separate signaling server.
 - **0-conf preview:** mempool scan surfaces inbound smart messages early. For an
@@ -41,9 +41,10 @@ bidirectional Conceal relationship.
   **Live** (`channel: "live"`) messaging is allowed only when the room is
   **Holepunch-connected**.
 - **L1′ chat relay** (`channel: "relay"`, wire `execute` / `e`) is an
-  SMS-class fallback after accept when Hyperswarm is not connected — fee +
-  ~block latency, grey bubbles. App text inside Conceal MESSAGE (chain ChaCha).
-  Never while `pending`. It does **not** replace L2. See §16.
+  SMS-class fallback after accept when Hyperswarm is not connected — grey
+  bubbles; mined (tap) or mempool-TTL (long-press). App text inside Conceal
+  MESSAGE (chain ChaCha). Never while `pending`. It does **not** replace L2.
+  See §16.
 - **L1 session seal** (ChaCha20-Poly1305 with handshake-derived keys) seals live
   frames before the bridge; Hyperswarm Noise (**L2**) protects the DHT hop.
   There is **no L3** — live AEAD is an L1 key use, not a third layer. See
@@ -88,15 +89,18 @@ bidirectional Conceal relationship.
 
 ### On-chain delivery (landed)
 
-- Create / register / revoke / **L1′ relay** ride `buildMessageTransaction` + daemon
+- Create / register / revoke ride `buildMessageTransaction` + daemon
   broadcast as **mined** smart messages. Contact signaling never sets Conceal
   `tx_extra` TTL (`0x05` / `ttlUnixSeconds: 0`). L1′ is app-layer text inside
-  Conceal MESSAGE (chain ChaCha); see §16.
-- Fee shape (atomic units, same as next-wallet mined message):
+  Conceal MESSAGE (chain ChaCha); see §16. L1′ **may** set mempool TTL
+  (`tx_extra` `0x05`) so the tx is not mined; mixin / decoys stay the same.
+- Fee shape for **mined** sends (atomic units, same as next-wallet mined message):
   - message amount = `100` (`MESSAGE_TX_AMOUNT_ATOMIC`)
   - network fee = `1000` (`MINIMUM_FEE_V2`)
   - remote node fee = `10000` (`REMOTE_NODE_FEE_ATOMIC`) when the node
     advertises a fee address
+  Mempool-TTL L1′ skips network and node fees. It is **not** a dust or
+  no-decoy path.
 - Inbound bodies are reconstructed during wallet sync via
   `readMessageFromTransaction` into `raw.receivedMessages`.
 -   Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤122 chars**
@@ -208,7 +212,8 @@ Handshake fields include: `protocolVersion` (1), `inviteId`, `relationshipId`,
 **`roomTtl`**, `replayId`.
 
 These deadlines live **only inside the smart-message body**. They are **not**
-Conceal `tx_extra` TTL (`0x05`). The on-chain send always uses `ttlUnixSeconds: 0`.
+Conceal `tx_extra` TTL (`0x05`). Create / register / revoke always use
+`ttlUnixSeconds: 0`. L1′ MAY set mempool TTL — see §16.
 
 | Field | Meaning |
 |---|---|
@@ -573,7 +578,13 @@ MESSAGE already encrypts the body with ChaCha + DH to sender/receiver view keys
 | `sentAt` | Unix seconds (thread order) |
 | `text` | Message body (≤ ~200 chars / `MAX_MESSAGE_BODY_BYTES`) |
 
-Same fee shape as other mined contact smart messages (§2). Fee + ~block latency.
+Tap = Conceal TTL 0 (mined, paid, durable — same fee shape as other mined
+contact smart messages, §2). Long-press flyout: **60 min** (top), **6 min**
+(middle) — `tx_extra` `0x05`, not mined, no network/node fee. Mixin / decoys
+and MESSAGE encryption unchanged. Create / register / revoke stay TTL 0.
+
+TTL L1′ bubbles erase from **both** rooms at expiry. Never persist TTL rows
+to `chatRooms`. Unlock / hydrate must not restore an expired TTL relay.
 
 ### Trust / receive
 
@@ -588,6 +599,7 @@ Same fee shape as other mined contact smart messages (§2). Fee + ~block latency
 2. Else if this session was live (L2) → show `queued` (no checkmarks), wait
    **6s** for L2, then live; if still down → L1′ (`chat.relay`, may poke).
 3. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay` (L1′).
+   Tap = TTL 0. Long-press flyout: 60 min (top), 6 min (middle).
 4. Else (`pending` / terminal) → composer blocked.
 
 @see `docs/features/chat-relay.md`, `docs/prompts/coding-constraints.md`

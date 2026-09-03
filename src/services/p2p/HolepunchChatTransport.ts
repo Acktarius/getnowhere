@@ -117,6 +117,10 @@ const rooms = new Map<string, RoomState>();
 const messagesByRoom = new Map<string, ChatMessage[]>();
 const subscribers = new Map<string, Set<(m: ChatMessage) => void>>();
 const roomStateSubscribers = new Map<string, Set<(room: ChatRoom) => void>>();
+const transcriptSubscribers = new Map<
+  string,
+  Set<(msgs: ChatMessage[]) => void>
+>();
 const contractsByRoom = new Map<string, HolepunchBootstrapContract>();
 /** topicRef → room ids joined on that topic */
 const topicRooms = new Map<string, Set<string>>();
@@ -167,6 +171,24 @@ export function subscribeRoomState(
   const set = roomStateSubscribers.get(roomId) ?? new Set();
   set.add(handler);
   roomStateSubscribers.set(roomId, set);
+  return () => {
+    set.delete(handler);
+  };
+}
+
+function emitTranscript(roomId: string): void {
+  const list = getMessagesForRoom(roomId);
+  for (const h of transcriptSubscribers.get(roomId) ?? []) h(list);
+}
+
+/** Sitting UI replaces the thread after prune (drops expired TTL bubbles). */
+export function subscribeRoomTranscript(
+  roomId: string,
+  handler: (msgs: ChatMessage[]) => void,
+): () => void {
+  const set = transcriptSubscribers.get(roomId) ?? new Set();
+  set.add(handler);
+  transcriptSubscribers.set(roomId, set);
   return () => {
     set.delete(handler);
   };
@@ -330,6 +352,9 @@ function notify(roomId: string, msg: ChatMessage): void {
   messagesByRoom.set(roomId, next);
   for (const h of subscribers.get(roomId) ?? []) h(msg);
   if (msg.channel === "live") scheduleLiveTranscriptFlush();
+  if (typeof msg.ttlExpiresAt === "number" && msg.ttlExpiresAt > 0) {
+    scheduleTtlPruneTimer();
+  }
 }
 
 /** Stable id for L1 relay rows (dedupe on rescan). */
@@ -371,7 +396,9 @@ function ensureRoomForRelay(roomId: string): RoomState | null {
  */
 export async function ingestChatRelay(
   relay: ChatRelayPayload,
+  ttlExpiresAt?: number,
 ): Promise<ChatMessage | null> {
+  if (isRoomTtlExpired(ttlExpiresAt, nowUnix())) return null;
   const state = ensureRoomForRelay(relay.roomId);
   if (!state) return null;
   const id = relayMessageId(relay.roomId, relay.sentAt, relay.text);
@@ -387,6 +414,9 @@ export async function ingestChatRelay(
     status: "delivered",
     channel: "relay",
     kind: "text",
+    ...(typeof ttlExpiresAt === "number" && ttlExpiresAt > 0
+      ? { ttlExpiresAt }
+      : {}),
   };
   notify(relay.roomId, msg);
   state.room = { ...state.room, lastMessageAt: msg.createdAt };
@@ -774,6 +804,7 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     rooms.delete(id);
     messagesByRoom.delete(id);
     subscribers.delete(id);
+    transcriptSubscribers.delete(id);
     contractsByRoom.delete(id);
     removeCatalogRoom(id);
     removeRoomSession(id);
@@ -910,6 +941,7 @@ async function sendRelayText(
   state: RoomState,
   text: string,
   replaceId?: string,
+  ttlUnixSeconds?: number,
 ): Promise<ChatMessage> {
   if (!isRelayEligibleStatus(state.room.lifecycleStatus)) {
     throw new Error("Relay only after invite accepted.");
@@ -937,6 +969,9 @@ async function sendRelayText(
     status: "sending",
     channel: "relay",
     kind: "text",
+    ...(ttlUnixSeconds && ttlUnixSeconds > 0
+      ? { ttlExpiresAt: ttlUnixSeconds }
+      : {}),
   };
   notify(roomId, pending);
   try {
@@ -948,6 +983,7 @@ async function sendRelayText(
         sentAt,
         text: trimmed,
       },
+      ttlUnixSeconds,
     });
     const msg: ChatMessage = { ...pending, status: "delivered" };
     notify(roomId, msg);
@@ -1095,6 +1131,7 @@ export const HolepunchChatTransport: ChatTransport = {
     rooms.delete(roomId);
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
+    transcriptSubscribers.delete(roomId);
     contractsByRoom.delete(roomId);
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
@@ -1149,7 +1186,7 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async sendMessage(roomId, text) {
+  async sendMessage(roomId, text, ttlUnixSeconds) {
     const state = rooms.get(roomId) ?? ensureRoomForRelay(roomId);
     if (!state) throw new Error("Room not found.");
     assertRoomInteractive(
@@ -1193,9 +1230,9 @@ export const HolepunchChatTransport: ChatTransport = {
       if ((await waitForLiveUpTo(roomId, l2SendHoldMs)) === "live") {
         return this.sendContent!(roomId, envelope);
       }
-      return sendRelayText(state, text, envelope.messageId);
+      return sendRelayText(state, text, envelope.messageId, ttlUnixSeconds);
     }
-    return sendRelayText(state, text);
+    return sendRelayText(state, text, undefined, ttlUnixSeconds);
   },
 
   async sendContent(roomId, envelope) {
@@ -1365,6 +1402,67 @@ function localMessageRetentionOn(): boolean {
   return useSettingsStore.getState().privacy.localMessageRetention === true;
 }
 
+function isRoomTtlExpired(
+  ttlExpiresAt: number | undefined,
+  nowUnixSec: number,
+): boolean {
+  return (
+    typeof ttlExpiresAt === "number" &&
+    ttlExpiresAt > 0 &&
+    nowUnixSec >= ttlExpiresAt
+  );
+}
+
+/** Soonest future TTL delay (conceal-next-wallet `ttlRefetchMs`). */
+function ttlRefetchMs(
+  messages: ReadonlyArray<{ ttlExpiresAt?: number }>,
+  nowUnixSec: number,
+): number | false {
+  let soonest: number | null = null;
+  for (const message of messages) {
+    const at = message.ttlExpiresAt;
+    if (typeof at === "number" && at > nowUnixSec) {
+      if (soonest === null || at < soonest) soonest = at;
+    }
+  }
+  if (soonest === null) return false;
+  return Math.max(1000, (soonest - nowUnixSec) * 1000 + 250);
+}
+
+let ttlPruneTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearTtlPruneTimer(): void {
+  if (ttlPruneTimer == null) return;
+  clearTimeout(ttlPruneTimer);
+  ttlPruneTimer = null;
+}
+
+function scheduleTtlPruneTimer(): void {
+  clearTtlPruneTimer();
+  const all: ChatMessage[] = [];
+  for (const list of messagesByRoom.values()) all.push(...list);
+  const delay = ttlRefetchMs(all, nowUnix());
+  if (delay === false) return;
+  ttlPruneTimer = setTimeout(() => {
+    ttlPruneTimer = null;
+    pruneExpiredTtlRoomMessages(nowUnix());
+  }, delay);
+}
+
+/** Drop room-memory rows whose ttlExpiresAt is in the past. */
+export function pruneExpiredTtlRoomMessages(nowUnixSec: number): void {
+  for (const [roomId, list] of messagesByRoom.entries()) {
+    const kept = list.filter(
+      (m) => !isRoomTtlExpired(m.ttlExpiresAt, nowUnixSec),
+    );
+    if (kept.length !== list.length) {
+      messagesByRoom.set(roomId, kept);
+      emitTranscript(roomId);
+    }
+  }
+  scheduleTtlPruneTimer();
+}
+
 /** Save in-memory room messages into the encrypted wallet blob. */
 export async function saveChatRoomsToWallet(): Promise<void> {
   if (!localMessageRetentionOn()) return;
@@ -1397,9 +1495,15 @@ export function hydrateChatRoomsFromWallet(): void {
     if (!restoreBodies) continue;
     const existing = messagesByRoom.get(roomId) ?? [];
     if (existing.length > 0) continue;
-    messagesByRoom.set(roomId, [...entry.messages]);
+    messagesByRoom.set(
+      roomId,
+      entry.messages.filter(
+        (m) => !(typeof m.ttlExpiresAt === "number" && m.ttlExpiresAt > 0),
+      ),
+    );
   }
   mergeL1RelayTranscripts(rt.raw);
+  pruneExpiredTtlRoomMessages(nowUnix());
 }
 
 function isRoomBlockedForL1Hydrate(raw: RawWalletV1, roomId: string): boolean {
@@ -1419,9 +1523,11 @@ function mergeL1RelayTranscripts(raw: RawWalletV1): void {
       direction: "in" as const,
     })),
   ];
+  const nowSec = nowUnix();
   for (const { record, direction } of rows) {
     const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
     if (parsed?.action !== "relay") continue;
+    if (isRoomTtlExpired(record.ttlExpiresAt, nowSec)) continue;
     const { roomId, sentAt, text } = parsed.payload;
     if (isRoomBlockedForL1Hydrate(raw, roomId)) continue;
     const id = relayMessageId(roomId, sentAt, text);
@@ -1438,6 +1544,9 @@ function mergeL1RelayTranscripts(raw: RawWalletV1): void {
         status: "delivered",
         channel: "relay",
         kind: "text",
+        ...(typeof record.ttlExpiresAt === "number" && record.ttlExpiresAt > 0
+          ? { ttlExpiresAt: record.ttlExpiresAt }
+          : {}),
       },
     ]);
   }
@@ -1520,6 +1629,7 @@ export function getTopicRefForRoom(roomId: string): string | undefined {
 
 export function __resetHolepunchTransport(): void {
   clearLiveTranscriptFlushTimer();
+  clearTtlPruneTimer();
   for (const u of backendUnsubs) u();
   backendUnsubs = [];
   backendWired = false;
@@ -1531,6 +1641,7 @@ export function __resetHolepunchTransport(): void {
   messagesByRoom.clear();
   subscribers.clear();
   roomStateSubscribers.clear();
+  transcriptSubscribers.clear();
   topicRooms.clear();
   contractsByRoom.clear();
   inFlightConnects.clear();

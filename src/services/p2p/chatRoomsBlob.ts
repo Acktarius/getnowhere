@@ -70,8 +70,7 @@ export function withChatRooms(
 }
 
 /**
- * Save active room messages. Never replaces an existing revoked tombstone.
- * Rooms not in `messagesByRoom` are left as-is (except we do not clear them).
+ * Save active room messages. Never replaces a revoked tombstone. Omits TTL rows.
  */
 export function saveActiveMessages(
   raw: RawWalletV1,
@@ -81,7 +80,13 @@ export function saveActiveMessages(
   for (const [roomId, messages] of Object.entries(messagesByRoom)) {
     if (!roomId) continue;
     if (next[roomId]?.revoked === true) continue;
-    next[roomId] = { roomId, revoked: false, messages: [...messages] };
+    next[roomId] = {
+      roomId,
+      revoked: false,
+      messages: messages.filter(
+        (m) => !(typeof m.ttlExpiresAt === "number" && m.ttlExpiresAt > 0),
+      ),
+    };
   }
   return withChatRooms(raw, next);
 }

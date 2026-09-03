@@ -230,23 +230,21 @@ async function inviteFromCreateBody(
 }
 
 /**
- * Broadcast a contact create/register/revoke body as a mined smart message.
- *
- * On-chain: ttlUnixSeconds=0, amount=100, network fee=1000, node fee=10000.
- * App-layer inviteExpiry / roomTtl stay in the body only — if the peer does
- * not register before inviteExpiry, the invite is expired and must be redone.
+ * Broadcast a contact create/register/revoke/relay body as a smart message.
+ * Signaling callers omit TTL (mined 0). Relay MAY pass non-zero Conceal TTL.
  */
 async function broadcastSmartBody(input: {
   contactId: string;
   smartBody: string;
   delivery?: { recipientAddress: string; paymentId: string };
+  ttlUnixSeconds?: number;
 }): Promise<{ hash: string }> {
   const delivery = requireDelivery(input.contactId, input.delivery);
   return sendSmartMessage({
     recipientAddress: delivery.address,
     body: input.smartBody,
     paymentId: delivery.paymentIdTo,
-    ttlUnixSeconds: 0,
+    ttlUnixSeconds: input.ttlUnixSeconds ?? 0,
   });
 }
 
@@ -618,7 +616,11 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     }
   },
 
-  async sendChatRelay(input: { contactId: string; relay: ChatRelayPayload }) {
+  async sendChatRelay(input: {
+    contactId: string;
+    relay: ChatRelayPayload;
+    ttlUnixSeconds?: number;
+  }) {
     const smartBody = encodeRelaySmartBody(input.relay);
     if (!messages.isKnownSmartMessage(smartBody)) {
       throw new Error("Composed relay is not a recognized smart message.");
@@ -626,6 +628,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     const { hash } = await broadcastSmartBody({
       contactId: input.contactId,
       smartBody,
+      ttlUnixSeconds: input.ttlUnixSeconds,
     });
     return { txHash: hash };
   },
@@ -641,6 +644,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
         txHash: string;
         paymentIdFrom?: string;
         zeroConf?: boolean;
+        ttlExpiresAt?: number;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
@@ -656,6 +660,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           txHash: record.id,
           paymentIdFrom: record.paymentIdFrom ?? undefined,
           zeroConf: record.blockHeight === 0,
+          ...(typeof record.ttlExpiresAt === "number" && record.ttlExpiresAt > 0
+            ? { ttlExpiresAt: record.ttlExpiresAt }
+            : {}),
         });
       }
       return out;

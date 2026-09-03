@@ -16,11 +16,13 @@ ride Conceal smart messages (**L1′**). Live Holepunch remains preferred.
 Conceal MESSAGE already encrypts with ChaCha + DH. App body is plain fields.
 L1′ does **not** replace L2. Same `roomId` thread mixes both channels.
 
-**Persist / hydrate:** L1′ sent bodies are written to `raw.sentMessages` at
+**Persist / hydrate:** Mined L1′ sent bodies are written to `raw.sentMessages` at
 broadcast (paid). Inbound lands in `receivedMessages` on scan. Unlock merges
 those `{contact,e,roomId,…}` rows into the room thread regardless of **P2P
 message retention**. That setting gates L2 (live) `chatRooms` only. Expire /
 revoke / leave-forever tombstones `chatRooms` and drops matching L1′ `e` copies.
+Mempool-TTL L1′ never writes to `chatRooms`; at expiry erase from both rooms
+and do not restore on unlock.
 
 ## Composer
 
@@ -28,6 +30,8 @@ revoke / leave-forever tombstones `chatRooms` and drops matching L1′ `e` copie
 - Allow `relay` for `accepted` | `connecting` | `connect_failed`.
 - `pending` / terminal → blocked.
 - Subtle “via chain” hint when the next send is relay.
+- Tap send = Conceal TTL 0 (mined, paid, durable). Long-press flyout: **60 min**
+  (top), **6 min** (middle). Flyout only on chain fallback, not live.
 
 ## Inbound refresh
 
