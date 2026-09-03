@@ -738,6 +738,7 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
   const ttlDrop = dropExpiredTtl(rt.raw, Math.floor(nowMs / 1000));
   if (ttlDrop.changed) {
     rt.raw = ttlDrop.raw;
+    notifyHistoryPossiblyChanged(rt);
   }
   if (incomingChanged || receivedListChanged || ttlDrop.changed) {
     await persistRuntime(rt);

@@ -22,7 +22,8 @@ those `{contact,e,roomId,…}` rows into the room thread regardless of **P2P
 message retention**. That setting gates L2 (live) `chatRooms` only. Expire /
 revoke / leave-forever tombstones `chatRooms` and drops matching L1′ `e` copies.
 Mempool-TTL L1′ never writes to `chatRooms`; at expiry erase from both rooms
-and do not restore on unlock.
+and do not restore on unlock. Wallet history drops the matching pending 0-conf
+row at the same expiry (do not keep it for the 24h mempool lifetime).
 
 ## Composer
 

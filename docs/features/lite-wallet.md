@@ -108,7 +108,8 @@ or pending invite holds that room. If neither matches, the click is a no-op.
 
 **0-conf / mempool:** unconfirmed smartmessage rows also show a pulsing dot and a
 subtle `0-conf` mark (alongside the existing pending pill). After the tx mines,
-`zeroConf` clears and the dot stays solid.
+`zeroConf` clears and the dot stays solid. Mempool-TTL L1′ rows leave history at
+expiry (they are not mined); reserved inputs unlock then.
 
 **Non-final:** these affordances are **UI preview only**. Relationship eligibility,
 accept handoff, and trust still follow the mined (or existing confirmed) path —

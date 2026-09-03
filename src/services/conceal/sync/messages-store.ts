@@ -8,6 +8,15 @@ import {
   type WalletKeys,
   type WalletState,
 } from "conceal-wallet-sdk";
+import {
+  readIncomingPendingRecords,
+  withIncomingPendingRecords,
+} from "@/services/conceal/sync/incoming-pending-store";
+import {
+  readPendingRecords,
+  withPendingRecords,
+} from "@/services/conceal/sync/pending-store";
+import { isTtlExpired } from "@/services/conceal/sync/ttl-expiry";
 
 export type SdkMessageRecord = {
   id: string;
@@ -48,16 +57,7 @@ function normalizePaymentId(paymentId: string | undefined): string {
   return (paymentId ?? "").trim().toLowerCase();
 }
 
-function isTtlExpired(
-  ttlExpiresAt: number | undefined,
-  nowUnix: number,
-): boolean {
-  return (
-    typeof ttlExpiresAt === "number" &&
-    ttlExpiresAt > 0 &&
-    nowUnix >= ttlExpiresAt
-  );
-}
+export { isTtlExpired } from "@/services/conceal/sync/ttl-expiry";
 
 export function readSentRecords(raw: RawWalletV1): SdkMessageRecord[] {
   const list = raw[SENT_FIELD];
@@ -184,7 +184,7 @@ function pruneExpiredTtl(
   );
 }
 
-/** Drop unconfirmed message copies whose mempool TTL elapsed. */
+/** Drop unconfirmed message copies and matching wallet pending rows. */
 export function dropExpiredTtl(
   raw: RawWalletV1,
   nowSec: number = Math.floor(Date.now() / 1000),
@@ -193,14 +193,41 @@ export function dropExpiredTtl(
   const received = readReceivedRecords(raw);
   const nextSent = pruneExpiredTtl(sent, nowSec);
   const nextReceived = pruneExpiredTtl(received, nowSec);
-  if (
-    nextSent.length === sent.length &&
-    nextReceived.length === received.length
-  ) {
-    return { raw, changed: false };
-  }
+  const expiredHashes = new Set(
+    [...sent, ...received]
+      .filter(
+        (record) =>
+          isTtlExpired(record.ttlExpiresAt, nowSec) && record.blockHeight === 0,
+      )
+      .map((record) => record.id),
+  );
+  const nextSentIds = new Set(nextSent.map((record) => record.id));
+  const pending = readPendingRecords(raw);
+  const nextPending = pending.filter((record) => {
+    if (expiredHashes.has(record.hash)) return false;
+    if (isTtlExpired(record.ttlExpiresAt, nowSec)) return false;
+    if (record.type === "message" && !nextSentIds.has(record.hash))
+      return false;
+    return true;
+  });
+  const incoming = readIncomingPendingRecords(raw);
+  const nextIncoming = incoming.filter(
+    (record) => !expiredHashes.has(record.hash),
+  );
+  const changed =
+    nextSent.length !== sent.length ||
+    nextReceived.length !== received.length ||
+    nextPending.length !== pending.length ||
+    nextIncoming.length !== incoming.length;
+  if (!changed) return { raw, changed: false };
   return {
-    raw: withReceivedRecords(withSentRecords(raw, nextSent), nextReceived),
+    raw: withIncomingPendingRecords(
+      withPendingRecords(
+        withReceivedRecords(withSentRecords(raw, nextSent), nextReceived),
+        nextPending,
+      ),
+      nextIncoming,
+    ),
     changed: true,
   };
 }

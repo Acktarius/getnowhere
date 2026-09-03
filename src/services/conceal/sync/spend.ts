@@ -599,6 +599,7 @@ async function sendSmartMessageInner(
     address: input.recipientAddress.trim(),
     ...(paymentId ? { paymentId } : {}),
     spentKeyImages: built.inputs.map((vin) => vin.keyImage),
+    ...(hasTtl ? { ttlExpiresAt: ttlUnixSeconds } : {}),
   });
   runtime.raw = withSentRecords(runtime.raw, [
     ...readSentRecords(runtime.raw),
