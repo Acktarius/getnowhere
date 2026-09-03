@@ -25,6 +25,12 @@
       "cmd": "npx vitest run tests/conceal/smart-message-spend-policy.test.ts",
       "expect": "passed",
       "timeoutMs": 180000
+    },
+    {
+      "name": "Expired TTL leaves wallet history",
+      "cmd": "npx vitest run tests/conceal/ttl-wallet-history.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
     }
   ]
 }
