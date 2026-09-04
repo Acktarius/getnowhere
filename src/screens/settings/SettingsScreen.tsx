@@ -243,9 +243,7 @@ export function SettingsScreen() {
                     ? "Uses ntfy / APNs wake. No Google."
                     : "Turn on Notifications first."
                 }
-                on={
-                  s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled
-                }
+                on={s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled}
                 onToggle={
                   s.privacy.notificationsEnabled
                     ? (v) => applyPushWakeEnabled(v)

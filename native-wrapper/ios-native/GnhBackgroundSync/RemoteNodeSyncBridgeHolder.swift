@@ -4,46 +4,49 @@ import Foundation
 final class RemoteNodeSyncBridgeHolder {
     static let shared = RemoteNodeSyncBridgeHolder()
 
-    private let queue = DispatchQueue(label: "im.getnowhere.remote-node-sync-bridge")
+    private let lock = NSLock()
     private var injectScript: ((String) -> Void)?
     private var pending: [String: (RemoteNodeSyncOutcome) -> Void] = [:]
 
     private init() {}
 
     func setScriptInjector(_ injector: ((String) -> Void)?) {
-        queue.sync { injectScript = injector }
+        lock.lock()
+        injectScript = injector
+        lock.unlock()
     }
 
     func resolveRequest(requestId: String, outcome: RemoteNodeSyncOutcome) {
-        queue.sync {
-            pending.removeValue(forKey: requestId)?(outcome)
-        }
+        completeIfNeeded(requestId: requestId, outcome: outcome)
     }
 
     func requestBackgroundSync(timeout: TimeInterval, completion: @escaping (RemoteNodeSyncOutcome) -> Void) {
-        var injector: ((String) -> Void)?
-        queue.sync { injector = injectScript }
+        lock.lock()
+        let injector = injectScript
+        lock.unlock()
         guard let injector else {
             completion(.noOp)
             return
         }
         let requestId = "bg-sync-\(UUID().uuidString)"
-        var finished = false
-        let finish: (RemoteNodeSyncOutcome) -> Void = { outcome in
-            self.queue.sync {
-                guard !finished else { return }
-                finished = true
-                self.pending.removeValue(forKey: requestId)
-            }
-            completion(outcome)
-        }
-        queue.sync { pending[requestId] = finish }
+        lock.lock()
+        pending[requestId] = completion
+        lock.unlock()
         DispatchQueue.main.async {
             injector(self.buildInjectScript(requestId: requestId))
         }
-        queue.asyncAfter(deadline: .now() + timeout) {
-            finish(.retryable)
+        // Do not schedule this on a serial queue we later sync — TestFlight SIGTRAP.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) { [weak self] in
+            self?.completeIfNeeded(requestId: requestId, outcome: .retryable)
         }
+    }
+
+    /** Remove the waiter under the lock; invoke after release so resolve/timeout cannot deadlock. */
+    private func completeIfNeeded(requestId: String, outcome: RemoteNodeSyncOutcome) {
+        lock.lock()
+        let callback = pending.removeValue(forKey: requestId)
+        lock.unlock()
+        callback?(outcome)
     }
 
     private func buildInjectScript(requestId: String) -> String {

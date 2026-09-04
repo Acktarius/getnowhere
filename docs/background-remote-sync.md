@@ -55,7 +55,8 @@ Committed Kotlin/Swift live under `android-native/` and `ios-native/`; run
    - `BGTaskSchedulerPermittedIdentifiers`: `org.getnowhere.remote-node-refresh`
    - `UIBackgroundModes`: `fetch`
 3. Background App Refresh must be enabled for the app in iOS Settings.
-4. Task identifier constant: `RemoteNodeBackgroundSyncConfig.taskIdentifier`.
+4. JS resolve and the 20s timeout complete **at most once**. The waiter is removed under an `NSLock`; the callback runs after unlock. Do not `DispatchQueue.sync` from the timeout block — that SIGTRAPped in TestFlight (`__DISPATCH_WAIT_FOR_QUEUE__`).
+5. Task identifier constant: `RemoteNodeBackgroundSyncConfig.taskIdentifier`.
 
 ## Testing (debug builds)
 
