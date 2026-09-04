@@ -43,6 +43,11 @@ Xcode required). Target is **iPhone only** (`supportsTablet: false`).
 instead of overloading Android `preview`. Direct phone install without TestFlight
 uses **`adhoc-ios`** (Apple ad hoc; device UDID must be registered first).
 
+**Cost:** EAS iOS builds are paid. One iOS profile at a time. Prefer **`adhoc-ios`
+first**; only run **`preview-ios`** after that install passes. If ad-hoc fails,
+fix and rebuild ad-hoc — do not spend a TestFlight build on the same unproven
+change.
+
 ## Bake UI env, then cloud-build (TestFlight)
 
 Root `VITE_*` values are compiled into the WebView bundle **on your machine**.
