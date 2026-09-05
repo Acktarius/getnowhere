@@ -6,7 +6,7 @@ import { Hourglass, Link2, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 /** Spec ~2s hold before the TTL flyout appears. */
-export const CHAIN_TTL_LONG_PRESS_MS = 2000;
+export const CHAIN_TTL_LONG_PRESS_MS = 1500;
 
 const PRESET_MINUTES = [60, 6, 0] as const;
 const FLYOUT_GAP_PX = 8;
