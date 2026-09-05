@@ -117,6 +117,9 @@ interface GnhMobileBridge {
   onPokeToken?(handler: (platform: "apns", token: string) => void): () => void;
   /** @internal Injected by native shell via buildPokeTokenDispatchScript. */
   _dispatchPokeToken?(platform: "apns", token: string): void;
+  /** Set by RN after WKWebView remount; consumed once at boot. */
+  _sessionRestoreReady?: boolean;
+  _pendingWalletRestore?: string | null;
 }
 
 interface Window {

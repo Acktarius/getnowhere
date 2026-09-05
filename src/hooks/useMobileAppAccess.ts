@@ -53,6 +53,9 @@ export function useMobileAppAccess(): void {
 
     setAutoLockTimeoutSec(autoLockSec);
     setAppAccessLockEnabled(appAccessBiometricEnabled);
+    void import("@/lib/mobile/walletSessionBridge").then((m) => {
+      m.syncNativeWalletSessionTimeout();
+    });
     setOnAppAccessLock((reason) => onLockRef.current(reason));
 
     const unsubLifecycle = registerMobileLifecycleBridge();

@@ -31,6 +31,11 @@ import {
 } from "./src/gnhBackgroundSyncNative";
 import { nativeClearBadge } from "./src/gnhNotificationsNative";
 import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
+import {
+  securePrefsGet,
+  securePrefsRemove,
+  securePrefsSet,
+} from "./src/gnhSecurityNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
 import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
@@ -49,6 +54,17 @@ import {
   handleSaveTextFileWebViewMessage,
 } from "./src/saveTextFileFromWebView";
 import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
+import {
+  applyWalletSessionMessage,
+  buildWalletSessionRestoreScript,
+  copyWalletSessionIfValid,
+  hasWalletSession,
+  hydrateWalletSessionFromPersist,
+  markWalletSessionBackgrounded,
+  markWalletSessionForeground,
+  setWalletSessionPersist,
+  WALLET_SESSION_PREFS_KEY,
+} from "./src/walletSessionKeepAlive";
 import {
   getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
@@ -105,6 +121,10 @@ function parseBackgroundSyncMessage(raw: string): {
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const [pendingWalletRestore, setPendingWalletRestore] = useState<
+    string | null
+  >(null);
   const [blurInAppSwitcher, setBlurInAppSwitcher] = useState(false);
   const [appState, setAppState] = useState<AppStateStatus>(
     AppState.currentState,
@@ -126,9 +146,10 @@ export default function App() {
         ? buildMobileBridgeInjection(
             bridgeToken,
             Platform.OS === "android" ? "android" : "ios",
+            pendingWalletRestore,
           )
         : "",
-    [bridgeToken],
+    [bridgeToken, pendingWalletRestore],
   );
 
   const injectLifecycle = useCallback(
@@ -173,6 +194,7 @@ export default function App() {
     if (backgroundAtMsRef.current == null) {
       backgroundAtMsRef.current = Date.now();
     }
+    markWalletSessionBackgrounded(backgroundAtMsRef.current);
     console.warn("[gnh-lifecycle] AppState background", {
       backgroundAtMs: backgroundAtMsRef.current,
     });
@@ -187,9 +209,18 @@ export default function App() {
         : undefined;
     backgroundAtMsRef.current = null;
     pendingForegroundRef.current = { backgroundElapsedMs: elapsedMs };
+    if (typeof elapsedMs === "number") {
+      copyWalletSessionIfValid(elapsedMs);
+    }
+    if (hasWalletSession()) {
+      markWalletSessionForeground();
+    } else {
+      setPendingWalletRestore(null);
+    }
     console.warn("[gnh-lifecycle] AppState foreground", {
       backgroundElapsedMs: elapsedMs,
       hasWebView: !!webViewRef.current,
+      sessionAlive: hasWalletSession(),
     });
     setNativeAppInBackground(false);
     // iOS icon badge is independent of Notification Center dismissals; clear
@@ -206,9 +237,24 @@ export default function App() {
     );
   }, []);
 
+  const injectWalletSessionRestore = useCallback(() => {
+    const elapsed =
+      backgroundAtMsRef.current != null
+        ? Date.now() - backgroundAtMsRef.current
+        : (pendingForegroundRef.current?.backgroundElapsedMs ?? 0);
+    void hydrateWalletSessionFromPersist(Date.now()).then((fromPersist) => {
+      const password = fromPersist ?? copyWalletSessionIfValid(elapsed);
+      setPendingWalletRestore(password);
+      webViewRef.current?.injectJavaScript(
+        buildWalletSessionRestoreScript(password),
+      );
+    });
+  }, []);
+
   const onWebViewReady = useCallback(() => {
     setLoading(false);
     void SplashScreen.hideAsync();
+    injectWalletSessionRestore();
     flushPendingForeground();
     // Best-effort: fetch push token and deliver to WebView for gateway registration.
     void getPushTokenForPoke().then((result) => {
@@ -236,7 +282,12 @@ export default function App() {
         console.error("[gnh-mobile] Bare worklet start failed", err);
       }
     })();
-  }, [bridgeToken, flushPendingForeground, injectPokeToken]);
+  }, [
+    bridgeToken,
+    flushPendingForeground,
+    injectPokeToken,
+    injectWalletSessionRestore,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -271,6 +322,26 @@ export default function App() {
   }, [injectPokeToken]);
 
   useEffect(() => {
+    setWalletSessionPersist({
+      get: () => securePrefsGet(WALLET_SESSION_PREFS_KEY),
+      set: async (value) => {
+        await securePrefsSet(WALLET_SESSION_PREFS_KEY, value);
+      },
+      remove: async () => {
+        await securePrefsRemove(WALLET_SESSION_PREFS_KEY);
+      },
+    });
+    void hydrateWalletSessionFromPersist(Date.now())
+      .then((password) => {
+        setPendingWalletRestore(password);
+      })
+      .finally(() => {
+        setSessionHydrated(true);
+      });
+    return () => setWalletSessionPersist(null);
+  }, []);
+
+  useEffect(() => {
     // Keep Android lifecycle wiring as before; also enable on iOS for lock/UI.
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
@@ -290,6 +361,9 @@ export default function App() {
   const onWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const raw = event.nativeEvent.data;
+      if (applyWalletSessionMessage(raw)) {
+        return;
+      }
       const bgSync = parseBackgroundSyncMessage(raw);
       if (bgSync) {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
@@ -374,7 +448,7 @@ export default function App() {
     [extraPrefixes],
   );
 
-  if (!bridgeToken || !uiUri) {
+  if (!bridgeToken || !uiUri || !sessionHydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color="#c9a227" />
@@ -404,6 +478,12 @@ export default function App() {
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
         onShouldStartLoadWithRequest={(event) => allowNav(event.url)}
         onLoadEnd={onWebViewReady}
+        onContentProcessDidTerminate={() => {
+          webViewRef.current?.reload();
+        }}
+        onRenderProcessGone={() => {
+          webViewRef.current?.reload();
+        }}
         onMessage={onWebViewMessage}
         onError={(e) => {
           console.error("WebView error", e.nativeEvent);

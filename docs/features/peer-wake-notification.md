@@ -176,7 +176,9 @@ finds nothing (tx propagation still in flight), iOS records a wasted wake and th
 background pushes for the app. Repeated wasted wakes can silence background delivery permanently.
 
 An alert push shows a lock screen banner from the APNs payload itself — no background execution
-needed. By the time Bob reads the banner and taps (human latency: several seconds to a minute),
+needed, **no mounted wallet, and no auto-lock interaction**. Auto-lock only decides whether Bob
+must pass Face ID / passcode when he later opens the app. It must not suppress poke delivery.
+By the time Bob reads the banner and taps (human latency: several seconds to a minute),
 the L1′ tx has propagated through the Conceal network.
 
 ### Blockchain sync caveat on wake
@@ -386,7 +388,7 @@ New toggle adjacent to existing notification switches:
 
 | Build | APNs | ntfy SSE | pokeHandle |
 |---|---|---|---|
-| iOS (App Store / TestFlight) | yes | no | yes (registered at gateway) |
+| iOS (ad-hoc / TestFlight / App Store) | yes | no | yes (registered at gateway, `env: production`) |
 | Android (F-Droid / GrapheneOS) | no | yes | yes (generated locally) |
 | Desktop (Electron / browser) | no | no | absent |
 

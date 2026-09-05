@@ -1,11 +1,15 @@
 /// <reference path="../../src/vite-env.d.ts" />
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildMobileBridgeInjection,
   buildPokeTokenDispatchScript,
 } from "../../native-wrapper/src/injectMobileBridge";
 
 describe("buildMobileBridgeInjection", () => {
+  afterEach(() => {
+    delete window.gnhMobile;
+  });
+
   it("does not expose bridgeToken on window.gnhMobile", () => {
     const script = buildMobileBridgeInjection("super-secret-token");
     expect(script).not.toMatch(/bridgeToken\s*:/);
@@ -99,6 +103,18 @@ describe("buildMobileBridgeInjection", () => {
     unsub();
     bridge._dispatchPokeToken!("apns", "new-token");
     expect(handler).toHaveBeenCalledOnce(); // still just once
+  });
+
+  it("bakes a pending wallet restore into gnhMobile before Vite boots", () => {
+    const script = buildMobileBridgeInjection("token", "ios", "restore-pw");
+    Object.defineProperty(window, "ReactNativeWebView", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    new Function(script)();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    expect(bridge._sessionRestoreReady).toBe(true);
+    expect(bridge._pendingWalletRestore).toBe("restore-pw");
   });
 
   it("buildPokeTokenDispatchScript produces JS that calls _dispatchPokeToken", () => {

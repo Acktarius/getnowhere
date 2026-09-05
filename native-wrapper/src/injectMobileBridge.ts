@@ -7,10 +7,13 @@ import { securityBridgeInjectionJs } from "./securityBridgeInjection";
 /** Build injected JS: gnhMobile API with bridge token held in closure (not on window). */
 export function buildMobileBridgeInjection(
   bridgeToken: string,
-  platform: "ios" | "android",
+  platform: "ios" | "android" = "ios",
+  pendingWalletRestore: string | null = null,
 ): string {
   const tokenJson = JSON.stringify(bridgeToken);
   const platformJson = JSON.stringify(platform);
+  const restoreJson = JSON.stringify(pendingWalletRestore);
+  const restoreReady = pendingWalletRestore ? "true" : "false";
   const securityJs = securityBridgeInjectionJs();
   return `(function(){
   if (window.gnhMobile) return;
@@ -72,7 +75,9 @@ export function buildMobileBridgeInjection(
       for (var i = 0; i < pokeHandlers.length; i++) {
         try { pokeHandlers[i](platform, token); } catch (e) {}
       }
-    }
+    },
+    _sessionRestoreReady: ${restoreReady},
+    _pendingWalletRestore: ${restoreJson}
   };
   var pokeHandlers = [];
   ${securityJs}

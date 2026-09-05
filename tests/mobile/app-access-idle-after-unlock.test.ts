@@ -26,7 +26,7 @@ describe("app-access idle after unlock", () => {
     setOnAppAccessLock(onLock);
 
     setAppAccessLockEnabled(true);
-    expect(isAppAccessLocked()).toBe(true);
+    expect(isAppAccessLocked()).toBe(false);
 
     unlockAppAccess();
     onLock.mockClear();

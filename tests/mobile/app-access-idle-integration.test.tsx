@@ -8,7 +8,10 @@ import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
 import { PasskeyError } from "@/lib/auth/passkey-error";
-import { _resetAppAccessControllerForTests } from "@/lib/mobile/AppAccessController";
+import {
+  _resetAppAccessControllerForTests,
+  APP_ACCESS_BACKGROUND_AT_KEY,
+} from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { AppLockScreen } from "@/screens/AppLockScreen";
 import { isOnboarded, markOnboarded, useAuthStore } from "@/state/authStore";
@@ -144,6 +147,10 @@ describe("mobile app-access idle integration", () => {
   });
 
   it("keeps App lock after init when biometrics fail (no init bypass)", async () => {
+    localStorage.setItem(
+      APP_ACCESS_BACKGROUND_AT_KEY,
+      String(Date.now() - 120_000),
+    );
     unlockAppAccessBiometric.mockRejectedValue(
       new PasskeyError("cancelled", "Biometric unlock was cancelled."),
     );

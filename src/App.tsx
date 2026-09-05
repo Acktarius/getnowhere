@@ -62,6 +62,14 @@ function AppInner() {
         );
         await initMobileBiometricStorage();
         await reconcileBiometricSettingsWithEnrollments();
+        try {
+          const { restoreWalletSessionIfPending } = await import(
+            "@/lib/mobile/walletSessionBridge"
+          );
+          await restoreWalletSessionIfPending();
+        } catch {
+          /* remount without a valid session → Welcome */
+        }
       }
       setReady(true);
     });

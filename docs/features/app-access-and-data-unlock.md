@@ -47,9 +47,14 @@ disabled.
 ### Triggers
 
 - App returns to foreground (resume)
-- Idle longer than **Auto-lock** (`autoLockTimeoutSec` in Settings — UI exists; wiring
-  is part of this work)
+- Idle longer than **Auto-lock** (`autoLockTimeoutSec`: 1m / 5m / 15m / 1h)
 - Device screen off
+- **Not** WKWebView remount or enabling the biometric toggle. iOS often
+  discards the WebView after ~1–2 minutes and may jetsam the Expo process.
+  RAM cannot survive that. The shell stores the session in Keychain
+  (`gnh.walletSession`) with `backgroundedAtMs`, then silently reopens if
+  `Date.now() - backgroundedAtMs < autoLockTimeout`. After the timeout (or
+  Exit / wallet lock), Welcome.
 
 ### Normal background (not Exit, not killed)
 
@@ -60,6 +65,10 @@ disabled.
 - **Do not** data-lock. User resumes where they left off after app access succeeds.
 - Wallet sync and L1 background poll continue per **Background poll** / **Sleep**
   below.
+- **Peer-wake notifications (APNs / ntfy) are independent of auto-lock and of
+  whether the wallet is mounted.** Auto-lock only gates resume (password /
+  biometric if background time exceeded 1m / 5m / 15m / 1h). The lock-screen
+  wake is the poke alert, not a local chain scan.
 
 ### Explicit Exit and app killed
 
@@ -127,7 +136,9 @@ Implementation path:
   same JS contract as `cordova-plugin-biometric-unlock` (32-byte secret,
   `credentialId`, base64url payloads).
 - App access enrollment (if any app-level secret is persisted) uses the same native
-  stores — never duplicate wallet password in prefs.
+  stores. Auto-lock may keep the wallet password in Keychain
+  (`gnh.walletSession`) for the timeout window only — never in
+  `localStorage`. Cleared on Exit, lock, or expiry.
 
 Web-dev / browser: passcode-only app access; data unlock stays password-based until
 WebAuthn PRF is explicitly scoped (optional later — not required for first mobile

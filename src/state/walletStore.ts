@@ -177,6 +177,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       // Enter app immediately; live sync + resync catch tip in background.
       void get().resync();
       void useContactsStore.getState().refreshInvites();
+      void import("@/lib/mobile/walletSessionBridge").then((m) => {
+        m.keepNativeWalletSession(password);
+      });
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -186,6 +189,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   async lock() {
     await walletService.lockWallet();
     set({ locked: true });
+    void import("@/lib/mobile/walletSessionBridge").then((m) => {
+      m.clearNativeWalletSession();
+    });
   },
   async unlock() {
     await walletService.unlockWallet("");

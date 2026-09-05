@@ -140,8 +140,9 @@ export function SecuritySettingsScreen() {
             ))}
           </div>
           <p className="field__hint" style={{ marginTop: 10 }}>
-            When app biometrics is on: lock after this long idle in the app, or
-            after the same duration in background before returning.
+            When app biometrics is on: ask for Face ID / passcode only after
+            this long idle in the app, or this long in background. Returning
+            sooner must not lock. Notifications are not affected.
           </p>
         </div>
 

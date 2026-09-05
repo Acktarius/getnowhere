@@ -5,10 +5,14 @@
  */
 
 const STORAGE_KEY = "gnh.ownPokeHandle";
-const GATEWAY_URL = import.meta.env.VITE_POKE_GATEWAY_URL ?? "";
 
 function gatewayUrl(): string {
-  return GATEWAY_URL;
+  return import.meta.env.VITE_POKE_GATEWAY_URL ?? "";
+}
+
+/** EAS ad-hoc / TestFlight / App Store share the Production APNs key. */
+export function apnsPushEnv(): "sandbox" | "production" {
+  return "production";
 }
 
 /** Returns the cached own pokeHandle, or null if none registered. */
@@ -24,15 +28,22 @@ function clearOwnPokeHandle(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-/**
- * Registers (or refreshes) the device's push token with the poke gateway.
- * Mints a new pokeHandle if none is cached; otherwise updates the token for
- * the existing handle (handles OS token rotation).
- *
- * @param platform - "apns"
- * @param deviceToken - raw OS push token
- * @returns the pokeHandle (14-char base64url) to share with peers
- */
+/** Gateway `/register` body — `env` is required or APNs is never stored. */
+export function buildPokeRegisterBody(
+  platform: "apns",
+  deviceToken: string,
+  existingHandle: string | null,
+): Record<string, string> {
+  const body: Record<string, string> = {
+    platform,
+    token: deviceToken,
+    env: apnsPushEnv(),
+  };
+  if (existingHandle) body.pokeHandle = existingHandle;
+  return body;
+}
+
+/** Register or refresh the APNs token. Returns the pokeHandle to share with peers. */
 export async function registerPokeHandle(
   platform: "apns",
   deviceToken: string,
@@ -40,9 +51,7 @@ export async function registerPokeHandle(
   const base = gatewayUrl();
   if (!base) throw new Error("VITE_POKE_GATEWAY_URL not configured");
 
-  const existing = getOwnPokeHandle();
-  const body: Record<string, string> = { platform, token: deviceToken };
-  if (existing) body.pokeHandle = existing;
+  const body = buildPokeRegisterBody(platform, deviceToken, getOwnPokeHandle());
 
   const res = await fetch(`${base}/register`, {
     method: "POST",

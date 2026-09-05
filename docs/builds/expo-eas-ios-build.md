@@ -199,7 +199,7 @@ native-wrapper/
 | Symptom | Check |
 |---------|--------|
 | EAS asks for Apple login | Expected for signing / submit |
-| Push never arrives (TestFlight) | VPS `.p8` + `APNS_*`; Production key; app registered token with `env: production` |
+| Push never arrives (ad-hoc or TestFlight) | VPS `.p8` + `APNS_*`; Production key; app `POST /register` must include `env: production` (gateway rejects the body without it) |
 | Forever spinner (old IPA) | Pre-shell stub; rebuild with WebView enabled |
 | Stuck on splash logo | Splash hides on iOS mount; need `mobile:sync-ui` so `assets/ui` exists (Xcode Copy GNH WebView UI phase) |
 | Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? Check EAS log for “Copied WebView UI” |

@@ -59,6 +59,9 @@ export async function runWalletSessionExit(
         transactionsLoading: false,
       });
       useAuthStore.getState().lock();
+      void import("@/lib/mobile/walletSessionBridge").then((m) => {
+        m.clearNativeWalletSession();
+      });
     },
     navigate,
   });
