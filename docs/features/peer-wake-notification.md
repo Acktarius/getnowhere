@@ -141,33 +141,33 @@ Bob's device wakes → app opens (foreground or via banner)
   8. L2 peer connect while Alice is still mounted in the room
 ```
 
-### Poke trigger rule — one poke per relay session
+### Poke trigger rule — first poke, then re-poke after 5 minutes
 
 Each L1′ message costs 0.0111 CCX. Sending three consecutive relay messages is already a real
-user cost. Sending three pokes when one is sufficient would also create a recognizable timing
-pattern on the gateway (three HTTP calls closely following three chain transactions) that could
-link Alice's IP to the activity even without knowing the content.
+user cost. Poking on every message would also create a recognizable timing pattern on the
+gateway. But if the peer misses the first banner, a later L1′ should be allowed to wake again.
 
-**Rule: poke fires only on the first L1′ message after L2 was last the active channel.**
+**Rule: poke on the first L1′ after L2 was last active, and again if ≥300s since `lastPokedAt`.**
 
 ```
 Room lifecycle state       Previous channel    Current channel   Poke?
 ───────────────────────────────────────────────────────────────────────
-connected → disconnected   live                relay (1st msg)   YES  ← wake Bob
-relay → relay              relay               relay (2nd msg)   NO   ← Bob already notified
-reconnected → disconnected live                relay (1st msg)   YES  ← Bob disconnected again
+connected → disconnected   live                relay (1st msg)   YES  ← wake peer
+relay → relay              relay               relay (<5 min)    NO   ← still in cooldown
+relay → relay              relay               relay (≥5 min)    YES  ← re-notify
+reconnected → disconnected live                relay (1st msg)   YES  ← fresh after L2
 ```
 
 Implementation: each room tracks `lastPokedAt` (timestamp, persisted). A poke fires when:
 - `pokeHandle` is present for the contact
 - `pushWakeEnabled` is true in Settings → Privacy
-- `lastMessageChannel !== "relay"` OR `lastPokedAt` is absent for this room
+- `lastPokedAt` is absent **or** `now - lastPokedAt >= 300` (`POKE_RENOTIFY_AFTER_SEC`)
 
 Once L2 is re-established (`channel === "live"`), `lastPokedAt` is cleared so the next relay
-transition triggers a fresh poke.
+transition triggers a fresh poke without waiting for the cooldown.
 
-The gateway applies its own backstop rate limit (1 poke per 5 min per handle) to absorb any edge
-case where the app-side rule fires more than expected.
+The gateway applies its own backstop rate limit (1 poke per 5 min per handle) — the same window
+as the app-side re-poke cooldown.
 
 ### Why alert push, not silent background push
 
@@ -305,8 +305,8 @@ for `gnh-<ownPokeId>` is cancelled. A new room generates a fresh `ownPokeId`.
 **Natural spam deterrent:** each L1′ message costs ≈0.0111 CCX in chain fees. A contact who
 spams Alice with chain messages pays real fees. Poke-spamming is therefore not free.
 
-**App-side rule eliminates most abuse:** the poke-per-relay-session rule means a normal
-conversation generates at most one poke per L2 disconnect event, not one per message.
+**App-side rule eliminates most abuse:** at most one poke per 5 minutes per room while on
+relay (plus an immediate poke when first dropping from L2 after `lastPokedAt` was cleared).
 
 **Gateway rate limit:** 1 poke per 5 minutes per pokeHandle. This backstop covers edge cases
 where the app-side rule does not apply (e.g. unusual reconnect patterns, bugs).
@@ -475,7 +475,8 @@ Scenarios to cover:
 - Relay send with `pushWakeEnabled=true` but `partnerPokeHandle` unset → `sendPoke` never called
 - First relay send with `pushWakeEnabled=true` and handle set → `sendPoke` called once,
   `lastPokedAt` written to room and catalog
-- Second relay send in the same session → `sendPoke` NOT called again (`lastPokedAt` guard)
+- Second relay send within 300s → `sendPoke` NOT called again (cooldown)
+- Second relay send with `lastPokedAt` ≥300s ago → `sendPoke` called again
 - Room transitions to `connected` → `lastPokedAt` cleared
 - Next relay send after `connected` clear → `sendPoke` called again (new relay session)
 

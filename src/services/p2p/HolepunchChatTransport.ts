@@ -890,18 +890,22 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   return state;
 }
 
+/** Re-poke cooldown; matches poke-gateway 1 poke / 5 min. @see docs/features/peer-wake-notification.md §4 */
+const POKE_RENOTIFY_AFTER_SEC = 300;
+
 /**
- * Fire-and-forget peer-wake poke on the first L1′ relay after L2 was connected.
- * No-op when pushWakeEnabled is false, no handle is known, or poke was already sent.
+ * Fire-and-forget peer-wake poke on L1′ when needed (first after L2, or after cooldown).
+ * No-op when pushWakeEnabled is false, no handle is known, or still within cooldown.
  * @see docs/features/peer-wake-notification.md §4
  */
 async function maybeSendPoke(state: RoomState): Promise<void> {
   const { privacy } = useSettingsStore.getState();
   if (!privacy.pushWakeEnabled) return;
   if (!state.room.partnerPokeHandle) return;
-  if (state.room.lastPokedAt) return; // poke already sent this relay session
-
   const nowSec = nowUnix();
+  const last = state.room.lastPokedAt;
+  if (last !== undefined && nowSec - last < POKE_RENOTIFY_AFTER_SEC) return;
+
   try {
     await sendPoke(state.room.partnerPokeHandle);
   } catch {

@@ -103,7 +103,7 @@ describe("maybeSendPoke — no partnerPokeHandle", () => {
   });
 });
 
-describe("maybeSendPoke — send-once-per-relay-session rule", () => {
+describe("maybeSendPoke — cooldown re-poke rule", () => {
   it("calls sendPoke once on first relay when enabled and handle present", async () => {
     pushWakeEnabled = true;
     vi.spyOn(ConcealSmartMessageAdapter, "sendChatRelay").mockResolvedValue({
@@ -119,7 +119,7 @@ describe("maybeSendPoke — send-once-per-relay-session rule", () => {
     expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
   });
 
-  it("does NOT call sendPoke again on second relay in the same session", async () => {
+  it("does NOT call sendPoke again on second relay within 300s", async () => {
     pushWakeEnabled = true;
     vi.spyOn(ConcealSmartMessageAdapter, "sendChatRelay").mockResolvedValue({
       txHash: "tx4",
@@ -133,7 +133,35 @@ describe("maybeSendPoke — send-once-per-relay-session rule", () => {
 
     await HolepunchChatTransport.sendMessage(ROOM_ID, "second");
     await flushAsync();
-    // Still only once
+    expect(sendPokeSpy).toHaveBeenCalledOnce();
+  });
+
+  it("calls sendPoke again when lastPokedAt is at least 300s ago", async () => {
+    pushWakeEnabled = true;
+    vi.spyOn(ConcealSmartMessageAdapter, "sendChatRelay").mockResolvedValue({
+      txHash: "tx4b",
+    });
+    await setupRelayRoom();
+    storePartnerPokeHandle(ROOM_ID, PARTNER_HANDLE);
+
+    await HolepunchChatTransport.sendMessage(ROOM_ID, "first");
+    await flushAsync();
+    expect(sendPokeSpy).toHaveBeenCalledOnce();
+
+    const aged = Math.floor(Date.now() / 1000) - 300;
+    patchCatalogRoom(ROOM_ID, {
+      lastPokedAt: aged,
+      partnerPokeHandle: PARTNER_HANDLE,
+    });
+    __resetHolepunchTransport();
+    vi.spyOn(ConcealSmartMessageAdapter, "sendChatRelay").mockResolvedValue({
+      txHash: "tx4c",
+    });
+    await setupRelayRoom();
+
+    sendPokeSpy.mockClear();
+    await HolepunchChatTransport.sendMessage(ROOM_ID, "after cooldown");
+    await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
   });
 
