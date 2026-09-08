@@ -24,6 +24,7 @@ No L3. UI never joins Hyperswarm.
 7. `architecture/pairing-and-topics.md` — shipped v1 `topicRef` formula
 7b. `security/capabilities-and-derivation.md` — ids as capabilities, v2 HKDF targets
 8. `security/encryption.md` — threat model + L1 / L1′ / L2
+8b. `security/clipboard.md` — sensitive identifier copy/clear (no later read)
 9. `security/p2pchatprotocol.md`
 10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)
 10b. `builds/expo-eas-ios-build.md`

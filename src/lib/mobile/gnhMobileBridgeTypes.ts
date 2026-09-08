@@ -14,6 +14,8 @@ export type GnhBiometricAction =
 
 export type GnhSecurePrefsAction = "get" | "set" | "remove";
 
+export type GnhPrivacyAction = "copySensitive" | "clearClipboard";
+
 export type GnhSecurityChannel =
   | "gnh-lifecycle"
   | "gnh-biometric"
@@ -73,6 +75,22 @@ export type GnhSecurePrefsResponse = GnhBridgeEnvelope & {
   direction: "response";
   requestId: string;
   value?: string | null;
+  ok?: boolean;
+  error?: string;
+};
+
+export type GnhPrivacyCommand = GnhBridgeEnvelope & {
+  channel: "gnh-privacy";
+  direction: "command";
+  requestId: string;
+  action: GnhPrivacyAction;
+  value?: string;
+};
+
+export type GnhPrivacyResponse = GnhBridgeEnvelope & {
+  channel: "gnh-privacy";
+  direction: "response";
+  requestId: string;
   ok?: boolean;
   error?: string;
 };

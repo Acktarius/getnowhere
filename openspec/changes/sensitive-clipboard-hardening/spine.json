@@ -1,0 +1,33 @@
+{
+  "change": "sensitive-clipboard-hardening",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "copySensitive + reminder toast + Clear clipboard",
+      "library": "src/lib/clipboard/sensitiveClipboard.ts",
+      "runtimeOwner": "CopyButton / SensitiveValue click → copySensitive; Privacy Clear clipboard → clearClipboard; toastStore",
+      "writes": "system clipboard (raw identifier or empty); toast items (generic text only)",
+      "reads": "privacy.clearClipboardWarnings; isMobileAndroid; window.gnhDesktop; gnhMobile privacy commands on mobile",
+      "uiConsumer": "Wallet, receive, contacts, secrets keys, Privacy settings",
+      "evidence": "tests/lib/sensitive-clipboard.test.ts; tests/screens/SettingsScreen.clipboard.test.tsx; forge e2e run"
+    },
+    {
+      "capability": "Non-selectable display; seed no Copy; keys Copy",
+      "library": "src/components/NonSelectableText.tsx; src/components/SensitiveValue.tsx; src/components/SeedRevealModal.tsx; src/components/SeedBackupPanel.tsx",
+      "runtimeOwner": "Seed reveal / onboarding backup render; payment and address SensitiveValue rows",
+      "writes": "none (display + optional copySensitive)",
+      "reads": "seed phrase in memory; spend/view keys when revealed",
+      "uiConsumer": "Backup reveal dialog; onboarding seed panel; payment/address rows",
+      "evidence": "tests/components/SeedRevealModal.test.tsx; forge e2e run"
+    },
+    {
+      "capability": "Mobile native clipboard write/clear",
+      "library": "native-wrapper gnh-privacy copySensitive/clearClipboard; Android ClipboardManager; iOS UIPasteboard",
+      "runtimeOwner": "WebView gnh-privacy command → native clipboard APIs",
+      "writes": "Android primary clip (EXTRA_IS_SENSITIVE); iOS general pasteboard (localOnly, 60s expiry)",
+      "reads": "N/A (must not read clipboard to decide clear)",
+      "uiConsumer": "copySensitive / clearClipboard on Android and iOS hosts",
+      "evidence": "tests/native-wrapper privacy clipboard router tests; forge e2e run"
+    }
+  ]
+}

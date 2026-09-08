@@ -32,6 +32,8 @@ import {
 import { nativeClearBadge } from "./src/gnhNotificationsNative";
 import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
 import {
+  nativeClearClipboard,
+  nativeCopySensitive,
   securePrefsGet,
   securePrefsRemove,
   securePrefsSet,
@@ -369,7 +371,17 @@ export default function App() {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
         return;
       }
-      if (handlePrivacyWebViewMessage(raw, setBlurInAppSwitcher)) {
+      if (
+        handlePrivacyWebViewMessage(raw, setBlurInAppSwitcher, {
+          copySensitive: nativeCopySensitive,
+          clearClipboard: nativeClearClipboard,
+          resolve: (response) => {
+            webViewRef.current?.injectJavaScript(
+              buildSecurityResolveScript(response),
+            );
+          },
+        })
+      ) {
         return;
       }
       if (handleNtfyWakeWebViewMessage(raw)) {

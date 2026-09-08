@@ -4,9 +4,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
@@ -128,7 +130,11 @@ function LoadingDiagnosticsSheet({
   return (
     <Sheet open={open} title="Room diagnostics" onClose={onClose}>
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-        <div>Room id: {roomId}</div>
+        <div>
+          Room id:{" "}
+          <NonSelectableText className="mono">{roomId}</NonSelectableText>
+          <CopyButton value={roomId} />
+        </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
         <div>Sidecar: {getSidecarBridgeDiagnostic()}</div>
@@ -855,13 +861,26 @@ export function ChatRoomScreen() {
         onClose={() => setDiagOpen(false)}
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-          <div>Room id: {displayRoom.id}</div>
+          <div>
+            Room id:{" "}
+            <NonSelectableText className="mono">
+              {displayRoom.id}
+            </NonSelectableText>
+            <CopyButton value={displayRoom.id} />
+          </div>
           {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
           <div>
             Topic:{" "}
-            {discoveryTopicRef
-              ? shortTopicRef(discoveryTopicRef)
-              : "— not joined yet —"}
+            {discoveryTopicRef ? (
+              <>
+                <NonSelectableText className="mono">
+                  {shortTopicRef(discoveryTopicRef)}
+                </NonSelectableText>
+                <CopyButton value={discoveryTopicRef} />
+              </>
+            ) : (
+              "— not joined yet —"
+            )}
           </div>
           <div>Lifecycle: {displayRoom.lifecycleStatus}</div>
           <div>{roomExpiryDiagnosticLine(diagnosticRoomTtl)}</div>

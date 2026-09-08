@@ -16,7 +16,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { PresetStepper } from "@/components/PresetStepper";
@@ -30,7 +32,7 @@ import {
   RelationshipStatusBadge,
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { useCopy } from "@/hooks/useCopy";
+import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
 import { bindPointerToggle } from "@/lib/pointer-toggle";
 import {
   DEFAULT_INVITE_EXPIRY_HOURS,
@@ -91,8 +93,8 @@ export function ContactDetailScreen() {
     return Boolean(room && isRelayEligibleStatus(room.lifecycleStatus));
   });
 
-  const [copiedAddr, copyAddr] = useCopy();
-  const [copiedFrom, copyFrom] = useCopy();
+  const [copiedAddr, setCopiedAddr] = useState(false);
+  const [copiedFrom, setCopiedFrom] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
   const [createSheet, setCreateSheet] = useState(false);
   const [inviteExpiryHours, setInviteExpiryHours] = useState(
@@ -402,7 +404,9 @@ export function ContactDetailScreen() {
           <div className="stack stack--gap-1">
             <h2 style={{ fontSize: 20 }}>{contact.alias}</h2>
             <div className="mono faint" style={{ fontSize: 12 }}>
-              {shortAddress(contact.ccxAddress, 14, 14)}
+              <NonSelectableText>
+                {shortAddress(contact.ccxAddress, 14, 14)}
+              </NonSelectableText>
             </div>
           </div>
           <div
@@ -418,15 +422,33 @@ export function ContactDetailScreen() {
             style={{ gap: 8, justifyContent: "center", marginTop: 4 }}
           >
             <button
+              type="button"
               className="btn btn--sm btn--secondary"
-              onClick={() => copyAddr(contact.ccxAddress)}
+              onClick={() => {
+                void copySensitive(contact.ccxAddress).then(
+                  () => {
+                    setCopiedAddr(true);
+                    setTimeout(() => setCopiedAddr(false), 1800);
+                  },
+                  () => setCopiedAddr(false),
+                );
+              }}
             >
               {copiedAddr ? <Check size={13} /> : <Copy size={13} />}{" "}
               {copiedAddr ? "Copied" : "Copy address"}
             </button>
             <button
+              type="button"
               className="btn btn--sm btn--secondary"
-              onClick={() => copyFrom(contact.paymentIdFrom)}
+              onClick={() => {
+                void copySensitive(contact.paymentIdFrom).then(
+                  () => {
+                    setCopiedFrom(true);
+                    setTimeout(() => setCopiedFrom(false), 1800);
+                  },
+                  () => setCopiedFrom(false),
+                );
+              }}
             >
               {copiedFrom ? <Check size={13} /> : <Copy size={13} />}{" "}
               {copiedFrom ? "Copied" : "Copy your ID"}
@@ -838,7 +860,6 @@ function ShareRow({
   value: string;
   qrKind: "address" | "paymentId";
 }) {
-  const [copied, copy] = useCopy();
   const [qrOpen, setQrOpen] = useState(false);
   const qrExpand = bindPointerToggle(useRef(false), () => setQrOpen((o) => !o));
 
@@ -864,17 +885,11 @@ function ShareRow({
         </div>
       )}
       <div className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
-        {value}
+        <NonSelectableText>{value}</NonSelectableText>
       </div>
-      <button
-        type="button"
-        className="btn btn--sm btn--ghost"
-        style={{ marginTop: 10 }}
-        onClick={() => copy(value)}
-      >
-        {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <div style={{ marginTop: 10 }}>
+        <CopyButton value={value} />
+      </div>
     </div>
   );
 }

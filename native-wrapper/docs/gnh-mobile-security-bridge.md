@@ -76,13 +76,28 @@ Injected via `_dispatchLifecycleEvent`. No response.
 Values are JSON strings. Used for enrollment envelopes and app passcode hash —
 not WebView `localStorage` on device.
 
-### `gnh-privacy` (WebView → native events)
+### `gnh-privacy` (WebView → native events and commands)
 
 | `type` | Payload | Notes |
 |--------|---------|-------|
 | `setBlurInAppSwitcher` | `{ enabled: boolean }` | Native shell covers the WebView on `inactive`/`background` so iOS app-switcher snapshots stay obscure. Android also uses activity `FLAG_SECURE`. |
 
-Injected as `gnhMobile.setBlurInAppSwitcher(enabled)`. No response.
+Injected as `gnhMobile.setBlurInAppSwitcher(enabled)`. Event only; no response.
+
+**Commands** (`direction: "command"`), injected as `gnhMobile.copySensitive` /
+`gnhMobile.clearClipboard`. Native MUST NOT log `value`. Responses use
+`_resolveSecurity` and never echo the identifier.
+
+| `action` | Payload | Response |
+|----------|---------|----------|
+| `copySensitive` | `{ value }` | `{ ok: true }` or `{ error: "failed" }` |
+| `clearClipboard` | — | `{ ok: true }` or `{ error: "failed" }` |
+
+Android writes `setPrimaryClip` + `EXTRA_IS_SENSITIVE` and clears with
+`clearPrimaryClip()`. iOS writes `UIPasteboard.setItems` with `localOnly` and
+60s `expirationDate`, and clears by emptying the pasteboard.
+
+@see docs/security/clipboard.md
 
 ## JS types
 

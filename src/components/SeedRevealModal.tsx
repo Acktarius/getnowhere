@@ -1,4 +1,15 @@
+import { NonSelectableText } from "@/components/NonSelectableText";
+import { SensitiveValue } from "@/components/SensitiveValue";
 import { useSecretsModalTimer } from "@/hooks/useSecretsModalTimer";
+
+const keyBoxStyle = {
+  fontSize: 11,
+  wordBreak: "break-all" as const,
+  padding: "8px 10px",
+  background: "var(--bg-elev-2)",
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+};
 
 type Props = {
   open: boolean;
@@ -65,10 +76,13 @@ export function SeedRevealModal({
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <span className="faint" style={{ marginRight: 6 }}>
+                  <NonSelectableText
+                    className="faint"
+                    style={{ marginRight: 6 }}
+                  >
                     {i + 1}
-                  </span>
-                  {w}
+                  </NonSelectableText>
+                  <NonSelectableText>{w}</NonSelectableText>
                 </div>
               ))}
             </div>
@@ -77,35 +91,31 @@ export function SeedRevealModal({
           <div className="stack stack--gap-3" style={{ marginTop: 16 }}>
             <div>
               <div className="field__label">Spend key</div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  wordBreak: "break-all",
-                  padding: "8px 10px",
-                  background: "var(--bg-elev-2)",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                }}
-              >
-                {spendKey || "—"}
-              </div>
+              {spendKey ? (
+                <SensitiveValue
+                  value={spendKey}
+                  className="mono"
+                  style={keyBoxStyle}
+                />
+              ) : (
+                <div className="mono" style={keyBoxStyle}>
+                  —
+                </div>
+              )}
             </div>
             <div>
               <div className="field__label">View key</div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  wordBreak: "break-all",
-                  padding: "8px 10px",
-                  background: "var(--bg-elev-2)",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                }}
-              >
-                {viewKey || "—"}
-              </div>
+              {viewKey ? (
+                <SensitiveValue
+                  value={viewKey}
+                  className="mono"
+                  style={keyBoxStyle}
+                />
+              ) : (
+                <div className="mono" style={keyBoxStyle}>
+                  —
+                </div>
+              )}
             </div>
           </div>
 

@@ -53,6 +53,12 @@ export function securityBridgeInjectionJs(): string {
     set: function(key, value) { return postSecurity('gnh-secure-prefs', { action: 'set', key: key, value: value }); },
     remove: function(key) { return postSecurity('gnh-secure-prefs', { action: 'remove', key: key }); }
   };
+  window.gnhMobile.copySensitive = function(value) {
+    return postSecurity('gnh-privacy', { action: 'copySensitive', value: value });
+  };
+  window.gnhMobile.clearClipboard = function() {
+    return postSecurity('gnh-privacy', { action: 'clearClipboard' });
+  };
   window.gnhMobile.setBlurInAppSwitcher = function(enabled) {
     if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
     window.ReactNativeWebView.postMessage(JSON.stringify({

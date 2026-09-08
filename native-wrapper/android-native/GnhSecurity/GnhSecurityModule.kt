@@ -1,5 +1,11 @@
 package im.getnowhere.app.security
 
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
+import android.os.PersistableBundle
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -50,6 +56,41 @@ class GnhSecurityModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun copySensitive(value: String, promise: Promise) {
+        try {
+            val clipboard = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE)
+                as ClipboardManager
+            val clip = ClipData.newPlainText("", value)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val extras = PersistableBundle()
+                extras.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                clip.description.extras = extras
+            }
+            clipboard.setPrimaryClip(clip)
+            promise.resolve(true)
+        } catch (_: Exception) {
+            promise.reject("ERR", "failed")
+        }
+    }
+
+    @ReactMethod
+    fun clearClipboard(promise: Promise) {
+        try {
+            val clipboard = reactApplicationContext.getSystemService(Context.CLIPBOARD_SERVICE)
+                as ClipboardManager
+            // Overwrite first: clearPrimaryClip() is a no-op on some devices
+            // when this app did not set the current clip.
+            clipboard.setPrimaryClip(ClipData.newPlainText("", ""))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                clipboard.clearPrimaryClip()
+            }
+            promise.resolve(true)
+        } catch (_: Exception) {
+            promise.reject("ERR", "failed")
         }
     }
 

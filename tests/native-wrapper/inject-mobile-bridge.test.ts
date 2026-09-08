@@ -78,6 +78,29 @@ describe("buildMobileBridgeInjection", () => {
       type: "setBlurInAppSwitcher",
       enabled: true,
     });
+
+    postMessage.mockClear();
+    void bridge.copySensitive?.("gnh-privacy-copy-fixture-unique");
+    expect(postMessage).toHaveBeenCalledOnce();
+    const copyCmd = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(copyCmd).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "command",
+      action: "copySensitive",
+      value: "gnh-privacy-copy-fixture-unique",
+    });
+    expect(typeof copyCmd.requestId).toBe("string");
+
+    postMessage.mockClear();
+    void bridge.clearClipboard?.();
+    expect(postMessage).toHaveBeenCalledOnce();
+    const clearCmd = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(clearCmd).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "command",
+      action: "clearClipboard",
+    });
+    expect(clearCmd).not.toHaveProperty("value");
   });
 
   it("exposes onPokeToken / _dispatchPokeToken and dispatches correctly", () => {

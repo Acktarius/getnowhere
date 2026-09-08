@@ -104,6 +104,10 @@ interface GnhMobileBridge {
     set(key: string, value: string): Promise<Record<string, unknown>>;
     remove(key: string): Promise<Record<string, unknown>>;
   };
+  /** Native sensitive clipboard write. Injected by the mobile host. */
+  copySensitive?(value: string): Promise<void>;
+  /** Native clipboard wipe. Injected by the mobile host. */
+  clearClipboard?(): Promise<void>;
   /** Tell native shell to obscure content in the OS app switcher. */
   setBlurInAppSwitcher?(enabled: boolean): void;
   onLifecycle?(handler: (evt: { type: string }) => void): () => void;

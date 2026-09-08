@@ -20,6 +20,7 @@ import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { clearClipboard } from "@/lib/clipboard/sensitiveClipboard";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { bridgeRequestNotificationPermissions } from "@/lib/mobile/nativeNotificationsBridge";
 import { refreshAutoNode } from "@/lib/network/auto-node";
@@ -203,10 +204,28 @@ export function SettingsScreen() {
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem
-              title="Clear clipboard warnings"
-              description="Warn before sensitive values are copied to the clipboard."
+              title="Clipboard reminder"
+              description={
+                s.showTips
+                  ? "Toast after you copy a sensitive value. On Android and desktop, it points to Clear clipboard when you finish pasting."
+                  : "Toast after you copy a sensitive value."
+              }
               on={s.privacy.clearClipboardWarnings}
               onToggle={(v) => s.setPrivacy({ clearClipboardWarnings: v })}
+            />
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              title="Clear clipboard"
+              description="Clears whatever is on the clipboard."
+              trailing={
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void clearClipboard()}
+                >
+                  Clear clipboard
+                </button>
+              }
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem

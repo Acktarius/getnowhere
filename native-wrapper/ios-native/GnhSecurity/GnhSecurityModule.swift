@@ -1,5 +1,6 @@
 import Foundation
 import React
+import UIKit
 
 @objc(GnhSecurity)
 class GnhSecurityModule: NSObject {
@@ -31,6 +32,22 @@ class GnhSecurityModule: NSObject {
 
   @objc func securePrefsRemove(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
     prefs.remove(key: key)
+    resolver(true)
+  }
+
+  @objc func copySensitive(_ value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    UIPasteboard.general.setItems(
+      [["public.utf8-plain-text": value]],
+      options: [
+        .localOnly: true,
+        .expirationDate: Date().addingTimeInterval(60),
+      ]
+    )
+    resolver(true)
+  }
+
+  @objc func clearClipboard(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    UIPasteboard.general.items = []
     resolver(true)
   }
 

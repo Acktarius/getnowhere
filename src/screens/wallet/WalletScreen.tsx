@@ -10,13 +10,14 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { ReceiveSheet } from "@/components/ReceiveSheet";
 import { SendSheet } from "@/components/SendSheet";
 import { Sheet } from "@/components/Sheet";
 import { TopBar } from "@/components/TopBar";
 import { WalletBalanceCard } from "@/components/WalletBalanceCard";
-import { useCopy } from "@/hooks/useCopy";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import { activeTabFromPath } from "@/layouts/mainTabPaths";
 import { bindPointerToggle } from "@/lib/pointer-toggle";
@@ -82,7 +83,6 @@ export function WalletScreen() {
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
   const txExpandGuard = useRef(false);
-  const [copied, copy] = useCopy();
   const [page, setPage] = useState(1);
 
   // Clamp page when list length changes; do NOT reset to 1 if still in range
@@ -250,12 +250,7 @@ export function WalletScreen() {
                   Your address
                 </div>
               </div>
-              <button
-                className="btn btn--sm btn--ghost"
-                onClick={() => copy(address)}
-              >
-                {copied ? "Copied" : "Copy"}
-              </button>
+              <CopyButton value={address} />
             </div>
             <div
               className="mono"
@@ -266,7 +261,7 @@ export function WalletScreen() {
                 color: "var(--text-muted)",
               }}
             >
-              {address}
+              <NonSelectableText>{address}</NonSelectableText>
             </div>
           </div>
 
@@ -460,15 +455,15 @@ export function WalletScreen() {
                           <span className="faint" style={{ fontSize: 11 }}>
                             txHash
                           </span>
-                          <button
-                            type="button"
-                            className="tx-row__hash mono"
-                            onClick={() => copy(tx.hash)}
-                            title="Copy transaction hash"
+                          <div
+                            className="row-flex"
+                            style={{ gap: 8, alignItems: "center" }}
                           >
-                            {tx.hash}
-                            {copied ? " · copied" : ""}
-                          </button>
+                            <NonSelectableText className="tx-row__hash mono">
+                              {tx.hash}
+                            </NonSelectableText>
+                            <CopyButton value={tx.hash} />
+                          </div>
                         </div>
                       )}
                     </div>

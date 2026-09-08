@@ -1,5 +1,6 @@
 import { AlertTriangle, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { NonSelectableText } from "@/components/NonSelectableText";
 
 type Props = {
   seedPhrase: string;
@@ -71,10 +72,10 @@ export function SeedBackupPanel({ seedPhrase, onConfirm }: Props) {
                   border: "1px solid var(--border)",
                 }}
               >
-                <span className="faint" style={{ marginRight: 6 }}>
+                <NonSelectableText className="faint" style={{ marginRight: 6 }}>
                   {i + 1}
-                </span>
-                {w}
+                </NonSelectableText>
+                <NonSelectableText>{w}</NonSelectableText>
               </div>
             ))}
           </div>
