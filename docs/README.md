@@ -36,6 +36,7 @@ No L3. UI never joins Hyperswarm.
 13c. `features/peer-wake-notification.md` — APNs/FCM poke gateway to cut L2 meet-up from 15 min to seconds
 13c. `background-remote-sync.md` — WorkManager / BGAppRefresh → wallet sync
 14. `features/app-access-and-data-unlock.md` — mobile biometrics (app vs data)
+14b. `features/appearance.md` — page theme vs accent (Sky and Pink do not tint the page)
 15. `prompts/coding-constraints.md`
 
 ## Rules

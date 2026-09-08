@@ -31,7 +31,7 @@
 /* ===== Dark (default) ===== */
 :root,
 [data-theme="dark"] {
-  --bg: #0a0b0f;
+  --bg: #3d4558;
   --bg-elev: #11131a;
   --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #161922;
@@ -67,10 +67,10 @@
 
 /* ===== Light ===== */
 [data-theme="light"] {
-  --bg: #f6f7f9;
+  --bg: #e6e8ee;
   --bg-elev: #ffffff;
   --bg-elev-1: var(--bg-elev);
-  --bg-elev-2: #f0f2f6;
+  --bg-elev-2: #dcdfe6;
   --bg-card: #ffffff;
   --bg-hover: #f0f2f6;
   --bg-press: #e6e9ef;
@@ -98,7 +98,7 @@
   --danger-soft: rgba(214, 58, 58, 0.1);
   --info: #4a5bff;
 
-  --skeleton: linear-gradient(100deg, #eef0f4 30%, #e2e6ec 50%, #eef0f4 70%);
+  --skeleton: linear-gradient(100deg, #e6e8ee 30%, #dcdfe6 50%, #e6e8ee 70%);
 }
 
 * {
@@ -1530,7 +1530,7 @@ button {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background-color: color-mix(in srgb, var(--primary) 9%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 24%, transparent);
   mask-image: var(--chat-topic-tile);
   mask-repeat: repeat;
   mask-size: 168px 168px;
@@ -1539,7 +1539,7 @@ button {
   -webkit-mask-size: 168px 168px;
 }
 [data-theme="light"] .chat-topic-backdrop {
-  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
 /* ===== Preset stepper (room TTL / invite expiry) ===== */

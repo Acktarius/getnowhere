@@ -237,7 +237,7 @@ export type SmartMessageInvite = {
 };
 
 export type AppTheme = "dark" | "light" | "system";
-export type AccentName = "teal" | "blue" | "amber" | "violet";
+export type AccentName = "teal" | "blue" | "amber" | "violet" | "sky" | "pink";
 
 export type PrivacySettings = {
   localMessageRetention: boolean;
