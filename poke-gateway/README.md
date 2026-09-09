@@ -112,6 +112,10 @@ The Vite UI calls this base URL. If unset, `sendPoke` is a no-op.
 and `APNS_*` stay **only** in poke-gateway `.env` (VPS). Do not upload the
 AuthKey to EAS.
 
+**TODO (production cutover):** Rotate `VITE_NTFY_READ_TOKEN` (ntfy `gnh-reader` +
+GitHub secret + local `.env`) before public store/F-Droid. Test-phase syncs can
+leave the token in committed `native-wrapper/assets/ui` JS. See root `README.md`.
+
 ## Local run (no Docker)
 
 ```bash

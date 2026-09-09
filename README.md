@@ -42,6 +42,8 @@ Your ntfy server should run with `auth-default-access: deny-all` and two scoped 
 
 Generate tokens with `sudo ntfy token add gnh-reader` on your VPS.
 See `poke-gateway/.env.example` for the server-side `NTFY_PUBLISH_TOKEN`.
+
+**TODO (production cutover):** Pre-production `mobile:sync-ui` bakes `VITE_NTFY_READ_TOKEN` into `native-wrapper/assets/ui` (and that JS may have been committed). Before store / public F-Droid: rotate `gnh-reader` on ntfy, update root `.env` and GitHub secret `VITE_NTFY_READ_TOKEN`, rebuild so old baked copies stop working.
 Full setup: `docs/features/peer-wake-notification.md`.
 
 ## Test scenarios

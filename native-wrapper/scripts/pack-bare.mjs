@@ -54,10 +54,24 @@ if (!existsSync(entryPath)) {
 
 console.log(`Packing Bare worklet (${entry}) → ${outMjs}`);
 
-/** Match Expo device arches: Android arm64 APK + iPhone arm64 (TestFlight/EAS). */
-const packArgs =
-  `${entry} -o ../assets/bare/app.bundle.mjs --linked ` +
-  `--host android-arm64 --host ios-arm64`;
+/**
+ * Host targets for bare-pack.
+ * EAS iOS must not pass Android hosts — EAS is iOS-only for this app.
+ * Local (no EAS_BUILD_PLATFORM): both arches for local Android APK + iOS run.
+ */
+function barePackHostFlags() {
+  const platform = process.env.EAS_BUILD_PLATFORM;
+  if (platform === "ios") return "--host ios-arm64";
+  if (platform === "android") return "--host android-arm64";
+  return "--host android-arm64 --host ios-arm64";
+}
+
+const hostFlags = barePackHostFlags();
+console.log(
+  `bare-pack hosts (${process.env.EAS_BUILD_PLATFORM ?? "local"}): ${hostFlags}`,
+);
+
+const packArgs = `${entry} -o ../assets/bare/app.bundle.mjs --linked ${hostFlags}`;
 const packCmd = existsSync(barePackBin)
   ? `"${barePackBin}" ${packArgs}`
   : `npx --yes bare-pack@2.2.1 ${packArgs}`;

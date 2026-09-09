@@ -410,6 +410,9 @@ New toggle adjacent to existing notification switches:
 
 ## 12. Open questions / future
 
+- **TODO (production cutover):** Rotate ntfy `gnh-reader` / `VITE_NTFY_READ_TOKEN`
+  (local `.env`, GitHub secret, then rebuild) before public store or F-Droid.
+  Pre-production `assets/ui` JS may already contain the test token. See root `README.md`.
 - **Multi-device:** current design is one pokeHandle per room per peer. If a user has multiple
   devices, only the device used to accept the invite gets poked. Acceptable for v1.
 - **Protocol version bump:** adding `ph` to the slim-pack body is a minor protocol extension.

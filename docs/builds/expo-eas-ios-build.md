@@ -75,7 +75,8 @@ npx eas submit --platform ios --profile preview-ios --latest
    calls `link.mjs`, discovers every native addon under `native-wrapper/`
    (including via the symlink) and writes their XCFrameworks to `ios/addons/`.
 3. `eas-build-post-install` — packs the Bare JS bundle into
-   `assets/bare/app.bundle` (symlink already exists; no re-linking needed).
+   `assets/bare/app.bundle` with **`--host ios-arm64` only**
+   (`EAS_BUILD_PLATFORM=ios`; no Android hosts). Symlink already exists.
 4. Xcode build — picks up `addons/*.xcframework` vendored by BareKit podspec.
 
 iOS WebView UI: config plugin `withGnhIosUiBundle` adds an Xcode Run Script that
@@ -100,6 +101,10 @@ Optional later:
 ```bash
 npx eas build --platform ios --profile production --auto-submit
 ```
+
+**TODO (production cutover):** Rotate `VITE_NTFY_READ_TOKEN` before the first
+App Store / `production` EAS build (token may already be in git history of
+`native-wrapper/assets/ui`). See root `README.md`.
 
 ## Ad hoc install (no TestFlight)
 

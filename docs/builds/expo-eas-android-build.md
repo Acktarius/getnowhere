@@ -398,6 +398,10 @@ The unsigned build step is identical to local `npm run mobile:android:release`.
 Signing is injected **only** in CI from secrets; the repo never contains a
 release keystore.
 
+**TODO (production cutover):** Rotate GitHub secret `VITE_NTFY_READ_TOKEN` (and
+the ntfy `gnh-reader` token) before the first public F-Droid/store APK. Test
+builds bake that value into the WebView JS; see root `README.md`.
+
 ### F-Droid de-Google cleanup
 
 The workflow runs `scripts/fix-for-fdroid.py` automatically after `expo prebuild`
