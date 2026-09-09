@@ -20,12 +20,14 @@
     },
     "preview-ios": {
       "distribution": "store",
+      "node": "22.14.0",
       "ios": {
         "image": "sdk-55"
       }
     },
     "adhoc-ios": {
       "distribution": "internal",
+      "node": "22.14.0",
       "ios": {
         "image": "sdk-55",
         "simulator": false
@@ -36,6 +38,7 @@
       "android": {
         "buildType": "app-bundle"
       },
+      "node": "22.14.0",
       "ios": {
         "simulator": false,
         "image": "sdk-55"

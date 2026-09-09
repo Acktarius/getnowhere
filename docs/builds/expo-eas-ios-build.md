@@ -86,7 +86,9 @@ unchanged).
 
 Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
 `expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
-in scope. iOS profiles pin `"image": "sdk-55"`.
+in scope. iOS profiles pin `"image": "sdk-55"` and `"node": "22.14.0"` — the
+sdk-55 Mac image defaults to Node **20.19.4**, which has segfaulted
+`bare-pack` in `eas-build-post-install`; Node 22 matches a working local pack.
 
 Swift 6 (Xcode 26): AppDelegate uses `internal import …`; GnhBackgroundSync
 must match (`internal import BackgroundTasks`). The background-sync config
