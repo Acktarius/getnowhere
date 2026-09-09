@@ -32,6 +32,7 @@
 :root,
 [data-theme="dark"] {
   --bg: #3d4558;
+  --bg-topbar: #353c4e; /* Slightly darker than --bg; independent of accent. */
   --bg-elev: #11131a;
   --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #161922;
@@ -68,6 +69,7 @@
 /* ===== Light ===== */
 [data-theme="light"] {
   --bg: #e6e8ee;
+  --bg-topbar: #dde0e8; /* Slightly darker than --bg; independent of accent. */
   --bg-elev: #ffffff;
   --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #dcdfe6;
@@ -258,7 +260,7 @@ button {
   gap: var(--space-3);
   padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-4)
     var(--space-3);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-topbar) 92%, transparent);
   backdrop-filter: saturate(140%) blur(18px);
   -webkit-backdrop-filter: saturate(140%) blur(18px);
   border-bottom: 1px solid transparent;
@@ -961,7 +963,7 @@ button {
 .section__title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
