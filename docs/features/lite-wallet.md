@@ -62,9 +62,11 @@ chat rooms. Settings **Resync** re-scans txs for balance integrity only.
 - **Wallet password** — re-encrypts the local wallet blob (`/settings/wallet-password`).
   Distinct from the app unlock passcode.
 - **Backup** — `/settings/backup`: reveal seed & keys, show export QR, download
-  encrypted wallet `.json`. Export QR uses the same password gate as reveal;
-  payload is `conceal.<address>?spend_key=…?view_key=…?height=<creationHeight>`
-  so import QR decode recovers keys and scan start height.
+  encrypted wallet `.json`. On iOS (native wrapper), download opens the system
+  share sheet (Save to Files / share); Android uses the folder picker. Export QR
+  uses the same password gate as reveal; payload is
+  `conceal.<address>?spend_key=…?view_key=…?height=<creationHeight>` so import
+  QR decode recovers keys and scan start height.
 - **Daemon node** — probe list, Use fastest, custom HTTPS URL; triggers resync.
   Defaults match conceal-next-wallet (`explorer.conceal.network/daemon`,
   `ccxapi.conceal.network/daemon`). Fabricated leftovers

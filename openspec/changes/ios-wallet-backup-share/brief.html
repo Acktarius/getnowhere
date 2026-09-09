@@ -1,0 +1,80 @@
+<!-- forge-brief-specs-hash:5906d193f3fc8c15 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iOS wallet backup share</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>iOS wallet backup share</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    On iPhone, Settings → Backup → download wallet JSON currently crashes
+    because the app uses an Android-only save API. After this change, iOS opens
+    the normal share sheet so you can Save to Files (or AirDrop). Android keeps
+    working as it does today.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>iOS: tap Download → system share sheet → Save to Files / share elsewhere.</li>
+    <li>Android: same folder picker / Downloads write as now.</li>
+    <li>Cancel or failure still shows an error in Backup (no silent “success”).</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    The phone shell receives the encrypted wallet JSON from the in-app UI.
+    On Android it asks which folder to write to. On iOS it writes a temporary
+    file and opens the share sheet so you choose where it goes.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  A[Backup: Download wallet.json] --> B[Mobile shell gets file content]
+  B --> C{Platform?}
+  C -->|Android| D[Folder picker / SAF write]
+  C -->|iOS| E[Temp file + share sheet]
+  D --> F[Success or cancel error]
+  E --> F
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>iOS Backup download will feel like sharing a file, not a direct Downloads write.</li>
+    <li>No new settings screens or passwords — same Backup flow.</li>
+    <li>Needs a new iOS build that includes this native-shell fix.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>You must pick Save to Files (or another destination) in the share sheet; the app cannot force a folder.</li>
+    <li>A short-lived temp copy may sit in app cache if cleanup fails — still app-private.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Changing Android’s save UX.</li>
+    <li>Showing the app’s Documents folder in Files without sharing.</li>
+    <li>Changing seed reveal, export QR, or backup passwords.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Tests first (2) — prove iOS uses share sheet, Android still SAF.</li>
+    <li>Native save path (3) — implement the iOS branch and re-verify tests.</li>
+    <li>Docs (1) — one-line note that iOS uses the share sheet.</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

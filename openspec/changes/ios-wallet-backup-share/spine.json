@@ -1,0 +1,24 @@
+{
+  "change": "ios-wallet-backup-share",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Mobile host saves wallet backup text via platform path",
+      "library": "native-wrapper/src/saveTextFileFromWebView.ts",
+      "runtimeOwner": "App.tsx WebView onMessage → handleSaveTextFileWebViewMessage; UI downloadJson → gnhMobile.saveTextFile → gnh-file",
+      "writes": "Android: SAF document URI JSON file; iOS: temp cache JSON + system share sheet handoff",
+      "reads": "gnh-file command payload (filename, content, requestId)",
+      "uiConsumer": "Settings → Backup download wallet .json (BackupSettingsScreen)",
+      "evidence": "tests/native-wrapper/save-text-file.test.ts; forge e2e run"
+    },
+    {
+      "capability": "Save outcome reported to the WebView",
+      "library": "native-wrapper/src/saveTextFileFromWebView.ts; buildSaveTextFileResolveScript.ts",
+      "runtimeOwner": "handleSaveTextFileWebViewMessage resolve callback → buildSaveTextFileResolveScript into WebView",
+      "writes": "WebView _resolveSaveTextFile result { requestId, ok, message? }",
+      "reads": "share/SAF success or thrown Error message",
+      "uiConsumer": "downloadJson promise (saved vs reject)",
+      "evidence": "tests/native-wrapper/save-text-file.test.ts; tests/lib/downloadJson.test.ts; forge e2e run"
+    }
+  ]
+}
