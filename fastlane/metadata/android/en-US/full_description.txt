@@ -1,0 +1,31 @@
+Get NowHere is a private 1:1 peer-to-peer chat app. No phone number. No email. Just your Conceal Network wallet.
+
+Identity comes from your Conceal wallet—not a SIM, not an account signup. You add people the way you meet them in real life: each of you scans the other’s QR code so address and payment ID are exchanged without typing. Then you open a chat room when you actually have something to say—work, vacation, a project—and let it end when that chapter is over.
+
+FEATURES:
+• 1:1 P2P chat between two peers
+• Sign in with a Conceal Network wallet—no phone or email required
+• Meet-in-person style contact add: mutual QR scan for address and payment ID
+• Chat rooms with an invitation validity period and a total room lifetime
+• Rooms labeled by purpose—work, vacation, and whatever matters now
+• Encrypted messaging with wallet-based identity
+• Lite Conceal wallet: send, receive, and review CCX history
+• Privacy-first design with no account harvest for SMS or email
+
+HOW IT WORKS:
+1. Create or import a Conceal Network wallet
+2. Meet someone and each scan the other’s QR code to exchange address and payment ID
+3. Open a room for a topic that matters, with invite and room validity that expire
+4. Talk when you need to—then get back to life
+
+WHY GET NOWHERE:
+Technology should facilitate, not enslave. Get NowHere is for conversations with a reason and a season—not an endless feed. Stay reachable for what matters; enjoy the rest of your time offline.
+
+SECURITY & PRIVACY:
+• No phone number required
+• No email required
+• No traditional social-account signup
+• Wallet-based identity on Conceal Network
+• Open development with documentation you can inspect
+
+For support and updates, visit: https://acktarius.github.io/getnowhere/
