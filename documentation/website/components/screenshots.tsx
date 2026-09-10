@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { withBasePath } from "@/lib/base-path";
 
 const shots = [
   { file: "1.png", alt: "Landing — Create or import a Conceal wallet" },
@@ -12,8 +12,8 @@ export function Screenshots() {
     <div className="my-8 grid grid-cols-1 gap-6 sm:grid-cols-3">
       {shots.map((shot) => (
         <figure key={shot.file} className="m-0">
-          <Image
-            src={`/screenshots/${shot.file}`}
+          <img
+            src={withBasePath(`/screenshots/${shot.file}`)}
             alt={shot.alt}
             width={390}
             height={844}
