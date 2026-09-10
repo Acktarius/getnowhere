@@ -3,11 +3,12 @@ import { fileURLToPath } from "node:url";
 import { createMDX } from "fumadocs-mdx/next";
 import type { NextConfig } from "next";
 
+import { BASE_PATH } from "./lib/base-path";
+
 /** Website plus sibling `../content` must share one Turbopack root. */
 const websiteDir = path.dirname(fileURLToPath(import.meta.url));
 const documentationDir = path.resolve(websiteDir, "..");
 const withMDX = createMDX();
-const isGitHubPages = process.env.GITHUB_ACTIONS === "true";
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -20,10 +21,10 @@ const config: NextConfig = {
   images: {
     unoptimized: true,
   },
-  ...(isGitHubPages
+  ...(BASE_PATH
     ? {
-        basePath: "/getnowhere",
-        assetPrefix: "/getnowhere/",
+        basePath: BASE_PATH,
+        assetPrefix: `${BASE_PATH}/`,
       }
     : {}),
 };
