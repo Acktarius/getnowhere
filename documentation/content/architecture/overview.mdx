@@ -23,9 +23,10 @@ Peer-to-peer runtime (sidecar, Electron-owned process, or Bare worklet)
 - **Runtime** — joins derived topics, owns Noise transport, and forwards
   opaque frames.
 
-Application cryptography for live chat content is applied on the identity /
-wallet side of the bridge so a compromised runtime is not trusted with
-plaintext. See [security overview](/security/security-overview).
+Live chat is sealed on the identity / wallet side of the bridge, then
+sealed again on the peer transport. The runtime forwards opaque frames.
+The public internet never sees an open `ws://` of the room. See
+[security overview](/security/security-overview).
 
 ## Why the split exists
 

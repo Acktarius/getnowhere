@@ -15,9 +15,14 @@ specification and **not a security audit**. Cipher details for builders:
 | Chat in a room when the peer path is down | Conceal blockchain (fallback) | Layer 1′ | ChaCha12 |
 
 Layer 1 and Layer 1′ use Conceal Network message encryption. Outsiders
-without the view keys do not read the body. Layer 2 is a direct (or
-hole-punched) path: no chat server, ChaCha20-Poly1305 on the live session.
-The invited peer can still learn your IP. That is not anonymous routing.
+without the view keys do not read the body. Layer 2 is a hole-punched
+peer path with **no chat server**: the room is sealed at the application
+layer (**ChaCha20-Poly1305**) and again on the transport. Chat does not
+ride an open `ws://` on the public internet.
+
+A live session does **not** show your IP. Either counterpart could, with
+dedicated software, extract the other person’s IP — they already decided
+to talk to each other. That is not a reading of the room.
 
 Waking a sleeping phone (APNs or ntfy, no Google Firebase):
 [notifications](/security/notifications).

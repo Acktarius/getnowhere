@@ -7,10 +7,11 @@ This page is **high-level design documentation**. It is not a wire-format
 specification, not a substitute for the internal protocol documents, and
 **not a security audit**.
 
-The shipped live-session path uses **ChaCha20-Poly1305** (IETF / RFC 8439)
-as authenticated encryption for application-layer message seals. That choice
-is visible in the current source. Details such as exact key schedules, nonce
-derivation, and handshake bytes are intentionally omitted here.
+Live room content is **double-encrypted**: an application-layer
+**ChaCha20-Poly1305** (IETF / RFC 8439) seal, then the peer transport seal.
+Chat plaintext is not put on a public `ws://`. That choice is visible in
+the current source. Details such as exact key schedules, nonce derivation,
+and handshake bytes are intentionally omitted here.
 
 ## Authenticated encryption
 

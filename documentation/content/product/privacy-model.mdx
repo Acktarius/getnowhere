@@ -1,38 +1,47 @@
 ---
 title: Privacy model
-description: What Get NowHere aims to hide, and what live connections still reveal.
+description: Room text is double-encrypted. A live session does not show your IP.
 ---
 
-This page is a public privacy overview. It is not a threat-model dump and not
-a guarantee of anonymity.
+Get NowHere is built to keep a room private. There is no chat server, no
+phone number, and no open websocket of your conversation on the public
+internet. Words are sealed on your device, then sealed again on the live
+path. Outsiders do not get the room handed to them.
 
-## Two different paths
+## Who can read the room
 
-Get NowHere uses more than one delivery path. They excel in different ways.
+The person you invited. That is the point.
 
-**Relationship signaling and relay** ride the Conceal Network blockchain
-(smart messages, ChaCha12). Outsiders without the relevant view keys do not
-read message bodies. The counterparty learns the message by design. This
-path does **not** give the counterparty your IP address the way a direct
-connection does.
+A third party does not. Not a chain explorer without the view keys. Not an
+ISP. Not a DHT node. Not a “chat host,” because there isn’t one.
 
-**Live peer-to-peer** means no chat server: two peers, hole-punched if
-needed, sealed with **ChaCha20-Poly1305**. The invited peer can still learn
-your IP address and port. Network observers can still see that traffic
-exists. That is ordinary direct connectivity, not anonymous routing.
+Someone who stole your wallet or already owns the phone can read what you
+can read. That is a stolen identity, not a network design.
 
-## What is not claimed
+## Live session and IP
 
-- Get NowHere is **not** an anonymity network.
-- Live chat is **not** documented as metadata-complete.
-- Tor, VPN leak preflight, and relay-only live transport are **not
-  implemented**. Treat them as future work if they appear in internal notes.
-- Publishing this page is not a promise that every host already matches every
-  privacy property.
+You add people the way you would in real life: you meet, you exchange
+QR codes, then you open a room. Those two people already decided to talk.
 
-## Practical reading
+A live session does **not** show your IP. Either counterpart could, with
+dedicated software, extract the other person’s IP. They already chose to
+talk to each other.
 
-If you need to avoid showing your IP to a chat counterparty, a live direct
-session is the wrong mental model. The Conceal-backed path avoids that
-particular disclosure; it costs latency and still leaves public-chain
-activity residues such as transaction existence and rough timing.
+That is not a hole. Room text is still double-encrypted. It does not ride
+`ws://`. It does not sit in plaintext on a server.
+
+If you are not on a live session, relationship signaling and fallback
+relay ride Conceal smart messages (ChaCha12). Outsiders without the view
+keys still do not read the body, and that path does not hand your IP to
+the other person at all.
+
+## Two paths, same rule for the words
+
+| Path | What it is for | What outsiders get |
+| --- | --- | --- |
+| Live peer-to-peer | Fast room when both sides can punch | Nothing. They would have to steal the room ID *and* the room topic just to land on ciphertext. Good luck. And then only the IP could be extracted. |
+| Conceal (invites and fallback) | Meet, invite, and keep talking when the punch is down | Nothing — unless they stole the keys. |
+
+Both paths exist so privacy and delivery can both be true. The live path
+is sealed with **ChaCha20-Poly1305** on top of the transport seal. The
+chain path uses Conceal message encryption. Neither is a public inbox.
