@@ -16,6 +16,7 @@ import {
   type SdkMessageRecord,
 } from "@/services/conceal/sync/messages-store";
 import { readPendingRecords } from "@/services/conceal/sync/pending-store";
+import { isTtlExpired } from "@/services/conceal/sync/ttl-expiry";
 import { peekContactHint } from "@/services/protocol/SmartMessageProtocolAdapter";
 import type {
   Transaction,
@@ -66,6 +67,21 @@ function isZeroConfHeight(height: number | undefined): boolean {
   return typeof height !== "number" || height <= 0;
 }
 
+function nowUnixSec(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+function hideExpiredTtl(
+  msg: SdkMessageRecord | undefined,
+  ttlExpiresAt?: number,
+  nowSec: number = nowUnixSec(),
+): boolean {
+  return (
+    isTtlExpired(msg?.ttlExpiresAt, nowSec) ||
+    isTtlExpired(ttlExpiresAt, nowSec)
+  );
+}
+
 function mapSdkTx(
   tx: WalletTransaction,
   msg: SdkMessageRecord | undefined,
@@ -99,9 +115,13 @@ export function mapWalletTransactions(
   const byMsg = messagesByHash(raw);
   const byHash = new Map<string, Transaction>();
 
+  const nowSec = nowUnixSec();
+
   for (const tx of sdkTxs) {
     const hash = tx.hash || "";
-    const mapped = mapSdkTx(tx, hash ? byMsg.get(hash) : undefined);
+    const msg = hash ? byMsg.get(hash) : undefined;
+    if (hideExpiredTtl(msg, undefined, nowSec)) continue;
+    const mapped = mapSdkTx(tx, msg);
     if (hash) byHash.set(hash, mapped);
     else byHash.set(mapped.id, mapped);
   }
@@ -109,6 +129,7 @@ export function mapWalletTransactions(
   for (const pending of readPendingRecords(raw)) {
     if (byHash.has(pending.hash)) continue;
     const msg = byMsg.get(pending.hash);
+    if (hideExpiredTtl(msg, pending.ttlExpiresAt, nowSec)) continue;
     byHash.set(pending.hash, {
       id: pending.hash,
       type: "outgoing",
@@ -127,6 +148,7 @@ export function mapWalletTransactions(
   for (const pending of readIncomingPendingRecords(raw)) {
     if (byHash.has(pending.hash)) continue;
     const msg = byMsg.get(pending.hash);
+    if (hideExpiredTtl(msg, undefined, nowSec)) continue;
     byHash.set(pending.hash, {
       id: pending.hash,
       type: "incoming",
@@ -143,6 +165,7 @@ export function mapWalletTransactions(
   // 0-conf copies and mined 0-amount L1′ relays that never fold into SDK
   // outputs (no owned CCX). Chat ingest reads these records; history must too.
   for (const msg of byMsg.values()) {
+    if (hideExpiredTtl(msg, undefined, nowSec)) continue;
     if (byHash.has(msg.id)) {
       const existing = byHash.get(msg.id)!;
       if (!existing.contactHint) {

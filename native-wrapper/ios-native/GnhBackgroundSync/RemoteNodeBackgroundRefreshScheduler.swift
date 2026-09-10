@@ -1,9 +1,12 @@
-import BackgroundTasks
+internal import BackgroundTasks
 import Foundation
+import UIKit
 
 /** Registers and submits BGAppRefreshTask requests (~15 min earliest begin). */
 final class RemoteNodeBackgroundRefreshScheduler {
     static let shared = RemoteNodeBackgroundRefreshScheduler()
+
+    private var backgroundObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -13,6 +16,16 @@ final class RemoteNodeBackgroundRefreshScheduler {
             using: nil,
         ) { task in
             self.handleAppRefresh(task: task as! BGAppRefreshTask)
+        }
+        // ExpoAppDelegate does not expose applicationDidEnterBackground for override.
+        if backgroundObserver == nil {
+            backgroundObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main,
+            ) { [weak self] _ in
+                self?.scheduleNextRefresh()
+            }
         }
     }
 

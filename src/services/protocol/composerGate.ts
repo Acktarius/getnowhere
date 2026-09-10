@@ -9,6 +9,7 @@ import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   canSendLiveMessages,
   canSendMessages,
+  composerPreferredChannelWithGrace,
   isRelayEligibleStatus,
   preferredChannel,
 } from "@/services/protocol/roomLifecycle";
@@ -19,7 +20,7 @@ const COMPOSER_DISABLED_REASON: Record<
   Exclude<RoomLifecycleStatus, "connected">,
   string
 > = {
-  pending: "Waiting for invite accept — messaging not allowed yet.",
+  pending: "Waiting for them to accept your invite.",
   accepted: "Invite accepted — Holepunch connecting to peer.",
   connecting: "Holepunch connecting…",
   connect_failed:
@@ -54,8 +55,15 @@ export function canComposeMessages(status: RoomLifecycleStatus): boolean {
 
 export function composerPreferredChannel(
   status: RoomLifecycleStatus,
+  blipStartedAtMs?: number,
+  lastLiveAtMs?: number,
 ): MessageChannel {
-  return preferredChannel(status);
+  return composerPreferredChannelWithGrace(
+    status,
+    blipStartedAtMs,
+    Date.now(),
+    lastLiveAtMs,
+  );
 }
 
 export function connectFailureHint(code: string | undefined): string | null {
@@ -116,6 +124,7 @@ export function assertRoomInteractive(
 export {
   canSendLiveMessages,
   canSendMessages,
+  composerPreferredChannelWithGrace,
   isRelayEligibleStatus,
   preferredChannel,
 };

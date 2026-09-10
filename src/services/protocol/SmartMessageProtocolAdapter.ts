@@ -57,17 +57,26 @@ function normalizeAction(action: string): string {
 
 /**
  * Lightweight contact-action peek for wallet history dots (no expiry/replay checks).
+ * Returns relay hints with roomId for L1′ relay smartmessages.
  * @see docs/features/lite-wallet.md
  */
 export function peekContactHint(
   body: string,
-): { module: "contact"; action: "create" | "register" | "revoke" } | null {
+):
+  | { module: "contact"; action: "create" | "register" | "revoke" }
+  | { module: "contact"; action: "relay"; roomId: string }
+  | null {
   if (!messages.isSmartMessage(body)) return null;
   const parsed = messages.parseSmartMessage(body);
   if (!parsed || parsed[0] !== MODULE_CONTACT) return null;
   const action = normalizeAction(String(parsed[1] ?? ""));
   if (action === "create" || action === "register" || action === "revoke") {
     return { module: "contact", action };
+  }
+  if (action === "relay") {
+    const roomId = String(parsed[2] ?? "").trim();
+    if (!roomId) return null;
+    return { module: "contact", action: "relay", roomId };
   }
   return null;
 }
@@ -132,7 +141,7 @@ function assertBodyFits(smartBody: string): void {
 }
 
 /**
- * Slim packed create (current) — keep whole `{contact,c,1,<b64>}` under ~120 chars
+ * Slim packed create (current) — keep whole `{contact,c,pv,<b64>}` under ~122 chars
  * so payment-id + message fit practical wallet limits (SDK max remains 251).
  *
  * Omitted on wire (derived locally):
@@ -167,8 +176,11 @@ export const CREATE_PACK_BYTES_LEGACY_SLIM = CREATE_PACK_BYTES_V1;
 /** Legacy 136-byte pack (pre-slim) — still accepted on parse. */
 export const CREATE_PACK_BYTES_LEGACY = 136;
 
-/** Product target for create body length (chars ≈ UTF-8 bytes for this alphabet). */
-export const MAX_CREATE_BODY_CHARS = 120;
+/**
+ * Product target for create body length (chars ≈ UTF-8 bytes for this alphabet).
+ * v2 pack (106) + optional pokeHandle (15) = 121 — still well under SDK 251-byte cap.
+ */
+export const MAX_CREATE_BODY_CHARS = 122;
 
 function requireHexBytes(
   hex: string,
@@ -371,20 +383,25 @@ export async function hydrateCreateHandshake(
 
 /**
  * Packed create wire (current):
- * `{contact,c,pv,<b64url pack>}` — slim CREATE_PACK_FIELDS (≤120 chars).
+ * `{contact,c,pv,<b64url pack>}` — slim CREATE_PACK_FIELDS (≤122 chars).
  * Alias / caps stay local-only.
  */
 export function encodeCreateSmartBody(
   handshake: ChatInviteHandshake,
   _senderAlias?: string,
   _capabilities?: string[],
+  pokeHandle?: string,
 ): string {
   const pack = packCreateHandshake(handshake);
-  const body = messages.encodeSmartMessage(
+  const args: string[] = [
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.create,
     String(handshake.protocolVersion),
     pack,
+  ];
+  if (pokeHandle) args.push(pokeHandle);
+  const body = messages.encodeSmartMessage(
+    ...(args as [string, string, ...string[]]),
   );
   assertBodyFits(body);
   if (new TextEncoder().encode(body).length > MAX_CREATE_BODY_CHARS) {
@@ -444,12 +461,16 @@ function decodeVerboseCreate(data: string[]): ChatInviteHandshake | null {
 }
 
 export function encodeRegisterSmartBody(payload: ChatRegisterPayload): string {
-  const body = messages.encodeSmartMessage(
+  const args: string[] = [
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.register,
     payload.inviteId,
     hexToB64url(payload.receiverEphemeralPublicKey),
     hexToB64url(payload.replayId),
+  ];
+  if (payload.pokeHandle) args.push(payload.pokeHandle);
+  const body = messages.encodeSmartMessage(
+    ...(args as [string, string, ...string[]]),
   );
   assertBodyFits(body);
   return body;
@@ -514,7 +535,7 @@ export function parseChatSmartBody(
     // Packed (current): [pv, b64urlBlob]. Legacy compact: ≥10 parts. Verbose: suite string.
     let handshake: ChatInviteHandshake | null = null;
     let wireKind: "packed" | "compact" | "verbose" = "packed";
-    if (data.length === 2) {
+    if (data.length === 2 || data.length === 3) {
       handshake = unpackCreateHandshake(Number(data[0]), data[1]!);
       wireKind = "packed";
     } else {
@@ -540,6 +561,15 @@ export function parseChatSmartBody(
       wireKind === "verbose"
         ? (data[14] ?? "chat.v1").split("|").filter(Boolean)
         : ["chat.v1"];
+    // Packed format: optional ph at data[2]; verbose: data[15]
+    const senderPokeHandle =
+      wireKind === "packed"
+        ? data[2] && /^[A-Za-z0-9_-]{14}$/.test(data[2])
+          ? data[2]
+          : undefined
+        : data[15] && /^[A-Za-z0-9_-]{14}$/.test(data[15])
+          ? data[15]
+          : undefined;
     return {
       action: "create",
       payload: {
@@ -547,6 +577,7 @@ export function parseChatSmartBody(
         handshake,
         senderAlias,
         capabilities,
+        senderPokeHandle,
       },
     };
   }
@@ -568,6 +599,11 @@ export function parseChatSmartBody(
     } catch {
       return null;
     }
+    const pokeHandleRaw = String(parsed[5] ?? "").trim();
+    const pokeHandle =
+      pokeHandleRaw && /^[A-Za-z0-9_-]{14}$/.test(pokeHandleRaw)
+        ? pokeHandleRaw
+        : undefined;
     return {
       action: "register",
       payload: {
@@ -576,6 +612,7 @@ export function parseChatSmartBody(
         receiverEphemeralPublicKey,
         replayId,
         acceptedAt: new Date().toISOString(),
+        pokeHandle,
       },
     };
   }
@@ -687,6 +724,7 @@ export const SmartMessageProtocolAdapter: SmartMessageProtocolService = {
       receiverEphemeralPublicKey: input.receiverEphemeralPublicKey,
       replayId: input.replayId,
       acceptedAt: new Date().toISOString(),
+      ...(input.pokeHandle ? { pokeHandle: input.pokeHandle } : {}),
     };
   },
 

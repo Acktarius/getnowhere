@@ -1,0 +1,24 @@
+{
+  "change": "wipe-biometric-on-wallet-delete",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Delete wallet resets biometric settings flags while keeping other prefs",
+      "library": "src/services/storage/appDataLifecycle.ts deleteWalletData",
+      "runtimeOwner": "src/screens/settings/SettingsScreen.tsx Delete wallet action",
+      "writes": "gnh.settings biometric flags → false; native enrollments cleared; wallet-tied keys removed",
+      "reads": "WALLET_TIED_KEYS; gnh.settings",
+      "uiConsumer": "Post-reload Welcome / Import; Security settings toggles off",
+      "evidence": "tests/storage/app-data-lifecycle.test.ts"
+    },
+    {
+      "capability": "Stale app-access biometric flag self-heals before App Lock",
+      "library": "src/lib/auth/biometric-lifecycle.ts (reconcile helper)",
+      "runtimeOwner": "src/App.tsx mobile boot / App Lock gate path",
+      "writes": "appAccessBiometricEnabled (and data-unlock flag if enrollment missing) → false",
+      "reads": "settings flags; gnh.appAccessCredentialId / data-unlock enrollment",
+      "uiConsumer": "AppLockScreen skipped when enrollment missing",
+      "evidence": "unit tests for reconcile helper"
+    }
+  ]
+}

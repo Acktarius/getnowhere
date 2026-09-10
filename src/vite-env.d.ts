@@ -2,6 +2,10 @@
 
 interface ImportMetaEnv {
   readonly VITE_HOLEPUNCH_WS_URL?: string;
+  /** Base URL of the peer-wake poke gateway (e.g. https://poke.example.com). @see docs/features/peer-wake-notification.md */
+  readonly VITE_POKE_GATEWAY_URL?: string;
+  /** Optional ntfy read token for gnh-* topics. Leave empty if topics are publicly readable. */
+  readonly VITE_NTFY_READ_TOKEN?: string;
 }
 
 interface ImportMeta {
@@ -49,6 +53,8 @@ interface GnhMobileSaveTextFileResult {
 
 /** Mobile Expo WebView bridge API surface injected before Vite UI loads. */
 interface GnhMobileBridge {
+  /** Platform of the hosting native shell. */
+  readonly platform?: "ios" | "android";
   sendCommand(cmd: {
     type: string;
     topicRef?: string;
@@ -98,9 +104,26 @@ interface GnhMobileBridge {
     set(key: string, value: string): Promise<Record<string, unknown>>;
     remove(key: string): Promise<Record<string, unknown>>;
   };
+  /** Native sensitive clipboard write. Injected by the mobile host. */
+  copySensitive?(value: string): Promise<void>;
+  /** Native clipboard wipe. Injected by the mobile host. */
+  clearClipboard?(): Promise<void>;
+  /** Tell native shell to obscure content in the OS app switcher. */
+  setBlurInAppSwitcher?(enabled: boolean): void;
   onLifecycle?(handler: (evt: { type: string }) => void): () => void;
   _dispatchLifecycleEvent?(evt: { type: string }): void;
   _runBackgroundRemoteSync?(requestId: string): void;
+  /**
+   * Subscribe to push token delivery from the native shell.
+   * Called once on app load and again on OS token rotation.
+   * @see docs/features/peer-wake-notification.md
+   */
+  onPokeToken?(handler: (platform: "apns", token: string) => void): () => void;
+  /** @internal Injected by native shell via buildPokeTokenDispatchScript. */
+  _dispatchPokeToken?(platform: "apns", token: string): void;
+  /** Set by RN after WKWebView remount; consumed once at boot. */
+  _sessionRestoreReady?: boolean;
+  _pendingWalletRestore?: string | null;
 }
 
 interface Window {

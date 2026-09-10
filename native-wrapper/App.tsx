@@ -1,6 +1,7 @@
 /**
  * Expo shell: bundled Vite UI + Bare Hyperswarm worklet behind gnhMobile bridge.
  * @see docs/builds/expo-eas-android-build.md
+ * @see docs/builds/expo-eas-ios-build.md
  */
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -16,6 +17,11 @@ import {
 import type { WebViewMessageEvent } from "react-native-webview";
 import { WebView } from "react-native-webview";
 import { createBridgeToken } from "./src/bridgeToken";
+import {
+  getBundledUiIndexUri,
+  getBundledUiReadAccessUrl,
+  getIosUiAssetPrefix,
+} from "./src/bundledUiUri";
 import type { GnhMobileBridge } from "./src/GnhMobileBridge";
 import {
   isGnhBackgroundSyncNativeAvailable,
@@ -23,7 +29,19 @@ import {
   resolveNativeBackgroundSync,
   setNativeAppInBackground,
 } from "./src/gnhBackgroundSyncNative";
+import { nativeClearBadge } from "./src/gnhNotificationsNative";
+import { getPushTokenForPoke, onPushTokenRefresh } from "./src/gnhPokeNative";
+import {
+  nativeClearClipboard,
+  nativeCopySensitive,
+  securePrefsGet,
+  securePrefsRemove,
+  securePrefsSet,
+} from "./src/gnhSecurityNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
+import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
+import { handlePokeWebViewMessage } from "./src/handlePokeWebViewMessage";
+import { handlePrivacyWebViewMessage } from "./src/handlePrivacyWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
@@ -31,6 +49,7 @@ import {
 import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
+  buildPokeTokenDispatchScript,
 } from "./src/injectMobileBridge";
 import {
   buildSaveTextFileResolveScript,
@@ -38,14 +57,22 @@ import {
 } from "./src/saveTextFileFromWebView";
 import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
 import {
-  ANDROID_UI_ASSET_PREFIX,
+  applyWalletSessionMessage,
+  buildWalletSessionRestoreScript,
+  copyWalletSessionIfValid,
+  hasWalletSession,
+  hydrateWalletSessionFromPersist,
+  markWalletSessionBackgrounded,
+  markWalletSessionForeground,
+  setWalletSessionPersist,
+  WALLET_SESSION_PREFS_KEY,
+} from "./src/walletSessionKeepAlive";
+import {
+  getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
-  WEBVIEW_ORIGIN_WHITELIST,
 } from "./src/webviewNavigation";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
-
-const ANDROID_UI_URI = `${ANDROID_UI_ASSET_PREFIX}index.html`;
 
 /** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
 const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
@@ -96,6 +123,14 @@ function parseBackgroundSyncMessage(raw: string): {
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [sessionHydrated, setSessionHydrated] = useState(false);
+  const [pendingWalletRestore, setPendingWalletRestore] = useState<
+    string | null
+  >(null);
+  const [blurInAppSwitcher, setBlurInAppSwitcher] = useState(false);
+  const [appState, setAppState] = useState<AppStateStatus>(
+    AppState.currentState,
+  );
   const bridgeRef = useRef<GnhMobileBridge | null>(null);
   const bridgeStartingRef = useRef(false);
   const webViewRef = useRef<WebView>(null);
@@ -103,10 +138,20 @@ export default function App() {
   const pendingForegroundRef = useRef<PendingForeground | null>(null);
   const flushTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
+  /** Native cover for OS app-switcher snapshots (critical on iOS). */
+  const obscureInSwitcher =
+    blurInAppSwitcher && (appState === "inactive" || appState === "background");
 
   const injectedBeforeLoad = useMemo(
-    () => (bridgeToken ? buildMobileBridgeInjection(bridgeToken) : ""),
-    [bridgeToken],
+    () =>
+      bridgeToken
+        ? buildMobileBridgeInjection(
+            bridgeToken,
+            Platform.OS === "android" ? "android" : "ios",
+            pendingWalletRestore,
+          )
+        : "",
+    [bridgeToken, pendingWalletRestore],
   );
 
   const injectLifecycle = useCallback(
@@ -151,6 +196,7 @@ export default function App() {
     if (backgroundAtMsRef.current == null) {
       backgroundAtMsRef.current = Date.now();
     }
+    markWalletSessionBackgrounded(backgroundAtMsRef.current);
     console.warn("[gnh-lifecycle] AppState background", {
       backgroundAtMs: backgroundAtMsRef.current,
     });
@@ -165,25 +211,59 @@ export default function App() {
         : undefined;
     backgroundAtMsRef.current = null;
     pendingForegroundRef.current = { backgroundElapsedMs: elapsedMs };
+    if (typeof elapsedMs === "number") {
+      copyWalletSessionIfValid(elapsedMs);
+    }
+    if (hasWalletSession()) {
+      markWalletSessionForeground();
+    } else {
+      setPendingWalletRestore(null);
+    }
     console.warn("[gnh-lifecycle] AppState foreground", {
       backgroundElapsedMs: elapsedMs,
       hasWebView: !!webViewRef.current,
+      sessionAlive: hasWalletSession(),
     });
     setNativeAppInBackground(false);
+    // iOS icon badge is independent of Notification Center dismissals; clear
+    // when the user returns to the app. Android badges follow notifications.
+    if (Platform.OS === "ios") {
+      void nativeClearBadge();
+    }
     schedulePendingForegroundFlush();
   }, [schedulePendingForegroundFlush]);
+
+  const injectPokeToken = useCallback((platform: "apns", token: string) => {
+    webViewRef.current?.injectJavaScript(
+      buildPokeTokenDispatchScript(platform, token),
+    );
+  }, []);
+
+  const injectWalletSessionRestore = useCallback(() => {
+    const elapsed =
+      backgroundAtMsRef.current != null
+        ? Date.now() - backgroundAtMsRef.current
+        : (pendingForegroundRef.current?.backgroundElapsedMs ?? 0);
+    void hydrateWalletSessionFromPersist(Date.now()).then((fromPersist) => {
+      const password = fromPersist ?? copyWalletSessionIfValid(elapsed);
+      setPendingWalletRestore(password);
+      webViewRef.current?.injectJavaScript(
+        buildWalletSessionRestoreScript(password),
+      );
+    });
+  }, []);
 
   const onWebViewReady = useCallback(() => {
     setLoading(false);
     void SplashScreen.hideAsync();
+    injectWalletSessionRestore();
     flushPendingForeground();
+    // Best-effort: fetch push token and deliver to WebView for gateway registration.
+    void getPushTokenForPoke().then((result) => {
+      if (result) injectPokeToken(result.platform, result.token);
+    });
 
-    if (
-      Platform.OS !== "android" ||
-      !bridgeToken ||
-      bridgeRef.current ||
-      bridgeStartingRef.current
-    ) {
+    if (!bridgeToken || bridgeRef.current || bridgeStartingRef.current) {
       return;
     }
     bridgeStartingRef.current = true;
@@ -204,12 +284,14 @@ export default function App() {
         console.error("[gnh-mobile] Bare worklet start failed", err);
       }
     })();
-  }, [bridgeToken, flushPendingForeground]);
+  }, [
+    bridgeToken,
+    flushPendingForeground,
+    injectPokeToken,
+    injectWalletSessionRestore,
+  ]);
 
   useEffect(() => {
-    if (Platform.OS !== "android") {
-      void SplashScreen.hideAsync();
-    }
     return () => {
       clearForegroundFlushTimeouts();
       bridgeRef.current?.destroy();
@@ -218,8 +300,13 @@ export default function App() {
     };
   }, [clearForegroundFlushTimeouts]);
 
+  // iOS: never block forever on the native splash logo while WebView loads.
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    if (Platform.OS !== "ios") return;
+    void SplashScreen.hideAsync();
+  }, []);
+
+  useEffect(() => {
     if (!isGnhBackgroundSyncNativeAvailable()) return;
     return registerBackgroundSyncWebViewInjector((script) => {
       webViewRef.current?.injectJavaScript(script);
@@ -227,9 +314,40 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== "android") return;
+    let cleanup: (() => void) | undefined;
+    void onPushTokenRefresh((result) => {
+      injectPokeToken(result.platform, result.token);
+    }).then((fn) => {
+      cleanup = fn;
+    });
+    return () => cleanup?.();
+  }, [injectPokeToken]);
+
+  useEffect(() => {
+    setWalletSessionPersist({
+      get: () => securePrefsGet(WALLET_SESSION_PREFS_KEY),
+      set: async (value) => {
+        await securePrefsSet(WALLET_SESSION_PREFS_KEY, value);
+      },
+      remove: async () => {
+        await securePrefsRemove(WALLET_SESSION_PREFS_KEY);
+      },
+    });
+    void hydrateWalletSessionFromPersist(Date.now())
+      .then((password) => {
+        setPendingWalletRestore(password);
+      })
+      .finally(() => {
+        setSessionHydrated(true);
+      });
+    return () => setWalletSessionPersist(null);
+  }, []);
+
+  useEffect(() => {
+    // Keep Android lifecycle wiring as before; also enable on iOS for lock/UI.
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
+      setAppState(state);
       if (state === "background" || state === "inactive") {
         noteBackground();
         return;
@@ -245,12 +363,40 @@ export default function App() {
   const onWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const raw = event.nativeEvent.data;
+      if (applyWalletSessionMessage(raw)) {
+        return;
+      }
       const bgSync = parseBackgroundSyncMessage(raw);
       if (bgSync) {
         resolveNativeBackgroundSync(bgSync.requestId, bgSync.outcome);
         return;
       }
+      if (
+        handlePrivacyWebViewMessage(raw, setBlurInAppSwitcher, {
+          copySensitive: nativeCopySensitive,
+          clearClipboard: nativeClearClipboard,
+          resolve: (response) => {
+            webViewRef.current?.injectJavaScript(
+              buildSecurityResolveScript(response),
+            );
+          },
+        })
+      ) {
+        return;
+      }
+      if (handleNtfyWakeWebViewMessage(raw)) {
+        return;
+      }
       if (handleNotificationsWebViewMessage(raw)) {
+        return;
+      }
+      if (
+        handlePokeWebViewMessage(raw, () => {
+          void getPushTokenForPoke().then((result) => {
+            if (result) injectPokeToken(result.platform, result.token);
+          });
+        })
+      ) {
         return;
       }
       const lifecycleMsg = parseLifecycleHostMessage(raw);
@@ -285,18 +431,36 @@ export default function App() {
       }
       bridgeRef.current?.handleWebViewMessage(raw);
     },
-    [clearForegroundFlushTimeouts, flushPendingForeground],
+    [clearForegroundFlushTimeouts, flushPendingForeground, injectPokeToken],
   );
 
-  if (Platform.OS !== "android") {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#c9a227" />
-      </View>
-    );
-  }
+  const uiUri = useMemo(() => getBundledUiIndexUri(), []);
+  const uiReadAccessUrl = useMemo(() => getBundledUiReadAccessUrl(), []);
+  const iosUiPrefix = useMemo(() => getIosUiAssetPrefix(), []);
+  const extraPrefixes = useMemo(
+    () => (iosUiPrefix ? [iosUiPrefix] : []),
+    [iosUiPrefix],
+  );
+  const originWhitelist = useMemo(
+    () => getWebViewOriginWhitelist(extraPrefixes),
+    [extraPrefixes],
+  );
+  // iOS WKWebView resolves /var → /private/var symlink, so the URL fired in
+  // onShouldStartLoadWithRequest won't match a prefix built from bundleDirectory.
+  // Allow all file:// on iOS; external URLs are already blocked by originWhitelist.
+  // Android keeps strict path-based filtering unchanged. @see docs/builds/expo-eas-ios-build.md
+  const allowNav = useCallback(
+    (url: string) => {
+      if (Platform.OS === "ios") {
+        const lower = url.toLowerCase();
+        return lower === "about:blank" || lower.startsWith("file://");
+      }
+      return isAllowedWebViewNavigationUrl(url, extraPrefixes);
+    },
+    [extraPrefixes],
+  );
 
-  if (!bridgeToken) {
+  if (!bridgeToken || !uiUri || !sessionHydrated) {
     return (
       <View style={styles.center}>
         <ActivityIndicator color="#c9a227" />
@@ -314,24 +478,38 @@ export default function App() {
       ) : null}
       <WebView
         ref={webViewRef}
-        source={{ uri: ANDROID_UI_URI }}
+        source={{ uri: uiUri }}
         style={styles.webview}
-        originWhitelist={WEBVIEW_ORIGIN_WHITELIST}
+        originWhitelist={originWhitelist}
         allowFileAccess
         allowFileAccessFromFileURLs
+        allowingReadAccessToURL={uiReadAccessUrl}
         javaScriptEnabled
         domStorageEnabled
+        mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
         injectedJavaScriptBeforeContentLoaded={injectedBeforeLoad}
-        onShouldStartLoadWithRequest={(event) =>
-          isAllowedWebViewNavigationUrl(event.url)
-        }
+        onShouldStartLoadWithRequest={(event) => allowNav(event.url)}
         onLoadEnd={onWebViewReady}
+        onContentProcessDidTerminate={() => {
+          webViewRef.current?.reload();
+        }}
+        onRenderProcessGone={() => {
+          webViewRef.current?.reload();
+        }}
         onMessage={onWebViewMessage}
         onError={(e) => {
           console.error("WebView error", e.nativeEvent);
           onWebViewReady();
         }}
       />
+      {obscureInSwitcher ? (
+        <View
+          pointerEvents="none"
+          style={styles.appSwitcherObscure}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : null}
     </View>
   );
 }
@@ -357,5 +535,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#0a0b0f",
     zIndex: 1,
+  },
+  appSwitcherObscure: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#0a0b0f",
+    zIndex: 2,
   },
 });

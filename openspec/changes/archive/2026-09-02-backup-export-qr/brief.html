@@ -1,0 +1,93 @@
+<!-- forge-brief-specs-hash:b197dc2213e10f0a -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Backup export QR</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Backup export QR</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Settings → Backup gets a third action: <strong>Show export QR code</strong>.
+    After you enter the wallet password, a modal shows a QR another device can
+    scan to import this wallet (keys + creation height). Same Got it / Need
+    more time timing as Reveal seed &amp; keys.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>A <strong>Show export QR code</strong> button right after Reveal seed &amp; keys (QR icon).</li>
+    <li>Password required — same as reveal and download.</li>
+    <li>A modal that shows only the export QR (no extra warning text).</li>
+    <li>Got it closes it; Need more time works the same as the seed dialog (30s, then 5s grace).</li>
+    <li>The QR encodes address, spend key, view key, and wallet creation height so import can skip scanning from genesis.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    You type the wallet password and tap the new button. The app unlocks the
+    same secrets used for reveal, builds the Conceal-style wallet QR string,
+    and shows it. Closing the modal clears the password and the QR, same as
+    closing reveal.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  A[Backup settings] --> B[Enter wallet password]
+  B --> C[Show export QR code]
+  C --> D{Password OK?}
+  D -->|no| E[Show error — stay on Backup]
+  D -->|yes| F[Modal: export QR]
+  F --> G[Got it]
+  F --> H[Need more time]
+  F --> I[Auto-close after grace]
+  G --> J[Clear password and QR]
+  I --> J
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>On Settings → Backup, a new button between Reveal and Download.</li>
+    <li>Settings Backup subtitle will mention export QR.</li>
+    <li>Reveal and Download stay as they are.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>The QR holds spend/view keys — treat it like showing the seed. Don’t screenshot it in public.</li>
+    <li>Very old wallets without a stored creation height encode height 0 (import starts from genesis).</li>
+    <li>View-only wallets are not supported (error if that path is hit).</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>View-only export QR.</li>
+    <li>PDF or file that embeds the QR.</li>
+    <li>Warning / disclaimer text in the modal.</li>
+    <li>Changes to how import scans a QR.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Encode wallet keys + round-trip tests — 2 tasks</li>
+    <li>Include creation height in the password-gated reveal payload — 1 task</li>
+    <li>Share Got it / Need more time timer — 1 task</li>
+    <li>Export QR modal + Backup button — 2 tasks</li>
+    <li>Settings copy + docs — 1 task</li>
+    <li>Product-loop tests — 1 task</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

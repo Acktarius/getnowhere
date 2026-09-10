@@ -1,0 +1,51 @@
+{
+  "change": "ntfy-fdroid-wake",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "F-Droid ntfy SSE wake — pokeId generated per-room, shared in L1",
+      "library": "src/lib/crypto/pokeId.ts → src/services/conceal/ConcealSmartMessageAdapter.ts",
+      "runtimeOwner": "sendInviteMessage / acceptInvite (ConcealSmartMessageAdapter)",
+      "writes": "CatalogRoom.ownPokeId (roomCatalogStore); ph field in chat.create / chat.register L1 wire",
+      "reads": "peekCatalogRoom(roomId).ownPokeId; getOwnPokeHandle() (iOS fallback)",
+      "uiConsumer": "Settings wake toggle → subscribeAll() reads CatalogRoom.ownPokeId",
+      "evidence": ".forge/sessions/20260824T183621Z-ntfy-fdroid-wake-303ed4/tasks/04-pokeid-mint/test-evidence.md"
+    },
+    {
+      "capability": "Gateway ntfy fallback — DB miss → POST wake to ntfy topic",
+      "library": "poke-gateway/src/routes.ts (ntfy fallback branch)",
+      "runtimeOwner": "POST /poke endpoint (Fastify route)",
+      "writes": "HTTP POST to https://ntfy.getnowhere.im/gnh-<pokeId>",
+      "reads": "NTFY_BASE_URL, NTFY_PUBLISH_TOKEN env vars; db.getHandle(to)",
+      "uiConsumer": "N/A (server-side only)",
+      "evidence": ".forge/sessions/20260824T183621Z-ntfy-fdroid-wake-303ed4/tasks/03-gateway-ntfy/test-evidence.md"
+    },
+    {
+      "capability": "Android SSE subscribe — GnhNtfyWakeModule → WorkManager scheduleSoonRemoteNodeSync",
+      "library": "native-wrapper/android/app/src/main/java/im/getnowhere/app/ntfywake/GnhNtfyWakeModule.kt + NtfyWakeHandler.kt",
+      "runtimeOwner": "@ReactMethod subscribe() called via handleNtfyWakeWebViewMessage in App.tsx onWebViewMessage",
+      "writes": "OkHttp SSE connection; WorkManager one-shot job on wake",
+      "reads": "ntfy SSE stream at gnh-<ownPokeId>/json",
+      "uiConsumer": "Settings wake toggle → subscribeAll → postMessage → GnhNtfyWakeModule.subscribe()",
+      "evidence": ".forge/sessions/20260824T183621Z-ntfy-fdroid-wake-303ed4/tasks/05-android-ntfy/test-evidence.md"
+    },
+    {
+      "capability": "Settings toggle wiring — Android/iOS platform branch",
+      "library": "src/services/poke/applyPushWakeSetting.ts; src/state/settingsStore.ts; src/lib/mobile/ntfyWakeBridge.ts",
+      "runtimeOwner": "applyPushWakeEnabled() called from SettingsScreen toggle onChange",
+      "writes": "settingsStore.privacy.pushWakeEnabled; ntfy subscribe/unsubscribe postMessages",
+      "reads": "isMobileAndroid(); listCatalogRooms().ownPokeId",
+      "uiConsumer": "SettingsScreen.tsx wake toggle",
+      "evidence": ".forge/sessions/20260824T183621Z-ntfy-fdroid-wake-303ed4/tasks/06-js-bridge/test-evidence.md"
+    },
+    {
+      "capability": "FCM/GMS removal — no Google push anywhere",
+      "library": "(deleted) poke-gateway/src/fcm.ts",
+      "runtimeOwner": "N/A — capability deleted",
+      "writes": "N/A",
+      "reads": "N/A",
+      "uiConsumer": "N/A",
+      "evidence": ".forge/sessions/20260824T183621Z-ntfy-fdroid-wake-303ed4/tasks/02-delete-fcm/test-evidence.md"
+    }
+  ]
+}

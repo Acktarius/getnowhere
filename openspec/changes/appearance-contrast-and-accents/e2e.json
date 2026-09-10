@@ -1,0 +1,24 @@
+{
+  "change": "appearance-contrast-and-accents",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Surface tokens and topic-glyph mix",
+      "cmd": "npx vitest run tests/appearance/surface-tokens.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Sky/pink accents and ThemeSelector",
+      "cmd": "npx vitest run tests/appearance/accents.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

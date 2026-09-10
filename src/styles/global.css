@@ -31,7 +31,8 @@
 /* ===== Dark (default) ===== */
 :root,
 [data-theme="dark"] {
-  --bg: #0a0b0f;
+  --bg: #3d4558;
+  --bg-topbar: #353c4e; /* Slightly darker than --bg; independent of accent. */
   --bg-elev: #11131a;
   --bg-elev-1: var(--bg-elev);
   --bg-elev-2: #161922;
@@ -67,10 +68,11 @@
 
 /* ===== Light ===== */
 [data-theme="light"] {
-  --bg: #f6f7f9;
+  --bg: #e6e8ee;
+  --bg-topbar: #dde0e8; /* Slightly darker than --bg; independent of accent. */
   --bg-elev: #ffffff;
   --bg-elev-1: var(--bg-elev);
-  --bg-elev-2: #f0f2f6;
+  --bg-elev-2: #dcdfe6;
   --bg-card: #ffffff;
   --bg-hover: #f0f2f6;
   --bg-press: #e6e9ef;
@@ -98,7 +100,7 @@
   --danger-soft: rgba(214, 58, 58, 0.1);
   --info: #4a5bff;
 
-  --skeleton: linear-gradient(100deg, #eef0f4 30%, #e2e6ec 50%, #eef0f4 70%);
+  --skeleton: linear-gradient(100deg, #e6e8ee 30%, #dcdfe6 50%, #e6e8ee 70%);
 }
 
 * {
@@ -142,6 +144,7 @@ p {
 a {
   color: inherit;
   text-decoration: none;
+  touch-action: manipulation;
 }
 
 button,
@@ -257,7 +260,7 @@ button {
   gap: var(--space-3);
   padding: calc(env(safe-area-inset-top) + var(--space-3)) var(--space-4)
     var(--space-3);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  background: color-mix(in srgb, var(--bg-topbar) 92%, transparent);
   backdrop-filter: saturate(140%) blur(18px);
   -webkit-backdrop-filter: saturate(140%) blur(18px);
   border-bottom: 1px solid transparent;
@@ -291,19 +294,31 @@ button {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+  touch-action: manipulation;
   transition:
     background var(--dur) var(--ease),
     color var(--dur) var(--ease),
     transform var(--dur) var(--ease);
 }
-.topbar__icon-btn:hover,
-.icon-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .topbar__icon-btn:hover,
+  .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 .topbar__icon-btn:active,
 .icon-btn:active {
   transform: scale(0.92);
+}
+/** Expand-toggle buttons: instant press feedback, no transition delay on touch. */
+.expander-btn {
+  touch-action: manipulation;
+  transition: none;
+}
+.expander-btn:active {
+  background: var(--bg-press);
+  transform: scale(0.96);
 }
 .topbar__leave-btn {
   flex-shrink: 0;
@@ -313,9 +328,11 @@ button {
   color: var(--text-muted);
   padding-inline: 10px;
 }
-.topbar__leave-btn:hover:not(:disabled) {
-  color: var(--danger);
-  background: var(--danger-soft);
+@media (hover: hover) and (pointer: fine) {
+  .topbar__leave-btn:hover:not(:disabled) {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
 }
 .topbar__leave-btn:disabled {
   opacity: 0.55;
@@ -382,6 +399,7 @@ button {
   padding: 0;
   cursor: pointer;
   font-family: inherit;
+  touch-action: manipulation;
 }
 .bottom-nav__item svg {
   width: 22px;
@@ -428,6 +446,7 @@ button {
   font-weight: 600;
   font-size: 15px;
   letter-spacing: -0.005em;
+  touch-action: manipulation;
   transition:
     background var(--dur) var(--ease),
     color var(--dur) var(--ease),
@@ -449,8 +468,10 @@ button {
   background: var(--primary);
   color: var(--primary-fg);
 }
-.btn--primary:hover {
-  background: var(--primary-press);
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover {
+    background: var(--primary-press);
+  }
 }
 
 .btn--secondary {
@@ -458,17 +479,21 @@ button {
   color: var(--text);
   border-color: var(--border);
 }
-.btn--secondary:hover {
-  background: var(--bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .btn--secondary:hover {
+    background: var(--bg-hover);
+  }
 }
 
 .btn--ghost {
   background: transparent;
   color: var(--text-muted);
 }
-.btn--ghost:hover {
-  background: var(--bg-hover);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .btn--ghost:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
 }
 
 .btn--danger {
@@ -476,8 +501,10 @@ button {
   color: var(--danger);
   border-color: transparent;
 }
-.btn--danger:hover {
-  background: color-mix(in srgb, var(--danger) 22%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .btn--danger:hover {
+    background: color-mix(in srgb, var(--danger) 22%, transparent);
+  }
 }
 
 .btn--block {
@@ -518,8 +545,10 @@ button {
     transform var(--dur) var(--ease),
     opacity var(--dur) var(--ease);
 }
-.wallet-bio-unlock:hover {
-  background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+@media (hover: hover) and (pointer: fine) {
+  .wallet-bio-unlock:hover {
+    background: color-mix(in srgb, var(--primary) 18%, var(--primary-soft));
+  }
 }
 .wallet-bio-unlock:active {
   transform: scale(0.96);
@@ -723,9 +752,12 @@ button {
 }
 .row--clickable {
   cursor: pointer;
+  touch-action: manipulation;
 }
-.row--clickable:hover {
-  background: var(--bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .row--clickable:hover {
+    background: var(--bg-hover);
+  }
 }
 .row--clickable:active {
   background: var(--bg-press);
@@ -742,7 +774,7 @@ button {
   text-align: left;
   font: inherit;
 }
-/* L1 contact smartmessage dots — create blue, register green, revoke amber */
+/* L1 contact smartmessage dots — create blue, register green, revoke amber, relay purple */
 .tx-contact-dot {
   display: inline-block;
   width: 8px;
@@ -751,6 +783,7 @@ button {
   margin-right: 6px;
   vertical-align: middle;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 .tx-contact-dot--create {
   background: var(--secondary);
@@ -761,8 +794,25 @@ button {
 .tx-contact-dot--revoke {
   background: var(--accent);
 }
+.tx-contact-dot--relay {
+  background: #a855f7;
+}
 .tx-contact-dot--zeroconf {
   animation: tx-dot-pulse 1.4s ease-in-out infinite;
+}
+/** Clickable Received/Sent label for L1′ relay rows (dot stays display-only). */
+.tx-relay-label {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  touch-action: manipulation;
 }
 @keyframes tx-dot-pulse {
   0%,
@@ -794,8 +844,10 @@ button {
   text-align: left;
   cursor: pointer;
 }
-.tx-row__hash:hover {
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .tx-row__hash:hover {
+    color: var(--text);
+  }
 }
 .row__avatar-wrap {
   position: relative;
@@ -911,7 +963,7 @@ button {
 .section__title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-faint);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -1223,6 +1275,15 @@ button {
 .no-shrink {
   flex-shrink: 0;
 }
+/** Horizontal scroll without a visible scrollbar. */
+.scroll-x-hidden {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-x-hidden::-webkit-scrollbar {
+  display: none;
+}
 .full-w {
   width: 100%;
 }
@@ -1324,7 +1385,11 @@ button {
   opacity: 0.75;
 }
 
-.md-fence-wrap:hover .md-fence-copy,
+@media (hover: hover) and (pointer: fine) {
+  .md-fence-wrap:hover .md-fence-copy {
+    opacity: 1;
+  }
+}
 .md-fence-copy:focus-visible {
   opacity: 1;
 }
@@ -1453,9 +1518,11 @@ button {
   place-items: center;
   cursor: pointer;
 }
-.toast__close:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .toast__close:hover {
+    background: var(--bg-elev-2);
+    color: var(--text);
+  }
 }
 
 /* ===== Chat topic backdrop (Keet-style tiled mask) ===== */
@@ -1465,7 +1532,7 @@ button {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background-color: color-mix(in srgb, var(--primary) 9%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 24%, transparent);
   mask-image: var(--chat-topic-tile);
   mask-repeat: repeat;
   mask-size: 168px 168px;
@@ -1474,7 +1541,7 @@ button {
   -webkit-mask-size: 168px 168px;
 }
 [data-theme="light"] .chat-topic-backdrop {
-  background-color: color-mix(in srgb, var(--primary) 5%, transparent);
+  background-color: color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
 /* ===== Preset stepper (room TTL / invite expiry) ===== */

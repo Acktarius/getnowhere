@@ -3,6 +3,18 @@
  * @see docs/architecture/mobile-p2p-runtime.md
  */
 
+// BareKit 0.13.x does not expose process as a global; guard before registering.
+// When available, override the default abort-on-rejection with a console log.
+// @see docs/builds/expo-eas-ios-build.md
+if (typeof process !== "undefined" && typeof process.on === "function") {
+  process.on("unhandledRejection", (err) => {
+    console.error(
+      "[gnh-bare] unhandledRejection:",
+      err instanceof Error ? err.stack ?? err.message : String(err),
+    );
+  });
+}
+
 import b4a from "b4a";
 import { createBridgeSession } from "./bridge.mjs";
 import { config } from "./config.mjs";

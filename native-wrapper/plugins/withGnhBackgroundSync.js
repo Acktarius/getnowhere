@@ -100,13 +100,24 @@ function withGnhBackgroundSyncIos(config) {
     if (contents.includes("RemoteNodeBackgroundRefreshScheduler")) {
       return cfg;
     }
-    if (!contents.includes("import BackgroundTasks")) {
-      contents = contents.replace(
-        /import Expo/,
-        "import BackgroundTasks\nimport Expo",
-      );
-      if (!contents.includes("import BackgroundTasks")) {
-        contents = `import BackgroundTasks\n${contents}`;
+    // Xcode 26 / Swift 6: keep `internal import` consistent across the target.
+    // Do not replace the substring inside `internal import Expo` (that strips `internal`).
+    if (
+      !contents.includes("import BackgroundTasks") &&
+      !contents.includes("internal import BackgroundTasks")
+    ) {
+      if (contents.includes("internal import Expo")) {
+        contents = contents.replace(
+          "internal import Expo",
+          "internal import BackgroundTasks\ninternal import Expo",
+        );
+      } else if (contents.includes("import Expo")) {
+        contents = contents.replace(
+          "import Expo",
+          "internal import BackgroundTasks\nimport Expo",
+        );
+      } else {
+        contents = `internal import BackgroundTasks\n${contents}`;
       }
     }
     contents = contents.replace(
@@ -115,24 +126,8 @@ function withGnhBackgroundSyncIos(config) {
     RemoteNodeBackgroundRefreshScheduler.shared.registerBackgroundTasks()
     RemoteNodeBackgroundRefreshScheduler.shared.scheduleNextRefresh()`,
     );
-    if (!contents.includes("applicationDidEnterBackground")) {
-      contents = contents.replace(
-        /\n\}\s*$/,
-        `
-  public override func applicationDidEnterBackground(_ application: UIApplication) {
-    RemoteNodeBackgroundRefreshScheduler.shared.scheduleNextRefresh()
-  }
-}
-`,
-      );
-    } else if (!contents.includes("RemoteNodeBackgroundRefreshScheduler")) {
-      contents = contents.replace(
-        /func applicationDidEnterBackground\([^)]*\)\s*\{/,
-        (match) =>
-          `${match}
-    RemoteNodeBackgroundRefreshScheduler.shared.scheduleNextRefresh()`,
-      );
-    }
+    // Do not inject applicationDidEnterBackground — ExpoAppDelegate has no
+    // overridable method; registerBackgroundTasks observes didEnterBackground.
     cfg.modResults.contents = contents;
     return cfg;
   });

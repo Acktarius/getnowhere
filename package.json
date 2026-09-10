@@ -1,7 +1,7 @@
 {
   "name": "getnowhere",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.4.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -39,7 +39,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.12/conceal-wallet-sdk-0.2.12.tgz",
+    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.14/conceal-wallet-sdk-0.2.14.tgz",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "qrcode-generator": "^2.0.4",
@@ -49,7 +49,7 @@
     "zustand": "^5.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.5",
+    "@biomejs/biome": "2.5.10",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
@@ -60,7 +60,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
-    "typescript": "^5.6.3",
+    "typescript": "~6.0.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.10"
   },

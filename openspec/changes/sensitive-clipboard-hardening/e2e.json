@@ -1,0 +1,30 @@
+{
+  "change": "sensitive-clipboard-hardening",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Sensitive clipboard helper and toast gating",
+      "cmd": "npx vitest run tests/lib/sensitive-clipboard.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Settings reminder, clear, seed and keys UI",
+      "cmd": "npx vitest run tests/screens/SettingsScreen.clipboard.test.tsx tests/components/SeedRevealModal.test.tsx",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "Mobile privacy clipboard router and native hosts",
+      "cmd": "npx vitest run tests/native-wrapper/handle-privacy-webview.test.ts tests/native-wrapper/inject-mobile-bridge.test.ts tests/native-wrapper/sensitive-clipboard-native.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "change": "l1-prime-ttl-relay",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Chain-fallback send offers TTL presets",
+      "library": "src/screens/chats/ChatRoomScreen.tsx; src/services/p2p/HolepunchChatTransport.ts; src/services/conceal/ConcealSmartMessageAdapter.ts",
+      "runtimeOwner": "Chat room composer tap / long-press flyout → sendRelayText → sendChatRelay",
+      "writes": "mempool chat.relay tx; messagesByRoom row with optional ttlExpiresAt",
+      "reads": "composer preferred channel; draft text",
+      "uiConsumer": "Chat room composer and thread",
+      "evidence": "composer flyout tests; relay TTL send tests; forge e2e run"
+    },
+    {
+      "capability": "TTL relay erases from both rooms",
+      "library": "src/services/conceal/sync/messages-store.ts; src/services/p2p/chatRoomsBlob.ts; HolepunchChatTransport hydrate/prune",
+      "runtimeOwner": "wall-clock prune; wallet unlock hydrate; dropExpiredTtl during sync",
+      "writes": "messagesByRoom minus expired TTL rows; chatRooms without ttlExpiresAt rows",
+      "reads": "ttlExpiresAt; sentMessages; receivedMessages",
+      "uiConsumer": "Chat room thread",
+      "evidence": "erase/hydrate tests; forge e2e run"
+    },
+    {
+      "capability": "TTL spend keeps full rings",
+      "library": "src/services/conceal/sync/spend.ts",
+      "runtimeOwner": "sendSmartMessage from sendChatRelay",
+      "writes": "TTL message tx (fee folded to change, ttlExpiresAt on sent record)",
+      "reads": "unspent outputs; decoys",
+      "uiConsumer": "Chat send error toast on build/broadcast failure",
+      "evidence": "tests/conceal/smart-message-spend-policy.test.ts; forge e2e run"
+    }
+  ]
+}

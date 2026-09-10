@@ -5,6 +5,7 @@
  */
 
 import { messages } from "conceal-wallet-sdk";
+import { generatePokeId } from "@/lib/crypto/pokeId";
 import {
   readReceivedRecords,
   readSentRecords,
@@ -15,10 +16,14 @@ import {
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
 import { sendSmartMessage } from "@/services/conceal/sync/spend";
+import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
-  getRelationshipTopicEpoch,
-  syncRelationshipTopicEpoch,
-} from "@/services/p2p/relationshipTopicEpochStore";
+  patchCatalogRoom,
+  peekCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
+import { syncAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
+import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -191,9 +196,10 @@ async function inviteFromCreateBody(
     hs = await hydrateCreateHandshake(hs, relationshipId);
   }
   if (resolveTopicSuite(hs) === "HKDF_EPOCH_V1") {
-    syncRelationshipTopicEpoch(
+    await syncAndMirrorRelationshipTopicEpoch(
       hs.relationshipId,
       hs.topicEpoch ?? getRelationshipTopicEpoch(hs.relationshipId),
+      meta.contactId,
     );
   }
   handshakesByInviteId.set(hs.inviteId, hs);
@@ -217,27 +223,28 @@ async function inviteFromCreateBody(
     txHash: meta.txHash,
   };
   invitesById.set(invite.id, invite);
+  if (meta.status === "received" && parsed.payload.senderPokeHandle) {
+    storePartnerPokeHandle(hs.roomId, parsed.payload.senderPokeHandle);
+  }
   return invite;
 }
 
 /**
- * Broadcast a contact create/register/revoke body as a mined smart message.
- *
- * On-chain: ttlUnixSeconds=0, amount=100, network fee=1000, node fee=10000.
- * App-layer inviteExpiry / roomTtl stay in the body only — if the peer does
- * not register before inviteExpiry, the invite is expired and must be redone.
+ * Broadcast a contact create/register/revoke/relay body as a smart message.
+ * Signaling callers omit TTL (mined 0). Relay MAY pass non-zero Conceal TTL.
  */
 async function broadcastSmartBody(input: {
   contactId: string;
   smartBody: string;
   delivery?: { recipientAddress: string; paymentId: string };
+  ttlUnixSeconds?: number;
 }): Promise<{ hash: string }> {
   const delivery = requireDelivery(input.contactId, input.delivery);
   return sendSmartMessage({
     recipientAddress: delivery.address,
     body: input.smartBody,
     paymentId: delivery.paymentIdTo,
-    ttlUnixSeconds: 0,
+    ttlUnixSeconds: input.ttlUnixSeconds ?? 0,
   });
 }
 
@@ -350,11 +357,12 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
   },
 
   async sendInviteMessage(contactId, payload, delivery) {
-    const { smartBody, composed } = decodeOutboundPayload(payload);
-    if (!messages.isKnownSmartMessage(smartBody)) {
+    const { smartBody: rawSmartBody, composed } =
+      decodeOutboundPayload(payload);
+    if (!messages.isKnownSmartMessage(rawSmartBody)) {
       throw new Error("Composed create is not a recognized smart message.");
     }
-    const parsed = parseChatSmartBody(smartBody);
+    const parsed = parseChatSmartBody(rawSmartBody);
     if (parsed?.action !== "create") {
       throw new Error("Invalid chat.create smart message.");
     }
@@ -362,6 +370,20 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     handshakesByInviteId.set(
       parsed.payload.handshake.inviteId,
       parsed.payload.handshake,
+    );
+    // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
+    let ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    if (!ownPokeHandle) {
+      const roomId = parsed.payload.handshake.roomId;
+      const existing = peekCatalogRoom(roomId)?.ownPokeId;
+      ownPokeHandle = existing ?? generatePokeId();
+      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+    }
+    const smartBody = encodeCreateSmartBody(
+      parsed.payload.handshake,
+      parsed.payload.senderAlias,
+      parsed.payload.capabilities,
+      ownPokeHandle,
     );
 
     const inviteExpiry =
@@ -473,6 +495,11 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "register") continue;
+        if (parsed.payload.pokeHandle) {
+          const hs = handshakesByInviteId.get(parsed.payload.inviteId);
+          if (hs?.roomId)
+            storePartnerPokeHandle(hs.roomId, parsed.payload.pokeHandle);
+        }
         out.push({ register: parsed.payload, txHash: record.id });
       }
       return out;
@@ -503,12 +530,24 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     if (inv.status !== "received" && inv.status !== "sent") {
       throw new Error("Invite cannot be accepted in current state.");
     }
+    // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
+    let ownPokeHandle = getOwnPokeHandle() ?? undefined;
+    if (!ownPokeHandle) {
+      const roomId = inv.roomId;
+      const existing = peekCatalogRoom(roomId)?.ownPokeId;
+      ownPokeHandle = existing ?? generatePokeId();
+      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+    }
     const payload = register
-      ? await SmartMessageProtocolAdapter.composeRegister(register)
+      ? await SmartMessageProtocolAdapter.composeRegister({
+          ...register,
+          pokeHandle: ownPokeHandle,
+        })
       : await SmartMessageProtocolAdapter.composeRegister({
           inviteId: inv.inviteId,
           receiverEphemeralPublicKey: randomHex(32),
           replayId: inv.replayId,
+          pokeHandle: ownPokeHandle,
         });
     await broadcastSmartBody({
       contactId: inv.contactId,
@@ -577,7 +616,11 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     }
   },
 
-  async sendChatRelay(input: { contactId: string; relay: ChatRelayPayload }) {
+  async sendChatRelay(input: {
+    contactId: string;
+    relay: ChatRelayPayload;
+    ttlUnixSeconds?: number;
+  }) {
     const smartBody = encodeRelaySmartBody(input.relay);
     if (!messages.isKnownSmartMessage(smartBody)) {
       throw new Error("Composed relay is not a recognized smart message.");
@@ -585,6 +628,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     const { hash } = await broadcastSmartBody({
       contactId: input.contactId,
       smartBody,
+      ttlUnixSeconds: input.ttlUnixSeconds,
     });
     return { txHash: hash };
   },
@@ -600,6 +644,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
         txHash: string;
         paymentIdFrom?: string;
         zeroConf?: boolean;
+        ttlExpiresAt?: number;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
@@ -615,6 +660,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           txHash: record.id,
           paymentIdFrom: record.paymentIdFrom ?? undefined,
           zeroConf: record.blockHeight === 0,
+          ...(typeof record.ttlExpiresAt === "number" && record.ttlExpiresAt > 0
+            ? { ttlExpiresAt: record.ttlExpiresAt }
+            : {}),
         });
       }
       return out;

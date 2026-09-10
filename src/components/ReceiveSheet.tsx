@@ -1,7 +1,8 @@
-import { Check, Copy, Eye, EyeOff, Link2 } from "lucide-react";
+import { Eye, EyeOff, Link2 } from "lucide-react";
 import { useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
-import { useCopy } from "@/hooks/useCopy";
 import {
   buildCcxPaymentUri,
   makeIntegratedCcxAddress,
@@ -16,9 +17,6 @@ type Props = {
 type QrFace = "address" | "paymentId";
 
 export function ReceiveSheet({ address, paymentId }: Props) {
-  const [copiedAddr, copyAddr] = useCopy();
-  const [copiedPid, copyPid] = useCopy();
-  const [copiedInt, copyInt] = useCopy();
   const [showFull, setShowFull] = useState(false);
   const [integrated, setIntegrated] = useState<string | null>(null);
   const [intError, setIntError] = useState<string | null>(null);
@@ -58,7 +56,7 @@ export function ReceiveSheet({ address, paymentId }: Props) {
               ? "Payment ID"
               : "Your Conceal address"}
         </div>
-        <div
+        <NonSelectableText
           className="mono"
           style={{
             fontSize: 12,
@@ -74,27 +72,11 @@ export function ReceiveSheet({ address, paymentId }: Props) {
             : showFull
               ? (integrated ?? address)
               : shortAddress(integrated ?? address, 12, 12)}
-        </div>
+        </NonSelectableText>
         <div className="row-flex" style={{ gap: 8, justifyContent: "center" }}>
-          <button
-            className="btn btn--sm btn--secondary"
-            onClick={() =>
-              showingPid
-                ? copyPid(paymentId ?? "")
-                : copyAddr(integrated ?? address)
-            }
-          >
-            {(showingPid ? copiedPid : copiedAddr) ? (
-              <Check size={13} />
-            ) : (
-              <Copy size={13} />
-            )}{" "}
-            {(showingPid ? copiedPid : copiedAddr)
-              ? "Copied"
-              : showingPid
-                ? "Copy payment ID"
-                : "Copy address"}
-          </button>
+          <CopyButton
+            value={showingPid ? (paymentId ?? "") : (integrated ?? address)}
+          />
           <button
             className="btn btn--sm btn--ghost"
             onClick={() => setShowFull((s) => !s)}
@@ -138,20 +120,15 @@ export function ReceiveSheet({ address, paymentId }: Props) {
           <div className="eyebrow" style={{ marginBottom: 6 }}>
             Integrated payment ID (embedded)
           </div>
-          <div
+          <NonSelectableText
             className="mono"
             style={{ fontSize: 11.5, wordBreak: "break-all" }}
           >
-            {integrated.length > address.length ? "embedded in address" : "—"}
+            {integrated}
+          </NonSelectableText>
+          <div style={{ marginTop: 10 }}>
+            <CopyButton value={integrated} />
           </div>
-          <button
-            className="btn btn--sm btn--ghost"
-            style={{ marginTop: 10 }}
-            onClick={() => copyInt(integrated)}
-          >
-            {copiedInt ? <Check size={13} /> : <Copy size={13} />}{" "}
-            {copiedInt ? "Copied" : "Copy integrated address"}
-          </button>
         </div>
       )}
 

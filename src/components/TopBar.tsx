@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
 
 type Props = {
   title: ReactNode;
@@ -30,7 +30,7 @@ export function TopBar({
 
 export function BackLink({ to }: { to: string }) {
   return (
-    <Link to={to} className="topbar__icon-btn" aria-label="Back">
+    <MobileInstantLink to={to} className="topbar__icon-btn" aria-label="Back">
       <svg
         width="20"
         height="20"
@@ -43,6 +43,6 @@ export function BackLink({ to }: { to: string }) {
       >
         <path d="M15 18l-6-6 6-6" />
       </svg>
-    </Link>
+    </MobileInstantLink>
   );
 }

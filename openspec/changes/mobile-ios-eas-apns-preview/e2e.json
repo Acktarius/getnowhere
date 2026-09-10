@@ -1,0 +1,5 @@
+{
+  "change": "mobile-ios-eas-apns-preview",
+  "notApplicable": "Config and docs only (Expo iOS phone-only, EAS preview-ios TestFlight profile, APNs operator runbook). No runtime product loop to execute.",
+  "steps": []
+}

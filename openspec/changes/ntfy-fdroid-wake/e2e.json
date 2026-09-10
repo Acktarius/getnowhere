@@ -1,0 +1,29 @@
+{
+  "change": "ntfy-fdroid-wake",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "install-gateway-deps",
+      "cmd": "cd poke-gateway && npm install --silent"
+    },
+    {
+      "name": "gateway-ntfy-route-e2e",
+      "cmd": "cd poke-gateway && npx vitest run src/routes.test.ts --reporter=verbose",
+      "expect": "8 passed"
+    },
+    {
+      "name": "pokeId-crypto-e2e",
+      "cmd": "npx vitest run tests/lib/crypto/pokeId.test.ts --reporter=verbose",
+      "expect": "3 passed"
+    },
+    {
+      "name": "settings-toggle-e2e",
+      "cmd": "npx vitest run tests/services/poke/apply-push-wake-setting.test.ts tests/state/settings-store-push-wake.test.ts --reporter=verbose",
+      "expect": "11 passed"
+    }
+  ],
+  "blockedPaths": [
+    "Android GnhNtfyWakeModule → ntfy SSE → WorkManager.scheduleSoonRemoteNodeSync: requires physical Android device + live ntfy server. Verified at unit level via NtfyWakeHandler.kt tests and GnhNtfyWakeModuleTest.kt (require ./gradlew test).",
+    "iOS APNs path end-to-end: requires Apple Developer certificate + physical iOS device. Existing behavior, not changed by this feature."
+  ]
+}

@@ -30,8 +30,9 @@ let lifecycleUnsub: (() => void) | null = null;
 const lifecycleHandlers = new Set<LifecycleHandler>();
 let appAccessLockEnabled = false;
 let backgroundSinceMs: number | null = null;
-let coldStartEngaged = false;
 let lastActivityAtMs = Date.now();
+/** Survives iOS WKWebView remount; cleared when the user is interactively back. */
+export const APP_ACCESS_BACKGROUND_AT_KEY = "gnh.appAccessBackgroundedAt";
 /** Last native/WebView lifecycle type — independent of the app-access lock. */
 let lastLifecycleType: GnhLifecycleType = "foreground";
 const lockListeners = new Set<() => void>();
@@ -79,11 +80,56 @@ function scheduleIdleTimer(): void {
   }, idleTimeoutSec * 1000);
 }
 
-function engageColdStartLock(): void {
-  if (coldStartEngaged || locked) return;
-  coldStartEngaged = true;
-  lock("lifecycle");
-  onLockCallback?.("lifecycle");
+function persistBackgroundedAt(atMs: number): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(APP_ACCESS_BACKGROUND_AT_KEY, String(atMs));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function readPersistedBackgroundedAt(): number | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(APP_ACCESS_BACKGROUND_AT_KEY);
+    if (!raw) return null;
+    const at = Number(raw);
+    return Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPersistedBackgroundedAt(): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.removeItem(APP_ACCESS_BACKGROUND_AT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function elapsedSinceBackgroundMs(): number | null {
+  if (backgroundSinceMs !== null) return Date.now() - backgroundSinceMs;
+  const persisted = readPersistedBackgroundedAt();
+  if (persisted !== null) return Date.now() - persisted;
+  return null;
+}
+
+function lockIfBackgroundExceeded(): boolean {
+  const elapsedMs = elapsedSinceBackgroundMs();
+  if (
+    elapsedMs !== null &&
+    idleTimeoutSec > 0 &&
+    elapsedMs >= idleTimeoutSec * 1000
+  ) {
+    lock("background");
+    onLockCallback?.("background");
+    backgroundSinceMs = null;
+    return true;
+  }
+  return false;
 }
 
 /** Current monotonic lock generation (incremented on each lock). */
@@ -151,21 +197,22 @@ export function unlockAppAccess(): void {
   locked = false;
   lockReason = null;
   backgroundSinceMs = null;
+  clearPersistedBackgroundedAt();
   if (appAccessLockEnabled) armIdleTracking();
   notifyLockListeners();
 }
 
-/** Enable/disable app-access auto-lock (mobile app biometrics setting). */
+/** Enable/disable app-access auto-lock. Does not lock; timeout is the only gate. */
 export function setAppAccessLockEnabled(enabled: boolean): void {
   appAccessLockEnabled = enabled;
   if (!enabled) {
     disarmIdleTracking();
     backgroundSinceMs = null;
-    coldStartEngaged = false;
+    clearPersistedBackgroundedAt();
     if (locked) unlockAppAccess();
     return;
   }
-  engageColdStartLock();
+  if (lockIfBackgroundExceeded()) return;
   if (!locked) armIdleTracking();
 }
 
@@ -229,8 +276,8 @@ function dispatchLifecycle(
     let elapsedMs: number | null = null;
     if (typeof backgroundElapsedMs === "number" && backgroundElapsedMs >= 0) {
       elapsedMs = backgroundElapsedMs;
-    } else if (backgroundSinceMs !== null) {
-      elapsedMs = Date.now() - backgroundSinceMs;
+    } else {
+      elapsedMs = elapsedSinceBackgroundMs();
     }
     if (typeof console !== "undefined") {
       console.warn("[gnh-lifecycle] foreground", {
@@ -252,13 +299,17 @@ function dispatchLifecycle(
       return;
     }
     backgroundSinceMs = null;
+    clearPersistedBackgroundedAt();
     if (!locked) armIdleTracking();
     return;
   }
 
   if (type === "background" || type === "screenOff") {
     disarmIdleTracking();
-    if (!locked) backgroundSinceMs = Date.now();
+    if (!locked) {
+      backgroundSinceMs = Date.now();
+      persistBackgroundedAt(backgroundSinceMs);
+    }
   }
 }
 
@@ -303,8 +354,8 @@ export function _resetAppAccessControllerForTests(): void {
   lifecycleUnsub = null;
   appAccessLockEnabled = false;
   backgroundSinceMs = null;
-  coldStartEngaged = false;
   lastActivityAtMs = Date.now();
+  clearPersistedBackgroundedAt();
   lastLifecycleType = "foreground";
   lockListeners.clear();
 }

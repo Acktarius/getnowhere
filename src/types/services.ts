@@ -222,6 +222,8 @@ export type SmartMessageService = {
   sendChatRelay(input: {
     contactId: string;
     relay: ChatRelayPayload;
+    /** Conceal mempool TTL. Omit or 0 = mined durable. Relay only. */
+    ttlUnixSeconds?: number;
   }): Promise<{ txHash: string }>;
   /** Scan received smart messages for chat.relay (0-conf preview OK). */
   fetchIncomingRelays(): Promise<
@@ -230,6 +232,8 @@ export type SmartMessageService = {
       txHash: string;
       paymentIdFrom?: string;
       zeroConf?: boolean;
+      /** Mempool TTL unix seconds from the received record. */
+      ttlExpiresAt?: number;
     }>
   >;
 };
@@ -262,7 +266,11 @@ export type ChatTransport = {
   softLeaveAll(): Promise<void>;
   /** Retry after connect_failed. */
   retryConnect(roomId: string): Promise<ChatRoom>;
-  sendMessage(roomId: string, text: string): Promise<ChatMessage>;
+  sendMessage(
+    roomId: string,
+    text: string,
+    ttlUnixSeconds?: number,
+  ): Promise<ChatMessage>;
   sendContent?(
     roomId: string,
     envelope: ChatContentEnvelopeV1,
@@ -312,6 +320,7 @@ export type SmartMessageProtocolService = {
     inviteId: string;
     receiverEphemeralPublicKey: string;
     replayId: string;
+    pokeHandle?: string;
   }): Promise<ChatRegisterPayload>;
 
   composeRevoke(input: {
@@ -420,6 +429,8 @@ export type WalletSecretsExport = {
   spendKey: string;
   viewKey: string;
   viewOnly: boolean;
+  /** Scan floor from the wallet blob; 0 when missing or invalid. */
+  creationHeight: number;
 };
 
 export type WalletBackupDownload = {

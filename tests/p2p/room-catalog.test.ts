@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { CatalogRoom } from "../../src/services/p2p/roomCatalogStore";
 import {
   findCatalogRetirements,
+  peekCatalogRoom,
   shouldRetireCatalogRoom,
   upsertCatalogRoom,
 } from "../../src/services/p2p/roomCatalogStore";
@@ -89,6 +90,19 @@ describe("room catalog retirement rules", () => {
     ).toBe("room_ttl");
   });
 
+  it("retires rooms marked lifecycle expired", () => {
+    expect(
+      shouldRetireCatalogRoom(
+        room({
+          inviteExpiry: now + 3600,
+          roomTtl: now + 86400,
+          lifecycleStatus: "expired",
+        }),
+        now,
+      ),
+    ).toBe("room_ttl");
+  });
+
   it("findCatalogRetirements lists expired catalog rows", () => {
     upsertCatalogRoom(
       room({
@@ -109,5 +123,36 @@ describe("room catalog retirement rules", () => {
     const due = findCatalogRetirements(now);
     expect(due.map((d) => d.room.id)).toEqual(["expired-room"]);
     expect(due[0]?.reason).toBe("room_ttl");
+  });
+
+  it("peekCatalogRoom returns row without pruning even when due for retirement", () => {
+    upsertCatalogRoom(
+      room({
+        id: "due-room",
+        inviteId: "inv-abc",
+        roomTtl: now - 1000,
+        lifecycleStatus: "connected",
+      }),
+    );
+    const peeked = peekCatalogRoom("due-room");
+    expect(peeked).toBeDefined();
+    expect(peeked?.inviteId).toBe("inv-abc");
+    // Row must still be intact (not deleted by peek)
+    expect(peekCatalogRoom("due-room")).toBeDefined();
+  });
+
+  it("findCatalogRetirements preserves inviteId for due lifecycle-expired rows", () => {
+    upsertCatalogRoom(
+      room({
+        id: "lifecycle-expired",
+        inviteId: "inv-xyz",
+        roomTtl: now + 86400,
+        lifecycleStatus: "expired",
+      }),
+    );
+    const due = findCatalogRetirements(now);
+    const entry = due.find((d) => d.room.id === "lifecycle-expired");
+    expect(entry).toBeDefined();
+    expect(entry?.room.inviteId).toBe("inv-xyz");
   });
 });

@@ -133,6 +133,11 @@ export function createSwarmMesh(opts = {}) {
   swarm.on("error", (err) => {
     console.error(`[swarm] error: ${err?.message ?? err}`);
   });
+  // HyperDHT bootstrap is async; if ready() rejects (e.g. UDP blocked on iOS)
+  // it must not become an unhandled rejection that aborts the worklet.
+  swarm.dht?.ready?.()?.catch?.((err) => {
+    console.error(`[swarm] DHT ready error: ${err?.message ?? err}`);
+  });
 
   /** @type {Map<string, TopicState>} */
   const topics = new Map();

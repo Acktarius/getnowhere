@@ -1,5 +1,5 @@
 import { Search, UserPlus, Users } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { ContactCard } from "@/components/ContactCard";
@@ -31,6 +31,7 @@ export function ContactsScreen() {
   const [filter, setFilter] = useState<"all" | RelationshipStatus>("all");
   const [tagFilter, setTagFilter] = useState<ContactCategoryTag[]>([]);
   const [adding, setAdding] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const initialized = useWalletStore((s) => s.initialized);
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export function ContactsScreen() {
                 }}
               />
               <input
+                ref={searchRef}
                 className="input"
                 style={{ paddingLeft: 38 }}
                 placeholder="Search alias or address"
@@ -141,7 +143,13 @@ export function ContactsScreen() {
               />
             )
           ) : (
-            <div className="card card--flush stagger">
+            <div
+              className="card card--flush stagger"
+              onPointerDownCapture={(e) => {
+                if (!(e.target as HTMLElement).closest("a")) return;
+                searchRef.current?.blur();
+              }}
+            >
               {filtered.map((c) => (
                 <ContactCard key={c.id} contact={c} />
               ))}

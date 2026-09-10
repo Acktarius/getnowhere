@@ -7,13 +7,13 @@ import {
   Radio,
   ShieldCheck,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import type { Contact } from "@/types/models";
 
 type Props = { contact: Contact };
 
 export function RelationshipStateCard({ contact }: Props) {
-  const [open, setOpen] = useState(true);
   const hasFrom = Boolean(contact.paymentIdFrom);
   const hasTo = Boolean(
     contact.paymentIdTo && contact.paymentIdTo.length >= 16,
@@ -22,6 +22,11 @@ export function RelationshipStateCard({ contact }: Props) {
   const returnReceived = hasTo;
   const verified = hasFrom && hasTo;
   const p2pEligible = verified && contact.relationshipStatus === "eligible";
+  const allRequirementsDone =
+    identityLinked && returnReceived && verified && p2pEligible;
+
+  const [open, setOpen] = useState(!allRequirementsDone);
+  const expand = bindPointerToggle(useRef(false), () => setOpen((v) => !v));
 
   const steps = [
     {
@@ -56,7 +61,7 @@ export function RelationshipStateCard({ contact }: Props) {
     <div className="card">
       <button
         type="button"
-        className="row-flex row-flex--between"
+        className="row-flex row-flex--between expander-btn"
         style={{
           width: "100%",
           background: "none",
@@ -67,7 +72,8 @@ export function RelationshipStateCard({ contact }: Props) {
           textAlign: "left",
         }}
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onPointerDown={expand.onPointerDown}
+        onClick={expand.onClick}
       >
         <div className="card__title" style={{ margin: 0 }}>
           Relationship state

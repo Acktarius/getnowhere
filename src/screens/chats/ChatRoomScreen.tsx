@@ -1,16 +1,25 @@
-import { RefreshCw, Send, Wifi, WifiOff } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
+  ChainSendFlyout,
+  ttlUnixFromDuration,
+} from "@/screens/chats/chainSendFlyout";
+import {
+  getL2BlipStartedAt,
+  getLastLiveAtMs,
   getLastSidecarDetail,
   getMessagesForRoom,
   getTopicRefForRoom,
@@ -21,23 +30,31 @@ import {
 } from "@/services/p2p/HolepunchSidecarClient";
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
 import { resolveRoomTtl } from "@/services/p2p/resolveRoomTtl";
-import { loadCatalogRoom } from "@/services/p2p/roomCatalogStore";
+import {
+  loadCatalogRoom,
+  peekCatalogRoom,
+} from "@/services/p2p/roomCatalogStore";
+import {
+  canBroadcastRoomRevoke,
+  resolveRoomRevokeIds,
+} from "@/services/p2p/roomRevoke";
 import {
   canComposeMessages,
   composerDisabledReason,
-  composerPreferredChannel,
+  composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
-import { isRoomExpired } from "@/services/protocol/roomLifecycle";
+import { isRoomExpired, nowUnix } from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
 import { toastError, toastSuccess } from "@/state/toastStore";
+import { useWalletStore } from "@/state/walletStore";
 import type { ChatMessage, ChatRoom, Contact } from "@/types/models";
 import {
   type ConnectFailureCode,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
-import { formatUnixDateTime } from "@/utils/format";
+import { formatUnixDateTime, shortTopicRef } from "@/utils/format";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -65,24 +82,29 @@ function roomExpiryDiagnosticLine(roomTtl?: number): string {
 function LeaveRoomModal({
   open,
   revoking,
+  localOnly,
   onConfirm,
   onClose,
 }: {
   open: boolean;
   revoking: boolean;
+  localOnly?: boolean;
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }) {
+  const body = localOnly
+    ? "Could not leave this room properly. Confirm room retirement — the room will be removed locally; the peer will not be notified on-chain."
+    : "This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm.";
   return (
     <ConfirmModal
       open={open}
       title="Leave room?"
-      body="This destroys the room immediately and sends an on-chain revoke to the other peer. It disappears from Chats now — no waiting for chain confirm."
+      body={body}
       confirmLabel="LEAVE ROOM"
       cancelLabel="Cancel"
       destructive
-      busyLabel="Leaving…"
-      busyStatus="Destroying room…"
+      busyLabel={localOnly ? "Retiring…" : "Leaving…"}
+      busyStatus={localOnly ? "Retiring room…" : "Destroying room…"}
       onConfirm={onConfirm}
       onClose={() => {
         if (!revoking) onClose();
@@ -108,7 +130,11 @@ function LoadingDiagnosticsSheet({
   return (
     <Sheet open={open} title="Room diagnostics" onClose={onClose}>
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-        <div>Room id: {roomId}</div>
+        <div>
+          Room id:{" "}
+          <NonSelectableText className="mono">{roomId}</NonSelectableText>
+          <CopyButton value={roomId} />
+        </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
         <div>Sidecar: {getSidecarBridgeDiagnostic()}</div>
@@ -160,11 +186,11 @@ export function ChatRoomScreen() {
   });
 
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
   const [diagOpen, setDiagOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [revoking, setRevoking] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [openingRoom, setOpeningRoom] = useState(
     () => !useChatStore.getState().rooms.some((r) => r.id === roomId),
   );
@@ -200,7 +226,22 @@ export function ChatRoomScreen() {
     useNotificationStore.getState().markRoomSeen(roomId);
   }, [roomId]);
 
+  const invites = useContactsStore((s) => s.invites);
+  const contacts = useContactsStore((s) => s.contacts);
+  const walletSyncStatus = useWalletStore((s) => s.syncStatus);
   const catalogRoom = useMemo(() => loadCatalogRoom(roomId), [roomId]);
+  // Use peekCatalogRoom (non-pruning) so a silently-pruned expired row's
+  // inviteId is still visible for ID resolution at modal-open time.
+  const leaveLocalOnly = useMemo(() => {
+    const ids = resolveRoomRevokeIds({
+      roomId,
+      invites,
+      contacts,
+      room,
+      catalog: peekCatalogRoom(roomId),
+    });
+    return !canBroadcastRoomRevoke(ids);
+  }, [roomId, room, invites, contacts]);
 
   const displayRoom: ChatRoom = useMemo(() => {
     if (room) return room;
@@ -222,6 +263,8 @@ export function ChatRoomScreen() {
       createdAt: "",
     };
   }, [room, catalogRoom, roomId, inviteForRoom]);
+
+  const discoveryTopicRef = getTopicRefForRoom(displayRoom.id);
 
   const linkedContact = useContactsStore((s) => {
     const cid = displayRoom.contactId;
@@ -404,11 +447,23 @@ export function ChatRoomScreen() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [visibleMessages.length]);
 
+  useEffect(() => {
+    const status = displayRoom.lifecycleStatus;
+    if (status !== "connecting" && status !== "connect_failed") return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 400);
+    return () => window.clearInterval(id);
+  }, [displayRoom.lifecycleStatus]);
+
   const composeAllowed =
     !openingRoom &&
     canComposeMessages(displayRoom.lifecycleStatus) &&
     !displayRoom.awaitingChainSync;
-  const sendChannel = composerPreferredChannel(displayRoom.lifecycleStatus);
+  const sendChannel = composerPreferredChannelWithGrace(
+    displayRoom.lifecycleStatus,
+    getL2BlipStartedAt(roomId),
+    nowMs,
+    getLastLiveAtMs(roomId),
+  );
   const viaChain = composeAllowed && sendChannel === "relay";
   /** True Holepunch L2; relay compose is separate. @see docs/security/encryption.md */
   const holepunchLive = displayRoom.lifecycleStatus === "connected";
@@ -426,26 +481,21 @@ export function ChatRoomScreen() {
     ) &&
     getUfwAdvisoryState() === "active";
 
-  async function handleSend() {
-    if (!draft.trim() || !composeAllowed || sending) return;
+  function handleSend(durationSeconds = 0) {
+    if (!draft.trim() || !composeAllowed) return;
     if (viaChain && draft.trim().length > RELAY_MAX_TEXT_CHARS) {
       toastError(
         `Via-chain messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
       );
       return;
     }
-    setSending(true);
     const text = draft.trim();
+    const ttlUnixSeconds = ttlUnixFromDuration(durationSeconds, nowUnix());
     setDraft("");
     composerRef.current?.focus({ preventScroll: mobileHost });
-    try {
-      await send(roomId, text);
-    } catch (e) {
+    void send(roomId, text, ttlUnixSeconds).catch((e) => {
       toastError((e as Error).message || "Send failed.");
-    } finally {
-      setSending(false);
-      composerRef.current?.focus({ preventScroll: mobileHost });
-    }
+    });
   }
 
   async function handleRetry() {
@@ -461,8 +511,12 @@ export function ChatRoomScreen() {
     if (revoking) return;
     setRevoking(true);
     try {
-      await revokeRoom(roomId);
-      toastSuccess("Room left.");
+      const { l1Revoke } = await revokeRoom(roomId);
+      toastSuccess(
+        l1Revoke
+          ? "Room left."
+          : "Could not leave this room properly. Room retired locally.",
+      );
       navigate("/chats", { replace: true });
     } catch (e) {
       toastError((e as Error).message || "Leave failed.");
@@ -488,9 +542,12 @@ export function ChatRoomScreen() {
           title="Room unavailable"
           body="This room could not be loaded."
           action={
-            <Link className="btn btn--sm btn--secondary" to="/chats">
+            <MobileInstantLink
+              className="btn btn--sm btn--secondary"
+              to="/chats"
+            >
               Back to chats
-            </Link>
+            </MobileInstantLink>
           }
         />
         <LoadingDiagnosticsSheet
@@ -503,6 +560,7 @@ export function ChatRoomScreen() {
         <LeaveRoomModal
           open={leaveOpen}
           revoking={revoking}
+          localOnly={leaveLocalOnly}
           onConfirm={handleRevokeConfirm}
           onClose={() => setLeaveOpen(false)}
         />
@@ -551,9 +609,18 @@ export function ChatRoomScreen() {
           <span
             className="muted"
             style={{ fontSize: 12 }}
-            title="Messages send over blockchain until Holepunch connects."
+            title="Delivered via blockchain relay. Live Holepunch starts when they open the app."
           >
-            Messages via chain fallback
+            Delivered — waiting for {displayContact.alias} to open the app
+          </span>
+        )}
+        {!holepunchLive && walletSyncStatus === "syncing" && (
+          <span
+            className="muted"
+            style={{ fontSize: 12 }}
+            title="Blockchain is syncing. New relay messages will appear when sync catches up."
+          >
+            Syncing — new messages will appear shortly
           </span>
         )}
         {displayRoom.lifecycleStatus === "connect_failed" &&
@@ -616,23 +683,29 @@ export function ChatRoomScreen() {
                   : holepunchLive
                     ? "Connected room"
                     : viaChain
-                      ? "Connected via chain fallback"
+                      ? `Waiting for ${displayContact.alias} to come online`
                       : "Room not live yet"
               }
               body={
-                openingRoom
-                  ? "Loading chat session."
-                  : holepunchLive
-                    ? "Encrypted Holepunch session is ready. Messages use ChaCha20-Poly1305."
-                    : viaChain
-                      ? "Holepunch hasn't connected yet. Messages send over the blockchain (Conceal-encrypted memo) until it does — this is not the Holepunch/ChaCha20-Poly1305 session."
-                      : displayRoom.lifecycleStatus === "accepted" &&
-                          (displayRoom.connectAttempts ?? 0) === 0
-                        ? "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
-                        : displayRoom.lifecycleStatus === "pending"
-                          ? (handoffHint ??
-                            "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
-                          : "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
+                openingRoom ? (
+                  "Loading chat session."
+                ) : holepunchLive ? (
+                  "Encrypted Holepunch session is ready. Messages use ChaCha20-Poly1305."
+                ) : viaChain ? (
+                  <span title="Holepunch hasn't connected yet. Messages send over the blockchain (Conceal-encrypted memo) until it does — this is not the Holepunch/ChaCha20-Poly1305 session.">
+                    {walletSyncStatus === "syncing"
+                      ? "Syncing blockchain — new messages will appear shortly."
+                      : "Message delivered. They'll see it when the app opens."}
+                  </span>
+                ) : displayRoom.lifecycleStatus === "accepted" &&
+                  (displayRoom.connectAttempts ?? 0) === 0 ? (
+                  "Invite was accepted but Holepunch connect never ran (attempts = 0). Reconnecting…"
+                ) : displayRoom.lifecycleStatus === "pending" ? (
+                  (handoffHint ??
+                  "Offline here means this device never joined Holepunch yet (still pending). Sync their on-chain accept, or send a new invite if the session key was lost.")
+                ) : (
+                  "Invite acceptance hands off to Holepunch. Live send unlocks only when connected."
+                )
               }
               action={
                 openingRoom ? undefined : displayRoom.lifecycleStatus ===
@@ -664,24 +737,24 @@ export function ChatRoomScreen() {
                       <RefreshCw size={13} /> Connect now
                     </button>
                     {displayContact.id && handoffProbe?.needsAccept && (
-                      <Link
+                      <MobileInstantLink
                         className="btn btn--sm btn--primary"
                         to={`/contacts/${displayContact.id}`}
                       >
                         Open contact to Accept
-                      </Link>
+                      </MobileInstantLink>
                     )}
                     {displayContact.id &&
                       handoffProbe &&
                       !handoffProbe.hasInitiatorKey &&
                       handoffProbe.role !== "responder" &&
                       !handoffProbe.needsAccept && (
-                        <Link
+                        <MobileInstantLink
                           className="btn btn--sm btn--primary"
                           to={`/contacts/${displayContact.id}`}
                         >
                           Resend invite from contact
-                        </Link>
+                        </MobileInstantLink>
                       )}
                   </div>
                 ) : undefined
@@ -775,15 +848,11 @@ export function ChatRoomScreen() {
             });
           }}
         />
-        <button
-          type="button"
-          className="btn btn--primary"
-          disabled={!composeAllowed || sending || !draft.trim()}
-          onClick={() => void handleSend()}
-          aria-label="Send"
-        >
-          <Send size={16} />
-        </button>
+        <ChainSendFlyout
+          viaChain={viaChain}
+          disabled={!composeAllowed || !draft.trim()}
+          onSend={(durationSeconds) => handleSend(durationSeconds)}
+        />
       </div>
 
       <Sheet
@@ -792,10 +861,26 @@ export function ChatRoomScreen() {
         onClose={() => setDiagOpen(false)}
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-          <div>Room id: {displayRoom.id}</div>
+          <div>
+            Room id:{" "}
+            <NonSelectableText className="mono">
+              {displayRoom.id}
+            </NonSelectableText>
+            <CopyButton value={displayRoom.id} />
+          </div>
           {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
           <div>
-            Topic: {getTopicRefForRoom(displayRoom.id) ?? "— not joined yet —"}
+            Topic:{" "}
+            {discoveryTopicRef ? (
+              <>
+                <NonSelectableText className="mono">
+                  {shortTopicRef(discoveryTopicRef)}
+                </NonSelectableText>
+                <CopyButton value={discoveryTopicRef} />
+              </>
+            ) : (
+              "— not joined yet —"
+            )}
           </div>
           <div>Lifecycle: {displayRoom.lifecycleStatus}</div>
           <div>{roomExpiryDiagnosticLine(diagnosticRoomTtl)}</div>
@@ -845,6 +930,7 @@ export function ChatRoomScreen() {
       <LeaveRoomModal
         open={leaveOpen}
         revoking={revoking}
+        localOnly={leaveLocalOnly}
         onConfirm={handleRevokeConfirm}
         onClose={() => setLeaveOpen(false)}
       />

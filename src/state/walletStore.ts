@@ -177,6 +177,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       // Enter app immediately; live sync + resync catch tip in background.
       void get().resync();
       void useContactsStore.getState().refreshInvites();
+      void import("@/lib/mobile/walletSessionBridge").then((m) => {
+        m.keepNativeWalletSession(password);
+      });
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -186,6 +189,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   async lock() {
     await walletService.lockWallet();
     set({ locked: true });
+    void import("@/lib/mobile/walletSessionBridge").then((m) => {
+      m.clearNativeWalletSession();
+    });
   },
   async unlock() {
     await walletService.unlockWallet("");
@@ -199,14 +205,17 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   },
 
   async refreshBalance() {
+    // One snapshot read → balance + history in the same setState (pre-Zustand
+    // WalletScreen re-fetched txs whenever balanceTotal changed; keep that coupling).
     const b = await walletService.getBalance();
+    const txs = await walletService.getTransactions();
     set({
       balanceTotal: b.total,
       balanceAvailable: b.available,
       balancePending: b.pending,
+      transactions: txs,
+      transactionsLoading: false,
     });
-    // Always reload history: 0-amount L1′ txs do not change totals.
-    await get().refreshTransactions();
   },
 
   async refreshTransactions() {

@@ -4,7 +4,16 @@
  * @see docs/security/p2pchatprotocol.md §16
  */
 
+import type { RawWalletV1 } from "conceal-wallet-sdk";
+import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
+import {
+  readReceivedRecords,
+  readSentRecords,
+  type SdkMessageRecord,
+  withReceivedRecords,
+  withSentRecords,
+} from "@/services/conceal/sync/messages-store";
 import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import { mergeContentMessage } from "@/services/p2p/chatMessageMerge";
 import {
@@ -20,18 +29,19 @@ import {
 import {
   HOLEPUNCH_CONNECT_TIMEOUT_MS,
   holepunchBackoffMs,
+  L2_RECONNECT_GRACE_MS,
 } from "@/services/p2p/holepunchPolicy";
 import {
   exportKeyHex,
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
-import { bumpRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isRoomRevoked,
   rememberRevokedRoom,
 } from "@/services/p2p/revokedRoomsStore";
 import {
+  clearPokeIds,
   listCatalogRooms,
   loadCatalogRoom,
   patchCatalogRoom,
@@ -44,6 +54,8 @@ import {
   saveRoomSession,
   updateRoomSessionCounters,
 } from "@/services/p2p/roomSessionStore";
+import { bumpAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
+import { sendPoke } from "@/services/poke/pokeGatewayClient";
 import {
   assertCanSendLive,
   assertCanSendMessages,
@@ -58,10 +70,11 @@ import {
   isRelayEligibleStatus,
   isRoomExpired,
   nowUnix,
-  preferredChannel,
   resolveIncomingLifecycle,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
+import { parseChatSmartBody } from "@/services/protocol/SmartMessageProtocolAdapter";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { ChatMessage, ChatRoom } from "@/types/models";
 import type {
   ChatContentEnvelopeV1,
@@ -86,6 +99,12 @@ export function __setHolepunchSkipProof(skip: boolean): void {
   skipPostConnectProofForTests = skip;
 }
 
+/** Test hook: shorten L2 hold before L1′ fallback. */
+let l2SendHoldMs = L2_RECONNECT_GRACE_MS;
+export function __setL2SendHoldMs(ms: number | null): void {
+  l2SendHoldMs = ms ?? L2_RECONNECT_GRACE_MS;
+}
+
 type RoomState = {
   room: ChatRoom;
   contract?: HolepunchBootstrapContract;
@@ -97,6 +116,11 @@ type RoomState = {
 const rooms = new Map<string, RoomState>();
 const messagesByRoom = new Map<string, ChatMessage[]>();
 const subscribers = new Map<string, Set<(m: ChatMessage) => void>>();
+const roomStateSubscribers = new Map<string, Set<(room: ChatRoom) => void>>();
+const transcriptSubscribers = new Map<
+  string,
+  Set<(msgs: ChatMessage[]) => void>
+>();
 const contractsByRoom = new Map<string, HolepunchBootstrapContract>();
 /** topicRef → room ids joined on that topic */
 const topicRooms = new Map<string, Set<string>>();
@@ -109,6 +133,66 @@ let lastSidecarDetail: string | undefined;
 const inFlightConnects = new Map<string, Promise<ChatRoom>>();
 /** Earliest time an *automatic* retry (poll-driven restore) may start a new attempt. */
 const nextAutoRetryAt = new Map<string, number>();
+/** Last live (L2) send/receive. */
+const lastLiveAtMsByRoom = new Map<string, number>();
+/** When L2 dropped from `connected` — grace anchor for L1′ deferral. */
+const l2BlipStartedAtByRoom = new Map<string, number>();
+
+function touchLastLiveAt(roomId: string, atMs = Date.now()): void {
+  lastLiveAtMsByRoom.set(roomId, atMs);
+}
+
+function noteL2Blip(roomId: string, atMs = Date.now()): void {
+  l2BlipStartedAtByRoom.set(roomId, atMs);
+}
+
+function clearL2Blip(roomId: string): void {
+  l2BlipStartedAtByRoom.delete(roomId);
+}
+
+/** @see composerPreferredChannel grace window */
+export function getL2BlipStartedAt(roomId: string): number | undefined {
+  return l2BlipStartedAtByRoom.get(roomId);
+}
+
+export function getLastLiveAtMs(roomId: string): number | undefined {
+  return lastLiveAtMsByRoom.get(roomId);
+}
+
+function emitRoom(room: ChatRoom): void {
+  for (const h of roomStateSubscribers.get(room.id) ?? []) h(room);
+}
+
+/** UI sync when L2 drops/returns mid-chat (store otherwise stays stale). */
+export function subscribeRoomState(
+  roomId: string,
+  handler: (room: ChatRoom) => void,
+): () => void {
+  const set = roomStateSubscribers.get(roomId) ?? new Set();
+  set.add(handler);
+  roomStateSubscribers.set(roomId, set);
+  return () => {
+    set.delete(handler);
+  };
+}
+
+function emitTranscript(roomId: string): void {
+  const list = getMessagesForRoom(roomId);
+  for (const h of transcriptSubscribers.get(roomId) ?? []) h(list);
+}
+
+/** Sitting UI replaces the thread after prune (drops expired TTL bubbles). */
+export function subscribeRoomTranscript(
+  roomId: string,
+  handler: (msgs: ChatMessage[]) => void,
+): () => void {
+  const set = transcriptSubscribers.get(roomId) ?? new Set();
+  set.add(handler);
+  transcriptSubscribers.set(roomId, set);
+  return () => {
+    set.delete(handler);
+  };
+}
 
 /**
  * Run `run` as the sole active connection attempt for `roomId`. A concurrent
@@ -167,16 +251,20 @@ function wireBackendOnce(): void {
             state.room.lifecycleStatus === "connected" ||
             state.room.lifecycleStatus === "connecting"
           ) {
+            if (state.room.lifecycleStatus === "connected") {
+              noteL2Blip(state.room.id);
+            }
             state.room = {
               ...state.room,
               peerStatus: "offline",
               lifecycleStatus:
                 state.room.lifecycleStatus === "connected"
-                  ? "connect_failed"
+                  ? "connecting"
                   : state.room.lifecycleStatus,
               lastConnectError: "unreachable",
             };
             rooms.set(state.room.id, state);
+            emitRoom(state.room);
           }
         }
       } else {
@@ -263,6 +351,10 @@ function notify(roomId: string, msg: ChatMessage): void {
   const next = mergeContentMessage(list, msg);
   messagesByRoom.set(roomId, next);
   for (const h of subscribers.get(roomId) ?? []) h(msg);
+  if (msg.channel === "live") scheduleLiveTranscriptFlush();
+  if (typeof msg.ttlExpiresAt === "number" && msg.ttlExpiresAt > 0) {
+    scheduleTtlPruneTimer();
+  }
 }
 
 /** Stable id for L1 relay rows (dedupe on rescan). */
@@ -304,7 +396,9 @@ function ensureRoomForRelay(roomId: string): RoomState | null {
  */
 export async function ingestChatRelay(
   relay: ChatRelayPayload,
+  ttlExpiresAt?: number,
 ): Promise<ChatMessage | null> {
+  if (isRoomTtlExpired(ttlExpiresAt, nowUnix())) return null;
   const state = ensureRoomForRelay(relay.roomId);
   if (!state) return null;
   const id = relayMessageId(relay.roomId, relay.sentAt, relay.text);
@@ -320,6 +414,9 @@ export async function ingestChatRelay(
     status: "delivered",
     channel: "relay",
     kind: "text",
+    ...(typeof ttlExpiresAt === "number" && ttlExpiresAt > 0
+      ? { ttlExpiresAt }
+      : {}),
   };
   notify(relay.roomId, msg);
   state.room = { ...state.room, lastMessageAt: msg.createdAt };
@@ -399,15 +496,35 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
   for (const roomId of topicRooms.get(topicRef) ?? []) {
     const state = rooms.get(roomId);
     if (!state) continue;
-    // Only refresh peer presence for rooms that already finished proof.
-    if (state.room.lifecycleStatus !== "connected") continue;
-    state.room = {
-      ...state.room,
-      peerStatus: "online",
-      lastConnectError: undefined,
-    };
-    rooms.set(roomId, state);
-    persistLiveSession(state);
+    if (state.room.lifecycleStatus === "connected") {
+      state.room = {
+        ...state.room,
+        peerStatus: "online",
+        lastConnectError: undefined,
+      };
+      rooms.set(roomId, state);
+      persistLiveSession(state);
+      emitRoom(state.room);
+      continue;
+    }
+    // Brief peer blip: session still valid — skip full proof round-trip.
+    if (state.room.lifecycleStatus === "connecting" && state.session) {
+      state.room = {
+        ...state.room,
+        lifecycleStatus: "connected",
+        peerStatus: "online",
+        lastConnectError: undefined,
+      };
+      rooms.set(roomId, state);
+      patchCatalogRoom(state.room.id, {
+        lifecycleStatus: "connected",
+        lastConnectError: undefined,
+      });
+      clearL2Blip(roomId);
+      touchLastLiveAt(roomId);
+      persistLiveSession(state);
+      emitRoom(state.room);
+    }
   }
 }
 
@@ -416,12 +533,14 @@ function maybeMarkPeerLost(topicRef: string): void {
     const state = rooms.get(roomId);
     if (!state) continue;
     if (state.room.lifecycleStatus !== "connected") continue;
+    noteL2Blip(roomId);
     state.room = {
       ...state.room,
       peerStatus: "connecting",
       lifecycleStatus: "connecting",
     };
     rooms.set(roomId, state);
+    emitRoom(state.room);
   }
 }
 
@@ -511,6 +630,22 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         deletedAt: msgKind === "delete" ? new Date().toISOString() : undefined,
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
+      touchLastLiveAt(roomId);
+      if (state.room.lifecycleStatus === "connecting") {
+        state.room = {
+          ...state.room,
+          lifecycleStatus: "connected",
+          peerStatus: "online",
+          lastConnectError: undefined,
+        };
+        rooms.set(roomId, state);
+        patchCatalogRoom(roomId, {
+          lifecycleStatus: "connected",
+          lastConnectError: undefined,
+        });
+        clearL2Blip(roomId);
+        emitRoom(state.room);
+      }
       notify(roomId, msg);
     } catch {
       /* fail closed */
@@ -528,8 +663,10 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       lifecycleStatus: "expired",
       peerStatus: "offline",
       lastConnectError: "expired",
+      roomTtl: contract.roomTtl,
     };
     rooms.set(state.room.id, state);
+    upsertCatalogRoom(state.room);
     return state.room;
   }
 
@@ -619,14 +756,19 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         lifecycleStatus: "connected",
         peerStatus: "online",
         lastConnectError: undefined,
+        lastPokedAt: undefined,
       };
       rooms.set(state.room.id, state);
       patchCatalogRoom(state.room.id, {
         lifecycleStatus: "connected",
         lastConnectError: undefined,
+        lastPokedAt: undefined,
       });
+      touchLastLiveAt(state.room.id);
+      clearL2Blip(state.room.id);
       nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
+      emitRoom(state.room);
       return state.room;
     }
     await sleep(50);
@@ -662,6 +804,7 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     rooms.delete(id);
     messagesByRoom.delete(id);
     subscribers.delete(id);
+    transcriptSubscribers.delete(id);
     contractsByRoom.delete(id);
     removeCatalogRoom(id);
     removeRoomSession(id);
@@ -733,17 +876,76 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     lastConnectError: catalog?.lastConnectError,
     createdAt: catalog?.createdAt ?? new Date().toISOString(),
     lastMessageAt: catalog?.lastMessageAt,
+    partnerPokeHandle: catalog?.partnerPokeHandle,
+    lastPokedAt: catalog?.lastPokedAt,
   };
   const state: RoomState = { room, peerId: uid("peer") };
   rooms.set(id, state);
-  messagesByRoom.set(id, []);
+  // Preserve hydrated transcripts across room-shell rebuild (iOS WKWebView restart).
+  // @see docs/security/encryption.md (Room transcripts)
+  if (!messagesByRoom.has(id)) {
+    messagesByRoom.set(id, []);
+  }
   upsertCatalogRoom(room);
   return state;
+}
+
+/** Re-poke cooldown; matches poke-gateway 1 poke / 5 min. @see docs/features/peer-wake-notification.md §4 */
+const POKE_RENOTIFY_AFTER_SEC = 300;
+
+/**
+ * Fire-and-forget peer-wake poke on L1′ when needed (first after L2, or after cooldown).
+ * No-op when pushWakeEnabled is false, no handle is known, or still within cooldown.
+ * @see docs/features/peer-wake-notification.md §4
+ */
+async function maybeSendPoke(state: RoomState): Promise<void> {
+  const { privacy } = useSettingsStore.getState();
+  if (!privacy.pushWakeEnabled) return;
+  if (!state.room.partnerPokeHandle) return;
+  const nowSec = nowUnix();
+  const last = state.room.lastPokedAt;
+  if (last !== undefined && nowSec - last < POKE_RENOTIFY_AFTER_SEC) return;
+
+  try {
+    await sendPoke(state.room.partnerPokeHandle);
+  } catch {
+    return; // best-effort
+  }
+  state.room = { ...state.room, lastPokedAt: nowSec };
+  rooms.set(state.room.id, state);
+  patchCatalogRoom(state.room.id, { lastPokedAt: nowSec });
+}
+
+/** Wait up to `ms` from now for L2. @see docs/security/p2pchatprotocol.md §16 */
+async function waitForLiveUpTo(
+  roomId: string,
+  ms: number,
+): Promise<"live" | "relay"> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const state = rooms.get(roomId);
+    if (!state) return "relay";
+    if (state.room.lifecycleStatus === "connected") return "live";
+    await sleep(50);
+  }
+  return rooms.get(roomId)?.room.lifecycleStatus === "connected"
+    ? "live"
+    : "relay";
+}
+
+function dropMessage(roomId: string, id: string): void {
+  const list = messagesByRoom.get(roomId) ?? [];
+  messagesByRoom.set(
+    roomId,
+    list.filter((m) => m.id !== id),
+  );
 }
 
 async function sendRelayText(
   state: RoomState,
   text: string,
+  replaceId?: string,
+  ttlUnixSeconds?: number,
 ): Promise<ChatMessage> {
   if (!isRelayEligibleStatus(state.room.lifecycleStatus)) {
     throw new Error("Relay only after invite accepted.");
@@ -760,6 +962,7 @@ async function sendRelayText(
   }
   const sentAt = nowUnix();
   const roomId = state.room.id;
+  if (replaceId) dropMessage(roomId, replaceId);
   const id = relayMessageId(roomId, sentAt, trimmed);
   const pending: ChatMessage = {
     id,
@@ -770,6 +973,9 @@ async function sendRelayText(
     status: "sending",
     channel: "relay",
     kind: "text",
+    ...(ttlUnixSeconds && ttlUnixSeconds > 0
+      ? { ttlExpiresAt: ttlUnixSeconds }
+      : {}),
   };
   notify(roomId, pending);
   try {
@@ -781,11 +987,13 @@ async function sendRelayText(
         sentAt,
         text: trimmed,
       },
+      ttlUnixSeconds,
     });
     const msg: ChatMessage = { ...pending, status: "delivered" };
     notify(roomId, msg);
     state.room = { ...state.room, lastMessageAt: msg.createdAt };
     rooms.set(roomId, state);
+    maybeSendPoke(state).catch(() => undefined);
     return msg;
   } catch (e) {
     notify(roomId, { ...pending, status: "failed" });
@@ -880,7 +1088,8 @@ export const HolepunchChatTransport: ChatTransport = {
       topicSuite === "HKDF_EPOCH_V1" &&
       relationshipId
     ) {
-      bumpRelationshipTopicEpoch(relationshipId);
+      const contactId = state?.room.contactId ?? persisted?.contactId;
+      await bumpAndMirrorRelationshipTopicEpoch(relationshipId, contactId);
     }
 
     if (!state) {
@@ -895,6 +1104,8 @@ export const HolepunchChatTransport: ChatTransport = {
         set?.delete(roomId);
         if (set && set.size === 0) topicRooms.delete(topicRef);
       }
+      ntfyUnsubscribeRoom(roomId);
+      clearPokeIds(roomId);
       removeCatalogRoom(roomId);
       removeRoomSession(roomId);
       rememberRevokedRoom(roomId);
@@ -924,9 +1135,12 @@ export const HolepunchChatTransport: ChatTransport = {
     rooms.delete(roomId);
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
+    transcriptSubscribers.delete(roomId);
     contractsByRoom.delete(roomId);
     nextAutoRetryAt.delete(roomId);
     removeRoomSession(roomId);
+    ntfyUnsubscribeRoom(roomId);
+    clearPokeIds(roomId);
     removeCatalogRoom(roomId);
     rememberRevokedRoom(roomId, state.room.inviteId);
     await persistChatRoomTombstone(roomId);
@@ -976,7 +1190,7 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async sendMessage(roomId, text) {
+  async sendMessage(roomId, text, ttlUnixSeconds) {
     const state = rooms.get(roomId) ?? ensureRoomForRelay(roomId);
     if (!state) throw new Error("Room not found.");
     assertRoomInteractive(
@@ -985,15 +1199,13 @@ export const HolepunchChatTransport: ChatTransport = {
     );
     assertCanSendMessages(state.room.lifecycleStatus);
     if (state.room.roomTtl && isRoomExpired(state.room.roomTtl, nowUnix())) {
-      state.room.lifecycleStatus = "expired";
+      state.room = { ...state.room, lifecycleStatus: "expired" };
+      rooms.set(roomId, state);
+      upsertCatalogRoom(state.room);
       throw new Error("Room expired.");
     }
 
-    const channel = preferredChannel(state.room.lifecycleStatus);
-    if (channel === "relay") {
-      return sendRelayText(state, text);
-    }
-
+    const lastLiveAtMs = lastLiveAtMsByRoom.get(roomId);
     const envelope: ChatContentEnvelopeV1 = {
       schemaVersion: 1,
       messageId: uid("m"),
@@ -1002,7 +1214,29 @@ export const HolepunchChatTransport: ChatTransport = {
       kind: "text",
       text,
     };
-    return this.sendContent!(roomId, envelope);
+    if (state.room.lifecycleStatus === "connected") {
+      return this.sendContent!(roomId, envelope);
+    }
+    // Were live this session: show queued, try L2, then L1′ (poke only on fallback).
+    if (state.session && lastLiveAtMs) {
+      const queued: ChatMessage = {
+        id: envelope.messageId,
+        roomId,
+        direction: "out",
+        text,
+        createdAt: envelope.sentAt,
+        status: "queued",
+        channel: "live",
+        clientId: envelope.clientId,
+        kind: "text",
+      };
+      notify(roomId, queued);
+      if ((await waitForLiveUpTo(roomId, l2SendHoldMs)) === "live") {
+        return this.sendContent!(roomId, envelope);
+      }
+      return sendRelayText(state, text, envelope.messageId, ttlUnixSeconds);
+    }
+    return sendRelayText(state, text, undefined, ttlUnixSeconds);
   },
 
   async sendContent(roomId, envelope) {
@@ -1056,6 +1290,7 @@ export const HolepunchChatTransport: ChatTransport = {
       deletedAt: outKind === "delete" ? envelope.sentAt : undefined,
       editedAt: outKind === "edit" ? envelope.sentAt : undefined,
     };
+    touchLastLiveAt(roomId);
     notify(roomId, msg);
     state.room = { ...state.room, lastMessageAt: msg.createdAt };
     rooms.set(roomId, state);
@@ -1088,7 +1323,7 @@ export const HolepunchChatTransport: ChatTransport = {
     if (live) return live;
     const catalog = loadCatalogRoom(roomId);
     if (!catalog) return null;
-    return ensureRoom(catalog.contactId, {
+    const restored = ensureRoom(catalog.contactId, {
       roomId: catalog.id,
       roomKeyRef: catalog.roomKeyRef,
       bootstrapSource: catalog.bootstrapSource,
@@ -1098,7 +1333,17 @@ export const HolepunchChatTransport: ChatTransport = {
       roomTtl: catalog.roomTtl,
       roomTopic: catalog.roomTopic,
       awaitingChainSync: catalog.awaitingChainSync,
-    }).room;
+    });
+    // Poke fields come from catalog only; not in bootstrap union.
+    if (catalog.partnerPokeHandle && !restored.room.partnerPokeHandle) {
+      restored.room = {
+        ...restored.room,
+        partnerPokeHandle: catalog.partnerPokeHandle,
+        lastPokedAt: catalog.lastPokedAt,
+      };
+      rooms.set(catalog.id, restored);
+    }
+    return restored.room;
   },
 
   async listRooms() {
@@ -1140,8 +1385,91 @@ export function getMessagesForRoom(roomId: string): ChatMessage[] {
   return [...(messagesByRoom.get(roomId) ?? [])];
 }
 
+/**
+ * Record the peer's pokeHandle for a room when first seen in a `chat.create`
+ * or `chat.register` payload. No-op if already set to the same value.
+ * Called by the chain-sync layer; safe to call multiple times.
+ * @see docs/features/peer-wake-notification.md
+ */
+export function storePartnerPokeHandle(roomId: string, handle: string): void {
+  if (!handle || !/^[A-Za-z0-9_-]{14}$/.test(handle)) return;
+  const state = rooms.get(roomId);
+  if (state) {
+    if (state.room.partnerPokeHandle === handle) return;
+    state.room = { ...state.room, partnerPokeHandle: handle };
+    rooms.set(roomId, state);
+  }
+  patchCatalogRoom(roomId, { partnerPokeHandle: handle });
+}
+
+function localMessageRetentionOn(): boolean {
+  return useSettingsStore.getState().privacy.localMessageRetention === true;
+}
+
+function isRoomTtlExpired(
+  ttlExpiresAt: number | undefined,
+  nowUnixSec: number,
+): boolean {
+  return (
+    typeof ttlExpiresAt === "number" &&
+    ttlExpiresAt > 0 &&
+    nowUnixSec >= ttlExpiresAt
+  );
+}
+
+/** Soonest future TTL delay (conceal-next-wallet `ttlRefetchMs`). */
+function ttlRefetchMs(
+  messages: ReadonlyArray<{ ttlExpiresAt?: number }>,
+  nowUnixSec: number,
+): number | false {
+  let soonest: number | null = null;
+  for (const message of messages) {
+    const at = message.ttlExpiresAt;
+    if (typeof at === "number" && at > nowUnixSec) {
+      if (soonest === null || at < soonest) soonest = at;
+    }
+  }
+  if (soonest === null) return false;
+  return Math.max(1000, (soonest - nowUnixSec) * 1000 + 250);
+}
+
+let ttlPruneTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearTtlPruneTimer(): void {
+  if (ttlPruneTimer == null) return;
+  clearTimeout(ttlPruneTimer);
+  ttlPruneTimer = null;
+}
+
+function scheduleTtlPruneTimer(): void {
+  clearTtlPruneTimer();
+  const all: ChatMessage[] = [];
+  for (const list of messagesByRoom.values()) all.push(...list);
+  const delay = ttlRefetchMs(all, nowUnix());
+  if (delay === false) return;
+  ttlPruneTimer = setTimeout(() => {
+    ttlPruneTimer = null;
+    pruneExpiredTtlRoomMessages(nowUnix());
+  }, delay);
+}
+
+/** Drop room-memory rows whose ttlExpiresAt is in the past. */
+export function pruneExpiredTtlRoomMessages(nowUnixSec: number): void {
+  for (const [roomId, list] of messagesByRoom.entries()) {
+    const kept = list.filter(
+      (m) => !isRoomTtlExpired(m.ttlExpiresAt, nowUnixSec),
+    );
+    if (kept.length !== list.length) {
+      messagesByRoom.set(roomId, kept);
+      emitTranscript(roomId);
+    }
+  }
+  scheduleTtlPruneTimer();
+}
+
 /** Save in-memory room messages into the encrypted wallet blob. */
 export async function saveChatRoomsToWallet(): Promise<void> {
+  if (!localMessageRetentionOn()) return;
   const rt = getRuntime();
   if (!rt) return;
   const bag: Record<string, ChatMessage[]> = {};
@@ -1153,13 +1481,14 @@ export async function saveChatRoomsToWallet(): Promise<void> {
 }
 
 /**
- * Load non-revoked transcripts from the wallet blob into memory.
- * Revoked stubs sync into gnh.revokedRooms.
+ * Load chatRooms (skip live bodies when retention off) then merge L1′ relays.
+ * @see openspec/changes/p2p-message-retention/specs/chat-room-persistence/spec.md
  */
 export function hydrateChatRoomsFromWallet(): void {
   const rt = getRuntime();
   if (!rt) return;
   const roomsMap = readChatRooms(rt.raw);
+  const restoreBodies = localMessageRetentionOn();
   for (const [roomId, entry] of Object.entries(roomsMap)) {
     if (entry.revoked === true) {
       rememberRevokedRoom(roomId);
@@ -1167,16 +1496,116 @@ export function hydrateChatRoomsFromWallet(): void {
       continue;
     }
     if (isRoomRevoked(roomId)) continue;
+    if (!restoreBodies) continue;
     const existing = messagesByRoom.get(roomId) ?? [];
     if (existing.length > 0) continue;
-    messagesByRoom.set(roomId, [...entry.messages]);
+    messagesByRoom.set(
+      roomId,
+      entry.messages.filter(
+        (m) => !(typeof m.ttlExpiresAt === "number" && m.ttlExpiresAt > 0),
+      ),
+    );
   }
+  mergeL1RelayTranscripts(rt.raw);
+  pruneExpiredTtlRoomMessages(nowUnix());
+}
+
+function isRoomBlockedForL1Hydrate(raw: RawWalletV1, roomId: string): boolean {
+  if (isRoomRevoked(roomId)) return true;
+  return readChatRooms(raw)[roomId]?.revoked === true;
+}
+
+/** Merge parsed L1′ relay rows; existing live id wins. */
+function mergeL1RelayTranscripts(raw: RawWalletV1): void {
+  const rows: Array<{ record: SdkMessageRecord; direction: "out" | "in" }> = [
+    ...readSentRecords(raw).map((record) => ({
+      record,
+      direction: "out" as const,
+    })),
+    ...readReceivedRecords(raw).map((record) => ({
+      record,
+      direction: "in" as const,
+    })),
+  ];
+  const nowSec = nowUnix();
+  for (const { record, direction } of rows) {
+    const parsed = parseChatSmartBody(record.body, { allowSeenReplay: true });
+    if (parsed?.action !== "relay") continue;
+    if (isRoomTtlExpired(record.ttlExpiresAt, nowSec)) continue;
+    const { roomId, sentAt, text } = parsed.payload;
+    if (isRoomBlockedForL1Hydrate(raw, roomId)) continue;
+    const id = relayMessageId(roomId, sentAt, text);
+    const existing = messagesByRoom.get(roomId) ?? [];
+    if (existing.some((m) => m.id === id)) continue;
+    messagesByRoom.set(roomId, [
+      ...existing,
+      {
+        id,
+        roomId,
+        direction,
+        text,
+        createdAt: new Date(sentAt * 1000).toISOString(),
+        status: "delivered",
+        channel: "relay",
+        kind: "text",
+        ...(typeof record.ttlExpiresAt === "number" && record.ttlExpiresAt > 0
+          ? { ttlExpiresAt: record.ttlExpiresAt }
+          : {}),
+      },
+    ]);
+  }
+}
+
+const LIVE_FLUSH_COALESCE_MS = 1000;
+let liveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearLiveTranscriptFlushTimer(): void {
+  if (liveFlushTimer == null) return;
+  clearTimeout(liveFlushTimer);
+  liveFlushTimer = null;
+}
+
+/** Hide checkpoint: same gated write as Exit. No-op if locked or retention off. */
+export async function flushChatTranscriptsOnHide(): Promise<void> {
+  clearLiveTranscriptFlushTimer();
+  try {
+    await saveChatRoomsToWallet();
+  } catch {
+    /* hide must not throw into UI */
+  }
+}
+
+/** Coalesce L2 persist after live send/receive (~1s). */
+export function scheduleLiveTranscriptFlush(): void {
+  clearLiveTranscriptFlushTimer();
+  liveFlushTimer = setTimeout(() => {
+    liveFlushTimer = null;
+    void saveChatRoomsToWallet();
+  }, LIVE_FLUSH_COALESCE_MS);
+}
+
+/** True when body is chat.relay for this room (fail closed: keep unparsed). */
+function isRelayBodyForRoom(body: string, roomId: string): boolean {
+  const parsed = parseChatSmartBody(body, { allowSeenReplay: true });
+  return parsed?.action === "relay" && parsed.payload.roomId === roomId;
+}
+
+function pruneRelayRecordsForRoom(
+  raw: RawWalletV1,
+  roomId: string,
+): RawWalletV1 {
+  const keep = (record: SdkMessageRecord) =>
+    !isRelayBodyForRoom(record.body, roomId);
+  return withReceivedRecords(
+    withSentRecords(raw, readSentRecords(raw).filter(keep)),
+    readReceivedRecords(raw).filter(keep),
+  );
 }
 
 async function persistChatRoomTombstone(roomId: string): Promise<void> {
   const rt = getRuntime();
   if (!rt) return;
-  rt.raw = tombstoneChatRoom(rt.raw, roomId);
+  rt.raw = pruneRelayRecordsForRoom(tombstoneChatRoom(rt.raw, roomId), roomId);
   try {
     await persistRuntime(rt);
   } catch {
@@ -1203,19 +1632,26 @@ export function getTopicRefForRoom(roomId: string): string | undefined {
 }
 
 export function __resetHolepunchTransport(): void {
+  clearLiveTranscriptFlushTimer();
+  clearTtlPruneTimer();
   for (const u of backendUnsubs) u();
   backendUnsubs = [];
   backendWired = false;
   lastSidecarDetail = undefined;
   connectTimeoutMs = HOLEPUNCH_CONNECT_TIMEOUT_MS;
   skipPostConnectProofForTests = false;
+  l2SendHoldMs = L2_RECONNECT_GRACE_MS;
   rooms.clear();
   messagesByRoom.clear();
   subscribers.clear();
+  roomStateSubscribers.clear();
+  transcriptSubscribers.clear();
   topicRooms.clear();
   contractsByRoom.clear();
   inFlightConnects.clear();
   nextAutoRetryAt.clear();
+  lastLiveAtMsByRoom.clear();
+  l2BlipStartedAtByRoom.clear();
   __setHolepunchSidecarBackend(null);
 }
 

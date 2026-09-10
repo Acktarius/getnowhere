@@ -1,6 +1,6 @@
 {
   "name": "gnh-native-wrapper",
-  "version": "0.3.0",
+  "version": "0.4.11",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -15,29 +15,56 @@
     "android:release": "node scripts/build-android-release.mjs",
     "android:sign-test": "node scripts/sign-android-apk.mjs",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "eas-build-pre-install": "node scripts/apply-expo-version.mjs && npm --prefix ../holepunch-sidecar ci && node scripts/prepare-bare-deps.mjs",
+    "eas-build-post-install": "node scripts/pack-bare.mjs"
   },
   "dependencies": {
-    "expo": "~55.0.23",
-    "expo-asset": "~55.0.18",
-    "expo-build-properties": "~55.0.16",
-    "expo-crypto": "~55.0.17",
-    "expo-file-system": "~55.0.24",
-    "expo-sharing": "~55.0.10",
-    "expo-splash-screen": "~55.0.23",
+    "expo": "~55.0.29",
+    "expo-asset": "~55.0.19",
+    "expo-build-properties": "~55.0.17",
+    "expo-crypto": "~55.0.18",
+    "expo-file-system": "~55.0.25",
+    "expo-notifications": "~55.0.26",
+    "expo-sharing": "~55.0.23",
+    "expo-splash-screen": "~55.0.24",
     "expo-status-bar": "~55.0.6",
     "react": "19.2.0",
     "react-native": "0.83.10",
+    "bare-type": "1.1.0",
+    "bare-url": "2.4.5",
     "react-native-bare-kit": "^0.13.3",
-    "react-native-webview": "13.16.0"
+    "react-native-webview": "13.16.0",
+    "sodium-native": "5.1.0",
+    "udx-native": "1.20.7"
   },
   "devDependencies": {
     "@types/react": "~19.2.10",
     "bare-link": "3.0.1",
     "bare-pack": "2.2.1",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.3"
   },
   "overrides": {
+    "expo": {
+      ".": "~55.0.29",
+      "js-yaml": "4.3.2"
+    },
+    "react-native": {
+      ".": "0.83.10",
+      "js-yaml": "3.15.2"
+    },
+    "bare-buffer": "3.6.2",
+    "bare-events": "2.9.1",
+    "bare-fs": "4.8.0",
+    "bare-inspect": "3.1.4",
+    "bare-lief": "0.2.6",
+    "bare-module-lexer": "1.6.3",
+    "bare-module-resolve": "1.12.4",
+    "bare-path": "3.1.1",
+    "bare-pipe": "4.2.3",
+    "bare-stream": "2.13.3",
+    "nanoid": "^3.3.18",
+    "postcss": "^8.5.18",
     "uuid": "13.0.1"
   }
 }

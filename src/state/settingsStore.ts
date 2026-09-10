@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     clearClipboardWarnings: true,
     notificationsEnabled: false,
     notificationBannersEnabled: false,
+    pushWakeEnabled: false,
   },
 };
 
@@ -100,6 +101,24 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
       const privacy = { ...s.privacy, ...patch };
       if (!privacy.notificationsEnabled) {
         privacy.notificationBannersEnabled = false;
+        privacy.pushWakeEnabled = false;
+      }
+      if (!privacy.pushWakeEnabled && s.privacy.pushWakeEnabled) {
+        // Fire-and-forget: best-effort cleanup when user opts out.
+        void import("@/lib/mobile/gnhMobileBridgeTypes").then(
+          ({ isMobileAndroid }) => {
+            if (isMobileAndroid()) {
+              void import("@/lib/mobile/ntfyWakeBridge").then(
+                ({ unsubscribeAll }) => unsubscribeAll(),
+              );
+            } else {
+              void import("@/services/poke/pokeGatewayClient").then(
+                ({ deletePokeHandle }) =>
+                  deletePokeHandle().catch(() => undefined),
+              );
+            }
+          },
+        );
       }
       const next = { ...s, privacy };
       persist(next);

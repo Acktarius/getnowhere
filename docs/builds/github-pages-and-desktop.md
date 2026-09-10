@@ -1,14 +1,14 @@
-# GitHub Pages UI + Linux/Windows desktop (Electron + sidecar)
+# GitHub Pages docs + Linux/Windows desktop (Electron + sidecar)
 
 **Two workflows.** Pages and desktop releases are independent.
 
 | Workflow | File | Triggers |
 |---|---|---|
-| GitHub Pages | `.github/workflows/github-pages.yml` | push to `main`, `workflow_dispatch` |
+| GitHub Pages | `.github/workflows/github-pages.yml` | `documentation/**` or the workflow file on `main`, `workflow_dispatch` |
 | Release Electron + sidecar | `.github/workflows/release-electron-sidecar.yml` | `v*` tags, `workflow_dispatch` |
 
 ```text
-Pages          npm run build → dist/ → GitHub Pages (browser)
+Pages          documentation/website build → out/ → GitHub Pages (public docs)
 Desktop Linux  npm run build → dist/ staged into package
                  Electron Forge zip/deb (Linux) + zip (Windows)
                  ├─ Electron shell
@@ -32,26 +32,34 @@ if present.
 
 ## Repo setup (once)
 
-1. **Settings → Pages → Source = GitHub Actions** (browser / mobile web only)
+1. **Settings → Pages → Source = GitHub Actions** (public documentation site)
+
+Expected URL: `https://acktarius.github.io/getnowhere/`. Do not claim Pages is
+already live until that setting is confirmed.
 
 ## Vite `base`
 
-Production build keeps `base: "./"` in `vite.config.ts` so assets work from:
+Production UI build keeps `base: "./"` in `vite.config.ts` so assets work from
+packaged Electron `file://` (`resources/ui/`) and other relative hosts.
 
-- GitHub project Pages (`/repo/`)
-- custom domain root
-- packaged Electron `file://` (`resources/ui/`)
-
-Do not switch to absolute `/` unless you only ever host at domain root.
+Do not switch the Vite app to absolute `/` unless you only ever host that
+bundle at domain root. GitHub Pages no longer deploys the Vite `dist/`.
 
 ## GitHub Pages workflow
 
-Triggers: push to `main`, or manual `workflow_dispatch`. Does **not** run on version tags.
+Deploys the isolated Fumadocs site, not the root Vite application.
 
-- Job `test`: Node 24, `npm ci`, `npm run test` (Vitest)
-- Job `pages` (`needs: test`): `npm ci`, `npm run build` — skipped if tests fail
-- Uploads `dist/` via `upload-pages-artifact`
-- Deploys with `deploy-pages` (environment `github-pages`)
+Triggers: push to `main` that touches `documentation/**` or
+`.github/workflows/github-pages.yml`, or manual `workflow_dispatch`. Does
+**not** run on version tags or ordinary application / `docs/**` changes.
+
+- Job `build`: Node 24, `npm ci` in `documentation/website`,
+  `GITHUB_ACTIONS=true npm run build`
+- Uploads `documentation/website/out` via `upload-pages-artifact`
+- Job `deploy` (`needs: build`): `deploy-pages` (environment `github-pages`)
+
+Local docs development uses `http://localhost:3000/` without `/getnowhere`.
+The CI build sets `basePath` / `assetPrefix` to `/getnowhere`.
 
 ## Release Electron + sidecar workflow
 
@@ -64,12 +72,17 @@ loopback WebSocket; packaged builds use native IPC at runtime (`main.mjs` sets
 
 - Root `npm ci` + `npm run build` → `dist/`
 - Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
-- Syncs `desktop-electron` package version from the tag (`v0.1.2` → `0.1.2`) so Forge artifact names include it
-- Linux: `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`
+- Syncs `desktop-electron` package version from repo-root `version` (`version=0.3.3` → `0.3.3`), **not** the git tag (so tags like `v0.3.3-f-droid` do not leak into filenames)
+- Linux: `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`, then AppImage via linuxdeploy
+- Canonical artifact names (always `v` + `version` file):
+  - `Get_NowHere-v0.3.3-x86_64.AppImage`
+  - `Get_NowHere-v0.3.3-amd64.deb`
+  - `Get_NowHere-v0.3.3-linux-x64.zip`
+  - `Get_NowHere-v0.3.3-win32-x64.zip`
 - Windows: `electron-forge make --platform=win32` → `.zip` under `desktop-electron/out/make/zip/win32/x64`
-- Uploads CI artifacts as `getnowhere-linux-desktop-<version>` and `getnowhere-windows-desktop-<version>`
-- On `v*` tags a **draft** GitHub Release titled **Get NowHere vX.Y.Z** bundles Linux + Windows assets and combined checksums
-- Manual dispatch without a tag still builds and uploads artifacts (version `<package.json>-ci.<short-sha>`); it does not create a release
+- Uploads CI artifacts as `getnowhere-linux-desktop-vX.Y.Z` and `getnowhere-windows-desktop-vX.Y.Z`
+- On `v*` tags a **draft** GitHub Release titled **Get NowHere vX.Y.Z** (title/version from `version` file) bundles Linux + Windows assets and combined checksums
+- Manual dispatch without a tag still builds and uploads artifacts from the `version` file; it does not create a release
 
 Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override with `GNH_UI_URL` if needed.
 
@@ -116,3 +129,4 @@ Desktop icons: `desktop-electron/icons/icon.png` (Linux `.deb`), `icon.ico` (Win
 - `docs/architecture/electron-desktop.md`
 - `docs/architecture/holepunch-sidecar.md`
 - `docs/architecture/web-vs-wrapper.md`
+- `documentation/content/` (public Pages source)

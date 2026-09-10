@@ -88,4 +88,37 @@ describe("SessionBootstrapAdapter v2 topicEpoch", () => {
     expect(aliceSession.topicEpoch).toBe(1);
     expect(bobSession.topicEpoch).toBe(1);
   });
+
+  it("uses wire topicEpoch when local store is higher", async () => {
+    const rel = "ef".repeat(32);
+    setRelationshipTopicEpoch(rel, 5);
+    const alice = await P2PEncryptionAdapter.generateEphemeralKeypair();
+    const bob = await P2PEncryptionAdapter.generateEphemeralKeypair();
+    const invite = baseHandshake({
+      relationshipId: rel,
+      senderEphemeralPublicKey: alice.publicKeyHex,
+      topicEpoch: 2,
+    });
+    const register = {
+      type: "chat.register" as const,
+      inviteId: invite.inviteId,
+      receiverEphemeralPublicKey: bob.publicKeyHex,
+      replayId: invite.replayId,
+    };
+    const bobSession = await SessionBootstrapAdapter.deriveSession({
+      invite,
+      acceptance: register,
+      peerRole: "responder",
+      localPrivateKeyRef: bob.privateKeyRef,
+    });
+    const aliceSession = await SessionBootstrapAdapter.deriveSession({
+      invite,
+      acceptance: register,
+      peerRole: "initiator",
+      localPrivateKeyRef: alice.privateKeyRef,
+    });
+    expect(bobSession.topicEpoch).toBe(2);
+    expect(aliceSession.topicEpoch).toBe(2);
+    expect(bobSession.topicRef).toBe(aliceSession.topicRef);
+  });
 });

@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { NonSelectableText } from "@/components/NonSelectableText";
+import { SensitiveValue } from "@/components/SensitiveValue";
+import { useSecretsModalTimer } from "@/hooks/useSecretsModalTimer";
 
-const FADE_MS = 30_000;
-const GRACE_MS = 5_000;
+const keyBoxStyle = {
+  fontSize: 11,
+  wordBreak: "break-all" as const,
+  padding: "8px 10px",
+  background: "var(--bg-elev-2)",
+  borderRadius: 8,
+  border: "1px solid var(--border)",
+};
 
 type Props = {
   open: boolean;
@@ -21,42 +29,8 @@ export function SeedRevealModal({
   viewOnly,
   onClose,
 }: Props) {
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  const [cycle, setCycle] = useState(0);
-  const [needMoreEnabled, setNeedMoreEnabled] = useState(false);
-  const [needMoreOpacity, setNeedMoreOpacity] = useState(0);
-
-  useEffect(() => {
-    if (!open) {
-      setNeedMoreEnabled(false);
-      setNeedMoreOpacity(0);
-      return;
-    }
-
-    setNeedMoreEnabled(false);
-    setNeedMoreOpacity(0);
-
-    const kickFade = setTimeout(() => {
-      setNeedMoreOpacity(1);
-    }, 0);
-
-    const enableTimer = setTimeout(() => {
-      setNeedMoreEnabled(true);
-      setNeedMoreOpacity(1);
-    }, FADE_MS);
-
-    const graceTimer = setTimeout(() => {
-      onCloseRef.current();
-    }, FADE_MS + GRACE_MS);
-
-    return () => {
-      clearTimeout(kickFade);
-      clearTimeout(enableTimer);
-      clearTimeout(graceTimer);
-    };
-  }, [open, cycle]);
+  const { needMoreEnabled, needMoreOpacity, requestMoreTime, fadeMs } =
+    useSecretsModalTimer({ open, onClose });
 
   if (!open) return null;
 
@@ -92,7 +66,7 @@ export function SeedRevealModal({
             >
               {words.map((w, i) => (
                 <div
-                  key={`${cycle}-${i}`}
+                  key={i}
                   className="mono"
                   style={{
                     fontSize: 12.5,
@@ -102,10 +76,13 @@ export function SeedRevealModal({
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <span className="faint" style={{ marginRight: 6 }}>
+                  <NonSelectableText
+                    className="faint"
+                    style={{ marginRight: 6 }}
+                  >
                     {i + 1}
-                  </span>
-                  {w}
+                  </NonSelectableText>
+                  <NonSelectableText>{w}</NonSelectableText>
                 </div>
               ))}
             </div>
@@ -114,35 +91,31 @@ export function SeedRevealModal({
           <div className="stack stack--gap-3" style={{ marginTop: 16 }}>
             <div>
               <div className="field__label">Spend key</div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  wordBreak: "break-all",
-                  padding: "8px 10px",
-                  background: "var(--bg-elev-2)",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                }}
-              >
-                {spendKey || "—"}
-              </div>
+              {spendKey ? (
+                <SensitiveValue
+                  value={spendKey}
+                  className="mono"
+                  style={keyBoxStyle}
+                />
+              ) : (
+                <div className="mono" style={keyBoxStyle}>
+                  —
+                </div>
+              )}
             </div>
             <div>
               <div className="field__label">View key</div>
-              <div
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  wordBreak: "break-all",
-                  padding: "8px 10px",
-                  background: "var(--bg-elev-2)",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                }}
-              >
-                {viewKey || "—"}
-              </div>
+              {viewKey ? (
+                <SensitiveValue
+                  value={viewKey}
+                  className="mono"
+                  style={keyBoxStyle}
+                />
+              ) : (
+                <div className="mono" style={keyBoxStyle}>
+                  —
+                </div>
+              )}
             </div>
           </div>
 
@@ -163,12 +136,9 @@ export function SeedRevealModal({
               disabled={!needMoreEnabled}
               style={{
                 opacity: needMoreOpacity,
-                transition: `opacity ${FADE_MS}ms linear`,
+                transition: `opacity ${fadeMs}ms linear`,
               }}
-              onClick={() => {
-                if (!needMoreEnabled) return;
-                setCycle((c) => c + 1);
-              }}
+              onClick={requestMoreTime}
             >
               Need more time
             </button>

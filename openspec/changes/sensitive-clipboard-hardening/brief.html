@@ -1,0 +1,88 @@
+<!-- forge-brief-specs-hash:5d6708050771838b -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sensitive clipboard hardening</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    .muted { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Sensitive clipboard hardening</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Payment IDs, addresses, keys, and similar values can be selected and copied by accident today,
+    and they stay on the clipboard. After this change, those values are not selectable.
+    Copy is a button. iOS drops the paste after 60 seconds. Everywhere else we do not touch
+    the clipboard again unless you tap Clear clipboard in Privacy.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Copy buttons write only the raw value — no labels.</li>
+    <li>A Privacy toggle named <strong>Clipboard reminder</strong> can toast after a sensitive copy (never shows the secret).</li>
+    <li>On Android and desktop, that toast also points you to <strong>Clear clipboard</strong>.</li>
+    <li>Clear clipboard wipes whatever is on the clipboard. It does not peek first.</li>
+    <li>Seed words stay write-down only (Need more time still works). Spend and view keys each have Copy.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    One copy path writes the value. On iPhone it is marked local and expires in 60 seconds.
+    On Android it is marked sensitive. The app never reads the clipboard on a timer or when you
+    come back to the app, and it does not keep a copy just to compare later.
+    GrapheneOS does not add a short clipboard timeout — we do not rely on the OS one-hour clear.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  A[Copy button] --> B[Write raw value]
+  B --> C{Host}
+  C -->|iOS| D[Expire in 60s]
+  C -->|Android / desktop / web| E[Leave it]
+  F[Clear clipboard] --> G[Wipe clipboard]
+  B --> H[Optional reminder toast]
+  </pre>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Privacy: Clipboard reminder + Clear clipboard.</li>
+    <li>You cannot highlight a payment ID or address to copy it — use Copy.</li>
+    <li>Seed: still no Copy. Keys: Copy each.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>On web and desktop the value stays until you copy something else or tap Clear clipboard.</li>
+    <li>Clear clipboard will erase a password you just copied in another app if you tap it.</li>
+    <li>iOS expiry needs the phone app’s native clipboard path, not the browser page alone.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Auto-clear after 60 seconds on Android, web, or desktop</li>
+    <li>Reading the clipboard to see if it still matches</li>
+    <li>Changing how chat messages or typed fields copy</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Copy helper + tests (2 tasks)</li>
+    <li>Display components, seed, and keys (2 tasks)</li>
+    <li>Privacy settings (1 task)</li>
+    <li>Existing Copy buttons on wallet and contacts (1 task)</li>
+    <li>Android and iOS native clipboard (3 tasks)</li>
+    <li>Docs (1 task)</li>
+    <li>Product-loop checks (1 task)</li>
+  </ul>
+  <p class="muted">Change: sensitive-clipboard-hardening</p>
+</body>
+</html>

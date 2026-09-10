@@ -1,0 +1,92 @@
+<!-- forge-brief-specs-hash:45a8f5d37e0a42d0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wallet history live + relay dots</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Wallet history live + relay dots</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    While the wallet is catching up with the chain, new transactions show up in
+    history as they are found — you should not need to mash the sync arrows.
+    Long lists are split into pages of 25. Relay (L1′) smartmessage rows get
+    their own colored dot; tap it to open the chat room, or the contact if the
+    room is gone.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>History that updates during sync, not only after a full manual resync.</li>
+    <li>Pages of 25 transactions with Prev / Next when there are more than 25.</li>
+    <li>If you already flipped to page 2+, sync will not yank you back to page 1.</li>
+    <li>A new colored dot on relay / execute smartmessage rows.</li>
+    <li>Tap that relay dot → related chat if it still exists, otherwise the contact.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Sync already folds chain batches into memory. This change also pushes that
+    mapped history into the app store on a gentle throttle so the Wallet screen
+    can redraw. Pagination is local (same full list, shown 25 at a time).
+    Relay dots come from peeking the smartmessage body; navigation looks up the
+    room id, then falls back to the contact that owned that room.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  S[Chain sync batch] --> P[Throttle publish to wallet store]
+  P --> L[Wallet history list]
+  L --> Page{More than 25?}
+  Page -->|yes| Nav[Prev / Next pages]
+  Page -->|no| All[Show all]
+  L --> Dot{Relay smartmessage?}
+  Dot -->|yes| Click[Tap colored dot]
+  Click --> Room{Room exists?}
+  Room -->|yes| Chat[Open chat]
+  Room -->|no| Contact[Open contact]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>On Wallet, watch history fill in while the height counter climbs.</li>
+    <li>Use the footer controls when history is long.</li>
+    <li>Tap a relay-colored dot to jump into the conversation (or contact).</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Phones are the slower UI; publishes are throttled so catch-up does not jank the list.</li>
+    <li>If neither room nor contact can be found for a relay, the tap does nothing (no toast in this change).</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Infinite scroll instead of pages.</li>
+    <li>Making invite create / register / revoke dots clickable.</li>
+    <li>Changing how fast the chain sync engine itself runs.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Relay hint + types + CSS — 3 tasks</li>
+    <li>Navigate resolver + click — 2 tasks</li>
+    <li>Pagination — 2 tasks</li>
+    <li>Mid-sync publish — 3 tasks</li>
+    <li>Docs — 1 task</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

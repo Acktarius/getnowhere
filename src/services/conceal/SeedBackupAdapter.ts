@@ -43,6 +43,7 @@ export const SeedBackupAdapter: SeedBackupService = {
       spendKey: viewOnly ? "" : spendKey,
       viewKey,
       viewOnly,
+      creationHeight: Math.max(0, Number(rt.raw.creationHeight ?? 0) || 0),
     };
   },
 

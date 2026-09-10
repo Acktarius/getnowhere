@@ -1,0 +1,68 @@
+<!-- forge-brief-specs-hash:e69dffaef1bd9afa -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Peer-wake re-poke cooldown</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    .muted { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Peer-wake re-poke cooldown</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Today Bob’s first chain message after L2 drops can wake Alice once.
+    If she ignores the banner and he sends again a few minutes later, nothing new is pushed.
+    After this change, a poke can fire again once five minutes have passed since the last poke.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>First L1′ after L2 drop still wakes Alice (unchanged).</li>
+    <li>Another L1′ within five minutes does not poke again (spam control).</li>
+    <li>Another L1′ after five minutes or more re-notifies Alice while still on relay.</li>
+    <li>Getting back on L2 still resets so the next drop can poke immediately.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Each room remembers when the last poke succeeded.
+    On each chain (L1′) send we poke if wake is on, we know Alice’s handle,
+    and either we never poked this stretch or at least 300 seconds have passed.
+    The gateway’s own five-minute limit stays as a backstop.
+  </p>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>No new Settings toggle — five minutes is fixed.</li>
+    <li>Testers: background Alice, have Bob send L1′, wait ≥5 minutes, send again — expect a second wake.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Does not fix missing APNs registration or empty gateway URL on builds — only re-poke timing.</li>
+    <li>If the gateway rejects a poke, the chain message still delivers; wake remains best-effort.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>APNs register <code>env</code> field fix</li>
+    <li>Renaming helpers, Settings for the interval, gateway changes</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Tests for within/after cooldown (2 tasks)</li>
+    <li>Transport gate + connected clear check (2 tasks)</li>
+    <li>Feature doc update (1 task)</li>
+  </ul>
+  <p class="muted">Change: peer-wake-repoke-cooldown</p>
+</body>
+</html>

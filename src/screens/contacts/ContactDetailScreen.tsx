@@ -12,11 +12,13 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { NotifyPin } from "@/components/NotifyPin";
 import { PaymentIdField } from "@/components/PaymentIdField";
 import { PresetStepper } from "@/components/PresetStepper";
@@ -30,7 +32,8 @@ import {
   RelationshipStatusBadge,
 } from "@/components/StatusBadges";
 import { BackLink, TopBar } from "@/components/TopBar";
-import { useCopy } from "@/hooks/useCopy";
+import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import {
   DEFAULT_INVITE_EXPIRY_HOURS,
   DEFAULT_ROOM_TTL_DAYS,
@@ -40,9 +43,14 @@ import {
 import {
   getContactInviteActionCount,
   getInviteQueue,
+  shouldPollContactInvites,
 } from "@/services/contacts/inviteQueue";
 import { isRoomRevoked } from "@/services/p2p/revokedRoomsStore";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import {
+  detectTopicEpochSkew,
+  topicEpochSkewMessage,
+} from "@/services/p2p/topicEpochSkew";
 import { hasOpenRoomForTopic } from "@/services/protocol/multiRoom";
 import { isRelayEligibleStatus } from "@/services/protocol/roomLifecycle";
 import { ROOM_TOPICS } from "@/services/protocol/roomTopics";
@@ -85,8 +93,8 @@ export function ContactDetailScreen() {
     return Boolean(room && isRelayEligibleStatus(room.lifecycleStatus));
   });
 
-  const [copiedAddr, copyAddr] = useCopy();
-  const [copiedFrom, copyFrom] = useCopy();
+  const [copiedAddr, setCopiedAddr] = useState(false);
+  const [copiedFrom, setCopiedFrom] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
   const [createSheet, setCreateSheet] = useState(false);
   const [inviteExpiryHours, setInviteExpiryHours] = useState(
@@ -95,6 +103,7 @@ export function ContactDetailScreen() {
   const [roomTtlDays, setRoomTtlDays] = useState(DEFAULT_ROOM_TTL_DAYS);
   const [roomTopic, setRoomTopic] =
     useState<import("@/services/protocol/roomTopics").RoomTopicId>("general");
+  const [epochSkewHint, setEpochSkewHint] = useState<string | null>(null);
   const [shareSheet, setShareSheet] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmBlock, setConfirmBlock] = useState(false);
@@ -128,9 +137,16 @@ export function ContactDetailScreen() {
     markContactSeen(id, actionCount);
   }, [id, markContactSeen]);
 
+  // Gate: keep polling only while waiting on invite or register state.
+  const shouldPoll = useMemo(
+    () => shouldPollContactInvites(contact, invites),
+    [contact, invites],
+  );
+
   // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
-  // Poll while waiting — mempool txs are near-instant; one-shot mount miss them.
+  // Always run once on mount; keep interval only while shouldPoll is true.
   useEffect(() => {
+    if (!id) return;
     let cancelled = false;
     let first = true;
     const run = async () => {
@@ -145,14 +161,18 @@ export function ContactDetailScreen() {
       }
     };
     void run();
-    const id = window.setInterval(() => {
+    if (!shouldPoll)
+      return () => {
+        cancelled = true;
+      };
+    const timerId = window.setInterval(() => {
       void run();
     }, 3000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.clearInterval(timerId);
     };
-  }, [id, refreshInvites]);
+  }, [id, refreshInvites, shouldPoll]);
 
   const inviteQueueForContact = getInviteQueue(id, invites);
   const incomingInviteRoomId =
@@ -165,6 +185,47 @@ export function ContactDetailScreen() {
       : undefined,
   );
   const acceptAwaitingSync = Boolean(inviteRoom?.awaitingChainSync);
+
+  const eligible = contact?.relationshipStatus === "eligible";
+  const incomingInvite = eligible ? inviteQueueForContact.newest : undefined;
+  const showAccept = Boolean(
+    contact &&
+      incomingInvite &&
+      (contact.inviteStatus === "received" ||
+        contact.roomId !== incomingInvite.roomId),
+  );
+
+  useEffect(() => {
+    if (!contact) {
+      setEpochSkewHint(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const hint = await detectTopicEpochSkew(
+        contact,
+        showAccept ? incomingInvite : undefined,
+      );
+      if (cancelled) return;
+      if (!hint) {
+        if (createSheet) {
+          const createHint = await detectTopicEpochSkew(contact);
+          setEpochSkewHint(
+            createHint
+              ? topicEpochSkewMessage(createHint, contact.alias)
+              : null,
+          );
+        } else {
+          setEpochSkewHint(null);
+        }
+        return;
+      }
+      setEpochSkewHint(topicEpochSkewMessage(hint, contact.alias));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contact, incomingInvite, showAccept, createSheet]);
 
   if (!contact) {
     return (
@@ -183,16 +244,8 @@ export function ContactDetailScreen() {
     );
   }
 
-  const eligible = contact.relationshipStatus === "eligible";
   const inviteQueue = inviteQueueForContact;
-  const incomingInvite = eligible ? inviteQueue.newest : undefined;
   const queuedOthers = inviteQueue.others;
-  /** Newer create must show Accept even if an older invite was already accepted. */
-  const showAccept = Boolean(
-    incomingInvite &&
-      (contact.inviteStatus === "received" ||
-        contact.roomId !== incomingInvite.roomId),
-  );
   const canInvite =
     eligible && !showAccept && contact.inviteStatus !== "received";
   /** Create another room with this contact (topic is chosen in the sheet). */
@@ -351,7 +404,9 @@ export function ContactDetailScreen() {
           <div className="stack stack--gap-1">
             <h2 style={{ fontSize: 20 }}>{contact.alias}</h2>
             <div className="mono faint" style={{ fontSize: 12 }}>
-              {shortAddress(contact.ccxAddress, 14, 14)}
+              <NonSelectableText>
+                {shortAddress(contact.ccxAddress, 14, 14)}
+              </NonSelectableText>
             </div>
           </div>
           <div
@@ -367,15 +422,33 @@ export function ContactDetailScreen() {
             style={{ gap: 8, justifyContent: "center", marginTop: 4 }}
           >
             <button
+              type="button"
               className="btn btn--sm btn--secondary"
-              onClick={() => copyAddr(contact.ccxAddress)}
+              onClick={() => {
+                void copySensitive(contact.ccxAddress).then(
+                  () => {
+                    setCopiedAddr(true);
+                    setTimeout(() => setCopiedAddr(false), 1800);
+                  },
+                  () => setCopiedAddr(false),
+                );
+              }}
             >
               {copiedAddr ? <Check size={13} /> : <Copy size={13} />}{" "}
               {copiedAddr ? "Copied" : "Copy address"}
             </button>
             <button
+              type="button"
               className="btn btn--sm btn--secondary"
-              onClick={() => copyFrom(contact.paymentIdFrom)}
+              onClick={() => {
+                void copySensitive(contact.paymentIdFrom).then(
+                  () => {
+                    setCopiedFrom(true);
+                    setTimeout(() => setCopiedFrom(false), 1800);
+                  },
+                  () => setCopiedFrom(false),
+                );
+              }}
             >
               {copiedFrom ? <Check size={13} /> : <Copy size={13} />}{" "}
               {copiedFrom ? "Copied" : "Copy your ID"}
@@ -504,6 +577,11 @@ export function ContactDetailScreen() {
                         .join(", ")}
                       . Accept handles the newest (
                       {roomTopicLabel(incomingInvite.roomTopic)}) first.
+                    </div>
+                  )}
+                  {epochSkewHint && (
+                    <div className="muted" style={{ fontSize: 12.5 }}>
+                      {epochSkewHint}
                     </div>
                   )}
                   <div className="row-flex" style={{ gap: 8 }}>
@@ -686,6 +764,11 @@ export function ContactDetailScreen() {
             onChange={setRoomTtlDays}
             hint="Room is destroyed locally after this period."
           />
+          {epochSkewHint && (
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {epochSkewHint}
+            </div>
+          )}
           {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"
@@ -777,19 +860,21 @@ function ShareRow({
   value: string;
   qrKind: "address" | "paymentId";
 }) {
-  const [copied, copy] = useCopy();
   const [qrOpen, setQrOpen] = useState(false);
+  const qrExpand = bindPointerToggle(useRef(false), () => setQrOpen((o) => !o));
+
   return (
     <div className="card card--pad-md">
       <div className="row-flex row-flex--between" style={{ marginBottom: 6 }}>
         <div className="eyebrow">{label}</div>
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn expander-btn"
           style={{ width: 28, height: 28 }}
           aria-expanded={qrOpen}
           aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
-          onClick={() => setQrOpen((o) => !o)}
+          onPointerDown={qrExpand.onPointerDown}
+          onClick={qrExpand.onClick}
         >
           {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
@@ -800,17 +885,11 @@ function ShareRow({
         </div>
       )}
       <div className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
-        {value}
+        <NonSelectableText>{value}</NonSelectableText>
       </div>
-      <button
-        type="button"
-        className="btn btn--sm btn--ghost"
-        style={{ marginTop: 10 }}
-        onClick={() => copy(value)}
-      >
-        {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
-        {copied ? "Copied" : "Copy"}
-      </button>
+      <div style={{ marginTop: 10 }}>
+        <CopyButton value={value} />
+      </div>
     </div>
   );
 }

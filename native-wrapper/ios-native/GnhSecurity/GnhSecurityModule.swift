@@ -1,5 +1,6 @@
 import Foundation
 import React
+import UIKit
 
 @objc(GnhSecurity)
 class GnhSecurityModule: NSObject {
@@ -8,8 +9,20 @@ class GnhSecurityModule: NSObject {
 
   @objc static func requiresMainQueueSetup() -> Bool { true }
 
+  override init() {
+    super.init()
+    // Migrate any existing items to AfterFirstUnlock accessibility at startup
+    // (device is always unlocked when the user opens the app).
+    prefs.migrateKnownKeys()
+  }
+
   @objc func securePrefsGet(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    resolver(prefs.get(key: key))
+    let (value, error) = prefs.getDetailed(key: key)
+    if let error = error {
+      rejecter("ERR_KEYCHAIN_UNAVAILABLE", error, nil)
+    } else {
+      resolver(value)
+    }
   }
 
   @objc func securePrefsSet(_ key: String, value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
@@ -19,6 +32,22 @@ class GnhSecurityModule: NSObject {
 
   @objc func securePrefsRemove(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
     prefs.remove(key: key)
+    resolver(true)
+  }
+
+  @objc func copySensitive(_ value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    UIPasteboard.general.setItems(
+      [["public.utf8-plain-text": value]],
+      options: [
+        .localOnly: true,
+        .expirationDate: Date().addingTimeInterval(60),
+      ]
+    )
+    resolver(true)
+  }
+
+  @objc func clearClipboard(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    UIPasteboard.general.items = []
     resolver(true)
   }
 

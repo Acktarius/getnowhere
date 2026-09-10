@@ -60,7 +60,23 @@ jobs:
         run: python3 scripts/fix-for-fdroid.py
 
       - name: Build unsigned release APK
+        env:
+          VITE_NTFY_READ_TOKEN: ${{ secrets.VITE_NTFY_READ_TOKEN }}
+          VITE_POKE_GATEWAY_URL: ${{ secrets.VITE_POKE_GATEWAY_URL }}
         run: npm run mobile:android:release
+
+      - name: Resolve version from version file
+        id: ver
+        run: |
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          BUILD="$(grep -E '^buildVersionAndroid=' version | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          FILE_VERSION="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file_version=${FILE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build=${BUILD:-0}" >> "$GITHUB_OUTPUT"
 
       - name: Decode release keystore
         env:
@@ -89,7 +105,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          APK=$(find native-wrapper/builds -maxdepth 1 -name "GetNowHere-v*.apk" ! -name "*-signed.apk" | head -n 1)
+          APK=$(find native-wrapper/builds -maxdepth 1 -name "GetNowHere-v*-b*-java*.apk" ! -name "*-signed.apk" | head -n 1)
 
           if [ -z "$APK" ]; then
             echo "Release APK not found in native-wrapper/builds/"
@@ -129,6 +145,7 @@ jobs:
         if: github.ref_type == 'tag' && endsWith(github.ref_name, '-f-droid')
         uses: softprops/action-gh-release@v2
         with:
+          name: Get NowHere ${{ steps.ver.outputs.file_version }} (F-Droid)
           files: |
             ${{ env.SIGNED_APK }}
             ${{ env.SIGNED_APK_SHA }}
@@ -138,7 +155,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v6
         with:
-          name: getnowhere-signed-apk
+          name: getnowhere-signed-apk-${{ steps.ver.outputs.file_version }}
           path: |
             ${{ env.SIGNED_APK }}
             ${{ env.SIGNED_APK_SHA }}

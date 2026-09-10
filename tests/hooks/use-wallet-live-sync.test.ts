@@ -7,17 +7,19 @@ const {
   refreshBalance,
   refreshTransactions,
   resetSession,
+  setState,
 } = vi.hoisted(() => ({
   refreshRelays: vi.fn().mockResolvedValue(undefined),
   refreshInvites: vi.fn().mockResolvedValue(undefined),
   refreshBalance: vi.fn().mockResolvedValue(undefined),
   refreshTransactions: vi.fn().mockResolvedValue(undefined),
   resetSession: vi.fn(),
+  setState: vi.fn(),
 }));
 
 vi.mock("../../src/services/conceal/sync/runtime", () => ({
-  sync: vi.fn().mockResolvedValue(0),
-  getRuntime: vi.fn(() => ({})),
+  sync: vi.fn().mockResolvedValue(100),
+  getRuntime: vi.fn(() => ({ state: { scannedHeight: 100 } })),
 }));
 
 vi.mock("../../src/state/chatStore", () => ({
@@ -40,6 +42,7 @@ vi.mock("../../src/state/walletStore", () => {
   };
   const useWalletStore = (fn: (s: typeof state) => unknown) => fn(state);
   useWalletStore.getState = () => state;
+  useWalletStore.setState = setState;
   return { useWalletStore };
 });
 
@@ -53,6 +56,7 @@ import {
   BACKGROUND_POLL_MS,
   resolveWalletPollMs,
   useWalletLiveSync,
+  WALLET_POLL_MS,
 } from "../../src/hooks/useWalletLiveSync";
 
 describe("useWalletLiveSync", () => {
@@ -62,6 +66,7 @@ describe("useWalletLiveSync", () => {
     refreshInvites.mockClear();
     refreshBalance.mockClear();
     refreshTransactions.mockClear();
+    setState.mockClear();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
@@ -78,19 +83,20 @@ describe("useWalletLiveSync", () => {
 
   it("resolveWalletPollMs uses background interval when hidden", () => {
     expect(resolveWalletPollMs(true, false)).toBe(BACKGROUND_POLL_MS);
-    expect(resolveWalletPollMs(false, false)).toBe(20_000);
-    expect(resolveWalletPollMs(false, true)).toBe(2500);
+    expect(resolveWalletPollMs(false, false)).toBe(WALLET_POLL_MS[1]);
+    expect(resolveWalletPollMs(false, true)).toBe(WALLET_POLL_MS[0]);
   });
 
-  it("calls refreshRelays when tab is hidden", async () => {
+  it("awaits sync then always refreshes balance+relays (even when hidden)", async () => {
     renderHook(() => useWalletLiveSync(true));
     await act(async () => {
+      await Promise.resolve();
       await Promise.resolve();
     });
     expect(refreshRelays).toHaveBeenCalled();
     expect(refreshInvites).toHaveBeenCalled();
-    expect(refreshBalance).not.toHaveBeenCalled();
-    expect(refreshTransactions).toHaveBeenCalled();
+    expect(refreshBalance).toHaveBeenCalled();
+    expect(setState).toHaveBeenCalled();
   });
 
   it("awaits sync then refreshes balance when visible", async () => {
@@ -104,6 +110,6 @@ describe("useWalletLiveSync", () => {
       await Promise.resolve();
     });
     expect(refreshBalance).toHaveBeenCalled();
-    expect(refreshTransactions).toHaveBeenCalled();
+    expect(setState).toHaveBeenCalled();
   });
 });

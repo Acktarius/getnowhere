@@ -22,10 +22,10 @@ export function useNavNotificationBadges(): {
   /** Invite pins live on contact rows — hide Contacts tab dot on the list itself. */
   const onContactsList = location.pathname === "/contacts";
 
-  const contactsUnread = useNotificationStore(
-    (s) =>
-      s.anyContactBadge(contacts, invites, visibleRooms) && !onContactsList,
+  const hasContactBadge = useNotificationStore((s) =>
+    s.anyContactBadge(contacts, invites, visibleRooms),
   );
+  const contactsUnread = hasContactBadge && !onContactsList;
   /** Chats tab dot = new L1′ relay on a post-accept room only. */
   const chatsUnread = useNotificationStore((s) => s.anyRoomBadge(visibleRooms));
 

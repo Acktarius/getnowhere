@@ -3,6 +3,7 @@ import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { EmptyState } from "@/components/EmptyState";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { NotifyPin } from "@/components/NotifyPin";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import { PeerStatusIndicator } from "@/components/StatusBadges";
@@ -149,7 +150,7 @@ export function ChatsScreen() {
                 </div>
                 <div className="card card--flush stagger">
                   {eligibleContacts.map((c) => (
-                    <Link
+                    <MobileInstantLink
                       key={c.id}
                       to={`/contacts/${c.id}`}
                       className="row row--clickable"
@@ -163,7 +164,7 @@ export function ChatsScreen() {
                         </div>
                       </div>
                       <Plus size={16} className="muted" />
-                    </Link>
+                    </MobileInstantLink>
                   ))}
                 </div>
               </div>

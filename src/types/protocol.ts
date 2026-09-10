@@ -111,6 +111,8 @@ export type ChatCreatePayload = {
   handshake: ChatInviteHandshake;
   senderAlias: string;
   capabilities: string[];
+  /** Optional `ph` after the packed blob. @see docs/features/peer-wake-notification.md */
+  senderPokeHandle?: string;
 };
 
 /** @deprecated Use ChatCreatePayload — scaffold name kept as alias. */
@@ -123,6 +125,8 @@ export type ChatRegisterPayload = {
   receiverEphemeralPublicKey: string;
   replayId: string;
   acceptedAt?: string;
+  /** Optional trailing pokeHandle (14-char base64url). @see docs/features/peer-wake-notification.md */
+  pokeHandle?: string;
 };
 
 /** @deprecated Use ChatRegisterPayload. */

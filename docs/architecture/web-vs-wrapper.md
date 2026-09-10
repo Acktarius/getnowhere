@@ -47,7 +47,10 @@ child. See `docs/architecture/electron-desktop.md`.
 
 Settings exposes two wipe actions, both implemented in
 `src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
-`removeItem` (not a full storage clear). Confirms use shared `ConfirmModal`
+`removeItem` (not a full storage clear). After keys are removed, wipe clears
+in-memory wallet/contacts/chat session state, sets `location.hash` to
+`#/welcome`, then reloads so a delayed/blocked WebView reload cannot leave
+`RequireWallet` serving tabs. Confirms use shared `ConfirmModal`
 (not `window.confirm`).
 
 | Action | Clears | Keeps |
@@ -55,9 +58,11 @@ Settings exposes two wipe actions, both implemented in
 | **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |
 | **Reset app data** | Wallet-tied keys **plus** prefs and side channels (`ccx-*`) | Nothing local for this identity |
 
-**Nav Exit** (bottom bar) is **not** a wipe: it saves the wallet blob (and chat
-text when Local message retention is on), soft-leaves Holepunch, locks keys out
-of memory, and returns to welcome/open. Use `leaveRoom` for leave-forever.
+**Nav Exit** (bottom bar) is **not** a wipe: it saves the wallet blob (and live
+chat text when **P2P message retention** is on), soft-leaves Holepunch, locks
+keys out of memory, and returns to welcome/open. Hide / process death use the
+same L2 persist when that setting is on. L1′ sent copies always stay in the
+wallet while the room is available. Use `leaveRoom` for leave-forever.
 
 All hosts use the same UI path. Electron isolation is partition-scoped
 `localStorage` (Alice/Bob / packaged `persist:gnh`) — this change does not add

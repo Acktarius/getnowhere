@@ -1,0 +1,33 @@
+---
+title: Contributing
+description: How to propose changes without publishing internal notes by accident.
+---
+
+Contributions are welcome through the public GitHub repository.
+
+## Before you change code
+
+The project is web-first. Prefer small TypeScript changes in `src/` unless a
+host truly needs a native API. Match the existing bridge and topic rules
+instead of inventing new ones.
+
+## Public documentation
+
+`documentation/content/` is the only tree intended for GitHub Pages.
+
+- Rewrite public pages in plain language.
+- Fact-check against current code.
+- If a behavior is not verified, mark it **planned** or omit it.
+- Never bulk-copy `docs/`, especially `docs/prompts/`, decision records,
+  build notes, or raw security notes.
+
+## What not to include
+
+- Seed phrases, tokens, keystores, or private operational URLs
+- Signing and release secrets
+- Exploit instructions or attack walkthroughs
+
+## Checks
+
+For product changes, use the root test and lint scripts. For this website,
+use the scripts in `documentation/website/`.

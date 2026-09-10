@@ -1,5 +1,4 @@
 import {
-  Bell,
   ChevronRight,
   Database,
   Download,
@@ -21,6 +20,7 @@ import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { clearClipboard } from "@/lib/clipboard/sensitiveClipboard";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { bridgeRequestNotificationPermissions } from "@/lib/mobile/nativeNotificationsBridge";
 import { refreshAutoNode } from "@/lib/network/auto-node";
@@ -40,6 +40,7 @@ import {
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
 import { onNotificationPrivacyChanged } from "@/services/notifications/publishBackgroundNotification";
+import { applyPushWakeEnabled } from "@/services/poke/applyPushWakeSetting";
 import {
   deleteWalletData,
   resetAppData,
@@ -203,51 +204,102 @@ export function SettingsScreen() {
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem
-              title="Clear clipboard warnings"
-              description="Warn before sensitive values are copied to the clipboard."
+              title="Clipboard reminder"
+              description={
+                s.showTips
+                  ? "Toast after you copy a sensitive value. On Android and desktop, it points to Clear clipboard when you finish pasting."
+                  : "Toast after you copy a sensitive value."
+              }
               on={s.privacy.clearClipboardWarnings}
               onToggle={(v) => s.setPrivacy({ clearClipboardWarnings: v })}
             />
             <hr className="divider divider--flush" />
             <PrivacySettingItem
-              title="Local message retention"
-              description="On Exit, save chat messages into the encrypted wallet. Off = do not save chat text."
+              title="Clear clipboard"
+              description="Clears whatever is on the clipboard."
+              trailing={
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void clearClipboard()}
+                >
+                  Clear clipboard
+                </button>
+              }
+            />
+            <hr className="divider divider--flush" />
+            <PrivacySettingItem
+              title="P2P message retention"
+              description={
+                s.showTips
+                  ? "Keep live (Holepunch) chats after Exit or when the app is killed. Off = live chats are session-only. Messages you paid to send on chain still show while the room is open."
+                  : "Toggle off: P2P chat won't be retained"
+              }
               on={s.privacy.localMessageRetention}
               onToggle={(v) => s.setPrivacy({ localMessageRetention: v })}
             />
-            <hr className="divider divider--flush" />
-            <PrivacySettingItem
-              icon={Bell}
-              title="Notifications"
-              description="Badge the app icon when invitations or chain messages arrive while the app is in the background."
-              on={s.privacy.notificationsEnabled}
-              onToggle={(v) => applyNotificationsEnabled(v)}
-            />
-            <hr className="divider divider--flush" />
-            <PrivacySettingItem
-              title="Notification banner"
-              description={
-                s.privacy.notificationsEnabled
-                  ? "Also show a system banner. Requires OS notification permission."
-                  : "Enable notifications to configure banners."
-              }
-              on={
-                s.privacy.notificationsEnabled &&
-                s.privacy.notificationBannersEnabled
-              }
-              onToggle={
-                s.privacy.notificationsEnabled
-                  ? (v) => applyNotificationBanners(v)
-                  : undefined
-              }
-              trailing={
-                s.privacy.notificationsEnabled ? undefined : (
-                  <span className="field__hint">Off</span>
-                )
-              }
-            />
           </div>
         </div>
+
+        {/* OS notifications + poke wake: native-wrapper only (no desktop/web host). */}
+        {isMobileHost() ? (
+          <div className="section">
+            <div className="section__head">
+              <span className="section__title">Notifications</span>
+            </div>
+            <div className="card card--flush">
+              <PrivacySettingItem
+                title="Notifications"
+                description="Badge the icon when invites or chain messages arrive."
+                on={s.privacy.notificationsEnabled}
+                onToggle={(v) => applyNotificationsEnabled(v)}
+              />
+              <hr className="divider divider--flush" />
+              <PrivacySettingItem
+                title="Wake contact on relay"
+                description={
+                  s.privacy.notificationsEnabled
+                    ? "Uses ntfy / APNs wake. No Google."
+                    : "Turn on Notifications first."
+                }
+                on={s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled}
+                onToggle={
+                  s.privacy.notificationsEnabled
+                    ? (v) => applyPushWakeEnabled(v)
+                    : undefined
+                }
+                trailing={
+                  s.privacy.notificationsEnabled ? undefined : (
+                    <span className="field__hint">Off</span>
+                  )
+                }
+              />
+              <hr className="divider divider--flush" />
+              <PrivacySettingItem
+                title="Notification banner"
+                description={
+                  s.privacy.notificationsEnabled
+                    ? "Show a lock-screen banner."
+                    : "Turn on Notifications first."
+                }
+                on={
+                  s.privacy.notificationsEnabled &&
+                  s.privacy.notificationBannersEnabled
+                }
+                onToggle={
+                  s.privacy.notificationsEnabled
+                    ? (v) => applyNotificationBanners(v)
+                    : undefined
+                }
+                trailing={
+                  s.privacy.notificationsEnabled ? undefined : (
+                    <span className="field__hint">Off</span>
+                  )
+                }
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="section">
           <div className="section__head">
@@ -270,7 +322,7 @@ export function SettingsScreen() {
               to="/settings/backup"
               icon={Download}
               title="Backup"
-              sub="Reveal seed & keys, download encrypted wallet"
+              sub="Reveal seed & keys, export QR, download encrypted wallet"
             />
           </div>
         </div>

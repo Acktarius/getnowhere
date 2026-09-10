@@ -8,6 +8,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { AppAccessBlurOverlay } from "@/components/AppAccessBlurOverlay";
+import { AppSwitcherBlurOverlay } from "@/components/AppSwitcherBlurOverlay";
 import { ToastHost } from "@/components/ToastHost";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
@@ -15,9 +16,11 @@ import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { MainTabShell } from "@/layouts/MainTabShell";
+import { reconcileBiometricSettingsWithEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { scrubLeftoverDaemonCaches } from "@/lib/config";
 import { installBackgroundRemoteSyncHook } from "@/lib/mobile/backgroundRemoteSync";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { installSyncLifecycleCheckpoint } from "@/lib/mobile/syncLifecycleCheckpoint";
 import { AppLockScreen } from "@/screens/AppLockScreen";
 import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
@@ -50,10 +53,27 @@ function AppInner() {
   useEffect(() => {
     scrubLeftoverDaemonCaches();
     if (isMobileHost()) installBackgroundRemoteSyncHook();
+    const unsubCheckpoint = installSyncLifecycleCheckpoint();
     init().then(async () => {
       await hydrateContacts();
+      if (isMobileHost()) {
+        const { initMobileBiometricStorage } = await import(
+          "@/lib/auth/biometric-storage"
+        );
+        await initMobileBiometricStorage();
+        await reconcileBiometricSettingsWithEnrollments();
+        try {
+          const { restoreWalletSessionIfPending } = await import(
+            "@/lib/mobile/walletSessionBridge"
+          );
+          await restoreWalletSessionIfPending();
+        } catch {
+          /* remount without a valid session → Welcome */
+        }
+      }
       setReady(true);
     });
+    return unsubCheckpoint;
   }, [init, hydrateContacts]);
 
   const onboarded = isOnboarded();
@@ -129,6 +149,7 @@ export default function App() {
         <AppInner />
       </HashRouter>
       <AppAccessBlurOverlay />
+      <AppSwitcherBlurOverlay />
       <ToastHost />
     </div>
   );

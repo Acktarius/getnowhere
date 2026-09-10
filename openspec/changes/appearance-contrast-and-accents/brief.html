@@ -1,0 +1,108 @@
+<!-- forge-brief-specs-hash:788683a10a707fb3 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Appearance contrast and accents</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+    th, td { border: 1px solid #ddd; padding: 0.4rem 0.55rem; text-align: left; }
+    th { background: #f4f4f4; }
+    .swatch { display: inline-block; width: 0.85rem; height: 0.85rem; border-radius: 2px; vertical-align: -0.1rem; margin-right: 0.25rem; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>Appearance contrast and accents</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    Dark and Light feel like a flat slab today — almost black, or almost white.
+    After this change the page is a softer charcoal or paper grey, and cards
+    sit clearly on top of it. The little topic icons in a chat room are easier
+    to see. Sky and Pink are extra accent dots only — they color buttons and
+    those icons, not the page.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Dark page is charcoal, not near-black. Cards are a clearly lighter tile.</li>
+    <li>Light page is paper grey, not near-white. Cards stay white.</li>
+    <li>Chat-room topic symbols are brighter (same pictures, stronger color).</li>
+    <li>Accent dots add <strong>Sky</strong> and <strong>Pink</strong> next to Teal, Blue, Amber, and Violet. Accents only — not new themes.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Theme is only Dark, Light, or System. That is what paints the page and
+    cards. Accent is the highlight on buttons and room icons. Sky and Pink
+    join Teal / Blue / Amber / Violet. They never become a page theme and
+    they never tint the background.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  A[Theme: Dark / Light / System] --> B[Page and cards]
+  C[Accent: Teal Blue Amber Violet Sky Pink] --> D[Buttons and room icons]
+  B --> E[Softer page, cards still pop]
+  D --> F[Sky or Pink highlight]
+  </pre>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Settings → Appearance: two new color dots labeled Sky and Pink.</li>
+    <li>Every screen looks a bit less harsh in Dark and Light.</li>
+    <li>Room backgrounds show the topic icons more clearly.</li>
+  </ul>
+
+  <p><strong>Page and cards</strong> (theme only — not Sky, not Pink):</p>
+  <table>
+    <thead>
+      <tr><th>Surface</th><th>Today</th><th>After</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Dark page</td><td>near black</td><td><span class="swatch" style="background:#3d4558"></span>#3d4558 charcoal</td></tr>
+      <tr><td>Dark cards</td><td>original</td><td><span class="swatch" style="background:#14161d"></span>#14161d (original tile)</td></tr>
+      <tr><td>Light page</td><td>near white</td><td><span class="swatch" style="background:#e6e8ee"></span>#e6e8ee</td></tr>
+      <tr><td>Light cards</td><td>white</td><td>white (unchanged)</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Accents</strong> (highlight only — do not change the page):</p>
+  <table>
+    <thead>
+      <tr><th>Accent</th><th>Role</th><th>Color</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Sky</td><td>accent only</td><td><span class="swatch" style="background:#6ec8f0"></span>#6ec8f0</td></tr>
+      <tr><td>Pink</td><td>accent only</td><td><span class="swatch" style="background:#ff8fb8"></span>#ff8fb8</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>If Dark still feels too grey or too bright, we can nudge the hex values — we will not invent a new theme to fix that.</li>
+    <li>Topic icons are meant to be visible, not loud. If they feel like wallpaper, say so.</li>
+    <li>Older app builds that see a stored Sky or Pink value will fall back to Teal until they update.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>A full pink or sky “skin” for the whole app</li>
+    <li>Changing Teal, Blue, Amber, or Violet themselves</li>
+    <li>Redesigning chat bubbles beyond inheriting the new colors</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Page and card colors + room-icon strength (2 tasks)</li>
+    <li>Sky and Pink accents + Settings dots (3 tasks)</li>
+    <li>Short appearance note in docs (1 task)</li>
+    <li>Automated check that the colors and dots stay correct (1 task)</li>
+  </ul>
+</body>
+</html>

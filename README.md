@@ -21,6 +21,31 @@ npm run holepunch:install
 npm run desktop:install
 ```
 
+## Environment setup
+
+Copy the example and fill in what you need:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `VITE_HOLEPUNCH_WS_URL` | local P2P only | WS bridge address (`ws://127.0.0.1:7901`) |
+| `VITE_NTFY_READ_TOKEN` | F-Droid push wake | Bearer token for SSE subscribe on `ntfy.getnowhere.im` |
+| `VITE_POKE_GATEWAY_URL` | F-Droid / iOS poke | Public origin of `poke-gateway/` (see that folder’s README) |
+
+**ntfy token setup (F-Droid / Android push wake):**
+Your ntfy server should run with `auth-default-access: deny-all` and two scoped users:
+- `gnh-publisher` → `write-only` on `gnh-*` (used by `poke-gateway`)
+- `gnh-reader` → `read-only` on `gnh-*` (token goes in `VITE_NTFY_READ_TOKEN`)
+
+Generate tokens with `sudo ntfy token add gnh-reader` on your VPS.
+See `poke-gateway/.env.example` for the server-side `NTFY_PUBLISH_TOKEN`.
+
+**TODO (production cutover):** Pre-production `mobile:sync-ui` bakes `VITE_NTFY_READ_TOKEN` into `native-wrapper/assets/ui` (and that JS may have been committed). Before store / public F-Droid: rotate `gnh-reader` on ntfy, update root `.env` and GitHub secret `VITE_NTFY_READ_TOKEN`, rebuild so old baked copies stop working.
+Full setup: `docs/features/peer-wake-notification.md`.
+
 ## Test scenarios
 
 Pick the scenario that matches what you are verifying. Always start Vite for
@@ -172,6 +197,34 @@ Seed phrase stays in-memory only — never route it through storage.
 - Do not codegen Nitro-Hyperswarm or a React Native desktop shell.
 - Do not drop the L1 session seal because Noise exists — `docs/security/encryption.md`.
 
-## Docs
+## Documentation
 
-Start at `docs/README.md`. Architecture runbooks beat this file for deep detail.
+- **`docs/`** is the internal engineering documentation library (architecture,
+  protocol, security notes, AI guidance, and operational records). It is not
+  published automatically.
+- **`documentation/content/`** is the curated public documentation source.
+- **`documentation/website/`** is the isolated Fumadocs / Next.js renderer.
+
+Local documentation site (no `/getnowhere` prefix):
+
+```bash
+cd documentation/website
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000/`.
+
+Production static build (GitHub Pages prefix):
+
+```bash
+cd documentation/website
+GITHUB_ACTIONS=true npm run build
+```
+
+Output is `documentation/website/out/`. The expected public URL is
+`https://acktarius.github.io/getnowhere/`. GitHub Pages must be configured
+manually to use **GitHub Actions** as its deployment source. This repository
+does not claim that Pages is already active.
+
+Start internal runbooks at `docs/README.md`.

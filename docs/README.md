@@ -24,17 +24,29 @@ No L3. UI never joins Hyperswarm.
 7. `architecture/pairing-and-topics.md` — shipped v1 `topicRef` formula
 7b. `security/capabilities-and-derivation.md` — ids as capabilities, v2 HKDF targets
 8. `security/encryption.md` — threat model + L1 / L1′ / L2
+8b. `security/clipboard.md` — sensitive identifier copy/clear (no later read)
 9. `security/p2pchatprotocol.md`
 10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)
 10b. `builds/expo-eas-ios-build.md`
-10c. `builds/github-pages-and-desktop.md` — Pages (browser) + Linux Electron with embedded UI
+10c. `builds/github-pages-and-desktop.md` — public Fumadocs Pages + Linux Electron with embedded UI
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1′ fallback when L2 is down (grey bubbles)
 13b. `features/local-background-notifications.md` — mobile local L1/L1′ badges + banners
+13c. `features/peer-wake-notification.md` — APNs/FCM poke gateway to cut L2 meet-up from 15 min to seconds
 13c. `background-remote-sync.md` — WorkManager / BGAppRefresh → wallet sync
 14. `features/app-access-and-data-unlock.md` — mobile biometrics (app vs data)
+14b. `features/appearance.md` — page theme vs accent (Sky and Pink do not tint the page)
 15. `prompts/coding-constraints.md`
+
+## Documentation boundaries
+
+- `docs/` contains internal engineering documentation, AI guidance,
+  architecture records, decision logs, and operational notes.
+- `documentation/content/` contains curated documentation intended
+  for public GitHub Pages publication.
+- Never automatically copy or publish material from `docs/` to
+  `documentation/content/`; review and rewrite it first.
 
 ## Rules
 

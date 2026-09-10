@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { Link } from "react-router-dom";
+import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { NotifyPin } from "@/components/NotifyPin";
 import {
   contactInviteIsZeroConf,
@@ -31,7 +31,7 @@ export function ContactCard({ contact, to }: Props) {
   const invitePulse = contactInviteIsZeroConf(contact, invites);
 
   return (
-    <Link
+    <MobileInstantLink
       to={target}
       className="row row--clickable"
       style={{ textDecoration: "none" }}
@@ -66,6 +66,6 @@ export function ContactCard({ contact, to }: Props) {
         size={16}
         style={{ color: "var(--text-faint)", flexShrink: 0 }}
       />
-    </Link>
+    </MobileInstantLink>
   );
 }

@@ -5,8 +5,15 @@
 import { securityBridgeInjectionJs } from "./securityBridgeInjection";
 
 /** Build injected JS: gnhMobile API with bridge token held in closure (not on window). */
-export function buildMobileBridgeInjection(bridgeToken: string): string {
+export function buildMobileBridgeInjection(
+  bridgeToken: string,
+  platform: "ios" | "android" = "ios",
+  pendingWalletRestore: string | null = null,
+): string {
   const tokenJson = JSON.stringify(bridgeToken);
+  const platformJson = JSON.stringify(platform);
+  const restoreJson = JSON.stringify(pendingWalletRestore);
+  const restoreReady = pendingWalletRestore ? "true" : "false";
   const securityJs = securityBridgeInjectionJs();
   return `(function(){
   if (window.gnhMobile) return;
@@ -14,6 +21,7 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
   var handlers = [];
   var saveHandlers = [];
   window.gnhMobile = {
+    platform: ${platformJson},
     saveTextFile: function(opts) {
       if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) return;
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -55,8 +63,23 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
       for (var i = 0; i < handlers.length; i++) {
         try { handlers[i](evt); } catch (e) {}
       }
-    }
+    },
+    onPokeToken: function(handler) {
+      pokeHandlers.push(handler);
+      return function() {
+        var i = pokeHandlers.indexOf(handler);
+        if (i >= 0) pokeHandlers.splice(i, 1);
+      };
+    },
+    _dispatchPokeToken: function(platform, token) {
+      for (var i = 0; i < pokeHandlers.length; i++) {
+        try { pokeHandlers[i](platform, token); } catch (e) {}
+      }
+    },
+    _sessionRestoreReady: ${restoreReady},
+    _pendingWalletRestore: ${restoreJson}
   };
+  var pokeHandlers = [];
   ${securityJs}
 })();true;`;
 }
@@ -64,4 +87,14 @@ export function buildMobileBridgeInjection(bridgeToken: string): string {
 /** Dispatch a sidecar event into the WebView main world. */
 export function buildBridgeEventDispatchScript(event: object): string {
   return `(function(){try{window.gnhMobile&&window.gnhMobile._dispatchBridgeEvent(${JSON.stringify(event)});}catch(e){}})();true;`;
+}
+
+/** Dispatch a push token into the WebView for gateway registration. */
+export function buildPokeTokenDispatchScript(
+  platform: "apns",
+  token: string,
+): string {
+  const p = JSON.stringify(platform);
+  const t = JSON.stringify(token);
+  return `(function(){try{window.gnhMobile&&window.gnhMobile._dispatchPokeToken(${p},${t});}catch(e){}})();true;`;
 }

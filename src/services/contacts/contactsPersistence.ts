@@ -10,6 +10,7 @@ import {
   persistRuntime,
   requireRuntime,
 } from "@/services/conceal/sync/runtime";
+import { seedTopicEpochStoreFromContacts } from "@/services/p2p/topicEpochContactSync";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake } from "@/types/protocol";
@@ -44,6 +45,7 @@ export type StoredAddressEntry = RawAddressEntry & {
   inviteStatus?: Contact["inviteStatus"];
   chatStatus?: Contact["chatStatus"];
   roomId?: string;
+  topicEpoch?: number;
   createdAt?: string;
   updatedAt?: string;
   lastInteractionAt?: string;
@@ -84,6 +86,7 @@ export function contactToAddressEntry(contact: Contact): StoredAddressEntry {
     inviteStatus: contact.inviteStatus,
     chatStatus: contact.chatStatus,
     roomId: contact.roomId,
+    topicEpoch: contact.topicEpoch,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt,
     lastInteractionAt: contact.lastInteractionAt,
@@ -132,6 +135,10 @@ export function addressEntryToContact(entry: StoredAddressEntry): Contact {
     inviteStatus: entry.inviteStatus ?? "none",
     chatStatus,
     roomId: entry.roomId,
+    topicEpoch:
+      typeof entry.topicEpoch === "number" && entry.topicEpoch >= 0
+        ? entry.topicEpoch
+        : undefined,
     createdAt: entry.createdAt ?? now,
     updatedAt: entry.updatedAt ?? now,
     lastInteractionAt: entry.lastInteractionAt,
@@ -313,8 +320,7 @@ export async function hydrateContacts(): Promise<{
     if (fromWallet.length > 0) {
       saveContactsToLocal(fromWallet);
       markReady();
-      // Keep blob in sync if local had extras that wallet lacked — prefer wallet
-      // as source of truth after import/unlock.
+      await seedTopicEpochStoreFromContacts(fromWallet);
       return { contacts: fromWallet, invites };
     }
     if (local.length > 0) {
@@ -328,6 +334,7 @@ export async function hydrateContacts(): Promise<{
   }
 
   markReady();
+  await seedTopicEpochStoreFromContacts(local);
   return { contacts: local, invites };
 }
 
@@ -345,6 +352,7 @@ export function contactsExportPayload(contacts: Contact[]): unknown[] {
     inviteStatus: c.inviteStatus,
     chatStatus: c.chatStatus,
     roomId: c.roomId ?? null,
+    topicEpoch: c.topicEpoch ?? 0,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   }));

@@ -1,0 +1,79 @@
+<!-- forge-brief-specs-hash:834bbafa94b7e9b9 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Get NowHere — iOS EAS + APNs preview</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    code { font-size: 0.9em; background: #f4f4f4; padding: 0.1em 0.35em; border-radius: 3px; }
+    .muted { color: #555; font-size: 0.95rem; }
+  </style>
+</head>
+<body>
+  <h1>iOS phone-only + TestFlight preview + APNs key</h1>
+  <p class="muted">Operator brief for change <code>mobile-ios-eas-apns-preview</code></p>
+
+  <h2>TL;DR</h2>
+  <p>
+    After this change, the Expo wrapper is configured for <strong>iPhone-only</strong> builds,
+    EAS can produce a <strong>TestFlight</strong> iOS preview from Linux, and docs tell you how
+    to wire the Apple push AuthKey into poke-gateway. The key itself stays off git (already on the VPS).
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Phone-only iOS app id settings (no tablet target)</li>
+    <li>An EAS <code>preview-ios</code> profile that builds iOS for TestFlight (Android <code>preview</code> stays internal APK)</li>
+    <li>A clear checklist: App ID → <code>.p8</code> → VPS secrets → rebuild gateway</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Product UI still ships inside the Expo wrapper. Linux cannot run Xcode, so EAS builds the IPA
+    in the cloud. Peer wake on iOS uses Apple Push: poke-gateway signs requests with your AuthKey.
+    F-Droid peers keep using ntfy when no APNs registration exists.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  Dev[Linux laptop] -->|eas build preview| EAS[EAS cloud]
+  EAS -->|IPA| TF[TestFlight]
+  TF --> Phone[iPhone]
+  Phone -->|register token| GW[poke-gateway]
+  GW -->|APNs .p8| Apple[Apple Push]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>After merge: with root <code>.env</code> set, run <code>npm run mobile:sync-ui</code>, then <code>eas build --platform ios --profile preview-ios</code>, then submit to TestFlight</li>
+    <li>APNs AuthKey stays on the VPS only — not uploaded to EAS. Root <code>VITE_*</code> (poke URL + ntfy read token) bake into the app JS at sync time, same idea as the F-Droid APK</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Production-only AuthKey will not wake sandbox/dev installs — TestFlight is the intended path</li>
+    <li>First EAS submit needs Apple/Expo login and an App Store Connect app for the bundle id</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Agent-run cloud builds or committing the <code>.p8</code></li>
+    <li>Dual sandbox + production keys in the gateway</li>
+    <li>App Store public release polish</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Expo iOS config — 2 tasks</li>
+    <li>Documentation — 2 tasks</li>
+    <li>Verify secrets/docs — 2 tasks</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _clearIdleLockTimerForTests,
   _resetAppAccessControllerForTests,
+  APP_ACCESS_BACKGROUND_AT_KEY,
   checkIdleDeadlineIfDue,
   getAppAccessLockGeneration,
   getAppAccessState,
@@ -148,12 +149,56 @@ describe("AppAccessController", () => {
     expect(getAppAccessState().reason).toBe("background");
   });
 
-  it("engages cold-start lock when app access lock is enabled", () => {
+  it("does not lock merely because app access was enabled", () => {
     const onLock = vi.fn();
     setOnAppAccessLock(onLock);
+    setAutoLockTimeoutSec(900);
+    setAppAccessLockEnabled(true);
+    expect(isAppAccessLocked()).toBe(false);
+    expect(onLock).not.toHaveBeenCalled();
+  });
+
+  it("does not lock after a short background when auto-lock is 15 minutes", () => {
+    setAppAccessLockEnabled(true);
+    setAutoLockTimeoutSec(900);
+    const start = Date.now();
+    vi.setSystemTime(start);
+    handleLifecycleEvent("background");
+    vi.setSystemTime(start + 120_000);
+    handleLifecycleEvent("foreground");
+    expect(isAppAccessLocked()).toBe(false);
+  });
+
+  it("re-enable after WKWebView remount uses persisted background time", () => {
+    setAutoLockTimeoutSec(900);
+    setAppAccessLockEnabled(true);
+    const start = Date.now();
+    vi.setSystemTime(start);
+    handleLifecycleEvent("background");
+    vi.setSystemTime(start + 120_000);
+    const saved = localStorage.getItem(APP_ACCESS_BACKGROUND_AT_KEY);
+    expect(saved).toBeTruthy();
+    _resetAppAccessControllerForTests();
+    localStorage.setItem(APP_ACCESS_BACKGROUND_AT_KEY, saved!);
+    setAutoLockTimeoutSec(900);
+    setAppAccessLockEnabled(true);
+    expect(isAppAccessLocked()).toBe(false);
+  });
+
+  it("locks on remount when persisted background exceeds auto-lock", () => {
+    setAutoLockTimeoutSec(60);
+    setAppAccessLockEnabled(true);
+    const start = Date.now();
+    vi.setSystemTime(start);
+    handleLifecycleEvent("background");
+    vi.setSystemTime(start + 120_000);
+    const saved = localStorage.getItem(APP_ACCESS_BACKGROUND_AT_KEY);
+    _resetAppAccessControllerForTests();
+    localStorage.setItem(APP_ACCESS_BACKGROUND_AT_KEY, saved!);
+    setAutoLockTimeoutSec(60);
     setAppAccessLockEnabled(true);
     expect(isAppAccessLocked()).toBe(true);
-    expect(getAppAccessState().reason).toBe("lifecycle");
+    expect(getAppAccessState().reason).toBe("background");
   });
 
   it("checkIdleDeadlineIfDue locks when timer was cleared", () => {

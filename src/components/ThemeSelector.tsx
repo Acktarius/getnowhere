@@ -1,5 +1,6 @@
 import { Lightbulb, Monitor, Moon, Sun } from "lucide-react";
 import { PrivacySettingItem } from "@/components/PrivacySettingItem";
+import { resolveAccentVars } from "@/lib/appearance/accentVars";
 import { useSettingsStore } from "@/state/settingsStore";
 import type { AccentName, AppTheme } from "@/types/models";
 
@@ -9,11 +10,13 @@ const THEMES: { value: AppTheme; label: string; icon: typeof Sun }[] = [
   { value: "system", label: "System", icon: Monitor },
 ];
 
-const ACCENTS: { value: AccentName; label: string; color: string }[] = [
-  { value: "teal", label: "Teal", color: "#5ce4c7" },
-  { value: "blue", label: "Blue", color: "#7c8cff" },
-  { value: "amber", label: "Amber", color: "#f0a868" },
-  { value: "violet", label: "Violet", color: "#9b8cff" },
+const ACCENT_SWATCHES: { value: AccentName; label: string }[] = [
+  { value: "teal", label: "Teal" },
+  { value: "blue", label: "Blue" },
+  { value: "amber", label: "Amber" },
+  { value: "violet", label: "Violet" },
+  { value: "sky", label: "Sky" },
+  { value: "pink", label: "Pink" },
 ];
 
 /** Theme, accent, and contextual tips — Settings → Appearance. */
@@ -63,8 +66,8 @@ export function ThemeSelector() {
           }}
         >
           <div className="row__title">Accent</div>
-          <div className="row-flex" style={{ gap: 10 }}>
-            {ACCENTS.map(({ value, label, color }) => (
+          <div className="row-flex" style={{ flexWrap: "wrap", gap: 10 }}>
+            {ACCENT_SWATCHES.map(({ value, label }) => (
               <button
                 key={value}
                 type="button"
@@ -74,7 +77,7 @@ export function ThemeSelector() {
                   width: 40,
                   height: 40,
                   borderRadius: "50%",
-                  background: color,
+                  background: resolveAccentVars(value, "dark")["--primary"],
                   border:
                     accent === value
                       ? "3px solid var(--text)"

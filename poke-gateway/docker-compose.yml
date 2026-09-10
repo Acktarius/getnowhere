@@ -1,0 +1,20 @@
+# Operator deploy: bind localhost only; TLS at the reverse proxy.
+# Copy .env.example → .env and set NTFY_* (APNS_* only if you wake iOS).
+services:
+  poke-gateway:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3456:3456"
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "3456"
+      DB_PATH: /data/poke.db
+      APNS_KEY_PATH: /secrets/AuthKey.p8
+    volumes:
+      - poke-data:/data
+      - ./secrets:/secrets:ro
+
+volumes:
+  poke-data:

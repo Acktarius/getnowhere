@@ -1,0 +1,125 @@
+---
+title: Local development
+description: Run Get NowHere from source — web UI, sidecar, desktop shells.
+---
+
+Daily work is the Vite app plus `npm run holepunch` when you want live
+chat. You do not need Electron or Expo for ordinary UI changes. The UI never
+imports Hyperswarm.
+
+Node.js **24** matches CI. npm. Clone
+[acktarius/getnowhere](https://github.com/acktarius/getnowhere).
+
+## Install
+
+```bash
+npm install
+npm run holepunch:install
+npm run desktop:install
+```
+
+Live chat in the browser needs the sidecar **and** the UI:
+
+```bash
+npm run holepunch
+npm run dev
+```
+
+`npm run holepunch` starts the local Hyperswarm host. Without it, the
+composer stays locked. Open `http://127.0.0.1:5173`.
+
+Do not paste tokens, signing material, or private service URLs into public
+docs or issues. Local env files stay on your machine.
+
+## 1. Web UI only
+
+Wallet, contacts, invites — no live swarm. Composer stays locked for live
+chat.
+
+```bash
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`.
+
+## 2. Web + sidecar (browser)
+
+Same machine, one Node sidecar. Two browser profiles, two wallets. Good for
+the bridge and sealed frames. **Not** two independent DHT peers — both tabs
+share one process.
+
+```bash
+npm run holepunch
+npm run dev
+```
+
+A second local sidecar is optional; use the repository README if you need it.
+Do not publish those URLs or tokens.
+
+## 3. Desktop — shared swarm
+
+Two Electron windows, isolated wallets, **one** shared sidecar. Closing
+the window that owns the child drops the other side’s bridge.
+
+```bash
+npm run dev
+npm run desktop:alice
+npm run desktop:bob
+```
+
+## 4. Desktop — isolated swarm
+
+Each window owns its own sidecar. This is the real peer path: DHT, then the
+app’s post-connect check.
+
+```bash
+npm run dev
+npm run desktop:alice:isolated
+npm run desktop:bob:isolated
+```
+
+Always start Vite first when a desktop shell loads `http://127.0.0.1:5173`.
+
+## Checks
+
+```bash
+npm run test
+npm run test:e2e
+npm run preflight
+npm run build && npm run preview
+```
+
+## Mobile from source
+
+Expo shell is `native-wrapper/`. Local Android:
+
+```bash
+npm run mobile:install
+npm run mobile:android
+```
+
+On-device P2P is the Bare worklet, not the WebView. Prefer scenarios 1–4
+unless you are working on the wrapper.
+
+## This documentation site
+
+```bash
+cd documentation/website
+npm ci
+npm run dev
+```
+
+`http://localhost:3000/` — no `/getnowhere` prefix locally.
+
+```bash
+cd documentation/website
+GITHUB_ACTIONS=true npm run build
+```
+
+Output: `documentation/website/out/`.
+
+## Do not
+
+- Import `hyperswarm` into the Vite UI
+- Publish `docs/` by copying it into `documentation/content/`
+- Put secrets, private URLs, or signing material on public pages

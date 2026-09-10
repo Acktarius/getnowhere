@@ -1,0 +1,27 @@
+{
+  "ok": true,
+  "ranAt": "2026-08-26T14:10:47.373Z",
+  "stepsHash": "be8a7b4a18aa878f11cbd55bc007a4e2135235407a81b7e491adc78927eefb58",
+  "steps": [
+    {
+      "name": "delete-wallet-resets-biometric-flags",
+      "cmd": "npm test -- tests/storage/app-data-lifecycle.test.ts -t \"biometric\"",
+      "exitCode": 0,
+      "expectMatched": true,
+      "ok": true,
+      "durationMs": 1042,
+      "outputTail": "> getnowhere@0.4.0 test\n> vitest run tests/storage/app-data-lifecycle.test.ts -t biometric\n\n\n RUN  v4.1.10 /home/katana/getnowhere\n\n\n Test Files  1 passed (1)\n      Tests  1 passed | 2 skipped (3)\n   Start at  10:10:45\n   Duration  673ms (transform 170ms, setup 45ms, import 223ms, tests 2ms, environment 319ms)\n\nnpm warn Unknown env config \"devdir\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.\n(node:2378418) ExperimentalWarning: Importing WebAssembly module instances is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)",
+      "error": null
+    },
+    {
+      "name": "reconcile-stale-biometric-flags",
+      "cmd": "npm test -- tests/auth/biometric-reconcile.test.ts",
+      "exitCode": 0,
+      "expectMatched": true,
+      "ok": true,
+      "durationMs": 755,
+      "outputTail": "> getnowhere@0.4.0 test\n> vitest run tests/auth/biometric-reconcile.test.ts\n\n\n RUN  v4.1.10 /home/katana/getnowhere\n\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  10:10:46\n   Duration  467ms (transform 31ms, setup 45ms, import 36ms, tests 3ms, environment 320ms)\n\nnpm warn Unknown env config \"devdir\". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.",
+      "error": null
+    }
+  ]
+}

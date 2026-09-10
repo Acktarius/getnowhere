@@ -68,6 +68,8 @@ export type Contact = {
   chatStatus: ChatStatus;
   /** Active or pending room id for this contact, if any. */
   roomId?: string;
+  /** Hyperswarm discovery generation for this relationship (HKDF_EPOCH_V1). */
+  topicEpoch?: number;
   createdAt: string;
   updatedAt: string;
   lastInteractionAt?: string;
@@ -95,6 +97,22 @@ export type ChatRoom = {
   awaitingChainSync?: boolean;
   createdAt: string;
   lastMessageAt?: string;
+  /**
+   * Peer's opaque 14-char pokeHandle from invite handshake (`ph` field).
+   * @see docs/features/peer-wake-notification.md
+   */
+  partnerPokeHandle?: string;
+  /**
+   * F-Droid: locally minted 14-char base64url id sent to partner as our pokeHandle.
+   * @see docs/features/peer-wake-notification.md
+   */
+  ownPokeId?: string;
+  /**
+   * Unix seconds of the last peer-wake poke this room fired.
+   * Cleared when L2 reaches `connected` so the next relay transition pokes again.
+   * @see docs/features/peer-wake-notification.md
+   */
+  lastPokedAt?: number;
 };
 
 export type ChatMessageKind = "text" | "reaction" | "edit" | "delete";
@@ -108,9 +126,11 @@ export type ChatMessage = {
   direction: "out" | "in";
   text: string;
   createdAt: string;
-  status: "sending" | "delivered" | "failed";
+  status: "queued" | "sending" | "delivered" | "failed";
   /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
   channel?: MessageChannel;
+  /** Mempool TTL unix seconds when this L1′ row is not mined. */
+  ttlExpiresAt?: number;
   /** Client-generated id for idempotent send / edit / delete. */
   clientId?: string;
   kind?: ChatMessageKind;
@@ -134,10 +154,9 @@ export type TransactionKind =
   | "unknown";
 
 /** Wallet-history hint for L1 contact smartmessages (display only). */
-export type TransactionContactHint = {
-  module: "contact";
-  action: "create" | "register" | "revoke";
-};
+export type TransactionContactHint =
+  | { module: "contact"; action: "create" | "register" | "revoke" }
+  | { module: "contact"; action: "relay"; roomId: string };
 
 export type Transaction = {
   id: string;
@@ -218,7 +237,7 @@ export type SmartMessageInvite = {
 };
 
 export type AppTheme = "dark" | "light" | "system";
-export type AccentName = "teal" | "blue" | "amber" | "violet";
+export type AccentName = "teal" | "blue" | "amber" | "violet" | "sky" | "pink";
 
 export type PrivacySettings = {
   localMessageRetention: boolean;
@@ -230,6 +249,11 @@ export type PrivacySettings = {
   notificationsEnabled: boolean;
   /** Requires notificationsEnabled; controls OS banner/alert presentation. */
   notificationBannersEnabled: boolean;
+  /**
+   * Opt-in peer-wake poke on first L1′ send after L2 was live. Default off.
+   * @see docs/features/peer-wake-notification.md
+   */
+  pushWakeEnabled: boolean;
 };
 
 export type AppSettings = {

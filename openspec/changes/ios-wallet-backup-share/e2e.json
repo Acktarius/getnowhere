@@ -1,0 +1,24 @@
+{
+  "change": "ios-wallet-backup-share",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Native save path: iOS share vs Android SAF",
+      "cmd": "npx vitest run tests/native-wrapper/save-text-file.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Web downloadJson mobile bridge contract",
+      "cmd": "npx vitest run tests/lib/downloadJson.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

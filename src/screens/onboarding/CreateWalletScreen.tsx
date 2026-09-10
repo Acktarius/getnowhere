@@ -120,7 +120,7 @@ export function CreateWalletScreen() {
         {step === "creating" && (
           <div
             className="center stack stack--gap-5 fade-in-up"
-            style={{ paddingTop: 40 }}
+            style={{ paddingTop: 40, alignItems: "center" }}
           >
             <BrandMark size={64} />
             <div className="stack stack--gap-2 center">
@@ -134,7 +134,7 @@ export function CreateWalletScreen() {
               className="btn btn--primary btn--block"
               disabled={initializing}
               onClick={() => void handleCreate()}
-              style={{ maxWidth: 280 }}
+              style={{ width: "100%", maxWidth: 280 }}
             >
               {initializing ? (
                 <>

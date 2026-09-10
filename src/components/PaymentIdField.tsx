@@ -1,16 +1,16 @@
 import {
   AlertCircle,
   ArrowLeftRight,
-  Check,
   ChevronDown,
   ChevronUp,
-  Copy,
   Pencil,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { CopyButton } from "@/components/CopyButton";
+import { NonSelectableText } from "@/components/NonSelectableText";
 import { PaymentIdQrScanButton } from "@/components/qr/PaymentIdQrScanButton";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
-import { useCopy } from "@/hooks/useCopy";
+import { bindPointerToggle } from "@/lib/pointer-toggle";
 import { walletService } from "@/services";
 import { shortAddress } from "@/utils/format";
 
@@ -44,10 +44,10 @@ export function PaymentIdField({
   qrKind = "paymentId",
   allowGenerate = false,
 }: Props) {
-  const [copied, copy] = useCopy();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [qrOpen, setQrOpen] = useState(false);
+  const qrExpand = bindPointerToggle(useRef(false), () => setQrOpen((o) => !o));
 
   const accent = direction === "from" ? "var(--primary)" : "var(--secondary)";
 
@@ -74,11 +74,12 @@ export function PaymentIdField({
           {showQr && value && !editing && (
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn expander-btn"
               style={{ width: 28, height: 28 }}
               aria-expanded={qrOpen}
               aria-label={qrOpen ? "Hide QR code" : "Show QR code"}
-              onClick={() => setQrOpen((o) => !o)}
+              onPointerDown={qrExpand.onPointerDown}
+              onClick={qrExpand.onClick}
             >
               {qrOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
@@ -155,7 +156,9 @@ export function PaymentIdField({
             color: value ? "var(--text)" : "var(--text-faint)",
           }}
         >
-          {value ? shortAddress(value, 10, 10) : "— not set —"}
+          <NonSelectableText>
+            {value ? shortAddress(value, 10, 10) : "— not set —"}
+          </NonSelectableText>
         </div>
       )}
       {showQr && value && !editing && qrOpen && (
@@ -170,16 +173,7 @@ export function PaymentIdField({
       )}
       {!editing && (
         <div className="row-flex" style={{ gap: 8, marginTop: 10 }}>
-          {value ? (
-            <button
-              type="button"
-              className="btn btn--sm btn--ghost"
-              onClick={() => copy(value)}
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
-              {copied ? "Copied" : "Copy"}
-            </button>
-          ) : null}
+          {value ? <CopyButton value={value} /> : null}
           {editable && (
             <button
               type="button"

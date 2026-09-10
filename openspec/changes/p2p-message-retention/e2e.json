@@ -1,0 +1,18 @@
+{
+  "change": "p2p-message-retention",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "L2 persist gate, hide flush, Exit",
+      "cmd": "npx vitest run tests/p2p/chat-rooms-blob.test.ts tests/p2p/chat-rooms-wallet.test.ts tests/storage/walletSessionExit.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "L1′ hydrate merge and destroy-path prune",
+      "cmd": "npx vitest run tests/p2p/chat-rooms-wallet.test.ts tests/p2p/holepunch-chat-transport.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    }
+  ]
+}

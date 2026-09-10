@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import {
   chatTransport,
   p2pEncryption,
@@ -23,10 +24,7 @@ import {
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
-import {
-  getRelationshipTopicEpoch,
-  syncRelationshipTopicEpoch,
-} from "@/services/p2p/relationshipTopicEpochStore";
+import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isInviteRevoked,
   isRoomRevoked,
@@ -36,7 +34,6 @@ import {
   type CatalogRetirementReason,
   findCatalogRetirements,
   listCatalogRooms,
-  loadCatalogRoom,
   patchCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import {
@@ -44,6 +41,10 @@ import {
   planRoomRestores,
   pruneRoomsForMissingContacts,
 } from "@/services/p2p/roomChainRestore";
+import {
+  applyRelationshipTopicEpoch,
+  syncAndMirrorRelationshipTopicEpoch,
+} from "@/services/p2p/topicEpochContactSync";
 import { deriveRelationshipId } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
 import {
@@ -94,10 +95,10 @@ type ContactsStore = {
   acceptInvite: (inviteId: string) => Promise<{ roomId: string }>;
   declineInvite: (inviteId: string) => Promise<void>;
   /**
-   * Leave forever: L1 chat.revoke (room_revoked), then destroy local room
-   * only after broadcast confirms. Peer destroys on scan.
+   * Leave forever: destroy local room immediately; L1 chat.revoke when ids resolve.
+   * Returns `l1Revoke: false` when contact/invite ids are missing (local retirement only).
    */
-  revokeRoom: (roomId: string) => Promise<void>;
+  revokeRoom: (roomId: string) => Promise<{ l1Revoke: boolean }>;
   /** Drop a dead sent invite so Alice can create again (optionally one topic only). */
   abandonPendingInvite: (
     contactId: string,
@@ -235,10 +236,17 @@ async function retireExpiredRoomsImpl(
       | ((s: ContactsStore) => Partial<ContactsStore>),
   ) => void,
 ): Promise<void> {
+  // Collect catalog inviteIds before any prune touches the rows.
+  const { findCatalogRetirements } = await import(
+    "@/services/p2p/roomCatalogStore"
+  );
+  const catalogInviteIds = new Map<string, string | undefined>(
+    findCatalogRetirements().map(({ room }) => [room.id, room.inviteId]),
+  );
   for (const [roomId] of collectRoomsDueForRetirement(get().invites)) {
     if (isRoomRevoked(roomId)) continue;
     const inv = get().invites.find((i) => i.roomId === roomId);
-    const inviteId = inv?.inviteId ?? loadCatalogRoom(roomId)?.inviteId;
+    const inviteId = inv?.inviteId ?? catalogInviteIds.get(roomId);
     try {
       await applyRoomDestroyLocally(get, set, roomId, inviteId);
     } catch {
@@ -261,9 +269,11 @@ async function applyRoomDestroyLocally(
   // Tombstone first so any concurrent openRoom/reconnect cannot re-upsert.
   rememberRevokedRoom(roomId, inviteId);
   try {
-    const { removeCatalogRoom } = await import(
+    const { clearPokeIds, removeCatalogRoom } = await import(
       "@/services/p2p/roomCatalogStore"
     );
+    ntfyUnsubscribeRoom(roomId);
+    clearPokeIds(roomId);
     removeCatalogRoom(roomId);
   } catch {
     /* ignore */
@@ -777,7 +787,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           }
         }
         if (relationshipId) {
-          syncRelationshipTopicEpoch(relationshipId, revoke.topicEpoch);
+          await syncAndMirrorRelationshipTopicEpoch(
+            relationshipId,
+            revoke.topicEpoch,
+            contactId,
+          );
           syncedEpochFromPeer = true;
         }
       }
@@ -1064,6 +1078,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     });
     rememberHandshake(composed.handshake);
 
+    const inviteEpoch =
+      composed.handshake.topicEpoch ??
+      getRelationshipTopicEpoch(relationshipId);
+    await applyRelationshipTopicEpoch(relationshipId, inviteEpoch, contactId);
+
     // Local envelope for the adapter (tx encryption is on-chain). Pass smartBody
     // directly so unicode aliases cannot break btoa.
     const sent = await smartMessageService.sendInviteMessage(
@@ -1173,6 +1192,13 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       );
     }
 
+    const localEpochBefore =
+      handshake.relationshipId &&
+      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+        ? getRelationshipTopicEpoch(handshake.relationshipId)
+        : 0;
+    const wireEpoch = handshake.topicEpoch ?? 0;
+
     const keypair = await p2pEncryption.generateEphemeralKeypair();
     const register = await smartMessageProtocol.composeRegister({
       inviteId: inv.inviteId,
@@ -1216,6 +1242,16 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       peerRole: "responder",
       localPrivateKeyRef: keypair.privateKeyRef,
     });
+    if (
+      localEpochBefore > wireEpoch &&
+      handshake.relationshipId &&
+      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+    ) {
+      const { toastInfo } = await import("@/state/toastStore");
+      toastInfo(
+        `Discovery generation aligned to invite (${wireEpoch}; was ${localEpochBefore}).`,
+      );
+    }
     const contract = await sessionBootstrap.buildHolepunchContract({
       session,
       invite: {
@@ -1333,23 +1369,27 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 
   async revokeRoom(roomId) {
+    if (!roomId) throw new Error("Room id required.");
     const inv = get().invites.find((i) => i.roomId === roomId);
     const catalog = (
       await import("@/services/p2p/roomCatalogStore")
     ).loadCatalogRoom(roomId);
     const room = await chatTransport.getRoom(roomId);
-    const contactId =
-      inv?.contactId ||
-      room?.contactId ||
-      catalog?.contactId ||
-      get().contacts.find((c) => c.roomId === roomId)?.id;
-    const inviteId = inv?.inviteId || room?.inviteId || catalog?.inviteId;
+    const { canBroadcastRoomRevoke, resolveRoomRevokeIds } = await import(
+      "@/services/p2p/roomRevoke"
+    );
+    const { contactId, inviteId } = resolveRoomRevokeIds({
+      roomId,
+      invites: get().invites,
+      contacts: get().contacts,
+      room,
+      catalog,
+    });
     const replayId = inv?.replayId;
-    if (!contactId || !inviteId) {
-      throw new Error("Cannot leave room — missing contact or invite id.");
-    }
+    const l1Revoke = canBroadcastRoomRevoke({ contactId, inviteId });
     // Destroy immediately — do not wait for L1 broadcast/confirm.
     await applyRoomDestroyLocally(get, set, roomId, inviteId);
+    if (!l1Revoke) return { l1Revoke: false };
     let topicEpoch: number | undefined;
     const handshake = inviteId ? getHandshakeForInvite(inviteId) : undefined;
     const contact = get().contacts.find((c) => c.id === contactId);
@@ -1367,7 +1407,13 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     }
     // Notify counterpart on L1 in the background (best-effort).
     void smartMessageService
-      .revokeRoom({ contactId, inviteId, roomId, replayId, topicEpoch })
+      .revokeRoom({
+        contactId: contactId!,
+        inviteId: inviteId!,
+        roomId,
+        replayId,
+        topicEpoch,
+      })
       .catch(async (e) => {
         const { toastError } = await import("@/state/toastStore");
         toastError(
@@ -1375,6 +1421,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             "Room destroyed here, but revoke tx failed to send.",
         );
       });
+    return { l1Revoke: true };
   },
 
   async abandonPendingInvite(contactId, opts) {

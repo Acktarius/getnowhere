@@ -7,6 +7,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SeedRevealModal } from "@/components/SeedRevealModal";
+import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
+
+vi.mock("@/lib/clipboard/sensitiveClipboard", () => ({
+  copySensitive: vi.fn().mockResolvedValue(undefined),
+}));
 
 const SEED_PHRASE = "abandon ability able about above absent";
 const SPEND = "spendkeyhex";
@@ -35,6 +40,7 @@ describe("SeedRevealModal", () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+    vi.mocked(copySensitive).mockClear();
   });
 
   it("shows restore warning, seed words, and keys when open", () => {
@@ -132,5 +138,49 @@ describe("SeedRevealModal", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer Copy for seed words", () => {
+    const { container } = renderModal();
+
+    const words = SEED_PHRASE.split(" ");
+    for (const [i, word] of words.entries()) {
+      const el = screen.getByText(word);
+      expect(el.style.userSelect).toBe("none");
+      expect(el.style.webkitUserSelect).toBe("none");
+      const indexEl = screen.getByText(String(i + 1));
+      expect(indexEl.style.userSelect).toBe("none");
+      expect(indexEl.style.webkitUserSelect).toBe("none");
+    }
+
+    const seedGrid = container.querySelector(".wrap");
+    expect(seedGrid).toBeTruthy();
+    expect(seedGrid!.querySelectorAll("button")).toHaveLength(0);
+  });
+
+  it("Copy on spend and view keys calls copySensitive with the raw key only", () => {
+    renderModal();
+
+    const copyButtons = screen.getAllByRole("button", { name: /^copy$/i });
+    expect(copyButtons).toHaveLength(2);
+
+    fireEvent.click(copyButtons[0]!);
+    fireEvent.click(copyButtons[1]!);
+
+    expect(copySensitive).toHaveBeenCalledTimes(2);
+    expect(copySensitive).toHaveBeenNthCalledWith(1, SPEND);
+    expect(copySensitive).toHaveBeenNthCalledWith(2, VIEW);
+    for (const [copied] of vi.mocked(copySensitive).mock.calls) {
+      expect(copied).not.toMatch(/spend key|view key|label/i);
+      expect(copied).not.toContain(SEED_PHRASE);
+    }
+  });
+
+  it("hides key Copy when viewOnly and keys are empty", () => {
+    renderModal({ viewOnly: true, spendKey: "", viewKey: "" });
+
+    expect(
+      screen.queryByRole("button", { name: /^copy$/i }),
+    ).not.toBeInTheDocument();
   });
 });

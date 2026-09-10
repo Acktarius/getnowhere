@@ -1,6 +1,11 @@
-/** WebView wallet backup export via Android Storage Access Framework (Downloads/Files). */
+/**
+ * WebView wallet backup export: Android SAF folder write; iOS share sheet.
+ * @see docs/features/lite-wallet.md
+ */
 import { File, Paths } from "expo-file-system";
 import { StorageAccessFramework } from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { Platform } from "react-native";
 import type { SaveTextFileResult } from "./buildSaveTextFileResolveScript";
 
 export type { SaveTextFileResult } from "./buildSaveTextFileResolveScript";
@@ -94,6 +99,39 @@ async function saveToAndroidStorage(
   }
 }
 
+/** Write JSON under cache and present the iOS share sheet. */
+async function saveToIosShare(
+  filename: string,
+  content: string,
+): Promise<void> {
+  const safeName = sanitizeFilename(filename);
+  const cacheFile = new File(Paths.cache, safeName);
+  if (cacheFile.exists) {
+    cacheFile.delete();
+  }
+  cacheFile.write(content);
+
+  try {
+    const available = await Sharing.isAvailableAsync();
+    if (!available) {
+      throw new Error("Sharing is not available on this device");
+    }
+    await Sharing.shareAsync(cacheFile.uri, {
+      mimeType: "application/json",
+      UTI: "public.json",
+      dialogTitle: "Save wallet backup",
+    });
+  } finally {
+    try {
+      if (cacheFile.exists) {
+        cacheFile.delete();
+      }
+    } catch {
+      // Best-effort cleanup of app-private cache.
+    }
+  }
+}
+
 /** Handle WebView `gnh-file` save command. Returns true when message was consumed. */
 export function handleSaveTextFileWebViewMessage(
   raw: string,
@@ -120,7 +158,11 @@ export function handleSaveTextFileWebViewMessage(
 
   void (async () => {
     try {
-      await saveToAndroidStorage(filename, content);
+      if (Platform.OS === "ios") {
+        await saveToIosShare(filename, content);
+      } else {
+        await saveToAndroidStorage(filename, content);
+      }
       resolve({ requestId, ok: true });
     } catch (err) {
       resolve({

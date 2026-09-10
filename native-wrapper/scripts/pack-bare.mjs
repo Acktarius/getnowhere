@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Pack Bare worklet bundle into native-wrapper/assets/bare/. */
+/** Pack Bare worklet bundle into native-wrapper/assets/bare/. @see docs/builds/expo-eas-ios-build.md */
 import { execSync } from "node:child_process";
 import {
   existsSync,
@@ -54,7 +54,10 @@ if (!existsSync(entryPath)) {
 
 console.log(`Packing Bare worklet (${entry}) → ${outMjs}`);
 
-const packArgs = `${entry} -o ../assets/bare/app.bundle.mjs --linked --host android-arm64 --host android-arm`;
+/** Same hosts as the last successful EAS iOS post-install (0.4.9). */
+const packArgs =
+  `${entry} -o ../assets/bare/app.bundle.mjs --linked ` +
+  `--host android-arm64 --host ios-arm64`;
 const packCmd = existsSync(barePackBin)
   ? `"${barePackBin}" ${packArgs}`
   : `npx --yes bare-pack@2.2.1 ${packArgs}`;

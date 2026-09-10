@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Copy root Vite dist/ into assets/ui/ for WebView loading. @see docs/builds/expo-eas-android-build.md */
+/** Copy root Vite dist/ into assets/ui for WebView loading. @see docs/builds/expo-eas-android-build.md */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

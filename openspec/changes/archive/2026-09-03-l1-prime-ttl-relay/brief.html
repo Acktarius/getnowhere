@@ -1,0 +1,94 @@
+<!-- forge-brief-specs-hash:a619cae4cfa68602 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cheap / auto-destroy chain messages</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.45; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.2rem; }
+    code { font-size: 0.9em; }
+    .mermaid { margin: 1rem 0; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>Cheap / auto-destroy chain messages</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    When chat has to go over the chain, a normal tap still sends a paid message
+    that is saved forever. A two-second press on send offers two cheaper
+    options that vanish after 60 minutes or 6 minutes. Those never get mined,
+    so you do not pay, and the bubble disappears from both phones.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Same chain-link send button as today for a paid, kept message.</li>
+    <li>Long-press shows 60 min (top), 6 min (middle), paid send (bottom).</li>
+    <li>The cheap ones still wake the other person if poke is on.</li>
+    <li>When the timer ends, the text is gone from both chat rooms — not left on the chain.</li>
+    <li>Privacy of the ring stays the same: no thinner mix, no dust shortcuts.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Live chat is unchanged. Only when send already means “via chain” does
+    long-press appear. The cheap options put the same chat text in the
+    mempool with a self-destruct time. Conceal drops it when that time hits.
+    This app also deletes the bubble on both sides and never stores those
+    rows in the lasting room history.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  A[Chain fallback composer] --> B{Press}
+  B -->|tap| C[Paid durable message]
+  B -->|long-press 2s| D[Flyout]
+  D --> E[60 min cheap]
+  D --> F[6 min cheap]
+  D --> C
+  E --> G[Mempool only]
+  F --> G
+  G --> H[Timer ends]
+  H --> I[Gone from chain and both rooms]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>In a chain-fallback room, hold send to pick 60 min or 6 min.</li>
+    <li>Cheap bubbles show a small timer mark, then disappear. No “expired” leftover.</li>
+    <li>You still need enough unlocked coins to <em>build</em> the cheap send; you get them back when it expires.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>If the other person opens the app after the timer, they will not see the text. They may still get a wake. Use tap if the words must last.</li>
+    <li>If a node refuses self-destruct messages, send fails. The app will not secretly send a paid one instead.</li>
+    <li>If the room itself has already ended, there is nothing to show; a leftover pending row in the wallet until the timer is fine.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>View-only wallets.</li>
+    <li>A custom timer slider.</li>
+    <li>A countdown clock or expired placeholder.</li>
+    <li>Changing live chat or the poke wake itself.</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Pass the timer through the existing chain send — 2 tasks</li>
+    <li>Keep full privacy rings on cheap sends — 2 tasks</li>
+    <li>Wipe both rooms and do not save those bubbles — 2 tasks</li>
+    <li>Long-press flyout in the composer — 2 tasks</li>
+    <li>Docs — 1 task</li>
+    <li>End-to-end check of send + vanish — 1 task</li>
+  </ul>
+
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

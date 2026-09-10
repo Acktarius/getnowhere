@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { AddressQrScanButton } from "@/components/qr/AddressQrScanButton";
 import { SecureInput } from "@/components/SecureInput";
 import { BackLink, TopBar } from "@/components/TopBar";
+import { decodeQrFromImageData } from "@/lib/qr-decode";
 import { walletService } from "@/services";
 import { validateConcealMnemonic } from "@/services/conceal/ConcealWalletAdapter";
 import { markOnboarded } from "@/state/authStore";
@@ -95,9 +96,20 @@ export function ImportWalletScreen() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        await video.play();
+        // iOS WKWebView resolves play() before the decoder reports frame dimensions.
+        // Wait for the first event that signals a valid size before scanning.
+        // @see docs/builds/expo-eas-ios-build.md
+        if (!video.videoWidth) {
+          await new Promise<void>((resolve) => {
+            const done = () => resolve();
+            video.addEventListener("loadedmetadata", done, { once: true });
+            video.addEventListener("resize", done, { once: true });
+          });
+        }
       }
       scanLoop();
     } catch {
@@ -133,21 +145,35 @@ export function ImportWalletScreen() {
   async function detectQrFromVideo(
     video: HTMLVideoElement,
   ): Promise<string | null> {
+    // Try hardware BarcodeDetector first (iOS 17+ / Chrome).
     const detector = getBarcodeDetector();
-    if (!detector) return null;
-    try {
-      const codes = await detector.detect(video);
-      if (codes.length > 0) return codes[0].rawValue ?? null;
-    } catch {
-      // transient frame errors — keep scanning
+    if (detector) {
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length > 0) return codes[0].rawValue ?? null;
+      } catch {
+        // transient frame errors — fall through to jsQR
+      }
     }
-    return null;
+    // jsQR fallback — required on iOS < 17 where BarcodeDetector is unavailable.
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return decodeQrFromImageData(frame.data, frame.width, frame.height) ?? null;
   }
 
   async function handleImagePicked(file: File) {
     setScanError(null);
     try {
-      const url = URL.createObjectURL(file);
+      // Use data: URL instead of blob: URL — WKWebView (file:// origin) treats
+      // blob: URLs as cross-origin, tainting the canvas so getImageData returns
+      // zeros. A data: URL is always same-origin. @see docs/builds/expo-eas-ios-build.md
+      const url = await fileToDataUrl(file);
       const img = new Image();
       img.src = url;
       await new Promise((res) => {
@@ -158,7 +184,6 @@ export function ImportWalletScreen() {
       if (detector) {
         try {
           const codes = await detector.detect(img);
-          URL.revokeObjectURL(url);
           if (codes.length > 0 && codes[0].rawValue) {
             setQrText(codes[0].rawValue);
             return;
@@ -167,9 +192,8 @@ export function ImportWalletScreen() {
           /* fall through to jsqr */
         }
       }
-      // jsqr fallback (next-wallet parity) when BarcodeDetector is missing/empty
+      // jsqr fallback when BarcodeDetector is missing or returns empty
       const decoded = await decodeQrWithJsQr(img);
-      URL.revokeObjectURL(url);
       if (decoded) {
         setQrText(decoded);
       } else {
@@ -1043,6 +1067,16 @@ function getBarcodeDetector(): BarcodeDetectorLike | null {
     }
   }
   return null;
+}
+
+/** Read a File as a data: URL (safe for WKWebView canvas — blob: taints the canvas). */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /** Decode a QR from an already-loaded image via jsqr (canvas sample). */

@@ -7,6 +7,7 @@ import {
   type RawWalletV1,
   type WalletState,
 } from "conceal-wallet-sdk";
+import { isTtlExpired } from "@/services/conceal/sync/ttl-expiry";
 
 export type PendingRecord = {
   hash: string;
@@ -17,6 +18,8 @@ export type PendingRecord = {
   type?: "send" | "message";
   /** Key images this tx spent — excluded from selection until mined/expired. */
   spentKeyImages: string[];
+  /** Mempool TTL unix seconds — drop this row at expiry (L1′ TTL relays). */
+  ttlExpiresAt?: number;
 };
 
 const PENDING_FIELD = "pendingTransactions";
@@ -79,6 +82,9 @@ export function prunePendingRecords(
   const minedHashes = new Set(state.transactions.map((tx) => tx.hash));
   const survivors = current.filter((record) => {
     if (minedHashes.has(record.hash)) return false;
+    if (isTtlExpired(record.ttlExpiresAt, Math.floor(nowMs / 1000))) {
+      return false;
+    }
     const ageMs = nowMs - Date.parse(record.timestampIso);
     if (Number.isFinite(ageMs) && ageMs > PENDING_TTL_MS) return false;
     return true;

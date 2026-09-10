@@ -58,7 +58,11 @@ validation, replay/dedup checks, and persistence. Never from raw tx data.
 
 ## Settings and permissions
 
-Settings → Privacy adds two persisted switches (defaults **off**):
+Settings → **Notifications** section is shown only on the mobile host
+(`isMobileHost()` / `window.gnhMobile`). Desktop Electron and plain web omit
+the section; privacy keys still exist in storage with defaults **off**.
+
+Persisted switches:
 
 - **Notifications** (`privacy.notificationsEnabled`) — badge/unread tracking.
 - **Notification banner** (`privacy.notificationBannersEnabled`) — system
@@ -92,6 +96,12 @@ Permission requests happen only from the Settings toggle gesture:
 - Badge clears via existing read semantics: `markRoomSeen` (room opened) and
   `markContactSeen` (contact detail opened) mark matching ledger events read
   and re-sync the native badge; delivery alone never clears it.
+- **iOS foreground clear:** dismissing banners from Notification Center does
+  not clear `applicationIconBadgeNumber`. On AppState `active`, the native
+  shell calls `clearBadge` (badge → 0 + remove delivered/pending) so the icon
+  pin drops when the user returns to the app. In-app `NotifyPin` badges still
+  follow the JS ledger / room-seen path. Android launcher badges track
+  notifications and need no equivalent.
 
 ## Platform limitations
 

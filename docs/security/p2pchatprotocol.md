@@ -21,7 +21,7 @@ bidirectional Conceal relationship.
   MESSAGE record (type `0x04`).
 - **Chat contact signaling does not use Conceal tx_extra TTL (`0x05`).**
   `inviteExpiry` and `roomTtl` are app-layer fields inside the body only.
-  On-chain TTL is a separate mempool feature (used elsewhere, e.g. pulse) —
+  On-chain TTL is a separate mempool feature (pulse; L1′ relay MAY use it) —
   not for create / register / revoke.
 - They provide store-and-forward signaling without a separate signaling server.
 - **0-conf preview:** mempool scan surfaces inbound smart messages early. For an
@@ -41,9 +41,10 @@ bidirectional Conceal relationship.
   **Live** (`channel: "live"`) messaging is allowed only when the room is
   **Holepunch-connected**.
 - **L1′ chat relay** (`channel: "relay"`, wire `execute` / `e`) is an
-  SMS-class fallback after accept when Hyperswarm is not connected — fee +
-  ~block latency, grey bubbles. App text inside Conceal MESSAGE (chain ChaCha).
-  Never while `pending`. It does **not** replace L2. See §16.
+  SMS-class fallback after accept when Hyperswarm is not connected — grey
+  bubbles; mined (tap) or mempool-TTL (long-press). App text inside Conceal
+  MESSAGE (chain ChaCha). Never while `pending`. It does **not** replace L2.
+  See §16.
 - **L1 session seal** (ChaCha20-Poly1305 with handshake-derived keys) seals live
   frames before the bridge; Hyperswarm Noise (**L2**) protects the DHT hop.
   There is **no L3** — live AEAD is an L1 key use, not a third layer. See
@@ -88,22 +89,32 @@ bidirectional Conceal relationship.
 
 ### On-chain delivery (landed)
 
-- Create / register / revoke / **L1′ relay** ride `buildMessageTransaction` + daemon
+- Create / register / revoke ride `buildMessageTransaction` + daemon
   broadcast as **mined** smart messages. Contact signaling never sets Conceal
   `tx_extra` TTL (`0x05` / `ttlUnixSeconds: 0`). L1′ is app-layer text inside
-  Conceal MESSAGE (chain ChaCha); see §16.
-- Fee shape (atomic units, same as next-wallet mined message):
+  Conceal MESSAGE (chain ChaCha); see §16. L1′ **may** set mempool TTL
+  (`tx_extra` `0x05`) so the tx is not mined; mixin / decoys stay the same.
+- Fee shape for **mined** sends (atomic units, same as next-wallet mined message):
   - message amount = `100` (`MESSAGE_TX_AMOUNT_ATOMIC`)
   - network fee = `1000` (`MINIMUM_FEE_V2`)
   - remote node fee = `10000` (`REMOTE_NODE_FEE_ATOMIC`) when the node
     advertises a fee address
+  Mempool-TTL L1′ skips network and node fees. It is **not** a dust or
+  no-decoy path.
 - Inbound bodies are reconstructed during wallet sync via
   `readMessageFromTransaction` into `raw.receivedMessages`.
-- Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤120 chars**
+-   Bodies must fit `MAX_MESSAGE_BODY_BYTES` (251). Create targets **≤122 chars**
   (practical room for payment-id + fees in wallet UIs):
   `{contact,c,pv,<b64url>}` slim pack (64 bytes raw):
   `inviteId(4) | roomId(4) | eph(32) | nonceSeed(8) | inviteExpiry(u32) |
   roomTtl(u32) | replayId(8)`.
+  Optional **`ph`** field (10 bytes, base64url, 14 chars): the sender's `ownPokeId`
+  (wake capability). Omitted when push wake is disabled or unavailable.
+  `chat.register` carries the same optional `ph` field from the acceptor's side.
+  The `ph` field serves dual purpose: on iOS it is registered with the poke gateway to map
+  to an APNs device token; on F-Droid it is used directly as the ntfy topic capability
+  `gnh-<ph>`. The field name and wire format are identical — the routing decision is made
+  by the gateway (APNs token found → APNs push; DB miss → ntfy POST).
   **Not on wire:** `relationshipId` (from payment IDs) and `salt`
   (`deriveInviteSalt(rel, room, invite)`). Suite/kdf/strategy implied by
   `protocolVersion`; alias/caps local-only.
@@ -201,7 +212,8 @@ Handshake fields include: `protocolVersion` (1), `inviteId`, `relationshipId`,
 **`roomTtl`**, `replayId`.
 
 These deadlines live **only inside the smart-message body**. They are **not**
-Conceal `tx_extra` TTL (`0x05`). The on-chain send always uses `ttlUnixSeconds: 0`.
+Conceal `tx_extra` TTL (`0x05`). Create / register / revoke always use
+`ttlUnixSeconds: 0`. L1′ MAY set mempool TTL — see §16.
 
 | Field | Meaning |
 |---|---|
@@ -234,6 +246,12 @@ and do not add a third ad hoc stream cipher on Noise.
 **L1′:** compensates L2 failure/absence (SMS-class). Different confidentiality
 (view-key / chain) than live — see §16. Mixing L1′ and live in one `roomId`
 thread is intentional UX.
+
+**Live history is local, not a shared log.** L2 carries sealed frames. This
+device may persist what it already saw (wallet blob). There is no Hypercore
+replica to request missed live messages. Room TTL / leave-forever wipe local
+copies. Peer catch-up is a later protocol change. @see `docs/security/encryption.md`
+(local storage rules).
 
 Library note: `@noble/ciphers` exposes both ChaCha and XChaCha helpers. The
 product cipher suite id `CHACHA20_POLY1305_V1` binds to **ChaCha20-Poly1305
@@ -387,13 +405,17 @@ any → `expired`/`destroyed`/`closed` via TTL or teardown.
 **Room list durability:** the Chats room list is persisted (`gnh.roomCatalog`).
 A room **disappears from the list only when**:
 
-1. the user **leaves forever** (`leaveRoom`) — local destroy **immediately**, plus **L1
-   `chat.revoke` with `reasonCode=room_revoked`** fired in the background (do
-   **not** wait for broadcast/confirm before destroying); peer destroys when
-   the revoke is scanned. Wallet blob keeps `{ roomId, revoked: true }` only
-   so the same `roomId` cannot be re-seeded, or
+1. the user **leaves forever** (`leaveRoom`) — local destroy **immediately**, durable
+   revoke tombstone written; L1 `chat.revoke` (`room_revoked`) fired in the
+   background **only when both `contactId` and `inviteId` resolve**. When ids are
+   missing (legacy/incomplete rows), local retirement still completes — peer is
+   not notified on-chain. Wallet blob keeps `{ roomId, revoked: true }` so the
+   same `roomId` cannot be re-seeded, or
 2. the invite was **never accepted** and `inviteExpiry` has passed, or
-3. `roomTtl` has expired.
+3. `roomTtl` has expired, or
+4. the transport sets `lifecycleStatus: "expired"` (TTL detected at connect or send
+   time) — treated as `room_ttl` for retirement purposes and auto-removed on the
+   next `loadRooms`.
 
 Restart, `crypto_mismatch`, and temporary offline must **not** remove the room.
 
@@ -556,7 +578,13 @@ MESSAGE already encrypts the body with ChaCha + DH to sender/receiver view keys
 | `sentAt` | Unix seconds (thread order) |
 | `text` | Message body (≤ ~200 chars / `MAX_MESSAGE_BODY_BYTES`) |
 
-Same fee shape as other mined contact smart messages (§2). Fee + ~block latency.
+Tap = Conceal TTL 0 (mined, paid, durable — same fee shape as other mined
+contact smart messages, §2). Long-press flyout: **60 min** (top), **6 min**
+(middle) — `tx_extra` `0x05`, not mined, no network/node fee. Mixin / decoys
+and MESSAGE encryption unchanged. Create / register / revoke stay TTL 0.
+
+TTL L1′ bubbles erase from **both** rooms at expiry. Never persist TTL rows
+to `chatRooms`. Unlock / hydrate must not restore an expired TTL relay.
 
 ### Trust / receive
 
@@ -568,7 +596,10 @@ Same fee shape as other mined contact smart messages (§2). Fee + ~block latency
 ### Send
 
 1. If `connected` → live Holepunch frame (L1 session seal over L2).
-2. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay` (L1′).
-3. Else (`pending` / terminal) → composer blocked.
+2. Else if this session was live (L2) → show `queued` (no checkmarks), wait
+   **6s** for L2, then live; if still down → L1′ (`chat.relay`, may poke).
+3. Else if post-accept → broadcast `{contact,e,…}` via `sendChatRelay` (L1′).
+   Tap = TTL 0. Long-press flyout: 60 min (top), 6 min (middle).
+4. Else (`pending` / terminal) → composer blocked.
 
 @see `docs/features/chat-relay.md`, `docs/prompts/coding-constraints.md`

@@ -149,4 +149,11 @@ final class GnhNotificationPublisherTests: XCTestCase {
     XCTAssertTrue(fake.authorizationRequests[0].contains(.badge))
     XCTAssertFalse(fake.authorizationRequests[0].contains(.alert))
   }
+
+  func testClearBadgeZerosCountAndRemovesDelivered() {
+    XCTAssertEqual(publish(input(badgeCount: 2)), .posted)
+    publisher.clearBadge()
+    XCTAssertEqual(fake.badgeCounts.last, 0)
+    XCTAssertTrue(fake.removedAll)
+  }
 }

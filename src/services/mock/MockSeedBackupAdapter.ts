@@ -11,6 +11,7 @@ export const MockSeedBackupAdapter: SeedBackupService = {
       spendKey: "aa".repeat(32),
       viewKey: "bb".repeat(32),
       viewOnly: false,
+      creationHeight: 0,
     };
   },
   async downloadWalletBackup(_password: string) {

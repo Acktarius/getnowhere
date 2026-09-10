@@ -1,0 +1,5 @@
+{
+  "change": "mobile-ios-eas-apns-preview",
+  "notApplicable": "Config and docs only: Expo iOS phone-only flag, EAS preview/TestFlight profile, and APNs operator runbook. No new runtime product loop or wire protocol.",
+  "rows": []
+}

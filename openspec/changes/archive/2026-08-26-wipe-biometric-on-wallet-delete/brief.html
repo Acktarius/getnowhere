@@ -1,0 +1,84 @@
+<!-- forge-brief-specs-hash:1ea21d9b450fdaf3 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wipe biometric on wallet delete — operator brief</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #111; background: #fff; line-height: 1.6; }
+  h1 { font-size: 1.4rem; border-bottom: 2px solid #111; padding-bottom: .4rem; }
+  h2 { font-size: 1.1rem; margin-top: 2rem; }
+  ul { padding-left: 1.4rem; }
+  li { margin: .3rem 0; }
+  .tldr { background: #f9f9f9; border-left: 4px solid #555; padding: .8rem 1rem; border-radius: 0 4px 4px 0; }
+  .risk { background: #fffbe6; border-left: 4px solid #e6a817; padding: .6rem 1rem; border-radius: 0 4px 4px 0; }
+  .scope { color: #555; }
+</style>
+</head>
+<body>
+
+<h1>Wipe biometric on wallet delete</h1>
+
+<div class="tldr">
+<strong>TL;DR.</strong> After you delete a wallet, biometric unlock will turn off
+(theme and other prefs stay). If an old install is already stuck on App Lock
+with no fingerprint enrollment, the app will clear that broken setting and let
+you in. You re-enable biometrics later in Security settings if you want them.
+</div>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>Delete wallet → no more App Lock demand until you opt in again.</li>
+  <li>Theme / network and other prefs still survive Delete wallet (Reset app data still wipes everything).</li>
+  <li>Devices already stuck after delete + re-import heal on next launch of the fixed build.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+Delete already wiped the fingerprint credential but left the “biometrics on”
+switch true. This change flips those switches off when credentials are wiped,
+and adds a check at startup: switch on but no credential → turn switch off.
+</p>
+
+<pre class="mermaid">
+flowchart LR
+  A[Delete wallet] --> B[Clear native biometric]
+  B --> C[Set biometric flags OFF]
+  C --> D[Keep theme prefs]
+  E[Cold start / import] --> F{Flag ON but no enrollment?}
+  F -->|yes| G[Turn flag OFF — skip App Lock]
+  F -->|no| H[Normal App Lock if needed]
+</pre>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>After Delete wallet + import: open the app without a fingerprint gate.</li>
+  <li>To use biometrics again: Settings → Biometrics &amp; auto-lock → turn on and enroll.</li>
+  <li>Until this build ships: <strong>Reset app data</strong> (or clear app storage) escapes the stuck lock screen.</li>
+</ul>
+
+<div class="risk">
+<strong>Risks.</strong> Stuck phones need the updated APK for the auto-heal.
+Wrong enrollment probe could clear a valid flag — mitigated by using the same
+credential key the enroll path already uses, plus unit tests.
+</div>
+
+<h2 class="scope">Out of scope</h2>
+<ul>
+  <li>Changing how enroll / unlock looks.</li>
+  <li>Auto-turning biometrics back on after import.</li>
+  <li>Desktop / browser biometrics.</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li>Delete-wallet flag reset — 3 tasks</li>
+  <li>Stale-flag safety net — 3 tasks</li>
+  <li>Docs — 1 task</li>
+</ul>
+
+</body>
+</html>

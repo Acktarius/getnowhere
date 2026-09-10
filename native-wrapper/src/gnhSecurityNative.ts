@@ -6,6 +6,8 @@ type GnhSecurityNative = {
   securePrefsGet(key: string): Promise<string | null>;
   securePrefsSet(key: string, value: string): Promise<boolean>;
   securePrefsRemove(key: string): Promise<boolean>;
+  copySensitive?(value: string): Promise<boolean>;
+  clearClipboard?(): Promise<boolean>;
 };
 
 const native: GnhSecurityNative | undefined =
@@ -41,4 +43,14 @@ export async function securePrefsSet(
 export async function securePrefsRemove(key: string): Promise<boolean> {
   if (!native) return false;
   return native.securePrefsRemove(key);
+}
+
+export async function nativeCopySensitive(value: string): Promise<void> {
+  if (!native?.copySensitive) throw new Error("unsupported");
+  await native.copySensitive(value);
+}
+
+export async function nativeClearClipboard(): Promise<void> {
+  if (!native?.clearClipboard) throw new Error("unsupported");
+  await native.clearClipboard();
 }

@@ -9,7 +9,7 @@
     "test": "node --test test/*.mjs"
   },
   "dependencies": {
-    "b4a": "^1.6.7",
+    "b4a": "^1.8.1",
     "hyperswarm": "^4.17.0",
     "ws": "^8.18.0"
   }

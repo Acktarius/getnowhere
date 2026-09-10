@@ -126,7 +126,11 @@ export const MockChatTransport: ChatTransport = {
     });
   },
 
-  async sendMessage(roomId: string, text: string): Promise<ChatMessage> {
+  async sendMessage(
+    roomId: string,
+    text: string,
+    ttlUnixSeconds?: number,
+  ): Promise<ChatMessage> {
     const room = rooms.get(roomId);
     if (!room) throw new Error("Room not found");
     if (room.lifecycleStatus !== "connected") {
@@ -141,6 +145,9 @@ export const MockChatTransport: ChatTransport = {
       text,
       createdAt: new Date().toISOString(),
       status: "sending",
+      ...(typeof ttlUnixSeconds === "number" && ttlUnixSeconds > 0
+        ? { ttlExpiresAt: ttlUnixSeconds }
+        : {}),
     };
     const list = messages.get(roomId) ?? [];
     list.push(msg);

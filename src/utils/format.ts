@@ -14,6 +14,14 @@ export function shortAddress(addr: string, head = 8, tail = 6): string {
   return `${addr.slice(0, head)}…${addr.slice(-tail)}`;
 }
 
+/** Discovery topic ref for diagnostics: 8 + `......` + 8 on 64-char hex refs. */
+export function shortTopicRef(topicRef: string): string {
+  const head = 8;
+  const tail = 8;
+  if (!topicRef || topicRef.length <= head + tail) return topicRef;
+  return `${topicRef.slice(0, head)}......${topicRef.slice(-tail)}`;
+}
+
 export function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
   const now = Date.now();

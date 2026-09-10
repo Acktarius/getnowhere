@@ -14,10 +14,13 @@ export type GnhBiometricAction =
 
 export type GnhSecurePrefsAction = "get" | "set" | "remove";
 
+export type GnhPrivacyAction = "copySensitive" | "clearClipboard";
+
 export type GnhSecurityChannel =
   | "gnh-lifecycle"
   | "gnh-biometric"
-  | "gnh-secure-prefs";
+  | "gnh-secure-prefs"
+  | "gnh-privacy";
 
 export type GnhMessageDirection = "command" | "response" | "event";
 
@@ -76,7 +79,28 @@ export type GnhSecurePrefsResponse = GnhBridgeEnvelope & {
   error?: string;
 };
 
+export type GnhPrivacyCommand = GnhBridgeEnvelope & {
+  channel: "gnh-privacy";
+  direction: "command";
+  requestId: string;
+  action: GnhPrivacyAction;
+  value?: string;
+};
+
+export type GnhPrivacyResponse = GnhBridgeEnvelope & {
+  channel: "gnh-privacy";
+  direction: "response";
+  requestId: string;
+  ok?: boolean;
+  error?: string;
+};
+
 /** Returns true when running inside Expo mobile WebView shell. */
 export function isMobileHost(): boolean {
   return typeof window !== "undefined" && window.gnhMobile != null;
+}
+
+/** Returns true when the hosting native shell is Android. */
+export function isMobileAndroid(): boolean {
+  return isMobileHost() && window.gnhMobile?.platform === "android";
 }

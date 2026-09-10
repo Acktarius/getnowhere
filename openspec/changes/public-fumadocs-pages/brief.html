@@ -1,0 +1,32 @@
+<!-- forge-brief-specs-hash:f55466e356158386 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Public documentation site</title>
+</head>
+<body>
+  <h1>Public documentation site</h1>
+  <p>
+    Add a separate public docs website and publish it on GitHub Pages.
+    The existing internal <code>docs/</code> folder stays private.
+  </p>
+  <h2>What you will get</h2>
+  <ul>
+    <li>A Fumadocs site you can run locally at <code>http://localhost:3000/</code>.</li>
+    <li>Curated public pages under <code>documentation/content/</code>.</li>
+    <li>A GitHub Pages deploy at <code>https://acktarius.github.io/getnowhere/</code> after Pages is set to GitHub Actions.</li>
+  </ul>
+  <h2>What will not change</h2>
+  <ul>
+    <li>The Vite app, Electron packaging, mobile wrapper, sidecar, Android workflow, and Electron release workflow.</li>
+    <li>Internal engineering docs will not be copied or published automatically.</li>
+  </ul>
+  <h2>After merge</h2>
+  <ol>
+    <li>Repository Settings → Pages → Source = GitHub Actions.</li>
+    <li>Merge to main or run the workflow manually.</li>
+    <li>Open the Pages URL and check navigation, assets, and refresh on nested pages.</li>
+  </ol>
+</body>
+</html>

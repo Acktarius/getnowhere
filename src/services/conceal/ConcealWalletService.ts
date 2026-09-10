@@ -23,6 +23,7 @@ import {
   hasStoredWallet,
   lock as lockRuntime,
   nodeUrlFromRaw,
+  persistRuntime,
   resetAndRescanFromCreationHeight as runtimeResetAndRescanFromCreationHeight,
   resyncFromCreationHeight as runtimeResyncFromCreationHeight,
   sendCcx,
@@ -30,6 +31,7 @@ import {
   unlock,
   updateRuntimeOptions,
 } from "@/services/conceal/sync";
+import { dropExpiredTtl } from "@/services/conceal/sync/messages-store";
 import {
   type BuiltWallet,
   buildFromMnemonic,
@@ -118,6 +120,11 @@ let seedRefMemory = "";
 function refreshSnapshotFromRuntime(): void {
   const rt = getRuntime();
   if (!rt || !snapshot) return;
+  const ttlDrop = dropExpiredTtl(rt.raw, Math.floor(Date.now() / 1000));
+  if (ttlDrop.changed) {
+    rt.raw = ttlDrop.raw;
+    void persistRuntime(rt);
+  }
   const balance = sdkGetBalance(rt.state);
   snapshot.balanceTotal = atomicToCCX(balance.total);
   snapshot.balanceAvailable = atomicToCCX(balance.spendable);

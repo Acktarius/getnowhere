@@ -2,7 +2,7 @@
 import { Asset } from "expo-asset";
 import { File } from "expo-file-system";
 
-// Packed by scripts/pack-bare.mjs before android build or `npm run pack-bare`.
+// Packed by scripts/pack-bare.mjs (local prepare / eas-build-post-install).
 import workletBundleAsset from "../assets/bare/app.bundle";
 
 export async function loadWorkletBundleBytes(): Promise<Uint8Array> {

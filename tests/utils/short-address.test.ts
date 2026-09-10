@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shortAddress } from "@/utils/format";
+import { shortAddress, shortTopicRef } from "@/utils/format";
 
 describe("shortAddress (import privacy)", () => {
   it("masks to first 5 and last 5 for long addresses", () => {
@@ -11,5 +11,12 @@ describe("shortAddress (import privacy)", () => {
 
   it("returns short values unchanged", () => {
     expect(shortAddress("ccx7ab", 5, 5)).toBe("ccx7ab");
+  });
+});
+
+describe("shortTopicRef", () => {
+  it("masks 64-char hex refs as 8......8", () => {
+    const ref = "a".repeat(64);
+    expect(shortTopicRef(ref)).toBe(`${"a".repeat(8)}......${"a".repeat(8)}`);
   });
 });

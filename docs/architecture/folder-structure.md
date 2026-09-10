@@ -35,6 +35,11 @@ getnowhere/
     preload-bridge.cjs      # test mirror of preload normalize/resolve helpers
     forge.config.cjs        # Linux Forge package (sidecar as extraResource)
     scripts/prepare-sidecar.mjs
+  poke-gateway/             # Standalone L1′ wake gateway (APNs/FCM); no UI, no Hyperswarm
+    src/
+  documentation/            # Public GitHub Pages docs (not a mirror of docs/)
+    content/                # curated public MDX
+    website/                # isolated Fumadocs / Next.js static site
   docs/
     architecture/
     builds/
@@ -55,6 +60,7 @@ getnowhere/
 | Shared protocol helpers | `src/services/protocol`, types | Types/crypto only; no swarm join |
 | Mobile wrapper | `native-wrapper/` | Hosts Bare worklet + bridge |
 | Desktop shell | `desktop-electron/` | Hosts Hyperswarm + loads Vite UI |
+| Wake gateway | `poke-gateway/` | **No** — opaque pokeHandle → APNs/FCM only |
 
 Do not move or rename these top-level product folders without updating this
 file in the same branch.

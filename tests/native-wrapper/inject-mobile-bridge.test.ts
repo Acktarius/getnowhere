@@ -1,8 +1,15 @@
 /// <reference path="../../src/vite-env.d.ts" />
-import { describe, expect, it, vi } from "vitest";
-import { buildMobileBridgeInjection } from "../../native-wrapper/src/injectMobileBridge";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildMobileBridgeInjection,
+  buildPokeTokenDispatchScript,
+} from "../../native-wrapper/src/injectMobileBridge";
 
 describe("buildMobileBridgeInjection", () => {
+  afterEach(() => {
+    delete window.gnhMobile;
+  });
+
   it("does not expose bridgeToken on window.gnhMobile", () => {
     const script = buildMobileBridgeInjection("super-secret-token");
     expect(script).not.toMatch(/bridgeToken\s*:/);
@@ -54,10 +61,108 @@ describe("buildMobileBridgeInjection", () => {
     expect(bridge.biometric?.isAvailable).toBeTypeOf("function");
     expect(bridge.securePrefs?.get).toBeTypeOf("function");
     expect(bridge.onLifecycle).toBeTypeOf("function");
+    expect(bridge.setBlurInAppSwitcher).toBeTypeOf("function");
     void bridge.biometric?.isAvailable("data");
     expect(postMessage).toHaveBeenCalled();
     const payload = JSON.parse(postMessage.mock.calls[0][0] as string);
     expect(payload.channel).toBe("gnh-biometric");
     expect(payload.action).toBe("isAvailable");
+
+    postMessage.mockClear();
+    bridge.setBlurInAppSwitcher?.(true);
+    expect(postMessage).toHaveBeenCalledOnce();
+    const privacy = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(privacy).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "event",
+      type: "setBlurInAppSwitcher",
+      enabled: true,
+    });
+
+    postMessage.mockClear();
+    void bridge.copySensitive?.("gnh-privacy-copy-fixture-unique");
+    expect(postMessage).toHaveBeenCalledOnce();
+    const copyCmd = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(copyCmd).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "command",
+      action: "copySensitive",
+      value: "gnh-privacy-copy-fixture-unique",
+    });
+    expect(typeof copyCmd.requestId).toBe("string");
+
+    postMessage.mockClear();
+    void bridge.clearClipboard?.();
+    expect(postMessage).toHaveBeenCalledOnce();
+    const clearCmd = JSON.parse(postMessage.mock.calls[0][0] as string);
+    expect(clearCmd).toMatchObject({
+      channel: "gnh-privacy",
+      direction: "command",
+      action: "clearClipboard",
+    });
+    expect(clearCmd).not.toHaveProperty("value");
+  });
+
+  it("exposes onPokeToken / _dispatchPokeToken and dispatches correctly", () => {
+    const script = buildMobileBridgeInjection("token");
+    Object.defineProperty(window, "ReactNativeWebView", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    new Function(script)();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+
+    expect(bridge.onPokeToken).toBeTypeOf("function");
+    expect(bridge._dispatchPokeToken).toBeTypeOf("function");
+
+    const handler = vi.fn();
+    const unsub = bridge.onPokeToken!(handler);
+
+    bridge._dispatchPokeToken!("apns", "raw-device-token");
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith("apns", "raw-device-token");
+
+    // Unsubscribe stops delivery.
+    unsub();
+    bridge._dispatchPokeToken!("apns", "new-token");
+    expect(handler).toHaveBeenCalledOnce(); // still just once
+  });
+
+  it("bakes a pending wallet restore into gnhMobile before Vite boots", () => {
+    const script = buildMobileBridgeInjection("token", "ios", "restore-pw");
+    Object.defineProperty(window, "ReactNativeWebView", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    new Function(script)();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    expect(bridge._sessionRestoreReady).toBe(true);
+    expect(bridge._pendingWalletRestore).toBe("restore-pw");
+  });
+
+  it("buildPokeTokenDispatchScript produces JS that calls _dispatchPokeToken", () => {
+    const script = buildMobileBridgeInjection("token");
+    Object.defineProperty(window, "ReactNativeWebView", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    new Function(script)();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+
+    const handler = vi.fn();
+    bridge.onPokeToken!(handler);
+
+    const dispatchScript = buildPokeTokenDispatchScript(
+      "apns",
+      "device-token-xyz",
+    );
+    expect(dispatchScript).toContain("_dispatchPokeToken");
+    expect(dispatchScript).toContain('"apns"');
+    expect(dispatchScript).toContain('"device-token-xyz"');
+
+    // Execute the script the same way the native shell would inject it.
+    new Function(dispatchScript)();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith("apns", "device-token-xyz");
   });
 });

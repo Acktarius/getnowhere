@@ -1,0 +1,24 @@
+{
+  "change": "appearance-contrast-and-accents",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Dark/Light surface contrast + topic-glyph mix",
+      "library": "src/styles/global.css; src/components/ChatTopicBackdrop.tsx",
+      "runtimeOwner": "useApplyTheme sets data-theme; ChatRoomScreen renders ChatTopicBackdrop; body/cards consume --bg/--bg-card",
+      "writes": ":root surface tokens; .chat-topic-backdrop fill mix",
+      "reads": "settings.theme (resolved dark|light); --primary",
+      "uiConsumer": "App shell, cards, chat room topic backdrop",
+      "evidence": "tests/appearance/surface-tokens.test.ts; forge e2e run"
+    },
+    {
+      "capability": "Sky and pink accents",
+      "library": "src/lib/appearance/accentVars.ts; src/hooks/useApplyTheme.ts; src/components/ThemeSelector.tsx",
+      "runtimeOwner": "ThemeSelector setAccent → gnh.settings; useApplyTheme applies accent map on :root",
+      "writes": "gnh.settings.accent; :root --primary and related vars",
+      "reads": "settings.accent; resolved data-theme",
+      "uiConsumer": "Settings → Appearance swatches; buttons; topic backdrop",
+      "evidence": "tests/appearance/accents.test.ts; forge e2e run"
+    }
+  ]
+}
