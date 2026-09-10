@@ -75,8 +75,12 @@ npx eas submit --platform ios --profile preview-ios --latest
    calls `link.mjs`, discovers every native addon under `native-wrapper/`
    (including via the symlink) and writes their XCFrameworks to `ios/addons/`.
 3. `eas-build-post-install` — packs the Bare JS bundle into
-   `assets/bare/app.bundle` with **`--host ios-arm64` only**
-   (`EAS_BUILD_PLATFORM=ios`; no Android hosts). Symlink already exists.
+   `assets/bare/app.bundle` (symlink already exists; no re-linking needed).
+   **Pin the Bare packer stack** in `native-wrapper/package.json` `overrides`
+   to the 0.4.9 lock (`bare-fs` 4.8.0, `bare-lief` 0.2.6, `bare-module-lexer`
+   1.6.3, and the other `bare-*` pins listed there). A later `npm audit` /
+   lock refresh bumped those transitives; `bare-pack` then **SIGSEGV** on the
+   EAS Mac in this step. Do not drop those pins without a proven EAS iOS pack.
 4. Xcode build — picks up `addons/*.xcframework` vendored by BareKit podspec.
 
 iOS WebView UI: config plugin `withGnhIosUiBundle` adds an Xcode Run Script that
@@ -86,9 +90,15 @@ unchanged).
 
 Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
 `expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
-in scope. iOS profiles pin `"image": "sdk-55"` and `"node": "22.14.0"` — the
-sdk-55 Mac image defaults to Node **20.19.4**, which has segfaulted
-`bare-pack` in `eas-build-post-install`; Node 22 matches a working local pack.
+in scope. iOS profiles pin `"image": "sdk-55"` and `"node": "22.14.0"` (the
+sdk-55 Mac image otherwise defaults to Node 20.19.4).
+
+`cd native-wrapper && npm install` prints many **`npm warn ERESOLVE`** /
+`peer @babel/core` lines. Those come from React Native’s Jest Babel plugins
+(`babel-preset-current-node-syntax` and friends) vs installed `@babel/core`
+7.29.x. npm overrides the peer and **exits 0**. They are not the Bare-pin
+issue and do not need extra Babel overrides. Treat a non-zero install, or a
+`bare-pack` SIGSEGV on EAS post-install, as a real failure.
 
 Swift 6 (Xcode 26): AppDelegate uses `internal import …`; GnhBackgroundSync
 must match (`internal import BackgroundTasks`). The background-sync config
