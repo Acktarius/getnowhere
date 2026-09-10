@@ -22,6 +22,20 @@ Xcode required). Target is **iPhone only** (`supportsTablet: false`).
 | iOS bundle ID | `im.getnowhere.app` |
 | Apple App ID | same bundle ID, Push Notifications enabled (**no** Broadcast) |
 
+## Marketing version
+
+Repo-root `version` (`version=…`) is the source of truth. `eas-build-pre-install`
+runs `scripts/apply-expo-version.mjs`, which writes that value into
+`app.json` `expo.version` before prebuild. Keep `buildversionIos` in the file
+for the record; do not copy it into `ios.buildNumber` — EAS remote versioning
+owns the App Store increment.
+
+To sync `app.json` on your machine after a bump (so git does not drift):
+
+```bash
+node native-wrapper/scripts/apply-expo-version.mjs
+```
+
 ## Prerequisites
 
 - Expo account + EAS CLI (`npm install -g eas-cli` then `eas login`)
@@ -59,18 +73,22 @@ uses it.
 npm run mobile:sync-ui
 
 cd native-wrapper
-npx eas build --platform ios --profile preview-ios
-npx eas submit --platform ios --profile preview-ios --latest
+eas build --platform ios --profile preview-ios
+eas submit --platform ios --profile preview-ios --latest
 ```
 
 **EAS build lifecycle (iOS):**
 
-1. `eas-build-pre-install` — installs `holepunch-sidecar` deps and creates
+1. `eas-build-pre-install` — syncs `expo.version` in `app.json` from repo-root
+   `version` (`version=…` → CFBundleShortVersionString), then installs
+   `holepunch-sidecar` deps and creates
    `bare/node_modules → holepunch-sidecar/node_modules` symlink **before**
-   CocoaPods runs. This is required so `pod install` → `BareKit/link.mjs` can
-   find `udx-native` prebuilds and emit `udx-native.xcframework` into
+   CocoaPods runs. The symlink is required so `pod install` → `BareKit/link.mjs`
+   can find `udx-native` prebuilds and emit `udx-native.xcframework` into
    `react-native-bare-kit/ios/addons/`. Without this step the app crashes at
    launch with `ADDON_NOT_FOUND: Cannot find addon '.' from udx-native/binding.js`.
+   Bump the marketing version in `version` only; EAS `appVersionSource: remote`
+   still owns `ios.buildNumber` (do not write `buildversionIos` into `app.json`).
 2. CocoaPods (`pod install`) — runs `BareKit` podspec `prepare_command` which
    calls `link.mjs`, discovers every native addon under `native-wrapper/`
    (including via the symlink) and writes their XCFrameworks to `ios/addons/`.

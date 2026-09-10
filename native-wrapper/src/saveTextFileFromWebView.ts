@@ -100,7 +100,10 @@ async function saveToAndroidStorage(
 }
 
 /** Write JSON under cache and present the iOS share sheet. */
-async function saveToIosShare(filename: string, content: string): Promise<void> {
+async function saveToIosShare(
+  filename: string,
+  content: string,
+): Promise<void> {
   const safeName = sanitizeFilename(filename);
   const cacheFile = new File(Paths.cache, safeName);
   if (cacheFile.exists) {

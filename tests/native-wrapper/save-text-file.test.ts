@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform } from "react-native";
-import { isAvailableAsync, shareAsync } from "expo-sharing";
 import { resetExpoFileSystemStub } from "expo-file-system";
 import { StorageAccessFramework } from "expo-file-system/legacy";
-import { buildSaveTextFileResolveScript } from "../../native-wrapper/src/buildSaveTextFileResolveScript";
+import { isAvailableAsync, shareAsync } from "expo-sharing";
+import { Platform } from "react-native";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SaveTextFileResult } from "../../native-wrapper/src/buildSaveTextFileResolveScript";
+import { buildSaveTextFileResolveScript } from "../../native-wrapper/src/buildSaveTextFileResolveScript";
 import { handleSaveTextFileWebViewMessage } from "../../native-wrapper/src/saveTextFileFromWebView";
 
 const {
@@ -56,12 +56,10 @@ describe("handleSaveTextFileWebViewMessage", () => {
     vi.mocked(isAvailableAsync).mockReset().mockResolvedValue(true);
     vi.mocked(shareAsync).mockReset().mockResolvedValue(undefined);
     vi.mocked(getUriForDirectoryInRoot).mockClear();
-    vi.mocked(requestDirectoryPermissionsAsync)
-      .mockReset()
-      .mockResolvedValue({
-        granted: true,
-        directoryUri: "content://tree/primary%3ADownload",
-      });
+    vi.mocked(requestDirectoryPermissionsAsync).mockReset().mockResolvedValue({
+      granted: true,
+      directoryUri: "content://tree/primary%3ADownload",
+    });
     vi.mocked(createFileAsync)
       .mockReset()
       .mockImplementation(

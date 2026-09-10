@@ -311,7 +311,9 @@ buildVersionAndroid=1
 
 - `version` → APK `versionName`
 - `buildVersionAndroid` → APK `versionCode`
-- `buildversionIos` → reserved for future iOS release builds
+- `buildversionIos` → recorded only; EAS `appVersionSource: remote` owns iOS
+  `buildNumber`. Marketing version for iOS is `version=` → `app.json`
+  `expo.version` via `eas-build-pre-install` (`apply-expo-version.mjs`).
 
 ```bash
 npm run mobile:android:release
