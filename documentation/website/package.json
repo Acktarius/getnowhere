@@ -1,0 +1,31 @@
+{
+  "name": "getnowhere-documentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/sync-screenshots.mjs",
+    "prebuild": "node scripts/sync-screenshots.mjs",
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint ."
+  },
+  "dependencies": {
+    "fumadocs-core": "^16.15.8",
+    "fumadocs-mdx": "^15.4.0",
+    "fumadocs-ui": "^16.15.8",
+    "next": "^16.3.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^22.20.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2"
+  }
+}

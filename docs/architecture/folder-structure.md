@@ -37,6 +37,9 @@ getnowhere/
     scripts/prepare-sidecar.mjs
   poke-gateway/             # Standalone L1′ wake gateway (APNs/FCM); no UI, no Hyperswarm
     src/
+  documentation/            # Public GitHub Pages docs (not a mirror of docs/)
+    content/                # curated public MDX
+    website/                # isolated Fumadocs / Next.js static site
   docs/
     architecture/
     builds/

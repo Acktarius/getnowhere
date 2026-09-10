@@ -1,0 +1,150 @@
+---
+title: Getting started
+description: Download Get NowHere, open a wallet, add someone by QR, then open a room.
+---
+
+Get NowHere is a chat app. No phone number. No email. You need a Conceal
+wallet, a build for your machine or phone, and another person who does the
+same.
+
+Download from:
+[github.com/acktarius/getnowhere/releases](https://github.com/acktarius/getnowhere/releases)
+
+There are **two kinds of release**. Do not mix them.
+
+| What you want | Which release | What to download |
+| --- | --- | --- |
+| PC (Linux or Windows) | A version tag such as `v0.4.11` — **not** F-Droid | `Get_NowHere-v…` desktop files |
+| Android APK | A tag that includes **F-Droid**, such as `v0.4.11-f-droid` | `GetNowHere-v…-b…-java….apk` plus its `.sha256` |
+
+Desktop file names come from the app version. The F-Droid tag suffix is **not**
+in the APK file name.
+
+There is **no packaged macOS desktop** yet.
+
+## Linux
+
+From a desktop release, pick one:
+
+| File | Who it is for |
+| --- | --- |
+| `Get_NowHere-vX.Y.Z-x86_64.AppImage` | Most Linux desktops (Debian/Ubuntu and Arch included) |
+| `Get_NowHere-vX.Y.Z-amd64.deb` | Debian / Ubuntu install |
+| `Get_NowHere-vX.Y.Z-linux-x64.zip` | Extract and run, no package manager |
+
+**AppImage:** make it executable, then run it.
+
+```bash
+chmod +x Get_NowHere-vX.Y.Z-x86_64.AppImage
+./Get_NowHere-vX.Y.Z-x86_64.AppImage
+```
+
+**Debian / Ubuntu package:**
+
+```bash
+sudo apt install ./Get_NowHere-vX.Y.Z-amd64.deb
+getnowhere
+```
+
+**Zip:** extract it, then run `getnowhere` from the folder.
+
+The packaged app is a single identity. Data lives under
+`~/.config/getnowhere`. It starts its own peer runtime; you do not run a
+sidecar yourself.
+
+## Windows
+
+From a desktop release, download `Get_NowHere-vX.Y.Z-win32-x64.zip`.
+
+Extract it. Run `getnowhere.exe`. Same idea as Linux: one identity, embedded
+UI, its own peer runtime.
+
+## Checksums
+
+Desktop releases include `SHA256SUMS.txt`. Android F-Droid releases include a
+`.sha256` next to the APK. Check the file you downloaded before you install it.
+
+## Android
+
+1. Open the release whose **tag includes F-Droid**.
+2. Download `GetNowHere-vX.Y.Z-bN-java….apk` (and the `.sha256` if you want to
+   verify).
+3. Sideload it. Your phone must allow installs from that source.
+4. The app id is `im.getnowhere.app`.
+
+This is the signed APK path used for F-Droid-style builds. It is **not** the
+desktop zip on the same page.
+
+Live chat on a phone uses the on-device peer runtime. It works in testing
+(including phone to desktop on the same room). Across some mobile networks,
+the live path can still fail; the app can fall back to Conceal relay so a
+message is not stuck forever. That is slower. It is not a second “more
+private live mode.”
+
+## iOS
+
+In process. Not a public store build yet. If you want to be a beta tester,
+open an issue on
+[github.com/acktarius/getnowhere](https://github.com/acktarius/getnowhere).
+
+## First launch — wallet
+
+On welcome you **create** a wallet or **import** one.
+
+| How you get in | Password |
+| --- | --- |
+| New wallet | You choose a wallet encryption password |
+| QR or file backup | The password that backup already has |
+| Seed or keys | You choose a new wallet encryption password |
+
+You land in the wallet. Send, receive, and history are there. The app does
+**not** create Conceal deposits or withdrawals; those txs can still show in
+history after sync.
+
+An **app unlock passcode** is optional and later: Settings → Passcode. That
+is not the same password as the wallet file.
+
+**Backup** is in Settings: seed and keys, export QR, or an encrypted
+`.json`. File backup is what restores chat rooms. Seed, keys, and QR restore
+the wallet; they do **not** rebuild rooms.
+
+Let the wallet sync. Chat signaling uses the chain / mempool. You can use
+the app while catch-up runs in the background.
+
+## Add a person — like a phone number, with a QR
+
+This is **Add contact**, not yet a chat room.
+
+1. You both have a Conceal wallet open in Get NowHere.
+2. Each of you opens **Add contact**.
+3. Each of you shows a QR; the other flashes it.
+4. Address and payment ID swap both ways. No typing.
+
+One scan is not enough. You flash theirs; they flash yours. After both
+payment IDs are in place, the contact is eligible for a chat invite.
+
+There is no public directory. You do not join a named room on the internet.
+
+## Open a room
+
+A room is a chapter, not an endless inbox.
+
+1. Open the contact.
+2. Create a room. Pick a purpose — work, vacation, whatever matters now.
+3. Set an **invitation window** (how long they have to accept) and a
+   **room lifetime** (when that chapter ends).
+4. They accept. Live chat waits for the peer path and a check that this is
+   actually the person from the invite — not just someone who found a topic.
+5. Talk. When the room expires, it is over. Open another if life needs one.
+
+If the live path is down after you are already in the relationship, text can
+go over Conceal relay until peers meet again.
+
+## If something is missing on Releases
+
+Desktop and Android are published by **different tags**. A desktop release
+will not have the F-Droid APK. An F-Droid release will not have the
+`.AppImage` / `.deb` / Windows zip.
+
+If the latest tag has no files yet, it may still be a draft. Wait for it to
+be published, or use the previous published release.

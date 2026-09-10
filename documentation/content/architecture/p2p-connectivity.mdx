@@ -1,0 +1,41 @@
+---
+title: Peer-to-peer connectivity
+description: Invite-led topics, a separate swarm host, and post-connect checks.
+---
+
+Get NowHere is not a public-room product. Connectivity is relationship-based.
+
+## Discovery is derived, not named
+
+The runtime joins a derived topic built from relationship identifiers. Human
+room titles are not used as raw network topics. After a transport peer
+appears, the application still runs a **post-connect check** before the
+composer is trusted. Topic join alone is not identity.
+
+The exact derivation formula and bridge message catalog stay in the internal
+engineering docs. They are not republished here.
+
+## Who owns the swarm
+
+| Host | Swarm owner | Status |
+| --- | --- | --- |
+| Web development | Node sidecar | In use for local development |
+| Desktop | Sidecar child / shell-owned process | In use for desktop development and packaging |
+| Mobile | Bare worklet | **Planned** on-device host |
+
+The UI always remains a client of the bridge.
+
+## Live path versus fallback
+
+When the live session is up, frames travel over the encrypted peer stream.
+When it is not, the product can use a Conceal-backed relay so text is not
+stuck forever behind a failed hole punch. Relay is an availability fallback,
+not a second “more anonymous live mode.”
+
+## Connectivity guarantees
+
+This page does **not** claim:
+
+- successful hole punches on every network
+- IP concealment on the live path
+- that every published binary includes the same runtime

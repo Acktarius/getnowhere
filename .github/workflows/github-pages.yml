@@ -1,23 +1,27 @@
-name: GitHub Pages
-
-# Deploy Vite UI (dist/) to GitHub Pages.
-# @see docs/builds/github-pages-and-desktop.md
+name: Deploy documentation to GitHub Pages
 
 on:
   push:
     branches: [main]
+    paths:
+      - "documentation/**"
+      - ".github/workflows/github-pages.yml"
+      - "fastlane/metadata/android/en-US/images/phoneScreenshots/**"
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 concurrency:
-  group: github-pages-${{ github.ref }}
+  group: documentation-github-pages
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Vitest
+  build:
+    name: Build documentation
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -27,48 +31,38 @@ jobs:
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: documentation/website/package-lock.json
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Install
+        working-directory: documentation/website
         run: npm ci
 
-      - name: Install native-wrapper deps
-        run: npm ci --prefix native-wrapper
-
-      - name: Test
-        run: npm run test
-
-  pages:
-    name: GitHub Pages UI
-    needs: test
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-
-      - name: Install
-        run: npm ci
+      - name: Sync screenshots from Fastlane
+        working-directory: documentation/website
+        run: node scripts/sync-screenshots.mjs
 
       - name: Build
+        working-directory: documentation/website
+        env:
+          GITHUB_ACTIONS: "true"
         run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: documentation/website/out
 
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

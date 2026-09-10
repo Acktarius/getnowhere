@@ -1,0 +1,34 @@
+---
+title: Architecture overview
+description: Vite UI, a typed bridge, and a separate peer-to-peer runtime.
+---
+
+The product is a chat app. This page is how that chat is built: the
+interface stays a client; a separate runtime owns discovery and transport.
+
+```text
+Vite / Electron / Expo UI
+        │
+        │  typed bridge (commands and events)
+        ▼
+Peer-to-peer runtime (sidecar, Electron-owned process, or Bare worklet)
+```
+
+## Layers
+
+- **UI** — React + TypeScript + Vite. Wallet, invitations, chat screens, and
+  the bridge *client*.
+- **Bridge** — a small typed contract. The UI never speaks Hyperswarm APIs
+  directly.
+- **Runtime** — joins derived topics, owns Noise transport, and forwards
+  opaque frames.
+
+Application cryptography for live chat content is applied on the identity /
+wallet side of the bridge so a compromised runtime is not trusted with
+plaintext. See [security overview](/security/security-overview).
+
+## Why the split exists
+
+Browsers and WebViews are user-interface environments. Hyperswarm needs a
+Node-class or Bare-class host for UDP, DHT, and Noise streams. Putting the
+swarm in the UI would break that boundary and is rejected.

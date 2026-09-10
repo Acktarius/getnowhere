@@ -1,0 +1,69 @@
+---
+title: Notifications
+description: A quiet wake — APNs or ntfy, Google Firebase out of the equation, one tag per room, used sparingly.
+---
+
+Notifications here are a **wake**, not the chat. The message still travels on
+Conceal (Layer 1′) or on the live peer path (Layer 2). A banner only tells
+the other phone: open the app, there is something to sync.
+
+This page is high-level. It is not a server runbook and **not a security
+audit**.
+
+## No Google
+
+Android builds aimed at F-Droid / GrapheneOS do **not** use Firebase Cloud
+Messaging or Google Play Services.
+
+| Phone | Wake path |
+| --- | --- |
+| iOS | Apple Push Notification service (APNs) |
+| Android (F-Droid) | **ntfy** on our own host |
+| Desktop | No poke. The app is already running |
+
+The sender never learns the other person’s OS. Same handshake field either
+way. A small private service picks APNs or ntfy. The peer only ever holds an
+opaque **tag**.
+
+## Private host
+
+ntfy runs on a **private server** we operate, in a **privacy-oriented
+country**. It is not a public social inbox and not a Google pipe.
+
+That host sees a wake on a tag and a time. It does not get the chat text,
+the Conceal address, or a room title.
+
+Apple, on the iOS path, sees a device token and a push time — not the room
+and not the message body.
+
+## One tag per room, device-agnostic
+
+The tag is **per room**, not per account and not per phone model.
+
+- Created for that invite / that chapter
+- The same kind of tag on iPhone or F-Droid
+- Dies when the room expires or is torn down
+- A new room gets a new tag
+
+No “always-on identity” for push. Work, vacation, a project — each room has
+its own wake address. Flash a QR and open a room; you are not enrolling a
+permanent device ID with the other person.
+
+## Limited use — avoid patterns
+
+A poke is not sent on every line of text. That would be noisy for the other
+person and would draw a timing pattern on the wake host.
+
+Wake fires when it is useful: the live path just dropped and a fallback
+message needs the other phone to come back. Then it stays quiet for a while.
+Not a heartbeat. Not a read-receipt network.
+
+If push is off, or the other side is a desktop, nothing is poked. Chat still
+works the slow way — chain sync when they next open the app.
+
+## What this is not
+
+- Not the message transport
+- Google Firebase is out of the equation — out of scope
+- Not a public topic named after you
+- Not a guarantee that every phone wakes in seconds on every network

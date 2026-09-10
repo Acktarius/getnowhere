@@ -12,7 +12,8 @@
       "**/*.js",
       "**/*.json",
       "**/*.css",
-      "!native-wrapper/assets/ui/*"
+      "!native-wrapper/assets/ui/*",
+      "!documentation/website/**"
     ],
     "ignoreUnknown": true
   },

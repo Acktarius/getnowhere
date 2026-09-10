@@ -1,0 +1,79 @@
+---
+title: Cryptographic design
+description: High-level authenticated-encryption guidance. Not a spec or audit.
+---
+
+This page is **high-level design documentation**. It is not a wire-format
+specification, not a substitute for the internal protocol documents, and
+**not a security audit**.
+
+The shipped live-session path uses **ChaCha20-Poly1305** (IETF / RFC 8439)
+as authenticated encryption for application-layer message seals. That choice
+is visible in the current source. Details such as exact key schedules, nonce
+derivation, and handshake bytes are intentionally omitted here.
+
+## Authenticated encryption
+
+Prefer a standard AEAD over a home-grown composition of a stream cipher plus
+a MAC.
+
+**ChaCha20-Poly1305** is a reasonable default when you want authenticated
+encryption with good software performance and a widely reviewed construction.
+Use a well-maintained implementation. Do not invent a “compatible” variant.
+
+## Unique nonces per key
+
+An AEAD key must never reuse a nonce.
+
+- Derive or increment nonces so that `(key, nonce)` is unique for every
+  seal.
+- Never rewind a counter for the same key.
+- If nonce uniqueness cannot be guaranteed, rotate the key.
+- Random 96-bit nonces are only acceptable when the collision risk for that
+  key’s lifetime is actually understood. Prefer a key-specific counter or a
+  KDF-produced nonce when the design already has a session secret.
+
+Reuse is not a “rare glitch.” It can destroy confidentiality and
+authenticity for that key.
+
+## Associated data
+
+Use authenticated associated data (AAD) for fields that must be bound to the
+ciphertext but are not themselves secret: protocol version, room or
+relationship identifiers, direction, or similar context.
+
+If those fields are left outside the AEAD, an attacker who can modify the
+envelope can re-bind valid ciphertext to the wrong context.
+
+## Key lifecycle
+
+- Generate session keys from a reviewed handshake / KDF. Do not reuse
+  long-term wallet keys as AEAD keys.
+- Keep raw key material in memory only as long as the session needs it.
+- Wipe keys on logout, room teardown, and cryptographic mismatch.
+- Persist session secrets only through the project’s storage adapter, never
+  in ad hoc files or logs.
+
+## Wire-format versioning
+
+Give sealed envelopes an explicit version. Receivers should reject unknown
+versions instead of guessing. Changing nonce size, AAD layout, or cipher
+suite requires a new version — not a silent reinterpretation of old bytes.
+
+## Replay protection
+
+AEAD success proves the ciphertext was sealed with the key. It does not, by
+itself, prove the message is fresh.
+
+Designs should reject reused envelopes: monotonic counters, bounded
+timestamps, or both. The public documentation does not claim that every
+replay case is already closed on every host.
+
+## Independent review
+
+Cryptography in this project should change through a specification first,
+then code, then review. Do not treat this page as permission to add a new
+primitive, mix ciphers, or drop the application-layer seal because transport
+encryption exists.
+
+Any serious change still needs **independent cryptographic review**.

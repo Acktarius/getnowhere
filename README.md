@@ -197,6 +197,34 @@ Seed phrase stays in-memory only — never route it through storage.
 - Do not codegen Nitro-Hyperswarm or a React Native desktop shell.
 - Do not drop the L1 session seal because Noise exists — `docs/security/encryption.md`.
 
-## Docs
+## Documentation
 
-Start at `docs/README.md`. Architecture runbooks beat this file for deep detail.
+- **`docs/`** is the internal engineering documentation library (architecture,
+  protocol, security notes, AI guidance, and operational records). It is not
+  published automatically.
+- **`documentation/content/`** is the curated public documentation source.
+- **`documentation/website/`** is the isolated Fumadocs / Next.js renderer.
+
+Local documentation site (no `/getnowhere` prefix):
+
+```bash
+cd documentation/website
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000/`.
+
+Production static build (GitHub Pages prefix):
+
+```bash
+cd documentation/website
+GITHUB_ACTIONS=true npm run build
+```
+
+Output is `documentation/website/out/`. The expected public URL is
+`https://acktarius.github.io/getnowhere/`. GitHub Pages must be configured
+manually to use **GitHub Actions** as its deployment source. This repository
+does not claim that Pages is already active.
+
+Start internal runbooks at `docs/README.md`.

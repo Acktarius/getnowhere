@@ -1,14 +1,14 @@
-# GitHub Pages UI + Linux/Windows desktop (Electron + sidecar)
+# GitHub Pages docs + Linux/Windows desktop (Electron + sidecar)
 
 **Two workflows.** Pages and desktop releases are independent.
 
 | Workflow | File | Triggers |
 |---|---|---|
-| GitHub Pages | `.github/workflows/github-pages.yml` | push to `main`, `workflow_dispatch` |
+| GitHub Pages | `.github/workflows/github-pages.yml` | `documentation/**` or the workflow file on `main`, `workflow_dispatch` |
 | Release Electron + sidecar | `.github/workflows/release-electron-sidecar.yml` | `v*` tags, `workflow_dispatch` |
 
 ```text
-Pages          npm run build → dist/ → GitHub Pages (browser)
+Pages          documentation/website build → out/ → GitHub Pages (public docs)
 Desktop Linux  npm run build → dist/ staged into package
                  Electron Forge zip/deb (Linux) + zip (Windows)
                  ├─ Electron shell
@@ -32,26 +32,34 @@ if present.
 
 ## Repo setup (once)
 
-1. **Settings → Pages → Source = GitHub Actions** (browser / mobile web only)
+1. **Settings → Pages → Source = GitHub Actions** (public documentation site)
+
+Expected URL: `https://acktarius.github.io/getnowhere/`. Do not claim Pages is
+already live until that setting is confirmed.
 
 ## Vite `base`
 
-Production build keeps `base: "./"` in `vite.config.ts` so assets work from:
+Production UI build keeps `base: "./"` in `vite.config.ts` so assets work from
+packaged Electron `file://` (`resources/ui/`) and other relative hosts.
 
-- GitHub project Pages (`/repo/`)
-- custom domain root
-- packaged Electron `file://` (`resources/ui/`)
-
-Do not switch to absolute `/` unless you only ever host at domain root.
+Do not switch the Vite app to absolute `/` unless you only ever host that
+bundle at domain root. GitHub Pages no longer deploys the Vite `dist/`.
 
 ## GitHub Pages workflow
 
-Triggers: push to `main`, or manual `workflow_dispatch`. Does **not** run on version tags.
+Deploys the isolated Fumadocs site, not the root Vite application.
 
-- Job `test`: Node 24, `npm ci`, `npm run test` (Vitest)
-- Job `pages` (`needs: test`): `npm ci`, `npm run build` — skipped if tests fail
-- Uploads `dist/` via `upload-pages-artifact`
-- Deploys with `deploy-pages` (environment `github-pages`)
+Triggers: push to `main` that touches `documentation/**` or
+`.github/workflows/github-pages.yml`, or manual `workflow_dispatch`. Does
+**not** run on version tags or ordinary application / `docs/**` changes.
+
+- Job `build`: Node 24, `npm ci` in `documentation/website`,
+  `GITHUB_ACTIONS=true npm run build`
+- Uploads `documentation/website/out` via `upload-pages-artifact`
+- Job `deploy` (`needs: build`): `deploy-pages` (environment `github-pages`)
+
+Local docs development uses `http://localhost:3000/` without `/getnowhere`.
+The CI build sets `basePath` / `assetPrefix` to `/getnowhere`.
 
 ## Release Electron + sidecar workflow
 
@@ -121,3 +129,4 @@ Desktop icons: `desktop-electron/icons/icon.png` (Linux `.deb`), `icon.ico` (Win
 - `docs/architecture/electron-desktop.md`
 - `docs/architecture/holepunch-sidecar.md`
 - `docs/architecture/web-vs-wrapper.md`
+- `documentation/content/` (public Pages source)

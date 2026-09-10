@@ -1,0 +1,25 @@
+---
+title: Security overview
+description: High-level layers — not a protocol specification or audit.
+---
+
+This page is **high-level design documentation**. It is not a full protocol
+specification and **not a security audit**. Cipher details for builders:
+[cryptographic design](/security/cryptographic-design).
+
+| What you do | Where it goes | Layer | Cipher |
+| --- | --- | --- | --- |
+| Create invitation | Conceal blockchain | Layer 1 | ChaCha12 |
+| Accept invitation | Conceal blockchain | Layer 1 | ChaCha12 |
+| Chat in a room when the peer path is up | Holepunch (peer-to-peer, no chat server) | Layer 2 | ChaCha20-Poly1305 |
+| Chat in a room when the peer path is down | Conceal blockchain (fallback) | Layer 1′ | ChaCha12 |
+
+Layer 1 and Layer 1′ use Conceal Network message encryption. Outsiders
+without the view keys do not read the body. Layer 2 is a direct (or
+hole-punched) path: no chat server, ChaCha20-Poly1305 on the live session.
+The invited peer can still learn your IP. That is not anonymous routing.
+
+Waking a sleeping phone (APNs or ntfy, no Google Firebase):
+[notifications](/security/notifications).
+
+Do not file secrets or seed phrases in public tickets.

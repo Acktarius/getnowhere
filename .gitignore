@@ -61,6 +61,11 @@ native-wrapper/ios/
 # Build|related
 *.tsbuildinfo
 
+# Public documentation site (Fumadocs / Next static export)
+documentation/website/.next/
+documentation/website/out/
+documentation/website/.source/
+
 # poke-gateway local SQLite (OS push tokens)
 poke-gateway/*.db
 poke-gateway/*.db-wal

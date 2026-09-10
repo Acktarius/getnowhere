@@ -1,0 +1,16 @@
+{
+  "title": "Get NowHere",
+  "root": true,
+  "pages": [
+    "index",
+    "getting-started",
+    "---Product---",
+    "...product",
+    "---Architecture---",
+    "...architecture",
+    "---Security---",
+    "...security",
+    "---Developers---",
+    "...developers"
+  ]
+}
