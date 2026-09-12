@@ -95,19 +95,39 @@ describe("SettingsScreen push wake toggle", () => {
     cleanup();
   });
 
-  it("renders Wake contact on relay on mobile host", () => {
+  it("renders Wake contact on mobile host", () => {
     renderSettings();
-    expect(screen.getByText("Wake contact on relay")).toBeTruthy();
+    expect(screen.getByText("Wake contact")).toBeTruthy();
   });
 
   it("toggle is disabled (no switch) when Notifications is off", () => {
     renderSettings();
     expect(
-      screen.queryByRole("switch", { name: /wake contact on relay/i }),
+      screen.queryByRole("switch", { name: /^wake contact$/i }),
     ).toBeNull();
     expect(
       screen.getAllByText("Turn on Notifications first.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("describes wake as accepted-invite and new-message ping when Notifications is on", () => {
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(
+      screen.getByText(
+        "Generic APNs/ntfy ping when a room invite is accepted or a room gets a new message. No names or preview.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("describes banner as invite-received only when Notifications is on", () => {
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(
+      screen.getByText(
+        'Local lock-screen alert only for “You received a room invite.”',
+      ),
+    ).toBeTruthy();
   });
 
   it("calls applyPushWakeEnabled when toggled with Notifications on", async () => {
@@ -115,7 +135,7 @@ describe("SettingsScreen push wake toggle", () => {
     const user = userEvent.setup();
     renderSettings();
     const toggle = screen.getByRole("switch", {
-      name: /wake contact on relay/i,
+      name: /^wake contact$/i,
     });
     await user.click(toggle);
     expect(applyPushWakeEnabled).toHaveBeenCalledWith(true);

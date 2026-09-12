@@ -117,6 +117,7 @@ describe("maybeSendPoke — cooldown re-poke rule", () => {
 
     expect(sendPokeSpy).toHaveBeenCalledOnce();
     expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 
   it("does NOT call sendPoke again on second relay within 300s", async () => {
@@ -163,6 +164,8 @@ describe("maybeSendPoke — cooldown re-poke rule", () => {
     await HolepunchChatTransport.sendMessage(ROOM_ID, "after cooldown");
     await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
+    expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 
   it("persists lastPokedAt to catalog after first poke", async () => {
@@ -223,6 +226,8 @@ describe("maybeSendPoke — reset on connected", () => {
     await HolepunchChatTransport.sendMessage(ROOM_ID, "after connect");
     await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
+    expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 });
 

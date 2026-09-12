@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  LOCAL_NOTIFICATION_ID_PREFIX,
+  localNotificationId,
+} from "../../src/services/notifications/localNotificationId";
+import {
   normalizeNotificationPreview,
   SINGLE_LINE_PREVIEW_GRAPHEMES,
   truncateNotificationPreview,
@@ -16,7 +20,7 @@ import type { Contact } from "../../src/types/models";
 const contact = { id: "c1", alias: "Alice" } as Contact;
 
 describe("notification event mapping", () => {
-  it("L1 received invitation maps to Room invitation received", () => {
+  it("L1 received invitation maps to You received a room invite", () => {
     const native = toNativeNotificationEvent({
       kind: "l1_invitation_received",
       eventId: "e1",
@@ -24,21 +28,22 @@ describe("notification event mapping", () => {
       contactId: "c1",
     });
     expect(native).not.toBeNull();
-    expect(nativeNotificationTitle(native!)).toBe("Room invitation received");
-    expect(nativeNotificationBody(native!)).toBe("Room invitation received");
+    expect(nativeNotificationTitle(native!)).toBe("Get NowHere");
+    expect(nativeNotificationBody(native!)).toBe("You received a room invite");
+    expect(nativeNotificationBody(native!)).not.toMatch(/Alice|hello|c1|e1/i);
   });
 
-  it("L1 accepted invitation maps to Room invitation accepted", () => {
+  it("L1 accepted invitation does not map to a native banner", () => {
     const native = toNativeNotificationEvent({
       kind: "l1_invitation_accepted",
       eventId: "e2",
       occurredAtMs: 1,
       contactId: "c1",
     });
-    expect(nativeNotificationTitle(native!)).toBe("Room invitation accepted");
+    expect(native).toBeNull();
   });
 
-  it("L1' known-room message maps to contact: truncated message", () => {
+  it("known-room L1′ does not map to a native content banner", () => {
     const native = toNativeNotificationEvent({
       kind: "l1_known_room_message",
       eventId: "e3",
@@ -48,8 +53,7 @@ describe("notification event mapping", () => {
       messagePreview: "hello there",
       roomId: "r1",
     });
-    expect(nativeNotificationTitle(native!)).toBe("Alice");
-    expect(nativeNotificationBody(native!)).toBe("Alice: hello there");
+    expect(native).toBeNull();
   });
 
   it("unknown contact fallback exposes no identifiers", () => {
@@ -77,7 +81,18 @@ describe("notification event mapping", () => {
       messagePreview: "\u0007\u0008",
       roomId: "r1",
     });
-    expect(native).toMatchObject({ messagePreview: "New message" });
+    expect(native).toBeNull();
+  });
+});
+
+describe("local notification ids", () => {
+  it("prefixes gnh.local. exactly once", () => {
+    const raw = "opaque-evt-a";
+    const once = localNotificationId(raw);
+    expect(LOCAL_NOTIFICATION_ID_PREFIX).toBe("gnh.local.");
+    expect(once).toBe(`${LOCAL_NOTIFICATION_ID_PREFIX}${raw}`);
+    expect(localNotificationId(once)).toBe(once);
+    expect(localNotificationId("opaque-evt-b")).not.toBe(once);
   });
 });
 

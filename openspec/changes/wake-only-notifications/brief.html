@@ -1,0 +1,88 @@
+<!-- forge-brief-specs-hash:ca0fcd4841601a59 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wake-only notifications</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    .muted { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Wake-only notifications</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    People only see a notification after they open the app, because we waited
+    for wallet sync so we could put the message text on the lock screen.
+    After this change, a wake is a separate ping: generic words, no names,
+    no preview, and no need to unlock the wallet.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>One generic wake (what the live poke gateway already shows: “Get NowHere” / “New message”) when an invite is accepted or a room gets a chain message.</li>
+    <li>A later chain message, five minutes or more after the last wake, can ping again. Sooner than that, it will not.</li>
+    <li>“You received a room invite” still appears only after that phone syncs (we do not have a wake address yet).</li>
+    <li>The app icon pin can still appear and still clears when you open the app. Opening the app will not wipe the lock-screen entries.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    When Bob accepts Alice’s invite, his app asks the poke gateway to wake her.
+    When someone sends the first chain message after live chat drops — or another
+    after five minutes — the same gateway sends a generic Apple (or ntfy) alert
+    using the same request the gateway already understands. No gateway redeploy.
+    The phone shows that alert without opening the wallet.
+    Decrypting the actual message still happens later, on the device.
+  </p>
+  <pre class="mermaid">
+flowchart LR
+  sender[Sender device] -->|poke kind| gateway[Poke gateway]
+  gateway -->|generic alert + badge 1| lock[Lock screen]
+  sync[Wallet sync later] -->|invite received only| local[Local generic banner]
+  sync -->|no preview banner| unread[In-app unread]
+  </pre>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Settings: “Wake contact” means accepted-invite + new-message pings, not “relay only”.</li>
+    <li>Settings: “Notification banner” is only the local “you received a room invite” line.</li>
+    <li>Testers: background Alice, have Bob accept or send L1′ — expect the generic wake without opening her wallet.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>If Apple registration is wrong on a build, wakes still will not arrive. This change does not re-audit tokens.</li>
+    <li>Apple and our gateway see which of the two wake types it was — not who or what was said.</li>
+    <li>First invites are not instant if the app is dead. That is intentional.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>A global device wake address so first invites can ping instantly</li>
+    <li>Making iOS background refresh instant</li>
+    <li>Putting message text or names on the lock screen</li>
+    <li>Turning wake on by default</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>Gateway kind → fixed alert (3 tasks)</li>
+    <li>App poke API + L1′ trigger (2 tasks)</li>
+    <li>Poke on accept (2 tasks)</li>
+    <li>Strip local message banners (3 tasks)</li>
+    <li>iOS badge vs notification wipe (3 tasks)</li>
+    <li>Settings + docs (2 tasks)</li>
+    <li>Harness loop (2 tasks)</li>
+  </ul>
+  <p class="muted">Change: wake-only-notifications · Issues #15 #16</p>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

@@ -256,10 +256,10 @@ export function SettingsScreen() {
               />
               <hr className="divider divider--flush" />
               <PrivacySettingItem
-                title="Wake contact on relay"
+                title="Wake contact"
                 description={
                   s.privacy.notificationsEnabled
-                    ? "Uses ntfy / APNs wake. No Google."
+                    ? "Generic APNs/ntfy ping when a room invite is accepted or a room gets a new message. No names or preview."
                     : "Turn on Notifications first."
                 }
                 on={s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled}
@@ -279,7 +279,7 @@ export function SettingsScreen() {
                 title="Notification banner"
                 description={
                   s.privacy.notificationsEnabled
-                    ? "Show a lock-screen banner."
+                    ? 'Local lock-screen alert only for “You received a room invite.”'
                     : "Turn on Notifications first."
                 }
                 on={
@@ -306,12 +306,15 @@ export function SettingsScreen() {
             <span className="section__title">Security</span>
           </div>
           <div className="card card--flush">
-            <LinkRow
-              to="/settings/security"
-              icon={Shield}
-              title="Biometrics & auto-lock"
-              sub="Auto-lock, app access, and data unlock"
-            />
+            {/* Native biometrics + idle/background auto-lock: mobile host only. */}
+            {isMobileHost() ? (
+              <LinkRow
+                to="/settings/security"
+                icon={Shield}
+                title="Biometrics & auto-lock"
+                sub="Auto-lock, app access, and data unlock"
+              />
+            ) : null}
             <LinkRow
               to="/settings/wallet-password"
               icon={KeyRound}

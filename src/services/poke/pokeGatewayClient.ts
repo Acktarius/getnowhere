@@ -65,8 +65,9 @@ export async function registerPokeHandle(
 }
 
 /**
- * Sends an opaque poke to the peer identified by `partnerPokeHandle`.
- * No message content or sender identity is transmitted.
+ * Sends an opaque wake poke. Body is `{ to }` only — matches the deployed
+ * gateway (no `kind`; extra fields are rejected).
+ * @see docs/features/peer-wake-notification.md
  */
 export async function sendPoke(partnerPokeHandle: string): Promise<void> {
   const base = gatewayUrl();

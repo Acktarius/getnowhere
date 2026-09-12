@@ -91,6 +91,13 @@ final class GnhNotificationPublisherTests: XCTestCase {
       content.userInfo[GnhNotificationPublisher.eventIdUserInfoKey] as? String,
       "evt-1"
     )
+    XCTAssertTrue(fake.addedRequests[0].identifier.hasPrefix("gnh.local."))
+    XCTAssertEqual(fake.addedRequests[0].identifier, "gnh.local.evt-1")
+  }
+
+  func testLocalIdentifierDoesNotDoublePrefix() {
+    XCTAssertEqual(publish(input(eventId: "gnh.local.evt-1")), .posted)
+    XCTAssertEqual(fake.addedRequests[0].identifier, "gnh.local.evt-1")
   }
 
   func testDuplicateEventNotReposted() {
@@ -150,10 +157,16 @@ final class GnhNotificationPublisherTests: XCTestCase {
     XCTAssertFalse(fake.authorizationRequests[0].contains(.alert))
   }
 
-  func testClearBadgeZerosCountAndRemovesDelivered() {
+  func testClearBadgeZerosCountWithoutRemovingDelivered() {
     XCTAssertEqual(publish(input(badgeCount: 2)), .posted)
     publisher.clearBadge()
     XCTAssertEqual(fake.badgeCounts.last, 0)
+    XCTAssertFalse(fake.removedAll)
+  }
+
+  func testCancelAllFeatureNotificationsRemovesDelivered() {
+    XCTAssertEqual(publish(input(badgeCount: 2)), .posted)
+    publisher.cancelAllFeatureNotifications()
     XCTAssertTrue(fake.removedAll)
   }
 }

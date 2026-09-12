@@ -47,6 +47,15 @@ function relayEvent(eventId: string) {
   };
 }
 
+function inviteReceivedEvent(eventId: string) {
+  return {
+    kind: "l1_invitation_received" as const,
+    eventId,
+    occurredAtMs: Date.now(),
+    contactId: "c1",
+  };
+}
+
 describe("publishDomainNotificationEvent", () => {
   beforeEach(() => {
     __resetNotificationEventLedger();
@@ -78,11 +87,13 @@ describe("publishDomainNotificationEvent", () => {
 
   it("event seen while disabled still notifies after the user opts in", () => {
     // Regression: the ledger must not burn eventIds while notifications are off.
-    publishDomainNotificationEvent(relayEvent("e-optin"));
+    publishDomainNotificationEvent(inviteReceivedEvent("e-optin"));
     expect(unreadNotificationCount()).toBe(0);
 
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
-    expect(publishDomainNotificationEvent(relayEvent("e-optin"))).toBe(true);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e-optin"))).toBe(
+      true,
+    );
     expect(unreadNotificationCount()).toBe(1);
     expect(
       posted.filter(
@@ -96,7 +107,9 @@ describe("publishDomainNotificationEvent", () => {
     // otherwise a background poll that lands as the user opens the app drops it.
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
     setVisibility("visible");
-    expect(publishDomainNotificationEvent(relayEvent("e-fg"))).toBe(false);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e-fg"))).toBe(
+      false,
+    );
     expect(unreadNotificationCount()).toBe(0);
     expect(
       posted.filter(
@@ -105,7 +118,9 @@ describe("publishDomainNotificationEvent", () => {
     ).toEqual([]);
 
     setVisibility("hidden");
-    expect(publishDomainNotificationEvent(relayEvent("e-fg"))).toBe(true);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e-fg"))).toBe(
+      true,
+    );
     expect(unreadNotificationCount()).toBe(1);
     const msgs = posted.filter(
       (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
@@ -119,9 +134,9 @@ describe("publishDomainNotificationEvent", () => {
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
     setVisibility("visible");
     handleLifecycleEvent("background");
-    expect(publishDomainNotificationEvent(relayEvent("e-native-bg"))).toBe(
-      true,
-    );
+    expect(
+      publishDomainNotificationEvent(inviteReceivedEvent("e-native-bg")),
+    ).toBe(true);
     expect(
       posted.filter(
         (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
@@ -131,7 +146,7 @@ describe("publishDomainNotificationEvent", () => {
 
   it("enabled + banners off publishes badge-bearing event with banners disabled", () => {
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
-    publishDomainNotificationEvent(relayEvent("e2"));
+    publishDomainNotificationEvent(inviteReceivedEvent("e2"));
     const msgs = posted.filter(
       (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
     );
@@ -144,8 +159,10 @@ describe("publishDomainNotificationEvent", () => {
 
   it("duplicate eventId does not increment unread or publish again", () => {
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
-    expect(publishDomainNotificationEvent(relayEvent("e3"))).toBe(true);
-    expect(publishDomainNotificationEvent(relayEvent("e3"))).toBe(false);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e3"))).toBe(true);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e3"))).toBe(
+      false,
+    );
     expect(unreadNotificationCount()).toBe(1);
     const msgs = posted.filter(
       (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
@@ -167,14 +184,42 @@ describe("publishDomainNotificationEvent", () => {
       notificationsEnabled: true,
       notificationBannersEnabled: true,
     });
-    publishDomainNotificationEvent(relayEvent("e5"));
+    publishDomainNotificationEvent(inviteReceivedEvent("e5"));
     const msg = posted.find(
       (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
     )!;
-    expect(msg.title).toBe("Alice");
-    expect(msg.body).toBe("Alice: hello");
+    expect(msg.title).toBe("Get NowHere");
+    expect(msg.body).toBe("You received a room invite");
     expect(JSON.stringify(msg)).not.toContain("r1");
     expect(Object.keys(msg)).not.toContain("roomId");
     expect(Object.keys(msg)).not.toContain("contactId");
+  });
+
+  it("known-room L1′ ingest does not publish a native content banner", () => {
+    useSettingsStore.getState().setPrivacy({
+      notificationsEnabled: true,
+      notificationBannersEnabled: true,
+    });
+    expect(publishDomainNotificationEvent(relayEvent("e-l1p"))).toBe(true);
+    expect(unreadNotificationCount()).toBe(1);
+    const msgs = posted.filter(
+      (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
+    );
+    expect(msgs).toHaveLength(0);
+    expect(JSON.stringify(posted)).not.toContain("Alice");
+    expect(JSON.stringify(posted)).not.toContain("hello");
+  });
+
+  it("local notification ids are prefixed gnh.local.", () => {
+    useSettingsStore.getState().setPrivacy({
+      notificationsEnabled: true,
+      notificationBannersEnabled: true,
+    });
+    publishDomainNotificationEvent(inviteReceivedEvent("e-local-id"));
+    const msg = posted.find(
+      (m) => m.channel === "gnh-notifications" && m.action === "publishEvent",
+    )!;
+    expect(String(msg.eventId).startsWith("gnh.local.")).toBe(true);
+    expect(String(msg.eventId)).toMatch(/^gnh\.local\./);
   });
 });

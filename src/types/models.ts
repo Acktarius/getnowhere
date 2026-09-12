@@ -229,6 +229,8 @@ export type SmartMessageInvite = {
   createdAt: string;
   /** On-chain delivery tx hash when broadcast via buildMessageTransaction. */
   txHash?: string;
+  /** Initiator poke handle from inbound create `ph` (catalog may be absent). */
+  initiatorPokeHandle?: string;
   /**
    * True when first seen in mempool (blockHeight 0). Known paymentId contacts may
    * act on chat.create immediately; still treat new relationships cautiously.

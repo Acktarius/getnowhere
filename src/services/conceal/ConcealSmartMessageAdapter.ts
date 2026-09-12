@@ -23,7 +23,7 @@ import {
   peekCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import { syncAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
-import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
+import { getOwnPokeHandle, sendPoke } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
@@ -41,6 +41,7 @@ import {
   rememberReplayId,
   SmartMessageProtocolAdapter,
 } from "@/services/protocol/SmartMessageProtocolAdapter";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake, ChatRelayPayload } from "@/types/protocol";
 import { CHAT_PROTOCOL_VERSION, resolveTopicSuite } from "@/types/protocol";
@@ -221,6 +222,9 @@ async function inviteFromCreateBody(
     status: meta.status,
     createdAt: meta.createdAt,
     txHash: meta.txHash,
+    ...(meta.status === "received" && parsed.payload.senderPokeHandle
+      ? { initiatorPokeHandle: parsed.payload.senderPokeHandle }
+      : {}),
   };
   invitesById.set(invite.id, invite);
   if (meta.status === "received" && parsed.payload.senderPokeHandle) {
@@ -554,6 +558,15 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       smartBody: encodeRegisterSmartBody(payload),
     });
     inv.status = "accepted";
+    const initiatorHandle =
+      inv.initiatorPokeHandle ??
+      peekCatalogRoom(inv.roomId)?.partnerPokeHandle;
+    if (
+      useSettingsStore.getState().privacy.pushWakeEnabled &&
+      initiatorHandle
+    ) {
+      sendPoke(initiatorHandle).catch(() => undefined);
+    }
     return { roomId: inv.roomId };
   },
 

@@ -1,0 +1,42 @@
+{
+  "change": "wake-only-notifications",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Peer-wake on L1′ and on accept (same { to } poke)",
+      "library": "src/services/poke/pokeGatewayClient.ts → HolepunchChatTransport.maybeSendPoke / ConcealSmartMessageAdapter.acceptInvite",
+      "runtimeOwner": "L1′ send path (maybeSendPoke); acceptInvite after chat.register broadcast",
+      "writes": "POST /poke { to }; CatalogRoom.lastPokedAt on successful L1′ poke",
+      "reads": "privacy.pushWakeEnabled; partnerPokeHandle / senderPokeHandle; lastPokedAt",
+      "uiConsumer": "Settings Wake contact toggle; lock-screen APNs/ntfy (no in-app copy)",
+      "evidence": "tests/p2p/poke-trigger.test.ts; tests/services/poke/poke-gateway-client.test.ts; accept-invite poke tests"
+    },
+    {
+      "capability": "Deployed gateway unchanged — { to } only",
+      "library": "poke-gateway/src/routes.ts (no kind field)",
+      "runtimeOwner": "Existing production POST /poke (not redeployed by this change)",
+      "writes": "Unchanged APNs Get NowHere / New message; ntfy body wake",
+      "reads": "handle → token/env; rate limit slot",
+      "uiConsumer": "N/A (OS lock screen)",
+      "evidence": "poke-gateway/src/routes.test.ts"
+    },
+    {
+      "capability": "Local invite-received banner only; no L1′ content banners",
+      "library": "src/services/notifications/scanSyncNotifications.ts; toNativeNotificationEvent.ts",
+      "runtimeOwner": "runBackgroundRemoteSync / useWalletLiveSync scan after ingest",
+      "writes": "native gnh-notifications publish for invite received; no l1_known_room_message banner",
+      "reads": "ingested invites; privacy.notificationBannersEnabled; isAppInBackground",
+      "uiConsumer": "iOS/Android local notification; in-app NotifyPin for unread",
+      "evidence": "tests/services/native-notification-mapping.test.ts; tests/services/background-notification-publish.test.ts"
+    },
+    {
+      "capability": "iOS foreground clears icon pin without wiping Notification Center",
+      "library": "native-wrapper/ios-native/GnhNotifications/GnhNotificationPublisher.swift",
+      "runtimeOwner": "App.tsx AppState active → nativeClearBadge()",
+      "writes": "application icon badge 0",
+      "reads": "N/A",
+      "uiConsumer": "iOS home-screen badge",
+      "evidence": "native-wrapper/ios-native/GnhNotifications/GnhNotificationPublisherTests.swift"
+    }
+  ]
+}

@@ -164,8 +164,11 @@ final class GnhNotificationPublisher {
       content.badge = NSNumber(value: input.badgeCount)
       // Opaque routing id only — no plaintext or protocol metadata in userInfo.
       content.userInfo = [Self.eventIdUserInfoKey: input.eventId]
+      let identifier = input.eventId.hasPrefix("gnh.local.")
+        ? input.eventId
+        : "gnh.local.\(input.eventId)"
       let request = UNNotificationRequest(
-        identifier: "gnh-\(input.eventId)",
+        identifier: identifier,
         content: content,
         trigger: nil
       )
@@ -179,11 +182,9 @@ final class GnhNotificationPublisher {
     center.setBadgeCount(count)
   }
 
-  /// Clears the icon badge and removes this feature's delivered/pending items
-  /// (Android `clearBadge` cancels notifications the same way).
+  /// Zeros the icon badge only. Bulk remove stays on cancelAllFeatureNotifications.
   func clearBadge() {
     center.setBadgeCount(0)
-    center.removeAllPendingAndDelivered()
   }
 
   func cancelAllFeatureNotifications() {

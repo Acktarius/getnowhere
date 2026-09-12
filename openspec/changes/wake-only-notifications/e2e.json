@@ -1,0 +1,25 @@
+{
+  "change": "wake-only-notifications",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "gateway-kind-payload",
+      "cmd": "cd poke-gateway && npx vitest run src/routes.test.ts --reporter=verbose",
+      "expect": "passed"
+    },
+    {
+      "name": "client-poke-trigger-and-kind",
+      "cmd": "npx vitest run tests/p2p/poke-trigger.test.ts tests/services/poke/poke-gateway-client.test.ts tests/p2p/poke-invite-accepted.test.ts --reporter=verbose",
+      "expect": "passed"
+    },
+    {
+      "name": "local-banners-generic-only",
+      "cmd": "npx vitest run tests/services/native-notification-mapping.test.ts tests/services/background-notification-publish.test.ts tests/services/scan-sync-notifications.test.ts tests/native-wrapper/ios-badge-clear.test.ts --reporter=verbose",
+      "expect": "passed"
+    }
+  ],
+  "blockedPaths": [
+    "Physical iOS APNs lock-screen delivery (backgrounded/terminated, wallet locked) requires a device + production/sandbox APNs. Covered by issue #15 device checks, not CI.",
+    "iOS GnhNotificationPublisherTests.swift requires Xcode; badge-only clear is proven in that suite when the native target is run."
+  ]
+}

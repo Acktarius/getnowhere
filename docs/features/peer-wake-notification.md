@@ -1,6 +1,6 @@
 # Peer-wake notification (fast L2 meet-up)
 
-**Status:** Current design. Phase 1 (UX) complete. Phase 2 (poke gateway + APNs) shipped. Phase 3 (ntfy F-Droid wake) — current.
+**Status:** Current. One generic peer-wake (`POST /poke { to }` only — no gateway `kind`). Fires on invite accepted and on L1′ after L2 drop. Invite received is local-only after wallet sync. No L1′ preview banners. iOS foreground badge clear does not wipe Notification Center. Deployed poke-gateway is unchanged.
 
 **Problem:** When Alice sends an L1′ relay message, Bob's mobile app is likely suspended.
 On **iOS**, `BGAppRefreshTask` fires at best every ~15 minutes (OS-scheduled, app cannot shorten
@@ -48,11 +48,12 @@ F-Droid: ownPokeId generated locally (no gateway registration needed);
           subscribes to https://ntfy.getnowhere.im/gnh-<ownPokeId>/json via SSE (OkHttp)
 ```
 
-Gateway routing on `POST /poke { to: pokeId }`:
+Gateway routing on `POST /poke { to }` (no extra fields — deployed schema rejects them):
 
 ```
 DB lookup pokeId
   ├── APNs token found → POST https://api.push.apple.com/3/device/{token}
+  │                        title Get NowHere; body New message
   └── DB miss          → POST https://ntfy.getnowhere.im/gnh-<pokeId>
                               { title: "Get NowHere", message: "wake" }
 ```
@@ -121,25 +122,19 @@ Alice taps Send (L1′, relay channel)
   2. broadcast to daemon → txHash returned         ← tx is in our remote node's mempool
   3. poke decision (see § Poke trigger rule below)
   4. if poke fires: POST /gateway/poke { to: Bob's pokeHandle }
-          │
-          ├── DB lookup: APNs token found
-          │     → POST https://api.push.apple.com/3/device/{token}
-          │          apns-push-type: alert, apns-priority: 10
-          │          { aps: { alert: { title: "Get NowHere", body: "New message" },
-          │                    sound: "default" } }
-          │
-          └── DB miss (F-Droid peer — no registered token)
-                → POST https://ntfy.getnowhere.im/gnh-<pokeHandle>
-                       { title: "Get NowHere", message: "wake" }
                   ntfy SSE (OkHttp) delivers to GnhNtfyWakeModule on Bob's device
                   → RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync
 
 Bob's device wakes → app opens (foreground or via banner)
   5. sync() runs — L1′ tx found in mempool, decrypted
-  6. existing local banner fires (§ blockchain sync caveat below)
+  6. no local L1′ content banner (in-app unread MAY update)
   7. room lifecycle: accepted → connecting → Bob joins Hyperswarm topic
   8. L2 peer connect while Alice is still mounted in the room
 ```
+
+Accept (`chat.register`) uses the same `{ to }` poke when wake is on and the
+initiator handle is known. Invite received is **not** a poke — it is a local
+generic banner after the recipient's wallet ingests `chat.create`.
 
 ### Poke trigger rule — first poke, then re-poke after 5 minutes
 
@@ -165,6 +160,9 @@ Implementation: each room tracks `lastPokedAt` (timestamp, persisted). A poke fi
 
 Once L2 is re-established (`channel === "live"`), `lastPokedAt` is cleared so the next relay
 transition triggers a fresh poke without waiting for the cooldown.
+
+iOS foreground return zeros the icon badge only. It does not wipe Notification Center
+(remote wakes already delivered stay). See `docs/features/local-background-notifications.md`.
 
 The gateway applies its own backstop rate limit (1 poke per 5 min per handle) — the same window
 as the app-side re-poke cooldown.
@@ -349,7 +347,7 @@ Minimal HTTP service (single Node process or serverless):
 | Endpoint | Input | Output | Notes |
 |---|---|---|---|
 | `POST /register` | `{ token, platform, env }` | `{ pokeHandle }` | iOS only; upsert on token change |
-| `POST /poke` | `{ to: pokeHandle }` | `204` or error | rate-limited; APNs if found, else ntfy POST |
+| `POST /poke` | `{ to }` | `202` or error | rate-limited; APNs if found, else ntfy POST `wake`. No `kind` field. |
 | `DELETE /register` | `{ pokeHandle }` | `204` | called when push wake disabled on iOS |
 
 - APNs adapter: `.p8` key + ES256 JWT (1-hour cache), `apns-topic = im.getnowhere.app`
@@ -372,17 +370,19 @@ Minimal HTTP service (single Node process or serverless):
 - Add optional `ph` field (10 bytes, base64url, 14 chars) to `chat.create` and `chat.register`
   slim-pack bodies
 - Parse `ph` on receive; store as `room.partnerPokeHandle` in room/contact store
-- On L1′ send: apply poke trigger rule; if poke fires → `POST /gateway/poke`
+- On L1′ send: apply poke trigger rule (300s re-poke unchanged); if poke fires → `POST /gateway/poke { to }`
+- On successful `chat.register`: same `{ to }` poke when wake is on and the initiator handle is known
 - No poke if `pushWakeEnabled === false`, no `pokeHandle` for the room, or F-Droid build flag
 
 ### Settings → Privacy
 
-New toggle adjacent to existing notification switches:
+Toggles adjacent to the Notifications master switch (`SettingsScreen.tsx`):
 
-- **Push wake** (`privacy.pushWakeEnabled`) — wired in Settings → Privacy (`SettingsScreen.tsx`)
-  - Default: **off** at first launch
-  - On enable: requests OS notification permission + refreshes push token for gateway registration
-  - Off → `deletePokeHandle()` at gateway, no poke calls (enforced in `settingsStore` + transport)
+- **Wake contact** (`privacy.pushWakeEnabled`) — generic APNs/ntfy ping on
+  invite accepted and new message. No names or preview. Default **off**.
+  Enable requests OS permission + token refresh. Off → `deletePokeHandle()`, no pokes.
+- **Notification banner** — local lock-screen alert only for
+  “You received a room invite.” not L1′ previews.
 
 ### Build matrix
 
@@ -516,7 +516,7 @@ Also verify `buildPokeTokenDispatchScript` output calls `_dispatchPokeToken` whe
 ## Related docs
 
 - `docs/features/chat-relay.md` — L1′ channel and grey bubbles
-- `docs/features/local-background-notifications.md` — local banner system this feature wakes into
+- `docs/features/local-background-notifications.md` — invite-received local banner only; iOS badge-clear vs Notification Center
 - `docs/background-remote-sync.md` — BGAppRefresh / WorkManager cadence
 - `docs/security/p2pchatprotocol.md` §16 — L1′ wire format and relay rules
 - `docs/security/encryption.md` — L1 / L1′ / L2 layering

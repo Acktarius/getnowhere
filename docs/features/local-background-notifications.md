@@ -1,8 +1,12 @@
 # Local background notifications (`native-wrapper` only)
 
-Privacy-controlled **local** notifications for L1 / L1′ events received by the
-background node-sync while the app is backgrounded and L2 Holepunch rooms are
-likely unmounted. No push services, no server, no remote notification SDK.
+**Status:** Invite received is the only local lock-screen banner. Invite accepted
+and new-message use peer-wake (APNs/ntfy), not local content banners. iOS
+foreground badge clear does not wipe Notification Center.
+
+Privacy-controlled **local** notifications for a first inbound room invite after
+background node-sync decrypts and persists it. No L1′ preview banners. Peer-wake
+is documented in `docs/features/peer-wake-notification.md`.
 
 ## Event flow
 
@@ -40,21 +44,17 @@ validation, replay/dedup checks, and persistence. Never from raw tx data.
 | iOS (Swift) | `native-wrapper/ios-native/GnhNotifications/` |
 | Expo plugin | `native-wrapper/plugins/withGnhNotifications.js` |
 
-## Content rules (L1 vs L1′)
+## Content rules
 
-| Event | Title | Body |
-|-------|-------|------|
-| L1 invitation received | `Room invitation received` | same |
-| L1 invitation accepted (register seen) | `Room invitation accepted` | same |
-| L1′ known-room message | contact alias | `<contact>: <preview>` |
+| Event | Local banner |
+|-------|----------------|
+| L1 invitation received | Title `Get NowHere`, body `You received a room invite` |
+| L1 invitation accepted | None — same generic peer-wake as L1′ |
+| L1′ known-room message | None — generic peer-wake; in-app unread MAY update |
 
-- Preview built only from authenticated decrypted plaintext; control chars
-  stripped, whitespace collapsed, truncated at a grapheme boundary
-  (`SINGLE_LINE_PREVIEW_GRAPHEMES = 72`).
-- Unknown contact or blank-after-normalization message → `New message`.
-- Never in title/body/userInfo/extras: wallet addresses, room IDs, Holepunch
-  keys, tx hashes, raw payloads, decrypt errors. The only native payload id is
-  an opaque sha256 of the domain event id.
+- Never in title/body/userInfo/extras: contact alias, message preview, wallet
+  addresses, room IDs, Holepunch keys, tx hashes, raw payloads, decrypt errors.
+  The only native payload id is an opaque sha256 of the domain event id.
 
 ## Settings and permissions
 
@@ -65,10 +65,13 @@ the section; privacy keys still exist in storage with defaults **off**.
 Persisted switches:
 
 - **Notifications** (`privacy.notificationsEnabled`) — badge/unread tracking.
-- **Notification banner** (`privacy.notificationBannersEnabled`) — system
-  banner. Store invariant (enforced in `setPrivacy`, not just UI): turning
-  Notifications off forces banners off. The banner row is disabled with
-  “Enable notifications to configure banners.” while Notifications is off.
+- **Wake contact** (`privacy.pushWakeEnabled`) — generic APNs/ntfy ping on
+  invite accepted and new message. See `peer-wake-notification.md`.
+- **Notification banner** (`privacy.notificationBannersEnabled`) — local
+  lock-screen alert only for “You received a room invite.” Store invariant
+  (enforced in `setPrivacy`, not just UI): turning Notifications off forces
+  wake and banners off. Both rows show “Turn on Notifications first.” while
+  Notifications is off.
 
 | Notifications | Banners | Badge | Banner |
 |---|---|---|---|
@@ -96,12 +99,12 @@ Permission requests happen only from the Settings toggle gesture:
 - Badge clears via existing read semantics: `markRoomSeen` (room opened) and
   `markContactSeen` (contact detail opened) mark matching ledger events read
   and re-sync the native badge; delivery alone never clears it.
-- **iOS foreground clear:** dismissing banners from Notification Center does
-  not clear `applicationIconBadgeNumber`. On AppState `active`, the native
-  shell calls `clearBadge` (badge → 0 + remove delivered/pending) so the icon
-  pin drops when the user returns to the app. In-app `NotifyPin` badges still
-  follow the JS ledger / room-seen path. Android launcher badges track
-  notifications and need no equivalent.
+- **iOS foreground clear:** AppState `active` zeros the icon badge only
+  (`setBadgeCount(0)`). It MUST NOT call `removeAllPendingAndDelivered` — remote
+  wakes already in Notification Center stay. Bulk remove is for privacy-off /
+  cancel-all only. In-app `NotifyPin` badges still follow the JS ledger /
+  room-seen path. Android launcher badges track notifications and need no
+  equivalent.
 
 ## Platform limitations
 
