@@ -279,7 +279,9 @@ export function SettingsScreen() {
                 title="Notification banner"
                 description={
                   s.privacy.notificationsEnabled
-                    ? 'Local lock-screen alert only for “You received a room invite.”'
+                    ? s.showTips
+                      ? "Lock screen alert when invitation accepted or chain message received"
+                      : "Lock screen alert"
                     : "Turn on Notifications first."
                 }
                 on={

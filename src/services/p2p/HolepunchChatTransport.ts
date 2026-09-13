@@ -1394,12 +1394,21 @@ export function getMessagesForRoom(roomId: string): ChatMessage[] {
 export function storePartnerPokeHandle(roomId: string, handle: string): void {
   if (!handle || !/^[A-Za-z0-9_-]{14}$/.test(handle)) return;
   const state = rooms.get(roomId);
-  if (state) {
-    if (state.room.partnerPokeHandle === handle) return;
+  if (state && state.room.partnerPokeHandle !== handle) {
     state.room = { ...state.room, partnerPokeHandle: handle };
     rooms.set(roomId, state);
   }
-  patchCatalogRoom(roomId, { partnerPokeHandle: handle });
+  const patched = patchCatalogRoom(roomId, { partnerPokeHandle: handle });
+  if (patched) return;
+  upsertCatalogRoom({
+    id: roomId,
+    contactId: state?.room.contactId || "",
+    bootstrapSource: state?.room.bootstrapSource ?? "conceal-smart-message",
+    roomKeyRef: state?.room.roomKeyRef || `key:${roomId}`,
+    lifecycleStatus: state?.room.lifecycleStatus ?? "pending",
+    createdAt: state?.room.createdAt || new Date().toISOString(),
+    partnerPokeHandle: handle,
+  });
 }
 
 function localMessageRetentionOn(): boolean {

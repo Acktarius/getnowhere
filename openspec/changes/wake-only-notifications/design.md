@@ -30,7 +30,10 @@ redeploy. That is out of scope. The deployed gateway already accepts
    rejected: it cannot ship without a gateway deploy.
 
 2. **Invite handle on the invite record** (`initiatorPokeHandle`) so accept
-   still pokes when `storePartnerPokeHandle` no-ops (no catalog row yet).
+   still pokes when the catalog row is not created yet. **Also** persist
+   `partnerPokeHandle` / `lastPokedAt` on catalog upsert (`incoming ?? prev`)
+   and let `storePartnerPokeHandle` create a catalog row when patch has no
+   prev — otherwise L1′ poke never fires after a room-list rewrite.
 
 3. **Invite received stays local after sync.** No poke — no handle yet.
 

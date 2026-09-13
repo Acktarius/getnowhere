@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  LOCAL_NOTIFICATION_ID_PREFIX,
-  localNotificationId,
-} from "../../src/services/notifications/localNotificationId";
-import {
   normalizeNotificationPreview,
   SINGLE_LINE_PREVIEW_GRAPHEMES,
   truncateNotificationPreview,
 } from "../../src/services/notifications/graphemeTruncate";
+import {
+  LOCAL_NOTIFICATION_ID_PREFIX,
+  localNotificationId,
+} from "../../src/services/notifications/localNotificationId";
 import {
   buildKnownRoomMessagePreview,
   nativeNotificationBody,

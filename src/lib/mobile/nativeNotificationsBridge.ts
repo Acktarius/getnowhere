@@ -1,10 +1,10 @@
 /** WebView → RN bridge for GnhNotifications (mobile shell). */
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { localNotificationId } from "@/services/notifications/localNotificationId";
 import type {
   NativeNotificationInput,
   NotificationPrivacySettings,
 } from "@/services/notifications/nativeNotificationTypes";
-import { localNotificationId } from "@/services/notifications/localNotificationId";
 import {
   nativeNotificationBody,
   nativeNotificationTitle,

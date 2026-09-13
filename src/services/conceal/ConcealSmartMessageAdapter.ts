@@ -559,8 +559,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     });
     inv.status = "accepted";
     const initiatorHandle =
-      inv.initiatorPokeHandle ??
-      peekCatalogRoom(inv.roomId)?.partnerPokeHandle;
+      inv.initiatorPokeHandle ?? peekCatalogRoom(inv.roomId)?.partnerPokeHandle;
     if (
       useSettingsStore.getState().privacy.pushWakeEnabled &&
       initiatorHandle

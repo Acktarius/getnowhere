@@ -43,14 +43,18 @@ describe("iOS badge clear vs Notification Center", () => {
     const body = swiftFuncBody(publisher, "clearBadge");
     expect(body).toMatch(/setBadgeCount\(0\)/);
     expect(body).not.toMatch(/removeAllPendingAndDelivered/);
-    expect(tests).toMatch(/func testClearBadgeZerosCountWithoutRemovingDelivered/);
+    expect(tests).toMatch(
+      /func testClearBadgeZerosCountWithoutRemovingDelivered/,
+    );
     expect(tests).toMatch(/XCTAssertFalse\(fake\.removedAll\)/);
   });
 
   it("cancelAllFeatureNotifications still bulk-removes", () => {
     const body = swiftFuncBody(publisher, "cancelAllFeatureNotifications");
     expect(body).toMatch(/removeAllPendingAndDelivered/);
-    expect(tests).toMatch(/func testCancelAllFeatureNotificationsRemovesDelivered/);
+    expect(tests).toMatch(
+      /func testCancelAllFeatureNotificationsRemovesDelivered/,
+    );
     expect(tests).toMatch(/XCTAssertTrue\(fake\.removedAll\)/);
   });
 

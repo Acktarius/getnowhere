@@ -122,7 +122,7 @@ async function sendCreateInvite(): Promise<{
   return { inviteId: sent.inviteId, roomId: composed.roomId };
 }
 
-/** Catalog row must exist before storePartnerPokeHandle can persist. */
+/** Seed a catalog row without a partner wake handle. */
 function seedCatalogRoom(roomId: string) {
   upsertCatalogRoom({
     id: roomId,
@@ -151,7 +151,7 @@ function receivedCreateRecord(body: string): SdkMessageRecord {
   };
 }
 
-/** Ingest inbound chat.create with ph — no catalog seed, no storePartnerPokeHandle. */
+/** Ingest inbound chat.create with ph — no catalog seed beforehand. */
 async function ingestReceivedCreateWithPh(): Promise<{
   inviteId: string;
   roomId: string;
@@ -260,10 +260,10 @@ describe("acceptInvite wake poke", () => {
     expect(result.roomId).toBe(roomId);
   });
 
-  it("pokes from received create ph without a catalog row", async () => {
+  it("stores received create ph and pokes on accept even if no catalog row existed", async () => {
     pushWakeEnabled = true;
     const { inviteId, roomId } = await ingestReceivedCreateWithPh();
-    expect(peekCatalogRoom(roomId)).toBeUndefined();
+    expect(peekCatalogRoom(roomId)?.partnerPokeHandle).toBe(INITIATOR_HANDLE);
 
     const result = await ConcealSmartMessageAdapter.acceptInvite(inviteId);
     await flushAsync();

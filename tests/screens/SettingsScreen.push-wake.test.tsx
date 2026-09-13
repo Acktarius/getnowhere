@@ -88,6 +88,7 @@ function renderSettings() {
 describe("SettingsScreen push wake toggle", () => {
   beforeEach(() => {
     getStorage().removeItem("gnh.settings");
+    useSettingsStore.getState().reset();
     applyPushWakeEnabled.mockClear();
   });
 
@@ -120,12 +121,20 @@ describe("SettingsScreen push wake toggle", () => {
     ).toBeTruthy();
   });
 
-  it("describes banner as invite-received only when Notifications is on", () => {
+  it("describes banner as lock-screen alert when Notifications is on and tips are off", () => {
+    useSettingsStore.getState().setShowTips(false);
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(screen.getByText("Lock screen alert")).toBeTruthy();
+  });
+
+  it("describes banner with invite/chain hint when Notifications is on and tips are on", () => {
+    useSettingsStore.getState().setShowTips(true);
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
     renderSettings();
     expect(
       screen.getByText(
-        'Local lock-screen alert only for “You received a room invite.”',
+        "Lock screen alert when invitation accepted or chain message received",
       ),
     ).toBeTruthy();
   });

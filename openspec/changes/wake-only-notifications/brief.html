@@ -1,4 +1,4 @@
-<!-- forge-brief-specs-hash:ca0fcd4841601a59 -->
+<!-- forge-brief-specs-hash:cbd8e28a2f9c510a -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,6 +28,7 @@
   <ul>
     <li>One generic wake (what the live poke gateway already shows: “Get NowHere” / “New message”) when an invite is accepted or a room gets a chain message.</li>
     <li>A later chain message, five minutes or more after the last wake, can ping again. Sooner than that, it will not.</li>
+    <li>The other person’s wake address stays on the room when the app rewrites the room list, and it is saved even if that room row did not exist yet.</li>
     <li>“You received a room invite” still appears only after that phone syncs (we do not have a wake address yet).</li>
     <li>The app icon pin can still appear and still clears when you open the app. Opening the app will not wipe the lock-screen entries.</li>
   </ul>
@@ -58,6 +59,7 @@ flowchart LR
 
   <h2>Risks and open questions</h2>
   <ul>
+    <li>Review missed that the app was throwing away the wake address when it rewrote the room list. Without that address the ping is never sent, even when the servers are up.</li>
     <li>If Apple registration is wrong on a build, wakes still will not arrive. This change does not re-audit tokens.</li>
     <li>Apple and our gateway see which of the two wake types it was — not who or what was said.</li>
     <li>First invites are not instant if the app is dead. That is intentional.</li>
@@ -80,6 +82,7 @@ flowchart LR
     <li>iOS badge vs notification wipe (3 tasks)</li>
     <li>Settings + docs (2 tasks)</li>
     <li>Harness loop (2 tasks)</li>
+    <li>Keep the wake address on the room (2 tasks)</li>
   </ul>
   <p class="muted">Change: wake-only-notifications · Issues #15 #16</p>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>

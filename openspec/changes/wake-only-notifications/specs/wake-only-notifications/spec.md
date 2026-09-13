@@ -129,3 +129,20 @@ Push wake off, missing permission, or a missing partner handle SHALL skip the wa
 
 - **WHEN** push wake is disabled
 - **THEN** no peer-wake request is sent on L1′ or on accept
+
+### Requirement: Partner wake handle survives catalog rewrite
+
+The durable room catalog SHALL keep the partner wake handle and last-poke time across catalog rewrites. Storing a partner wake handle SHALL persist even when no catalog row exists yet.
+
+#### Scenario: Upsert keeps partner wake handle
+
+- **WHEN** a catalog row already has a partner wake handle (and optionally a last-poke time)
+- **AND** the catalog row is rewritten with a full-room upsert that omits those fields
+- **THEN** the partner wake handle remains
+- **AND** the last-poke time remains when it was already set
+
+#### Scenario: Store handle before catalog row exists
+
+- **WHEN** a valid partner wake handle is stored for a room id that has no catalog row
+- **THEN** a catalog row exists afterward with that partner wake handle
+- **AND** a later full-room upsert that omits the handle still keeps it

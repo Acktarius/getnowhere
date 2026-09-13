@@ -557,7 +557,7 @@ button {
   opacity: 0.5;
   pointer-events: none;
 }
-.wallet-bio-unlock svg {
+.wallet-bio-unlock-wrap .wallet-bio-unlock svg {
   width: 2.25rem !important;
   height: 2.25rem !important;
 }

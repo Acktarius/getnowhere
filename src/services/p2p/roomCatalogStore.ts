@@ -116,6 +116,8 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
     lastConnectError: room.lastConnectError ?? prev?.lastConnectError,
     awaitingChainSync: room.awaitingChainSync ?? prev?.awaitingChainSync,
     ownPokeId: room.ownPokeId ?? prev?.ownPokeId,
+    partnerPokeHandle: room.partnerPokeHandle ?? prev?.partnerPokeHandle,
+    lastPokedAt: room.lastPokedAt ?? prev?.lastPokedAt,
   };
   all[room.id] = next;
   writeAll(all);

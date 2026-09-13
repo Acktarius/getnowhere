@@ -156,3 +156,48 @@ describe("room catalog retirement rules", () => {
     expect(entry?.room.inviteId).toBe("inv-xyz");
   });
 });
+
+describe("upsert keeps partner wake handle", () => {
+  const partnerHandle = "FixHandle_0001";
+  const otherHandle = "FixHandle_0002";
+  const lastPokedAt = 1_700_100_200;
+
+  it("keeps partnerPokeHandle and lastPokedAt when a rewrite omits them", () => {
+    upsertCatalogRoom(
+      room({
+        id: "wake-keep",
+        partnerPokeHandle: partnerHandle,
+        lastPokedAt,
+      }),
+    );
+    upsertCatalogRoom(
+      room({
+        id: "wake-keep",
+        contactId: "c-rewritten",
+      }),
+    );
+    const after = peekCatalogRoom("wake-keep");
+    expect(after?.partnerPokeHandle).toBe(partnerHandle);
+    expect(after?.lastPokedAt).toBe(lastPokedAt);
+    expect(after?.contactId).toBe("c-rewritten");
+  });
+
+  it("lets an incoming partnerPokeHandle replace the previous one", () => {
+    upsertCatalogRoom(
+      room({
+        id: "wake-replace",
+        partnerPokeHandle: partnerHandle,
+        lastPokedAt,
+      }),
+    );
+    upsertCatalogRoom(
+      room({
+        id: "wake-replace",
+        partnerPokeHandle: otherHandle,
+      }),
+    );
+    const after = peekCatalogRoom("wake-replace");
+    expect(after?.partnerPokeHandle).toBe(otherHandle);
+    expect(after?.lastPokedAt).toBe(lastPokedAt);
+  });
+});

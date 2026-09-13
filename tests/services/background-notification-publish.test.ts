@@ -159,7 +159,9 @@ describe("publishDomainNotificationEvent", () => {
 
   it("duplicate eventId does not increment unread or publish again", () => {
     useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
-    expect(publishDomainNotificationEvent(inviteReceivedEvent("e3"))).toBe(true);
+    expect(publishDomainNotificationEvent(inviteReceivedEvent("e3"))).toBe(
+      true,
+    );
     expect(publishDomainNotificationEvent(inviteReceivedEvent("e3"))).toBe(
       false,
     );

@@ -39,7 +39,7 @@
     "@noble/ciphers": "^2.2.0",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
-    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.14/conceal-wallet-sdk-0.2.14.tgz",
+    "conceal-wallet-sdk": "https://github.com/ConcealNetwork/conceal-wallet-sdk/releases/download/v0.2.16/conceal-wallet-sdk-0.2.16.tgz",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.460.0",
     "qrcode-generator": "^2.0.4",
@@ -49,7 +49,7 @@
     "zustand": "^5.0.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.10",
+    "@biomejs/biome": "2.5.12",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",

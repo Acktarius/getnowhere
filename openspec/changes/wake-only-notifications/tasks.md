@@ -35,3 +35,8 @@
 
 - [x] 7.1 Author / refresh `e2e.json` steps that prove gateway kind mapping and client poke-trigger + accept-poke + no L1′ content banner (unit harness)
 - [x] 7.2 Run `forge e2e run` for this change (or record BLOCKED only for physical APNs)
+
+## 8. Persist partner wake handle
+
+- [x] 8.1 Add failing tests: catalog upsert keeps `partnerPokeHandle` / `lastPokedAt`; `storePartnerPokeHandle` persists when no catalog row exists; later upsert still keeps the handle
+- [x] 8.2 Preserve those fields on `upsertCatalogRoom` (`incoming ?? prev`); `storePartnerPokeHandle` writes a catalog row when patch has no prev
