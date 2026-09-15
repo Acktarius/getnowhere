@@ -2,12 +2,14 @@ import {
   AlertCircle,
   Check,
   CheckCheck,
+  Copy,
   Hourglass,
   Pencil,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useCopy } from "@/hooks/useCopy";
 import type { ChatMessage } from "@/types/models";
 import { formatTime } from "@/utils/format";
 import { renderMarkdownLite } from "@/utils/markdownLite";
@@ -15,7 +17,7 @@ import { renderMarkdownLite } from "@/utils/markdownLite";
 /** Wire token for the Conceal mark quick reaction. */
 export const CCX_REACTION = ":ccx:";
 const CONCEAL_MARK_SRC = `${import.meta.env.BASE_URL}brand/conceal-mark.png`;
-const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "👀", CCX_REACTION];
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "💩", "👀", "🔥", CCX_REACTION];
 const LONG_PRESS_MS = 450;
 /** PNG reads smaller than emoji at the same px — tune display only. */
 const CCX_REACTION_SIZE_SCALE = 1.45;
@@ -74,11 +76,14 @@ export function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.text);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [, copyText] = useCopy();
   const longPressTimer = useRef<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const touchIntent = useRef(false);
   const deleted = Boolean(message.deletedAt) || message.kind === "delete";
   const canAct = !deleted && Boolean(onReact || onEdit || onDelete);
+  /** Block OS text-select / callout so long-press can open the action picker. */
+  const suppressNativeSelect = canAct && !editing;
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -101,6 +106,7 @@ export function MessageBubble({
 
   function openPicker() {
     if (!canAct || editing) return;
+    window.getSelection()?.removeAllRanges();
     setPickerOpen(true);
   }
 
@@ -145,6 +151,7 @@ export function MessageBubble({
       {!out && <div style={{ width: 28, flexShrink: 0 }} />}
       <div style={{ position: "relative", maxWidth: "76%" }}>
         <div
+          className={suppressNativeSelect ? "msg-bubble--actions" : undefined}
           role={canAct && !editing ? "button" : undefined}
           tabIndex={canAct && !editing ? 0 : undefined}
           onClick={onBubbleClick}
@@ -152,6 +159,9 @@ export function MessageBubble({
           onPointerUp={clearLongPress}
           onPointerLeave={clearLongPress}
           onPointerCancel={clearLongPress}
+          onContextMenu={(e) => {
+            if (suppressNativeSelect) e.preventDefault();
+          }}
           onKeyDown={(e) => {
             if (editing) return;
             if (e.key === "Enter" || e.key === " ") {
@@ -170,8 +180,9 @@ export function MessageBubble({
             borderBottomLeftRadius: out ? 16 : 5,
             opacity: deleted ? 0.55 : 1,
             cursor: canAct ? "pointer" : undefined,
-            userSelect: "text",
-            WebkitUserSelect: "text",
+            userSelect: suppressNativeSelect ? "none" : "text",
+            WebkitUserSelect: suppressNativeSelect ? "none" : "text",
+            WebkitTouchCallout: suppressNativeSelect ? "none" : undefined,
             outline: "none",
             ...(out && !relay
               ? ({
@@ -313,6 +324,7 @@ export function MessageBubble({
               display: "flex",
               alignItems: "center",
               gap: 2,
+              maxWidth: "min(92vw, 320px)",
               padding: 4,
               borderRadius: 999,
               background: "var(--bg-elev-1)",
@@ -322,66 +334,113 @@ export function MessageBubble({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {onReact &&
-              QUICK_REACTIONS.map((emoji) => (
+            {onReact && (
+              <div
+                className="msg-reaction-picker__emojis"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 2,
+                  minWidth: 0,
+                  flex: "1 1 auto",
+                  overflowX: "auto",
+                  overscrollBehavior: "contain",
+                  WebkitOverflowScrolling: "touch",
+                  touchAction: "pan-x",
+                }}
+              >
+                {QUICK_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    role="menuitem"
+                    className="btn btn--sm btn--ghost"
+                    aria-label={emoji === CCX_REACTION ? "Conceal" : emoji}
+                    style={{
+                      padding: "4px 8px",
+                      minHeight: 0,
+                      fontSize: 18,
+                      borderRadius: 999,
+                      flexShrink: 0,
+                    }}
+                    onClick={() => {
+                      onReact(emoji);
+                      setPickerOpen(false);
+                    }}
+                  >
+                    <ReactionGlyph reaction={emoji} />
+                  </button>
+                ))}
+              </div>
+            )}
+            <div
+              className="msg-reaction-picker__actions"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn--sm btn--ghost"
+                style={{ padding: "4px 8px", minHeight: 0, borderRadius: 999 }}
+                onClick={() => {
+                  copyText(message.text);
+                  setPickerOpen(false);
+                }}
+                aria-label="Copy"
+              >
+                <Copy size={14} />
+              </button>
+              {onEdit && (
                 <button
-                  key={emoji}
                   type="button"
-                  role="menuitem"
                   className="btn btn--sm btn--ghost"
-                  aria-label={emoji === CCX_REACTION ? "Conceal" : emoji}
                   style={{
                     padding: "4px 8px",
                     minHeight: 0,
-                    fontSize: 18,
                     borderRadius: 999,
                   }}
                   onClick={() => {
-                    onReact(emoji);
+                    setDraft(message.text);
+                    setEditing(true);
                     setPickerOpen(false);
                   }}
+                  aria-label="Edit"
                 >
-                  <ReactionGlyph reaction={emoji} />
+                  <Pencil size={14} />
                 </button>
-              ))}
-            {onEdit && (
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  className="btn btn--sm btn--ghost"
+                  style={{
+                    padding: "4px 8px",
+                    minHeight: 0,
+                    borderRadius: 999,
+                  }}
+                  onClick={() => {
+                    onDelete();
+                    setPickerOpen(false);
+                  }}
+                  aria-label="Delete"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn--sm btn--ghost"
                 style={{ padding: "4px 8px", minHeight: 0, borderRadius: 999 }}
-                onClick={() => {
-                  setDraft(message.text);
-                  setEditing(true);
-                  setPickerOpen(false);
-                }}
-                aria-label="Edit"
+                onClick={() => setPickerOpen(false)}
+                aria-label="Close"
               >
-                <Pencil size={14} />
+                <X size={14} />
               </button>
-            )}
-            {onDelete && (
-              <button
-                type="button"
-                className="btn btn--sm btn--ghost"
-                style={{ padding: "4px 8px", minHeight: 0, borderRadius: 999 }}
-                onClick={() => {
-                  onDelete();
-                  setPickerOpen(false);
-                }}
-                aria-label="Delete"
-              >
-                <Trash2 size={14} />
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn--sm btn--ghost"
-              style={{ padding: "4px 8px", minHeight: 0, borderRadius: 999 }}
-              onClick={() => setPickerOpen(false)}
-              aria-label="Close"
-            >
-              <X size={14} />
-            </button>
+            </div>
           </div>
         )}
       </div>

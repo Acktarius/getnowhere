@@ -1411,6 +1411,21 @@ button {
   -webkit-user-select: text;
 }
 
+/* Actionable bubbles: keep long-press for the picker, not OS text select. */
+.msg-bubble--actions,
+.msg-bubble--actions .md-fence {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.msg-reaction-picker__emojis {
+  scrollbar-width: none;
+}
+.msg-reaction-picker__emojis::-webkit-scrollbar {
+  display: none;
+}
+
 .md-fence code {
   font-family: inherit;
   font-size: inherit;
