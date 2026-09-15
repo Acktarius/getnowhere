@@ -4,7 +4,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
-import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
@@ -133,7 +132,6 @@ function LoadingDiagnosticsSheet({
         <div>
           Room id:{" "}
           <NonSelectableText className="mono">{roomId}</NonSelectableText>
-          <CopyButton value={roomId} />
         </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
@@ -866,18 +864,14 @@ export function ChatRoomScreen() {
             <NonSelectableText className="mono">
               {displayRoom.id}
             </NonSelectableText>
-            <CopyButton value={displayRoom.id} />
           </div>
           {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
           <div>
             Topic:{" "}
             {discoveryTopicRef ? (
-              <>
-                <NonSelectableText className="mono">
-                  {shortTopicRef(discoveryTopicRef)}
-                </NonSelectableText>
-                <CopyButton value={discoveryTopicRef} />
-              </>
+              <NonSelectableText className="mono">
+                {shortTopicRef(discoveryTopicRef)}
+              </NonSelectableText>
             ) : (
               "— not joined yet —"
             )}
