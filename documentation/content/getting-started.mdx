@@ -108,22 +108,58 @@ is not the same password as the wallet file.
 `.json`. File backup is what restores chat rooms. Seed, keys, and QR restore
 the wallet; they do **not** rebuild rooms.
 
+On **Android**, the open wallet stays in an app-private encrypted file
+(not the in-app browser, not the cloud). Keep a `.json` download if you
+change phones or reinstall. An update that first adds this store will
+not revive a wallet that only lived in the old browser storage — import
+the file.
+
 Let the wallet sync. Chat signaling uses the chain / mempool. You can use
 the app while catch-up runs in the background.
 
 ## Add a person — like a phone number, with a QR
 
-This is **Add contact**, not yet a chat room.
+This is **Add contact**, not yet a chat room. You both need a Conceal
+wallet open in Get NowHere. There is no public directory.
 
-1. You both have a Conceal wallet open in Get NowHere.
-2. Each of you opens **Add contact**.
-3. Each of you shows a QR; the other flashes it.
-4. Address and payment ID swap both ways. No typing.
+### On phone — Pair QR
 
-One scan is not enough. You flash theirs; they flash yours. After both
-payment IDs are in place, the contact is eligible for a chat invite.
+1. Open **Add contact** and start typing their name or pseudo.
+2. **Pair QR** and **Scan pair QR** appear.
+3. Decide who initiates: one person taps **Pair QR**; the other taps
+   **Scan pair QR**.
+4. That sequence generates a payment ID and embeds the address in the QR.
+   Scan it. Tap that the QR was scanned when you are done, then continue
+   the steps the app shows.
+5. Swap roles so the other side’s address and payment ID land too. One
+   direction is not enough.
 
-There is no public directory. You do not join a named room on the internet.
+After both payment IDs are in place, the contact is eligible for a chat
+invite.
+
+### On computer — payment IDs by hand
+
+QR pairing may not be available. Create the contact; a **payment ID from
+** is generated automatically. Give that payment ID (and your address)
+to your friend so they can put it on their side as the payment ID **to**
+you. They do the same back: their auto-generated payment ID and address
+come to you. Reciprocal — same end state as the QR dance.
+
+### Why both ways (Alice and Bob)
+
+Conceal messaging ties messages to an address **and** a payment ID. Each
+side keeps its own contact entry. A simple picture, same idea as the
+[Conceal WebWallet conversation setup](https://substack.com/home/post/p-201608132):
+
+1. Alice adds Bob: she stores Bob’s address and gets a payment ID she will
+   use when messaging him.
+2. Bob adds Alice: he stores Alice’s address and gets his own payment ID.
+3. They exchange those payment IDs (via Pair QR / Scan, or by hand on
+   desktop) so each side knows which thread id the other will use.
+4. Only after both directions are filled can the apps treat later traffic
+   as one relationship — and you can open a room.
+
+You do not join a named room on the internet. You meet first, then invite.
 
 ## Open a room
 

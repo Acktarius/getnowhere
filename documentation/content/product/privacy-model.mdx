@@ -18,6 +18,19 @@ ISP. Not a DHT node. Not a “chat host,” because there isn’t one.
 Someone who stole your wallet or already owns the phone can read what you
 can read. That is a stolen identity, not a network design.
 
+## Wallet on the phone
+
+Android keeps the wallet in an encrypted file the app owns. It is not
+WebView `localStorage`, and it is not uploaded. System Auto Backup and
+similar device-to-device copies are turned off for that file. iOS uses
+the same idea (app-private file, not iCloud). Uninstalling the app
+removes what the app can delete; it is not a forensic wipe of old
+backups that already left the device.
+
+A new Android build does **not** carry forward a wallet that only lived
+in the old in-app browser. Import your `.json` backup. Seed or keys
+restore the coins, not the rooms.
+
 ## Live session and IP
 
 You add people the way you would in real life: you meet, you exchange

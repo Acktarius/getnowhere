@@ -17,7 +17,8 @@ Peer-to-peer runtime (sidecar, Electron-owned process, or Bare worklet)
 ## Layers
 
 - **UI** — React + TypeScript + Vite. Wallet, invitations, chat screens, and
-  the bridge *client*.
+  the bridge *client*. On mobile the wallet file is stored by the native
+  shell, not by the WebView.
 - **Bridge** — a small typed contract. The UI never speaks Hyperswarm APIs
   directly.
 - **Runtime** — joins derived topics, owns Noise transport, and forwards

@@ -53,7 +53,8 @@ envelope can re-bind valid ciphertext to the wrong context.
 - Keep raw key material in memory only as long as the session needs it.
 - Wipe keys on logout, room teardown, and cryptographic mismatch.
 - Persist session secrets only through the project’s storage adapter, never
-  in ad hoc files or logs.
+  in ad hoc files or logs. On mobile that adapter is a native encrypted
+  wallet file plus secure prefs — not WebView `localStorage`.
 
 ## Wire-format versioning
 
