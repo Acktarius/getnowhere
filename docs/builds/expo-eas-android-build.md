@@ -57,11 +57,16 @@ npm run mobile:sync-ui && npm run mobile:android
 `bare/app.bundle.mjs` into `android/app/src/main/assets/`.
 
 After adding `react-native-bare-kit`, changing Expo SDK / `newArchEnabled`, or
-**editing `android-native/GnhSecurity/` or `ios-native/GnhSecurity/`**, run once:
+adding **new** native files under `ios-native/GnhSecurity/`, run once:
 
 ```bash
 cd native-wrapper && npx expo prebuild --platform android --clean
 ```
+
+Android Kotlin in `android-native/GnhSecurity/` is copied into generated
+`android/` on **every Gradle `preBuild`** (`plugins/gnhSecurityNativeSync.js`).
+`expo run:android` picks up those edits without another prebuild. iOS still
+needs prebuild when files are added to the Xcode project.
 
 Native security sources are **not** stored under `android/` (gitignored, regenerated).
 Edit Kotlin in `native-wrapper/android-native/GnhSecurity/`; Swift in

@@ -47,7 +47,9 @@ child. See `docs/architecture/electron-desktop.md`.
 
 Settings exposes two wipe actions, both implemented in
 `src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
-`removeItem` (not a full storage clear). After keys are removed, wipe clears
+`removeItem` (not a full storage clear). On mobile that adapter is native
+durable storage; wipe is logical delete only.
+@see `docs/storage/mobile-durable-storage.md`. After keys are removed, wipe clears
 in-memory wallet/contacts/chat session state, sets `location.hash` to
 `#/welcome`, then reloads so a delayed/blocked WebView reload cannot leave
 `RequireWallet` serving tabs. Confirms use shared `ConfirmModal`

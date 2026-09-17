@@ -385,7 +385,9 @@ Rules:
 - Tombstone flows must wipe bootstrap ciphertext and session secrets per
   `p2pchatprotocol.md`.
 - Prefer the active `StorageAdapter`; do not scatter secrets into ad hoc
-  `localStorage` calls.
+  `localStorage` calls. On mobile the adapter is native (encrypted wallet
+  file + secure prefs). Do not log the wallet blob or Keystore material.
+  @see `docs/storage/mobile-durable-storage.md`
 - **Room transcripts:** L2 is sealed frames, not a shared Hypercore log. Persist
   what this device already saw in the encrypted wallet blob (`chatRooms`) when
   Settings **P2P message retention** is on: background write ~1s after live

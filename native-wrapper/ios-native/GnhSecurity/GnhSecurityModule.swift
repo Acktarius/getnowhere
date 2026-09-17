@@ -6,6 +6,7 @@ import UIKit
 class GnhSecurityModule: NSObject {
   private let prefs = GnhSecurePrefs()
   private let biometric = GnhBiometricModule()
+  private let walletFile = GnhWalletFile()
 
   @objc static func requiresMainQueueSetup() -> Bool { true }
 
@@ -49,6 +50,44 @@ class GnhSecurityModule: NSObject {
   @objc func clearClipboard(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
     UIPasteboard.general.items = []
     resolver(true)
+  }
+
+  @objc func walletFileExists(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    switch walletFile.exists() {
+    case .ok(let exists):
+      resolver(["exists": exists])
+    case .err(let reason):
+      resolver(["reason": reason])
+    }
+  }
+
+  @objc func walletFileRead(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    switch walletFile.read() {
+    case .ok(let value):
+      resolver(["value": value])
+    case .missing:
+      resolver(["reason": "io-error"])
+    case .err(let reason):
+      resolver(["reason": reason])
+    }
+  }
+
+  @objc func walletFileWrite(_ value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    do {
+      try walletFile.write(value)
+      resolver(["ok": true])
+    } catch {
+      resolver(["reason": "io-error"])
+    }
+  }
+
+  @objc func walletFileRemove(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    do {
+      try walletFile.remove()
+      resolver(["ok": true])
+    } catch {
+      resolver(["reason": "io-error"])
+    }
   }
 
   @objc func handleBiometricCommand(_ payloadJson: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {

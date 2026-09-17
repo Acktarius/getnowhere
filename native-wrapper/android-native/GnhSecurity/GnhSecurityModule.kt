@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -21,6 +22,7 @@ class GnhSecurityModule(reactContext: ReactApplicationContext) :
     override fun getName(): String = "GnhSecurity"
 
     private val securePrefs by lazy { GnhSecurePrefs(reactApplicationContext) }
+    private val walletFile by lazy { GnhEncryptedWalletFile.create(reactApplicationContext) }
 
     private fun activity(): FragmentActivity? =
         reactApplicationContext.currentActivity as? FragmentActivity
@@ -91,6 +93,83 @@ class GnhSecurityModule(reactContext: ReactApplicationContext) :
             promise.resolve(true)
         } catch (_: Exception) {
             promise.reject("ERR", "failed")
+        }
+    }
+
+    @ReactMethod
+    fun walletFileExists(promise: Promise) {
+        try {
+            when (val result = walletFile.exists()) {
+                is GnhEncryptedWalletFile.WalletFileExists.Ok -> {
+                    val map = Arguments.createMap()
+                    map.putBoolean("exists", result.exists)
+                    promise.resolve(map)
+                }
+                is GnhEncryptedWalletFile.WalletFileExists.Err -> {
+                    val map = Arguments.createMap()
+                    map.putString("reason", result.reason)
+                    promise.resolve(map)
+                }
+            }
+        } catch (_: Exception) {
+            val map = Arguments.createMap()
+            map.putString("reason", "io-error")
+            promise.resolve(map)
+        }
+    }
+
+    @ReactMethod
+    fun walletFileRead(promise: Promise) {
+        try {
+            when (val result = walletFile.read()) {
+                is GnhEncryptedWalletFile.WalletFileRead.Ok -> {
+                    val map = Arguments.createMap()
+                    map.putString("value", result.value)
+                    promise.resolve(map)
+                }
+                is GnhEncryptedWalletFile.WalletFileRead.Missing -> {
+                    val map = Arguments.createMap()
+                    map.putString("reason", "io-error")
+                    promise.resolve(map)
+                }
+                is GnhEncryptedWalletFile.WalletFileRead.Err -> {
+                    val map = Arguments.createMap()
+                    map.putString("reason", result.reason)
+                    promise.resolve(map)
+                }
+            }
+        } catch (_: Exception) {
+            val map = Arguments.createMap()
+            map.putString("reason", "io-error")
+            promise.resolve(map)
+        }
+    }
+
+    @ReactMethod
+    fun walletFileWrite(value: String, promise: Promise) {
+        try {
+            walletFile.write(value)
+            val map = Arguments.createMap()
+            map.putBoolean("ok", true)
+            promise.resolve(map)
+        } catch (_: Exception) {
+            val map = Arguments.createMap()
+            map.putString("reason", "io-error")
+            promise.resolve(map)
+        }
+    }
+
+    @ReactMethod
+    fun walletFileRemove(promise: Promise) {
+        try {
+            walletFile.remove()
+            val map = Arguments.createMap()
+            map.putBoolean("ok", true)
+            promise.resolve(map)
+        } catch (_: Exception) {
+            val map = Arguments.createMap()
+            map.putString("reason", "io-error")
+            promise.resolve(map)
         }
     }
 

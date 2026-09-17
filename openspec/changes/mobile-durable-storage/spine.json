@@ -1,0 +1,33 @@
+{
+  "change": "mobile-durable-storage",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Mobile native adapter is source of truth; boot before hydration",
+      "library": "src/services/storage/adapters/mobileNativeStorageAdapter.ts; src/main.tsx",
+      "runtimeOwner": "main.tsx mobile bootstrap → installMobileNativeStorageAdapter → setActiveStorageAdapter before App import",
+      "writes": "active StorageAdapter; isMobileNativeStorageReady; hydrated Map from native prefs + wallet file",
+      "reads": "window.gnhMobile.securePrefs; gnhMobile.walletFile",
+      "uiConsumer": "settingsStore, isOnboarded, contacts/rooms hydrate, Welcome / App shell",
+      "evidence": "tests/storage/mobile-native-storage-adapter.test.ts; tests/storage/mobile-storage-boot.test.ts; forge e2e run"
+    },
+    {
+      "capability": "Encrypted wallet file + tri-state presence",
+      "library": "native GnhEncryptedWalletFile / wallet-file bridge; WalletStorageState",
+      "runtimeOwner": "wallet create/import/update/delete and hasStoredWallet via ConcealWalletService after adapter install",
+      "writes": "filesDir/gnh/wallet.v1.enc envelope; backup exclusion rules; in-memory wallet key only after durable success",
+      "reads": "walletFile.exists/read; Keystore AES-GCM",
+      "uiConsumer": "Welcome open-existing vs create; unreadable recovery screen",
+      "evidence": "tests/storage/mobile-wallet-file.test.ts; native envelope unit tests; forge e2e run"
+    },
+    {
+      "capability": "Adapter-owned prefs wipe through getStorage()",
+      "library": "src/services/storage/appDataLifecycle.ts; gnh.app:__keys:v1",
+      "runtimeOwner": "Settings Delete wallet / Reset app data → deleteWalletData / resetAppData",
+      "writes": "remove namespaced prefs + index + encrypted wallet file + same-dir temps; backup rules exclude those paths",
+      "reads": "gnh.app:__keys:v1; WALLET_TIED_KEYS",
+      "uiConsumer": "Settings wipe confirms → Welcome reload",
+      "evidence": "tests/storage/app-data-lifecycle.test.ts; tests/storage/sdk-wallet-storage.test.ts; tests/storage/mobile-native-storage-adapter.test.ts; forge e2e run"
+    }
+  ]
+}

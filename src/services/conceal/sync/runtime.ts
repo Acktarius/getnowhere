@@ -361,6 +361,17 @@ export function _setRuntimeForTest(next: SdkRuntime | null): void {
 /** Whether ANY stored wallet exists on this device (does not decrypt them). */
 export async function hasStoredWallet(): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  const { isMobileHost } = await import("@/lib/mobile/gnhMobileBridgeTypes");
+  if (isMobileHost()) {
+    const { assertMobileNativeStorageReady, getInstalledMobileStorageAdapter } =
+      await import("@/services/storage/installMobileNativeStorage");
+    const { isWalletPresent } = await import(
+      "@/services/storage/adapters/mobileNativeStorageAdapter"
+    );
+    assertMobileNativeStorageReady();
+    const adapter = getInstalledMobileStorageAdapter();
+    if (adapter) return isWalletPresent(adapter.getWalletStorageState());
+  }
   return (await readWalletsIndex()).wallets.length > 0;
 }
 

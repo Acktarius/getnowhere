@@ -4,6 +4,8 @@
  */
 import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
+import type { MobileNativeStorageAdapter } from "@/services/storage/adapters/mobileNativeStorageAdapter";
+import { LOGICAL_WALLET_KEY } from "@/services/storage/adapters/mobileNativeStorageAdapter";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import { useAuthStore } from "@/state/authStore";
 import { useChatStore } from "@/state/chatStore";
@@ -38,11 +40,23 @@ export const APP_PREF_LOCAL_SIDE_KEYS = [
 /** sessionStorage side channels cleared only by full reset. */
 export const APP_PREF_SESSION_KEYS = ["ccx-auto-node"] as const;
 
-function removeAdapterKeys(keys: readonly string[]): void {
+function asMobileNative(): MobileNativeStorageAdapter | null {
+  const storage = getStorage() as MobileNativeStorageAdapter;
+  return typeof storage.persistWallet === "function" ? storage : null;
+}
+
+/** Logical app-level delete — not forensic erase. */
+async function removeAdapterKeys(keys: readonly string[]): Promise<void> {
+  const mobile = asMobileNative();
   const storage = getStorage();
   for (const key of keys) {
+    if (mobile && key === LOGICAL_WALLET_KEY) {
+      await mobile.removeWallet();
+      continue;
+    }
     storage.removeItem(key);
   }
+  if (mobile) await mobile.flushPrefs();
 }
 
 /**
@@ -88,11 +102,12 @@ function goWelcomeAndReload(): void {
  */
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
+  asMobileNative()?.sealWalletWrites();
   await clearAllMobileBiometricEnrollments();
   const settings = useSettingsStore.getState();
   settings.setAppAccessBiometric(false);
   settings.setDataUnlockBiometric(false);
-  removeAdapterKeys(WALLET_TIED_KEYS);
+  await removeAdapterKeys(WALLET_TIED_KEYS);
   clearSessionRam();
   goWelcomeAndReload();
 }
@@ -103,9 +118,15 @@ export async function deleteWalletData(): Promise<void> {
  */
 export async function resetAppData(): Promise<void> {
   await disconnect();
+  asMobileNative()?.sealWalletWrites();
   await clearAllMobileBiometricEnrollments();
-  removeAdapterKeys(WALLET_TIED_KEYS);
-  removeAdapterKeys(APP_PREF_ADAPTER_KEYS);
+  const mobile = asMobileNative();
+  if (mobile) {
+    await mobile.resetAdapterOwned();
+  } else {
+    await removeAdapterKeys(WALLET_TIED_KEYS);
+    await removeAdapterKeys(APP_PREF_ADAPTER_KEYS);
+  }
   for (const key of APP_PREF_LOCAL_SIDE_KEYS) {
     localStorage.removeItem(key);
   }

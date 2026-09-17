@@ -76,6 +76,22 @@ Injected via `_dispatchLifecycleEvent`. No response.
 Values are JSON strings. Used for enrollment envelopes and app passcode hash —
 not WebView `localStorage` on device.
 
+### `gnh-wallet-file` (WebView ↔ native)
+
+| `action` | Payload | Response |
+|----------|---------|----------|
+| `exists` | — | `{ exists: boolean }` or `{ reason }` |
+| `read` | — | `{ value: string }` or `{ reason }` (never `value: null` for AEAD fail) |
+| `write` | `{ value }` | `{ ok: true }` or `{ reason }` |
+| `remove` | — | `{ ok: true }` or `{ reason }` |
+
+`reason` is a storage error (`auth-failed`, `invalid-envelope`, `io-error`,
+`key-unavailable`, `bridge-unavailable`). Failures use `reason`, not
+`error`, so the injected promise resolves and JS can map tri-state presence.
+Native resolves `{ reason }` (does not reject). JS catch logs action, error
+name, and value **length** only — never the blob. @see
+`docs/storage/mobile-durable-storage.md`
+
 ### `gnh-privacy` (WebView → native events and commands)
 
 | `type` | Payload | Notes |

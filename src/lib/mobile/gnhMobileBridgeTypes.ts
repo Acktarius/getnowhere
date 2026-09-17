@@ -20,7 +20,8 @@ export type GnhSecurityChannel =
   | "gnh-lifecycle"
   | "gnh-biometric"
   | "gnh-secure-prefs"
-  | "gnh-privacy";
+  | "gnh-privacy"
+  | "gnh-wallet-file";
 
 export type GnhMessageDirection = "command" | "response" | "event";
 

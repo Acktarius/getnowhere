@@ -18,7 +18,16 @@ vi.mock("@/lib/auth/biometric-lifecycle", () => ({
   clearAllMobileBiometricEnrollments: vi.fn(async () => undefined),
 }));
 
+import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
+import {
+  APP_KEYS_INDEX_KEY,
+  createMobileNativeStorageAdapter,
+  LOGICAL_WALLET_KEY,
+  type MobilePrefsBackend,
+  type MobileWalletFileBackend,
+  toNamespacedPrefKey,
+} from "@/services/storage/adapters/mobileNativeStorageAdapter";
 import {
   APP_PREF_ADAPTER_KEYS,
   APP_PREF_LOCAL_SIDE_KEYS,
@@ -27,6 +36,9 @@ import {
   resetAppData,
   WALLET_TIED_KEYS,
 } from "@/services/storage/appDataLifecycle";
+
+const BIOMETRIC_PREF = "gnh.appAccessCredentialId";
+const SESSION_PREF = "gnh.walletSession";
 
 function createMemoryAdapter(): StorageAdapter & {
   store: Map<string, string>;
@@ -197,6 +209,143 @@ describe("app-data lifecycle", () => {
     }
     expect(useWalletStore.getState().initialized).toBe(false);
     expect(locationStub.hash).toBe("#/welcome");
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+function createPrefsMock(
+  initial?: Record<string, string>,
+): MobilePrefsBackend & {
+  store: Map<string, string>;
+} {
+  const store = new Map<string, string>(Object.entries(initial ?? {}));
+  return {
+    store,
+    async get(key) {
+      return store.has(key) ? (store.get(key) as string) : null;
+    },
+    async set(key, value) {
+      store.set(key, value);
+    },
+    async remove(key) {
+      store.delete(key);
+    },
+  };
+}
+
+function createWalletFileMock(opts?: {
+  remove?: () => Promise<void>;
+}): MobileWalletFileBackend & { written: string | null; removed: boolean } {
+  const state = { written: null as string | null, removed: false };
+  return {
+    get written() {
+      return state.written;
+    },
+    get removed() {
+      return state.removed;
+    },
+    async exists() {
+      return { ok: true, exists: state.written != null };
+    },
+    async read() {
+      return state.written == null
+        ? { ok: false, reason: "io-error" as const }
+        : { ok: true, value: state.written };
+    },
+    async write(value) {
+      state.written = value;
+    },
+    async remove() {
+      if (opts?.remove) await opts.remove();
+      state.written = null;
+      state.removed = true;
+    },
+  };
+}
+
+describe("app-data lifecycle on mobile native adapter", () => {
+  let prefs: ReturnType<typeof createPrefsMock>;
+  let walletFile: ReturnType<typeof createWalletFileMock>;
+  let adapter: ReturnType<typeof createMobileNativeStorageAdapter>;
+  let reloadSpy: ReturnType<typeof vi.fn>;
+  let locationStub: { hash: string; reload: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    prefs = createPrefsMock({
+      [BIOMETRIC_PREF]: "cred-1",
+      [SESSION_PREF]: "session-1",
+    });
+    walletFile = createWalletFileMock();
+    adapter = createMobileNativeStorageAdapter({ prefs, walletFile });
+    setActiveStorageAdapter(adapter);
+
+    adapter.setItem("gnh.settings", '{"theme":"dark"}');
+    adapter.setItem("gnh.onboarded", "1");
+    adapter.setItem("gnh.contacts", "[]");
+    await adapter.flushPrefs();
+    await adapter.persistWallet("durable-wallet");
+
+    reloadSpy = vi.fn();
+    locationStub = { hash: "#/settings", reload: reloadSpy };
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: locationStub,
+    });
+    vi.mocked(disconnect).mockClear();
+    vi.mocked(clearAllMobileBiometricEnrollments).mockClear();
+  });
+
+  afterEach(() => {
+    setActiveStorageAdapter(webStorageAdapter);
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it("deleteWalletData awaits native wallet remove and keeps settings plus biometric prefs", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    walletFile = createWalletFileMock({
+      remove: async () => {
+        await gate;
+      },
+    });
+    adapter = createMobileNativeStorageAdapter({ prefs, walletFile });
+    setActiveStorageAdapter(adapter);
+    adapter.setItem("gnh.settings", '{"theme":"dark"}');
+    adapter.setItem("gnh.onboarded", "1");
+    await adapter.flushPrefs();
+    await adapter.persistWallet("durable-wallet");
+
+    const pending = deleteWalletData();
+    expect(walletFile.removed).toBe(false);
+    expect(reloadSpy).not.toHaveBeenCalled();
+
+    release?.();
+    await pending;
+
+    expect(walletFile.removed).toBe(true);
+    expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBeNull();
+    expect(adapter.getItem("gnh.settings")).not.toBeNull();
+    expect(prefs.store.get(BIOMETRIC_PREF)).toBe("cred-1");
+    expect(prefs.store.get(SESSION_PREF)).toBe("session-1");
+    expect(clearAllMobileBiometricEnrollments).toHaveBeenCalledTimes(1);
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("resetAppData awaits native reset of wallet file and adapter index", async () => {
+    await resetAppData();
+
+    expect(walletFile.removed).toBe(true);
+    expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBeNull();
+    expect(adapter.getItem("gnh.settings")).toBeNull();
+    expect(adapter.getItem("gnh.onboarded")).toBeNull();
+    expect(prefs.store.has(APP_KEYS_INDEX_KEY)).toBe(false);
+    expect(prefs.store.has(toNamespacedPrefKey("gnh.settings"))).toBe(false);
+    expect(prefs.store.get(BIOMETRIC_PREF)).toBe("cred-1");
+    expect(prefs.store.get(SESSION_PREF)).toBe("session-1");
+    expect(clearAllMobileBiometricEnrollments).toHaveBeenCalledTimes(1);
     expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 });

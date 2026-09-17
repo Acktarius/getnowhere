@@ -60,6 +60,7 @@ describe("buildMobileBridgeInjection", () => {
     const bridge = window.gnhMobile as GnhMobileBridge;
     expect(bridge.biometric?.isAvailable).toBeTypeOf("function");
     expect(bridge.securePrefs?.get).toBeTypeOf("function");
+    expect(bridge.walletFile?.exists).toBeTypeOf("function");
     expect(bridge.onLifecycle).toBeTypeOf("function");
     expect(bridge.setBlurInAppSwitcher).toBeTypeOf("function");
     void bridge.biometric?.isAvailable("data");

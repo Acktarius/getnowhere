@@ -1,0 +1,36 @@
+{
+  "change": "mobile-durable-storage",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Mobile adapter routing, index, prefs, wallet await, wipe",
+      "cmd": "npx vitest run tests/storage/mobile-native-storage-adapter.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Boot order and fail-closed hydrate",
+      "cmd": "npx vitest run tests/storage/mobile-storage-boot.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Wipe and SDK wallet persist await native file ops",
+      "cmd": "npx vitest run tests/storage/app-data-lifecycle.test.ts tests/storage/sdk-wallet-storage.test.ts",
+      "expect": "passed",
+      "timeoutMs": 180000
+    },
+    {
+      "name": "Wallet file envelope and unreadable leftover file",
+      "cmd": "npx vitest run tests/storage/mobile-wallet-file.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

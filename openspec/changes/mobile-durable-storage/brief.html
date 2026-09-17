@@ -1,0 +1,96 @@
+<!-- forge-brief-specs-hash:74dc334293f2778e -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mobile durable storage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; color: #1a1a1a; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    ul { padding-left: 1.25rem; }
+    .muted { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>Mobile durable storage</h1>
+
+  <h2>TL;DR</h2>
+  <p>
+    On some Android phones, leaving the app and coming back can wipe the wallet
+    and settings because they live in the WebView’s short-lived storage.
+    After this change, the phone keeps the wallet and preferences in native
+    storage. The wallet file is encrypted. Web and desktop stay as they are.
+  </p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Create or import a wallet on Android, kill the app, reopen — the wallet is still there.</li>
+    <li>Theme and settings survive the same restart.</li>
+    <li>If the wallet file is damaged, the app says it could not be opened and does not pretend you have no wallet.</li>
+    <li>Delete wallet / Reset app still wipe the durable copy on this device (logical delete, not forensic erase).</li>
+    <li>A missing native bridge shows a fatal screen instead of silently using WebView storage.</li>
+  </ul>
+
+  <h2>How it works</h2>
+  <p>
+    Before the UI starts, the phone app installs one storage adapter. Settings
+    and contacts go into the existing native secure preferences. The wallet
+    blob goes into a private encrypted file. Creating or deleting a wallet
+    waits until that file write or delete finishes. Preferences may flush a
+    moment later, but the wallet does not.
+  </p>
+  <pre class="mermaid">
+flowchart TD
+  Boot[Phone app starts] --> Install[Install native storage]
+  Install --> Ready{Bridge ready?}
+  Ready -->|no| Fatal[Fatal screen]
+  Ready -->|yes| Read[Read prefs and wallet file]
+  Read --> State{Wallet file}
+  State -->|missing| Welcome[Normal Welcome]
+  State -->|readable| App[Open existing wallet]
+  State -->|unreadable| Error[Recovery screen — file kept]
+  App --> Write[Wallet save waits for disk]
+  Write --> File[Encrypted private file]
+  </pre>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true });</script>
+
+  <h2>What changes for you</h2>
+  <ul>
+    <li>Existing test wallets stored only in the WebView will not come back. That is intended; there is no migration.</li>
+    <li>If you see “wallet data could not be opened,” do not create a second wallet over it.</li>
+    <li>Web and desktop behavior does not change.</li>
+  </ul>
+
+  <h2>Risks and open questions</h2>
+  <ul>
+    <li>Theme or other small prefs could still be lost if Android kills the app mid-flush. The wallet path waits for disk.</li>
+    <li>Full “kill the app on a real phone” proof is an operator smoke test. Automated tests cover the adapter, encryption envelope, wipe, and boot order.</li>
+    <li>iOS uses the same app contract. If the iOS file encryption grows too large, Android still ships encrypted; iOS may follow with a leftover TODO.</li>
+    <li>The wallet file and related secure prefs are kept out of Android Auto Backup / phone-to-phone transfer and iCloud backup. A restored copy without the original hardware key is treated as damaged, not as a new empty wallet.</li>
+    <li>Delete wallet removes the app’s current file and temp files. It does not promise to erase OS snapshots or backups that already left the device.</li>
+  </ul>
+
+  <h2>Out of scope</h2>
+  <ul>
+    <li>Copying old WebView data into native storage</li>
+    <li>Changing how the Conceal wallet blob itself is encrypted</li>
+    <li>Cloud backup or key recovery</li>
+    <li>Encrypting chat rooms or all preferences as files</li>
+    <li>Asking for biometrics every time the wallet file is read</li>
+  </ul>
+
+  <h2>Work overview</h2>
+  <ul>
+    <li>JS adapter, index, and tri-state wallet checks (4 tasks)</li>
+    <li>Boot order and fail-closed start (2 tasks)</li>
+    <li>Android encrypted file, backup exclusion, and native methods (4 tasks)</li>
+    <li>Bridge injection and iOS contract (2 tasks)</li>
+    <li>Wipe / create-import await paths (2 tasks)</li>
+    <li>Docs (1 task)</li>
+    <li>Automated product-loop tests (1 task)</li>
+  </ul>
+</body>
+</html>

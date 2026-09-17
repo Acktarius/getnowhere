@@ -104,6 +104,12 @@ interface GnhMobileBridge {
     set(key: string, value: string): Promise<Record<string, unknown>>;
     remove(key: string): Promise<Record<string, unknown>>;
   };
+  walletFile?: {
+    exists(): Promise<{ exists?: boolean; reason?: string }>;
+    read(): Promise<{ value?: string; reason?: string }>;
+    write(value: string): Promise<{ ok?: boolean; reason?: string }>;
+    remove(): Promise<{ ok?: boolean; reason?: string }>;
+  };
   /** Native sensitive clipboard write. Injected by the mobile host. */
   copySensitive?(value: string): Promise<void>;
   /** Native clipboard wipe. Injected by the mobile host. */

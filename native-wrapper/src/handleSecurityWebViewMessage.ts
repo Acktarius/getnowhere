@@ -7,6 +7,10 @@ import {
   securePrefsGet,
   securePrefsRemove,
   securePrefsSet,
+  walletFileExists,
+  walletFileRead,
+  walletFileRemove,
+  walletFileWrite,
 } from "./gnhSecurityNative";
 
 export type SecurityWebViewResolve = (
@@ -90,6 +94,36 @@ export function handleSecurityWebViewMessage(
         resolve(buildResponse(msg, { error: "failed" }));
       } catch {
         resolve(buildResponse(msg, { error: "failed" }));
+      }
+    })();
+    return true;
+  }
+
+  if (msg.channel === "gnh-wallet-file") {
+    void (async () => {
+      try {
+        if (msg.action === "exists") {
+          resolve(buildResponse(msg, await walletFileExists()));
+          return;
+        }
+        if (msg.action === "read") {
+          resolve(buildResponse(msg, await walletFileRead()));
+          return;
+        }
+        if (msg.action === "write" && msg.value !== undefined) {
+          resolve(buildResponse(msg, await walletFileWrite(msg.value)));
+          return;
+        }
+        if (msg.action === "remove") {
+          resolve(buildResponse(msg, await walletFileRemove()));
+          return;
+        }
+        resolve(buildResponse(msg, { reason: "failed" }));
+      } catch (err) {
+        const name = err instanceof Error ? err.name : "Error";
+        const chars = typeof msg.value === "string" ? msg.value.length : 0;
+        console.warn("[GnhWalletFile]", msg.action, name, chars);
+        resolve(buildResponse(msg, { reason: "io-error" }));
       }
     })();
     return true;

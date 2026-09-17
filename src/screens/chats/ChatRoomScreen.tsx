@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ChatRoomHeader } from "@/components/ChatRoomHeader";
 import { ChatTopicBackdrop } from "@/components/ChatTopicBackdrop";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
@@ -129,9 +130,12 @@ function LoadingDiagnosticsSheet({
   return (
     <Sheet open={open} title="Room diagnostics" onClose={onClose}>
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-        <div>
-          Room id:{" "}
-          <NonSelectableText className="mono">{roomId}</NonSelectableText>
+        <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
+          <span>
+            Room id:{" "}
+            <NonSelectableText className="mono">{roomId}</NonSelectableText>
+          </span>
+          <CopyButton value={roomId} />
         </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
@@ -859,13 +863,16 @@ export function ChatRoomScreen() {
         onClose={() => setDiagOpen(false)}
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-          <div>
-            Room id:{" "}
-            <NonSelectableText className="mono">
-              {displayRoom.id}
-            </NonSelectableText>
+          <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
+            <span>
+              Room id:{" "}
+              <NonSelectableText className="mono">
+                {displayRoom.id}
+              </NonSelectableText>
+            </span>
+            <CopyButton value={displayRoom.id} />
           </div>
-          {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
+          {/* Display-only (no Copy). Must match the peer and sidecar `topic <prefix>…` log. */}
           <div>
             Topic:{" "}
             {discoveryTopicRef ? (

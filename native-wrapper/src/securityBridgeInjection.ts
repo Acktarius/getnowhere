@@ -53,6 +53,12 @@ export function securityBridgeInjectionJs(): string {
     set: function(key, value) { return postSecurity('gnh-secure-prefs', { action: 'set', key: key, value: value }); },
     remove: function(key) { return postSecurity('gnh-secure-prefs', { action: 'remove', key: key }); }
   };
+  window.gnhMobile.walletFile = {
+    exists: function() { return postSecurity('gnh-wallet-file', { action: 'exists' }); },
+    read: function() { return postSecurity('gnh-wallet-file', { action: 'read' }); },
+    write: function(value) { return postSecurity('gnh-wallet-file', { action: 'write', value: value }); },
+    remove: function() { return postSecurity('gnh-wallet-file', { action: 'remove' }); }
+  };
   window.gnhMobile.copySensitive = function(value) {
     return postSecurity('gnh-privacy', { action: 'copySensitive', value: value });
   };

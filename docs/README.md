@@ -65,4 +65,5 @@ No L3. UI never joins Hyperswarm.
 - `decisions/` — accepted ADRs (spend policy, etc.)
 - `features/` — product behavior and user-facing flows
 - `security/` — encryption, key handling, and protocol details
+- `storage/` — mobile durable persistence (`mobile-durable-storage.md`)
 - `prompts/` — durable coding constraints for AI / codegen tools

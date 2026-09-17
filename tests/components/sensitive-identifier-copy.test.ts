@@ -24,9 +24,12 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/useCopy/);
   });
 
-  it("ChatRoomScreen room and topic ids use NonSelectableText and CopyButton", () => {
+  it("ChatRoomScreen copies room id only; topic stays non-selectable and not copyable", () => {
     const src = readSrc("src/screens/chats/ChatRoomScreen.tsx");
     expect(src).toMatch(/NonSelectableText/);
-    expect(src).toMatch(/CopyButton/);
+    expect(src).toMatch(/CopyButton value=\{displayRoom\.id\}/);
+    expect(src).toMatch(/CopyButton value=\{roomId\}/);
+    expect(src).not.toMatch(/CopyButton value=\{discoveryTopicRef\}/);
+    expect(src).not.toMatch(/copySensitive\(discoveryTopicRef\)/);
   });
 });

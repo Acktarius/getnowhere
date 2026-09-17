@@ -20,6 +20,8 @@ describe("native sensitive clipboard hosts", () => {
     expect(kt).toMatch(/newPlainText\("", ""\)/);
     expect(kt).not.toMatch(/Log\./);
     expect(kt).not.toMatch(/promise\.reject\([^)]*value/);
+    expect(kt).toMatch(/fun walletFileWrite/);
+    expect(kt).not.toMatch(/walletFileWrite[\s\S]*Log\./);
   });
 
   it("iOS writes localOnly + 60s expiry and never logs", () => {

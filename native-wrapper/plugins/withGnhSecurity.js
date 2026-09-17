@@ -6,7 +6,9 @@ const {
   withAppBuildGradle,
   withMainApplication,
   withMainActivity,
+  withAndroidManifest,
 } = require("@expo/config-plugins");
+const { applyGnhSecurityNativeSync } = require("./gnhSecurityNativeSync");
 
 const IOS_SOURCE_DIR = "ios-native/GnhSecurity";
 const ANDROID_SOURCE_DIR = "android-native/GnhSecurity";
@@ -17,18 +19,27 @@ const BIOMETRIC_DEPS = `
     implementation("androidx.security:security-crypto:1.1.0-alpha06")`;
 
 /** Copy committed Kotlin sources into the generated android/ tree. */
-function copyAndroidSecuritySources(projectRoot, platformProjectRoot) {
+function copyAndroidSecuritySources(projectRoot, platformProjectRoot, subdir) {
   const src = path.join(projectRoot, ANDROID_SOURCE_DIR);
-  const dest = path.join(
-    platformProjectRoot,
-    "app/src/main/java",
-    ANDROID_JAVA_PKG,
-  );
+  const dest = path.join(platformProjectRoot, subdir, "java", ANDROID_JAVA_PKG);
   if (!fs.existsSync(src)) return;
   fs.mkdirSync(dest, { recursive: true });
   for (const name of fs.readdirSync(src)) {
     if (!name.endsWith(".kt")) continue;
+    if (subdir.includes("test") && !name.endsWith("Test.kt")) continue;
+    if (subdir.includes("main") && name.endsWith("Test.kt")) continue;
     fs.copyFileSync(path.join(src, name), path.join(dest, name));
+  }
+}
+
+function copyAndroidBackupXml(projectRoot, platformProjectRoot) {
+  const srcDir = path.join(projectRoot, ANDROID_SOURCE_DIR, "xml");
+  const destDir = path.join(platformProjectRoot, "app/src/main/res/xml");
+  if (!fs.existsSync(srcDir)) return;
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const name of fs.readdirSync(srcDir)) {
+    if (!name.endsWith(".xml")) continue;
+    fs.copyFileSync(path.join(srcDir, name), path.join(destDir, name));
   }
 }
 
@@ -84,6 +95,16 @@ function withGnhSecurityAndroid(config) {
       copyAndroidSecuritySources(
         cfg.modRequest.projectRoot,
         cfg.modRequest.platformProjectRoot,
+        "app/src/main",
+      );
+      copyAndroidSecuritySources(
+        cfg.modRequest.projectRoot,
+        cfg.modRequest.platformProjectRoot,
+        "app/src/test",
+      );
+      copyAndroidBackupXml(
+        cfg.modRequest.projectRoot,
+        cfg.modRequest.platformProjectRoot,
       );
       return cfg;
     },
@@ -105,6 +126,13 @@ function withGnhSecurityAndroid(config) {
         `dependencies {${BIOMETRIC_DEPS}`,
       );
     }
+    return cfg;
+  });
+
+  config = withAppBuildGradle(config, (cfg) => {
+    cfg.modResults.contents = applyGnhSecurityNativeSync(
+      cfg.modResults.contents,
+    );
     return cfg;
   });
 
@@ -147,6 +175,16 @@ function withGnhSecurityAndroid(config) {
         "import android.os.Bundle\nimport android.view.WindowManager",
       );
     }
+    return cfg;
+  });
+
+  config = withAndroidManifest(config, (cfg) => {
+    const app = cfg.modResults.manifest.application?.[0];
+    if (!app) return cfg;
+    app.$ = app.$ ?? {};
+    app.$["android:allowBackup"] = "false";
+    app.$["android:fullBackupContent"] = "@xml/gnh_backup_rules";
+    app.$["android:dataExtractionRules"] = "@xml/gnh_data_extraction_rules";
     return cfg;
   });
 
