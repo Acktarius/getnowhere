@@ -55,6 +55,7 @@ import {
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
 import { formatUnixDateTime, shortTopicRef } from "@/utils/format";
+import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
@@ -188,6 +189,10 @@ export function ChatRoomScreen() {
   });
 
   const [draft, setDraft] = useState("");
+  const [pendingReply, setPendingReply] = useState<{
+    replyToMessageId: string;
+    replyPreview: string;
+  } | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -226,6 +231,10 @@ export function ChatRoomScreen() {
   useEffect(() => {
     if (!roomId) return;
     useNotificationStore.getState().markRoomSeen(roomId);
+  }, [roomId]);
+
+  useEffect(() => {
+    setPendingReply(null);
   }, [roomId]);
 
   const invites = useContactsStore((s) => s.invites);
@@ -493,11 +502,26 @@ export function ChatRoomScreen() {
     }
     const text = draft.trim();
     const ttlUnixSeconds = ttlUnixFromDuration(durationSeconds, nowUnix());
+    const reply =
+      holepunchLive && pendingReply && !viaChain ? pendingReply : undefined;
     setDraft("");
+    setPendingReply(null);
     composerRef.current?.focus({ preventScroll: mobileHost });
-    void send(roomId, text, ttlUnixSeconds).catch((e) => {
+    void send(roomId, text, ttlUnixSeconds, reply).catch((e) => {
       toastError((e as Error).message || "Send failed.");
     });
+  }
+
+  function startReply(message: ChatMessage) {
+    if (!holepunchLive) return;
+    if (message.direction !== "in") return;
+    if (message.channel === "relay") return;
+    if (message.deletedAt || message.kind === "delete") return;
+    setPendingReply({
+      replyToMessageId: message.id,
+      replyPreview: truncateReplyPreview(message.text),
+    });
+    composerRef.current?.focus({ preventScroll: mobileHost });
   }
 
   async function handleRetry() {
@@ -774,6 +798,15 @@ export function ChatRoomScreen() {
                       ? (emoji) => sendReaction(roomId, m.id, emoji)
                       : undefined
                   }
+                  onReply={
+                    holepunchLive &&
+                    m.direction === "in" &&
+                    m.channel !== "relay" &&
+                    !m.deletedAt &&
+                    m.kind !== "delete"
+                      ? () => startReply(m)
+                      : undefined
+                  }
                   onEdit={
                     holepunchLive && m.direction === "out"
                       ? (text) => editMessage(roomId, m.id, text)
@@ -801,60 +834,98 @@ export function ChatRoomScreen() {
                 padding: "10px 12px 14px",
                 borderTop: "1px solid var(--border)",
                 display: "flex",
+                flexDirection: "column",
                 gap: 8,
-                alignItems: "flex-end",
                 flexShrink: 0,
                 background: "var(--bg)",
               }),
         }}
       >
-        <textarea
-          ref={composerRef}
-          value={draft}
-          disabled={!composeAllowed}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            !composeAllowed
-              ? (disabledReason ?? "Messaging unavailable…")
-              : viaChain
-                ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
-                : "Message…"
-          }
-          rows={1}
-          maxLength={viaChain ? RELAY_MAX_TEXT_CHARS : undefined}
+        {pendingReply ? (
+          <div
+            style={{
+              padding: "6px 10px",
+              borderRadius: 10,
+              background: "var(--bg-elev-2)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text-muted, var(--text))",
+              fontSize: 12,
+              lineHeight: 1.35,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              wordBreak: "break-word",
+              opacity: 0.9,
+            }}
+          >
+            {pendingReply.replyPreview}
+          </div>
+        ) : null}
+        <div
           style={{
-            flex: 1,
-            resize: "none",
-            minHeight: 40,
-            maxHeight: 120,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            background: "var(--bg-elev-1)",
-            color: "var(--text)",
-            font: "inherit",
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-end",
+            width: "100%",
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void handleSend();
+        >
+          <textarea
+            ref={composerRef}
+            value={draft}
+            disabled={!composeAllowed}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={
+              !composeAllowed
+                ? (disabledReason ?? "Messaging unavailable…")
+                : viaChain
+                  ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
+                  : "Message…"
             }
-          }}
-          onFocus={() => {
-            if (!mobileHost) return;
-            const scroller = scrollerRef.current;
-            if (!scroller) return;
-            const scrollTop = scroller.scrollTop;
-            requestAnimationFrame(() => {
-              scroller.scrollTop = scrollTop;
-            });
-          }}
-        />
-        <ChainSendFlyout
-          viaChain={viaChain}
-          disabled={!composeAllowed || !draft.trim()}
-          onSend={(durationSeconds) => handleSend(durationSeconds)}
-        />
+            rows={1}
+            maxLength={viaChain ? RELAY_MAX_TEXT_CHARS : undefined}
+            style={{
+              flex: 1,
+              resize: "none",
+              minHeight: 40,
+              maxHeight: 120,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elev-1)",
+              color: "var(--text)",
+              font: "inherit",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void handleSend();
+              }
+            }}
+            onBlur={() => {
+              window.setTimeout(() => {
+                const active = document.activeElement;
+                if (active === composerRef.current) return;
+                if (composerBarRef.current?.contains(active)) return;
+                setPendingReply(null);
+              }, 0);
+            }}
+            onFocus={() => {
+              if (!mobileHost) return;
+              const scroller = scrollerRef.current;
+              if (!scroller) return;
+              const scrollTop = scroller.scrollTop;
+              requestAnimationFrame(() => {
+                scroller.scrollTop = scrollTop;
+              });
+            }}
+          />
+          <ChainSendFlyout
+            viaChain={viaChain}
+            disabled={!composeAllowed || !draft.trim()}
+            onSend={(durationSeconds) => handleSend(durationSeconds)}
+          />
+        </div>
       </div>
 
       <Sheet

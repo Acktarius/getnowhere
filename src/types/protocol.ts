@@ -276,6 +276,10 @@ export type ChatContentEnvelopeV1 = {
   text?: string;
   targetMessageId?: string;
   reaction?: string;
+  /** Parent message id for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyToMessageId?: string;
+  /** Frozen truncated quote for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyPreview?: string;
 };
 
 // ---------- Envelope (smart-message transport) ----------

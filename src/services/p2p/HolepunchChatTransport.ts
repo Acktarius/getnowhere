@@ -73,7 +73,10 @@ import {
   resolveIncomingLifecycle,
   transitionRoom,
 } from "@/services/protocol/roomLifecycle";
-import { parseChatSmartBody } from "@/services/protocol/SmartMessageProtocolAdapter";
+import {
+  parseChatSmartBody,
+  sanitizeRelayDisplayText,
+} from "@/services/protocol/SmartMessageProtocolAdapter";
 import { useSettingsStore } from "@/state/settingsStore";
 import type { ChatMessage, ChatRoom } from "@/types/models";
 import type {
@@ -627,6 +630,8 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         kind: msgKind,
         targetMessageId: envelope?.targetMessageId,
         reaction: envelope?.reaction,
+        replyToMessageId: envelope?.replyToMessageId,
+        replyPreview: envelope?.replyPreview,
         deletedAt: msgKind === "delete" ? new Date().toISOString() : undefined,
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
@@ -950,15 +955,12 @@ async function sendRelayText(
   if (!isRelayEligibleStatus(state.room.lifecycleStatus)) {
     throw new Error("Relay only after invite accepted.");
   }
-  const trimmed = text.trim();
+  const trimmed = sanitizeRelayDisplayText(text);
   if (!trimmed) throw new Error("Empty message.");
   if (trimmed.length > RELAY_MAX_TEXT_CHARS) {
     throw new Error(
       `Relay messages are limited to ${RELAY_MAX_TEXT_CHARS} characters.`,
     );
-  }
-  if (/[,{}]/.test(trimmed)) {
-    throw new Error("Relay text cannot contain , { or }.");
   }
   const sentAt = nowUnix();
   const roomId = state.room.id;
@@ -1190,7 +1192,7 @@ export const HolepunchChatTransport: ChatTransport = {
     });
   },
 
-  async sendMessage(roomId, text, ttlUnixSeconds) {
+  async sendMessage(roomId, text, ttlUnixSeconds, reply) {
     const state = rooms.get(roomId) ?? ensureRoomForRelay(roomId);
     if (!state) throw new Error("Room not found.");
     assertRoomInteractive(
@@ -1206,6 +1208,13 @@ export const HolepunchChatTransport: ChatTransport = {
     }
 
     const lastLiveAtMs = lastLiveAtMsByRoom.get(roomId);
+    const liveReply =
+      reply?.replyToMessageId && reply.replyPreview
+        ? {
+            replyToMessageId: reply.replyToMessageId,
+            replyPreview: reply.replyPreview,
+          }
+        : undefined;
     const envelope: ChatContentEnvelopeV1 = {
       schemaVersion: 1,
       messageId: uid("m"),
@@ -1213,11 +1222,13 @@ export const HolepunchChatTransport: ChatTransport = {
       sentAt: new Date().toISOString(),
       kind: "text",
       text,
+      ...(liveReply ?? {}),
     };
     if (state.room.lifecycleStatus === "connected") {
       return this.sendContent!(roomId, envelope);
     }
     // Were live this session: show queued, try L2, then L1′ (poke only on fallback).
+    // Reply fields are live-only — strip before L1′ relay fallback.
     if (state.session && lastLiveAtMs) {
       const queued: ChatMessage = {
         id: envelope.messageId,
@@ -1229,11 +1240,15 @@ export const HolepunchChatTransport: ChatTransport = {
         channel: "live",
         clientId: envelope.clientId,
         kind: "text",
+        ...liveReply,
       };
       notify(roomId, queued);
       if ((await waitForLiveUpTo(roomId, l2SendHoldMs)) === "live") {
         return this.sendContent!(roomId, envelope);
       }
+      // Reply is live-only — do not carry quote metadata onto L1′.
+      delete envelope.replyToMessageId;
+      delete envelope.replyPreview;
       return sendRelayText(state, text, envelope.messageId, ttlUnixSeconds);
     }
     return sendRelayText(state, text, undefined, ttlUnixSeconds);
@@ -1287,6 +1302,8 @@ export const HolepunchChatTransport: ChatTransport = {
       kind: outKind,
       targetMessageId: envelope.targetMessageId,
       reaction: envelope.reaction,
+      replyToMessageId: envelope.replyToMessageId,
+      replyPreview: envelope.replyPreview,
       deletedAt: outKind === "delete" ? envelope.sentAt : undefined,
       editedAt: outKind === "edit" ? envelope.sentAt : undefined,
     };

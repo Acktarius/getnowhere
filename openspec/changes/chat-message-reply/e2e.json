@@ -1,0 +1,24 @@
+{
+  "change": "chat-message-reply",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Truncate helper",
+      "cmd": "npx vitest run tests/chat/reply-preview-truncate.test.ts",
+      "expect": "passed",
+      "timeoutMs": 60000
+    },
+    {
+      "name": "Reply envelope mapping",
+      "cmd": "npx vitest run tests/chat/reply-envelope.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

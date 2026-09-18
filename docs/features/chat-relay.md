@@ -58,7 +58,7 @@ Invite/register pins unchanged. L2 live messages are not badged.
 
 ## Limits
 
-- Text only; no `,` `{` `}` in body (smart-message delimiters).
+- Text only; **L1′ only**: strip `{` `}`; `,` → `;` on wire (restored on receive). Live L2 unchanged.
 - Fit `MAX_MESSAGE_BODY_BYTES` (~200 chars).
 - Reaction / edit / delete stay live-only.
 - Dedupe by `roomId + sentAt + text`.

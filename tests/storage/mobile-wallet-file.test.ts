@@ -72,7 +72,9 @@ describe("wallet file envelope and backup policy", () => {
       ),
       "utf8",
     );
-    expect(file).toMatch(/Log\.e\("GnhWalletFile", "write failed: \$\{e\.reason\}"\)/);
+    expect(file).toMatch(
+      /Log\.e\("GnhWalletFile", "write failed: \$\{e\.reason\}"\)/,
+    );
     expect(file).toMatch(/e\.javaClass\.simpleName/);
     expect(file).not.toMatch(/Log\.[ewidv]\([^)]*plaintext/);
     expect(file).not.toMatch(/Log\.[ewidv]\([^)]*envelope/);

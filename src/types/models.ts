@@ -138,6 +138,10 @@ export type ChatMessage = {
   targetMessageId?: string;
   /** Reaction emoji when kind is reaction. */
   reaction?: string;
+  /** Parent message id for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyToMessageId?: string;
+  /** Frozen truncated quote for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyPreview?: string;
   editedAt?: string;
   deletedAt?: string;
 };

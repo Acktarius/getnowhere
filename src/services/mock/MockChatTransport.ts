@@ -130,6 +130,7 @@ export const MockChatTransport: ChatTransport = {
     roomId: string,
     text: string,
     ttlUnixSeconds?: number,
+    reply?: { replyToMessageId: string; replyPreview: string },
   ): Promise<ChatMessage> {
     const room = rooms.get(roomId);
     if (!room) throw new Error("Room not found");
@@ -145,8 +146,16 @@ export const MockChatTransport: ChatTransport = {
       text,
       createdAt: new Date().toISOString(),
       status: "sending",
+      channel: "live",
+      kind: "text",
       ...(typeof ttlUnixSeconds === "number" && ttlUnixSeconds > 0
         ? { ttlExpiresAt: ttlUnixSeconds }
+        : {}),
+      ...(reply?.replyToMessageId && reply.replyPreview
+        ? {
+            replyToMessageId: reply.replyToMessageId,
+            replyPreview: reply.replyPreview,
+          }
         : {}),
     };
     const list = messages.get(roomId) ?? [];

@@ -491,25 +491,76 @@ export function encodeRevokeSmartBody(payload: ChatRevokePayload): string {
   return body;
 }
 
-/** Wire: `{contact,e,roomId,sentAtUnix,text}` — Conceal MESSAGE encrypts on-chain. */
+/**
+ * L1′ (on-chain fallback) only — strip `{` `}`; commas stay in the bubble.
+ * Wire maps `,` → `;` inside encodeRelaySmartBody. Live L2 does not use this.
+ * @see docs/security/p2pchatprotocol.md §16
+ */
+export function sanitizeRelayDisplayText(text: string): string {
+  return text.replace(/[{}]/g, "").trim();
+}
+
+/** Wire text: commas → `;` so SDK smart-message commas stay structural. */
+function toRelayWireText(display: string): string {
+  return display.replace(/,/g, ";");
+}
+
+/** Inverse of {@link toRelayWireText}; also strips any braces on legacy bodies. */
+function fromRelayWireText(wire: string): string {
+  return wire.replace(/[{}]/g, "").replace(/;/g, ",");
+}
+
+/**
+ * Wire: `{contact,e,roomId,sentAtUnix,text}` via SDK encode.
+ * App text: strip `{}`; map `,` → `;` on wire (restore on parse).
+ * @see docs/security/p2pchatprotocol.md §16
+ */
 export function encodeRelaySmartBody(payload: ChatRelayPayload): string {
-  const text = payload.text.trim();
-  if (!text) throw new Error("Relay text required.");
-  if (/[,{}]/.test(text)) {
-    throw new Error("Relay text cannot contain , { or }.");
-  }
-  if (text.length > RELAY_MAX_TEXT_CHARS) {
+  const display = sanitizeRelayDisplayText(payload.text);
+  if (!display) throw new Error("Relay text required.");
+  if (display.length > RELAY_MAX_TEXT_CHARS) {
     throw new Error("Relay text too long for smart-message body.");
   }
+  const wireText = toRelayWireText(display);
   const body = messages.encodeSmartMessage(
     MODULE_CONTACT,
     CHAT_WIRE_ACTIONS.relay,
-    payload.roomId,
+    payload.roomId.trim(),
     String(payload.sentAt),
-    text,
+    wireText,
   );
   assertBodyFits(body);
   return body;
+}
+
+/**
+ * Text = remainder after the 4th comma (legacy bodies may still embed `,`).
+ * @returns null when the envelope or fixed fields are missing.
+ */
+function parseRelayFields(
+  smartBody: string,
+): { roomId: string; sentAt: number; text: string } | null {
+  const trimmed = smartBody.trim();
+  if (trimmed.length < 2 || trimmed[0] !== "{" || trimmed.at(-1) !== "}") {
+    return null;
+  }
+  const inner = trimmed.slice(1, -1);
+  const commaAt: number[] = [];
+  for (let i = 0, from = 0; i < 4; i++) {
+    const idx = inner.indexOf(",", from);
+    if (idx < 0) return null;
+    commaAt.push(idx);
+    from = idx + 1;
+  }
+  const module = inner.slice(0, commaAt[0]);
+  const action = inner.slice(commaAt[0]! + 1, commaAt[1]);
+  if (module !== MODULE_CONTACT) return null;
+  if (normalizeAction(action) !== "relay") return null;
+  const roomId = inner.slice(commaAt[1]! + 1, commaAt[2]).trim();
+  const sentAt = Number(inner.slice(commaAt[2]! + 1, commaAt[3]).trim());
+  const text = fromRelayWireText(inner.slice(commaAt[3]! + 1)).trim();
+  if (!roomId || !text || !Number.isFinite(sentAt) || sentAt <= 0) return null;
+  return { roomId, sentAt, text };
 }
 
 export function parseChatSmartBody(
@@ -654,18 +705,15 @@ export function parseChatSmartBody(
   }
 
   if (action === "relay") {
-    const roomId = String(parsed[2] ?? "").trim();
-    const sentAt = Number(parsed[3] ?? 0);
-    const text = String(parsed[4] ?? "");
-    if (!roomId || !text || !Number.isFinite(sentAt) || sentAt <= 0)
-      return null;
+    const fields = parseRelayFields(smartBody);
+    if (!fields) return null;
     return {
       action: "relay",
       payload: {
         type: "chat.relay",
-        roomId,
-        sentAt,
-        text,
+        roomId: fields.roomId,
+        sentAt: fields.sentAt,
+        text: fields.text,
       },
     };
   }

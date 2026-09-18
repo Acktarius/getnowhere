@@ -38,6 +38,7 @@ type ChatStore = {
     roomId: string,
     text: string,
     ttlUnixSeconds?: number,
+    reply?: { replyToMessageId: string; replyPreview: string },
   ) => Promise<void>;
   sendReaction: (
     roomId: string,
@@ -314,14 +315,19 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     });
   },
 
-  async send(roomId, text, ttlUnixSeconds) {
+  async send(roomId, text, ttlUnixSeconds, reply) {
     const room =
       get().rooms.find((r) => r.id === roomId) ??
       (await chatTransport.getRoom(roomId));
     if (!room) throw new Error("Room not found.");
     assertCanSendMessages(room.lifecycleStatus);
     // Transport notify → subscribeRoom appends; do not append here (avoids doubles).
-    const msg = await chatTransport.sendMessage(roomId, text, ttlUnixSeconds);
+    const msg = await chatTransport.sendMessage(
+      roomId,
+      text,
+      ttlUnixSeconds,
+      reply,
+    );
     set((s) => ({
       rooms: s.rooms.map((r) =>
         r.id === roomId ? { ...r, lastMessageAt: msg.createdAt } : r,

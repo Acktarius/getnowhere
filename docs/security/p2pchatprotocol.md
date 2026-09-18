@@ -531,12 +531,15 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 ## 14. Content envelopes
 
 `ChatContentEnvelopeV1`: `schemaVersion`, `messageId`, `clientId`, `sentAt`,
-`kind: text|reaction|edit|delete`, optional `text` / `targetMessageId` / `reaction`.
+`kind: text|reaction|edit|delete`, optional `text` / `targetMessageId` /
+`reaction` / `replyToMessageId` / `replyPreview`.
 
 - **Live path:** L1 session seal → Holepunch bridge frame (`channel: "live"`).
 - **L1′ path:** plain `{contact,e,roomId,ts,text}` (`channel: "relay"`).
   Conceal MESSAGE encryption covers the chain; no second session-key seal.
-- Reaction / edit / delete remain **live-only**. L1′ is text only (§16).
+- Reaction / edit / delete / reply metadata (`replyToMessageId`,
+  `replyPreview`) remain **live-only**. L1′ is text only and has no reply
+  metadata (§16).
 
 ---
 
@@ -568,7 +571,9 @@ Module `contact`, action `execute` (`e`):
 {contact,e,<roomId>,<sentAtUnix>,<text>}
 ```
 
-App-layer text (no `,` `{` `}` — SDK smart-message delimiter rules). Conceal
+App-layer **L1′ only**: strip `{` `}`; map `,` → `;` on the wire (restore on
+parse) so SDK smart-message commas stay structural. Live L2 text is unchanged.
+Conceal
 MESSAGE already encrypts the body with ChaCha + DH to sender/receiver view keys
 — chain observers without the view key cannot read it. No second L1 session seal.
 

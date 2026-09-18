@@ -270,6 +270,7 @@ export type ChatTransport = {
     roomId: string,
     text: string,
     ttlUnixSeconds?: number,
+    reply?: { replyToMessageId: string; replyPreview: string },
   ): Promise<ChatMessage>;
   sendContent?(
     roomId: string,

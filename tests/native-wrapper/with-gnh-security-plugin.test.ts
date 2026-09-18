@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
+import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { applyGnhSecurityNativeSync } = require(
-  "../../native-wrapper/plugins/gnhSecurityNativeSync.js",
-);
+const {
+  applyGnhSecurityNativeSync,
+} = require("../../native-wrapper/plugins/gnhSecurityNativeSync.js");
 
 describe("applyGnhSecurityNativeSync", () => {
   it("appends a preBuild copy from android-native/GnhSecurity", () => {
@@ -16,7 +16,9 @@ describe("applyGnhSecurityNativeSync", () => {
   });
 
   it("is idempotent", () => {
-    const once = applyGnhSecurityNativeSync("apply plugin: 'com.android.application'\n");
+    const once = applyGnhSecurityNativeSync(
+      "apply plugin: 'com.android.application'\n",
+    );
     const twice = applyGnhSecurityNativeSync(once);
     expect(twice).toBe(once);
   });

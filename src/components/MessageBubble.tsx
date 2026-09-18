@@ -5,6 +5,7 @@ import {
   Copy,
   Hourglass,
   Pencil,
+  Reply,
   Trash2,
   X,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export function MessageBubble({
   message,
   reactions = [],
   onReact,
+  onReply,
   onEdit,
   onDelete,
 }: {
@@ -68,6 +70,7 @@ export function MessageBubble({
   /** Aggregated reactions for this message (Apple-style corner badge). */
   reactions?: BubbleReaction[];
   onReact?: (emoji: string) => void;
+  onReply?: () => void;
   onEdit?: (text: string) => void;
   onDelete?: () => void;
 }) {
@@ -81,7 +84,7 @@ export function MessageBubble({
   const rootRef = useRef<HTMLDivElement>(null);
   const touchIntent = useRef(false);
   const deleted = Boolean(message.deletedAt) || message.kind === "delete";
-  const canAct = !deleted && Boolean(onReact || onEdit || onDelete);
+  const canAct = !deleted && Boolean(onReact || onReply || onEdit || onDelete);
   /** Block OS text-select / callout so long-press can open the action picker. */
   const suppressNativeSelect = canAct && !editing;
 
@@ -235,20 +238,43 @@ export function MessageBubble({
               </div>
             </div>
           ) : (
-            <span
-              style={{
-                fontSize: 14.5,
-                lineHeight: 1.4,
-                wordBreak: "break-word",
-                fontStyle: deleted ? "italic" : undefined,
-              }}
-            >
-              {deleted
-                ? "Message deleted"
-                : relay
-                  ? message.text
-                  : renderMarkdownLite(message.text)}
-            </span>
+            <div className="stack" style={{ gap: 6 }}>
+              {message.replyPreview ? (
+                <div
+                  style={{
+                    padding: "4px 8px",
+                    borderRadius: 8,
+                    background: "var(--bubble-fence-bg)",
+                    color: "var(--bubble-fence-fg)",
+                    border: "1px solid var(--bubble-fence-border)",
+                    fontSize: 12,
+                    lineHeight: 1.35,
+                    opacity: 0.92,
+                    overflow: "hidden",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {message.replyPreview}
+                </div>
+              ) : null}
+              <span
+                style={{
+                  fontSize: 14.5,
+                  lineHeight: 1.4,
+                  wordBreak: "break-word",
+                  fontStyle: deleted ? "italic" : undefined,
+                }}
+              >
+                {deleted
+                  ? "Message deleted"
+                  : relay
+                    ? message.text
+                    : renderMarkdownLite(message.text)}
+              </span>
+            </div>
           )}
           <div
             className="row-flex"
@@ -394,6 +420,24 @@ export function MessageBubble({
               >
                 <Copy size={14} />
               </button>
+              {onReply && (
+                <button
+                  type="button"
+                  className="btn btn--sm btn--ghost"
+                  style={{
+                    padding: "4px 8px",
+                    minHeight: 0,
+                    borderRadius: 999,
+                  }}
+                  onClick={() => {
+                    onReply();
+                    setPickerOpen(false);
+                  }}
+                  aria-label="Reply"
+                >
+                  <Reply size={14} />
+                </button>
+              )}
               {onEdit && (
                 <button
                   type="button"

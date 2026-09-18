@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleSecurityWebViewMessage } from "../../native-wrapper/src/handleSecurityWebViewMessage";
 import { walletFileWrite } from "../../native-wrapper/src/gnhSecurityNative";
+import { handleSecurityWebViewMessage } from "../../native-wrapper/src/handleSecurityWebViewMessage";
 
 vi.mock("../../native-wrapper/src/gnhSecurityNative", () => ({
   invokeBiometricCommand: vi.fn(async (payload: Record<string, unknown>) => {

@@ -1592,8 +1592,9 @@ button {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
+  align-items: stretch;
   flex-shrink: 0;
   background: var(--bg);
 }
