@@ -170,6 +170,24 @@ export function contactsPersistenceReady(): boolean {
   return getStorage().getItem(CONTACTS_READY_KEY) === "1";
 }
 
+/**
+ * Erase all wallet-scoped local data before onboarding a new/different wallet.
+ * Must be called before `hydrateContacts()` on create, restore, or import.
+ * @see docs/architecture/folder-structure.md
+ */
+export function wipeWalletScopedLocalData(): void {
+  const storage = getStorage();
+  // Contacts layer
+  storage.removeItem(CONTACTS_KEY);
+  storage.removeItem(INVITES_KEY);
+  storage.removeItem(PENDING_INITIATOR_KEYS_KEY);
+  storage.removeItem(CONTACTS_READY_KEY);
+  // Rooms layer — keys match WALLET_TIED_KEYS in appDataLifecycle.ts
+  storage.removeItem("gnh.roomCatalog");
+  storage.removeItem("gnh.roomSessions");
+  storage.removeItem("gnh.revokedRooms");
+}
+
 function markReady(): void {
   getStorage().setItem(CONTACTS_READY_KEY, "1");
 }

@@ -9,6 +9,7 @@ import { useWalletStore } from "@/state/walletStore";
 export function RestoreWalletScreen() {
   const navigate = useNavigate();
   const restoreWallet = useWalletStore((s) => s.restoreWallet);
+  const clearSeed = useWalletStore((s) => s.clearSeed);
   const initializing = useWalletStore((s) => s.initializing);
 
   const [seed, setSeed] = useState("");
@@ -28,6 +29,7 @@ export function RestoreWalletScreen() {
     try {
       await restoreWallet(seed.trim());
       markOnboarded();
+      clearSeed();
       navigate("/contacts");
     } catch (e) {
       setError((e as Error).message);

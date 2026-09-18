@@ -27,6 +27,7 @@ export function CreateWalletScreen() {
   const navigate = useNavigate();
   const createWallet = useWalletStore((s) => s.createWallet);
   const seedPhrase = useWalletStore((s) => s.seedPhrase);
+  const clearSeed = useWalletStore((s) => s.clearSeed);
   const address = useWalletStore((s) => s.address);
   const initializing = useWalletStore((s) => s.initializing);
   const setDataUnlockBiometric = useSettingsStore(
@@ -156,7 +157,10 @@ export function CreateWalletScreen() {
             </p>
             <SeedBackupPanel
               seedPhrase={seedPhrase}
-              onConfirm={() => setStep("biometric")}
+              onConfirm={() => {
+                clearSeed();
+                setStep("biometric");
+              }}
             />
           </div>
         )}

@@ -5,9 +5,24 @@ import {
   setInternalWalletNetwork,
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
+import { wipeWalletScopedLocalData } from "@/services/contacts/contactsPersistence";
 import { useContactsStore } from "@/state/contactsStore";
 import type { Transaction, WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
+
+/** Reset contacts + chat in RAM so no stale data leaks into the new wallet session. */
+function resetContactsAndChatRam(): void {
+  useContactsStore.setState({ contacts: [], invites: [], hydrated: false });
+  // Lazy import avoids a chatStore → walletStore circular dep.
+  void import("@/state/chatStore").then((m) => {
+    m.useChatStore.setState({
+      rooms: [],
+      messagesByRoom: {},
+      activeRoomId: null,
+      loadingRooms: false,
+    });
+  });
+}
 
 type WalletStore = WalletState & {
   seedPhrase: string | null; // held only in-memory, never persisted to disk
@@ -89,6 +104,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       });
       await get().refreshBalance();
       await get().refreshTransactions();
+      // Erase any previous wallet's contacts/rooms before loading the new identity.
+      wipeWalletScopedLocalData();
+      resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
@@ -112,6 +130,9 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0.05,
         initializing: false,
       });
+      // Erase any previous wallet's contacts/rooms before loading the restored identity.
+      wipeWalletScopedLocalData();
+      resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       // Tip catch-up in background — UI (L2 chat) must not wait.
       void get().resync();
@@ -139,6 +160,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       if (input.method === "file") {
         set({ pendingFileImportRoomRestore: true });
       }
+      // Erase any previous wallet's contacts/rooms. File import re-populates
+      // from the wallet blob; seed/key/QR import starts with an empty addressBook.
+      wipeWalletScopedLocalData();
+      resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       void get().resync();
       if (input.method === "file") {

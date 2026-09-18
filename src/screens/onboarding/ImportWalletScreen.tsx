@@ -32,6 +32,7 @@ type Method = "qr" | "mnemonic" | "keys" | "file";
 export function ImportWalletScreen() {
   const navigate = useNavigate();
   const importWallet = useWalletStore((s) => s.importWallet);
+  const clearSeed = useWalletStore((s) => s.clearSeed);
   const initializing = useWalletStore((s) => s.initializing);
 
   const [method, setMethod] = useState<Method>("qr");
@@ -352,6 +353,7 @@ export function ImportWalletScreen() {
       // Match next-wallet: land on the wallet page after import — never block on
       // an app-passcode / password-change step (passcode can be set later in Settings).
       markOnboarded();
+      clearSeed();
       navigate("/wallet");
     } catch (e) {
       setError((e as Error).message);
