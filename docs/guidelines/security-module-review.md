@@ -156,7 +156,8 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Description: Production chat UI exposes Layer-2 capability material (`roomId`, topicRef prefix/suffix) on an ungated diagnostics surface
   - Impact: Screenshots, shoulder surfing, shared support captures, or local malware reading the DOM can obtain room join capability hints that protocol docs treat as secrets
   - Recommended remediation: Gate diagnostics behind explicit debug mode / `import.meta.env.DEV`, or remove copyable `roomId` / topicRef from production builds; keep only non-capability status fields
-  - Status: open
+  - Mitigations applied: `shortRoomId()` truncates room id at both sheet call sites; `CopyButton` copies truncated label only; topic stays `shortTopicRef` + non-selectable; source-guard test enforces the invariant (OpenSpec change `redact-room-diagnostics`)
+  - Status: **addressed** (see `.repo-kit/findings/02-room-diagnostics-capability-leak.md`)
 
 - [x] `SEC-2026-003` — severity: ~~medium~~ → **low / accepted**
   - Date found: 2026-09-18
