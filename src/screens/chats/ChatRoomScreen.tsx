@@ -54,7 +54,7 @@ import {
   type ConnectFailureCode,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
-import { formatUnixDateTime, shortTopicRef } from "@/utils/format";
+import { formatUnixDateTime, shortRoomId, shortTopicRef } from "@/utils/format";
 import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
@@ -134,9 +134,9 @@ function LoadingDiagnosticsSheet({
         <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
           <span>
             Room id:{" "}
-            <NonSelectableText className="mono">{roomId}</NonSelectableText>
+            <NonSelectableText className="mono">{shortRoomId(roomId)}</NonSelectableText>
           </span>
-          <CopyButton value={roomId} />
+          <CopyButton value={shortRoomId(roomId)} />
         </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
@@ -153,7 +153,16 @@ function LoadingDiagnosticsSheet({
 }
 
 export function ChatRoomScreen() {
-  const { roomId = "" } = useParams();
+  const { roomId: _roomIdParam = "" } = useParams();
+  const [roomId] = useState(() => _roomIdParam);
+
+  // Electron only: strip roomId from hash before Chromium logs it. @see docs/guidelines/security-module-review.md SEC-2026-003
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.gnhDesktop != null) {
+      window.history.replaceState(null, "", "#/chats");
+    }
+  }, []);
+
   const navigate = useNavigate();
   const openRoom = useChatStore((s) => s.openRoom);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
@@ -938,10 +947,10 @@ export function ChatRoomScreen() {
             <span>
               Room id:{" "}
               <NonSelectableText className="mono">
-                {displayRoom.id}
+                {shortRoomId(displayRoom.id)}
               </NonSelectableText>
             </span>
-            <CopyButton value={displayRoom.id} />
+            <CopyButton value={shortRoomId(displayRoom.id)} />
           </div>
           {/* Display-only (no Copy). Must match the peer and sidecar `topic <prefix>…` log. */}
           <div>

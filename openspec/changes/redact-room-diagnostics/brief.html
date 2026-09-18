@@ -1,0 +1,82 @@
+<!-- forge-brief-specs-hash:18a7747c3fbd6346 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief: Redact Room Diagnostics</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; background: #fff; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+  ul { padding-left: 1.4rem; }
+  li { margin-bottom: 0.3rem; }
+  code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+  .muted { color: #666; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<h1>Redact Room Diagnostics</h1>
+<p class="muted">Change brief — generated for operator approval</p>
+
+<h2>TL;DR</h2>
+<p>
+  The room diagnostics sheet today shows the full raw room ID (and lets you
+  copy it). The room ID is a protocol capability secret, so exposing it
+  in plain text is a mild but real risk (screenshots, shared screens, DOM
+  readers). After this change the sheet shows a short human-readable label
+  like <code>aabb…cd</code> instead — still useful for verbally confirming
+  which room you're both in, but no longer the full capability value.
+</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>The diagnostics sheet "Room id" row shows a truncated label, e.g. <code>aabb…cd</code>, not the full hex string.</li>
+  <li>The copy button next to "Room id" copies that truncated label — same behavior, safer value.</li>
+  <li>The "Topic" row is unchanged: already shows a short non-copyable excerpt, stays that way.</li>
+  <li>Both the loading-state sheet and the fully-loaded sheet are updated consistently.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+  A new <code>shortRoomId(id)</code> helper is added next to the existing
+  <code>shortTopicRef</code> in the format utilities. For the current 4-byte
+  (8-hex) room id format it produces <code>head4 + "…" + tail2</code>.
+  The two call sites in <code>ChatRoomScreen</code> are updated to pass the
+  truncated string as the <code>CopyButton</code> value and as the display
+  text. The full raw id is never passed into the sheet component.
+</p>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>Diagnostics sheet: room id row now reads e.g. <code>aabb…cd</code> instead of <code>aabbccdd</code>.</li>
+  <li>Copying the room id copies the short label — usable for verbal peer comparison, not for protocol re-entry.</li>
+  <li>No UI flow, no settings, no wallet/data changes.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li><strong>Weak concealment:</strong> A 4-byte id is only 32 bits — truncation is defense-in-depth, not a strong secret. Full ids remain in memory, routing, and persistence. This change removes the clean copy-paste exposure path only.</li>
+  <li><strong>Not addressed here:</strong> full room id in the URL hash (<code>/chats/:roomId</code>) is a separate finding tracked elsewhere.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Gating the whole diagnostics sheet behind a dev/debug flag.</li>
+  <li>Changes to route params, persistence, chat store, or bridge.</li>
+  <li>Topic ref display changes (already truncated and non-copyable).</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li><strong>Group 1 — Utility helper</strong> (1 task): add <code>shortRoomId</code> to format.ts.</li>
+  <li><strong>Group 2 — Unit tests</strong> (1 task): new test file for <code>shortRoomId</code> and <code>shortTopicRef</code>.</li>
+  <li><strong>Group 3 — Screen call sites</strong> (2 tasks): update both sheet usages in ChatRoomScreen.</li>
+  <li><strong>Group 4 — Source-guard test</strong> (1 task): tighten existing sensitive-copy test.</li>
+  <li><strong>Group 5 — Verify</strong> (1 task): full test + typecheck run.</li>
+</ul>
+
+<!-- forge-brief-specs-hash: pending -->
+</body>
+</html>

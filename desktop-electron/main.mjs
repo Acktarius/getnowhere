@@ -582,6 +582,11 @@ async function shutdown(reason) {
   log(`shutdown (${reason})${ownsSwarm || swarmChild ? " + swarm" : ""}`);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.removeAllListeners("close");
+    // Clear persist: partition history on exit. @see docs/guidelines/security-module-review.md SEC-2026-003
+    await session
+      .fromPartition(PARTITION)
+      .clearData({ dataTypes: ["browsing_history"] })
+      .catch(() => {});
     try {
       mainWindow.destroy();
     } catch {

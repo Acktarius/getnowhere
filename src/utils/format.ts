@@ -22,6 +22,18 @@ export function shortTopicRef(topicRef: string): string {
   return `${topicRef.slice(0, head)}......${topicRef.slice(-tail)}`;
 }
 
+/** Room id for diagnostics: 4+…+2 for 8-hex ids; 4+…+4 for longer. @see docs/security/capabilities-and-derivation.md */
+export function shortRoomId(id: string): string {
+  if (!id) return "";
+  if (id.length <= 8) {
+    // 4-byte (8-hex) current format
+    if (id.length <= 6) return id;
+    return `${id.slice(0, 4)}…${id.slice(-2)}`;
+  }
+  // Legacy 16-hex or longer
+  return shortAddress(id, 4, 4);
+}
+
 export function timeAgo(iso: string): string {
   const then = new Date(iso).getTime();
   const now = Date.now();

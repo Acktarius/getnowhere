@@ -24,11 +24,18 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/useCopy/);
   });
 
-  it("ChatRoomScreen copies room id only; topic stays non-selectable and not copyable", () => {
+  it("ChatRoomScreen copies truncated room id; raw id and topic are not copyable", () => {
     const src = readSrc("src/screens/chats/ChatRoomScreen.tsx");
+    // shortRoomId must be imported and used
+    expect(src).toMatch(/import[^;]*shortRoomId[^;]*from "@\/utils\/format"/);
     expect(src).toMatch(/NonSelectableText/);
-    expect(src).toMatch(/CopyButton value=\{displayRoom\.id\}/);
-    expect(src).toMatch(/CopyButton value=\{roomId\}/);
+    // CopyButton must be bound to the shortRoomId helper, not the raw id
+    expect(src).toMatch(/CopyButton value=\{shortRoomId\(displayRoom\.id\)\}/);
+    expect(src).toMatch(/CopyButton value=\{shortRoomId\(roomId\)\}/);
+    // Raw capability values must not be passed to CopyButton
+    expect(src).not.toMatch(/CopyButton value=\{displayRoom\.id\}/);
+    expect(src).not.toMatch(/CopyButton value=\{roomId\}/);
+    // Topic must never be copyable
     expect(src).not.toMatch(/CopyButton value=\{discoveryTopicRef\}/);
     expect(src).not.toMatch(/copySensitive\(discoveryTopicRef\)/);
   });
