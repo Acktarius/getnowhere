@@ -20,21 +20,22 @@ export function getSdkWalletStorage(): SdkStorageAdapter {
       const storage = getStorage();
       const mobile = asMobileNative(storage);
       if (mobile && key === LOGICAL_WALLET_KEY) {
-        await mobile.persistWallet(value);
+        // Do not await — invite refresh/mempool persist must not hang on the native bridge.
+        void mobile.persistWallet(value);
         return;
       }
       storage.setItem(key, value);
-      if (mobile) await mobile.flushPrefs();
+      if (mobile) void mobile.flushPrefs();
     },
     async removeItem(key: string): Promise<void> {
       const storage = getStorage();
       const mobile = asMobileNative(storage);
       if (mobile && key === LOGICAL_WALLET_KEY) {
-        await mobile.removeWallet();
+        void mobile.removeWallet();
         return;
       }
       storage.removeItem(key);
-      if (mobile) await mobile.flushPrefs();
+      if (mobile) void mobile.flushPrefs();
     },
     async keys(): Promise<string[]> {
       // Web adapter has no key listing; SDK outbound queue may use namespaced keys.

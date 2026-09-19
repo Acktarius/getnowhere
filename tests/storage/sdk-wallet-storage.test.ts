@@ -68,7 +68,7 @@ describe("getSdkWalletStorage mobile durable writes", () => {
     setActiveStorageAdapter(webStorageAdapter);
   });
 
-  it("setItem(wallet) awaits persistWallet before resolving", async () => {
+  it("setItem(wallet) does not block on native persist", async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -83,12 +83,12 @@ describe("getSdkWalletStorage mobile durable writes", () => {
     setActiveStorageAdapter(adapter);
     const blob = `sdk-wallet-${Date.now()}`;
 
-    const pending = getSdkWalletStorage().setItem(LOGICAL_WALLET_KEY, blob);
+    await getSdkWalletStorage().setItem(LOGICAL_WALLET_KEY, blob);
     expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBeNull();
     expect(walletFile.written).toBeNull();
 
     release?.();
-    await pending;
+    await adapter.flushPrefs();
 
     expect(walletFile.written).toBe(blob);
     expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBe(blob);
@@ -99,7 +99,7 @@ describe("getSdkWalletStorage mobile durable writes", () => {
     );
   });
 
-  it("removeItem(wallet) awaits removeWallet before resolving", async () => {
+  it("removeItem(wallet) does not block on native remove", async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -114,12 +114,12 @@ describe("getSdkWalletStorage mobile durable writes", () => {
     setActiveStorageAdapter(adapter);
     await adapter.persistWallet("to-delete");
 
-    const pending = getSdkWalletStorage().removeItem(LOGICAL_WALLET_KEY);
+    await getSdkWalletStorage().removeItem(LOGICAL_WALLET_KEY);
     expect(walletFile.removed).toBe(false);
     expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBe("to-delete");
 
     release?.();
-    await pending;
+    await adapter.flushPrefs();
 
     expect(walletFile.removed).toBe(true);
     expect(adapter.getItem(LOGICAL_WALLET_KEY)).toBeNull();
