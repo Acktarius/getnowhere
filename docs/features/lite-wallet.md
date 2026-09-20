@@ -31,7 +31,9 @@ sync at ~2.5s while catching up and ~5s near tip (`useWalletLiveSync`). Each tic
 awaits sync then pushes **balance + history** into Zustand together (keep-alive
 wallet tab never remounts, so the store must stay current without Resync). Invite fetch
 uses a **mempool-first** path (`pollMempoolRuntime`) so L1 creates/registers do not wait
-on deep tip catch-up. Contact detail also refreshes invites every ~3s while open.
+on deep tip catch-up or on the native wallet-file write. Contact detail caps the first
+check (~8s) so a stuck persist cannot hide Create room, then polls every ~3s only while
+the relationship is not eligible or an invite is still outstanding.
 0-conf received copies are kept for a **2h grace** after leaving the mempool so the
 mempool→block gap cannot erase chat creates before Accept appears.
 

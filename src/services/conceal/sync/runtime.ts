@@ -664,7 +664,7 @@ export function syncRuntime(rt: SdkRuntime): Promise<number> {
 
 /**
  * Mempool-only pass (0-conf inbound messages + pending amounts).
- * Fast path for L1 invites — does not wait on tip catch-up.
+ * Fast path for L1 invites — does not wait on tip catch-up or wallet persist.
  * @see conceal-next-wallet #109 + docs/features/lite-wallet.md
  */
 export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
@@ -752,7 +752,10 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
     notifyHistoryPossiblyChanged(rt);
   }
   if (incomingChanged || receivedListChanged || ttlDrop.changed) {
-    await persistRuntime(rt);
+    // Invite scan must not wait on native wallet persist (no bridge timeout).
+    void persistRuntime(rt).catch(() => {
+      /* next poll retries */
+    });
   }
   return poolFetchOk;
 }

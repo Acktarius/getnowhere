@@ -61,6 +61,7 @@ describe("buildMobileBridgeInjection", () => {
     expect(bridge.biometric?.isAvailable).toBeTypeOf("function");
     expect(bridge.securePrefs?.get).toBeTypeOf("function");
     expect(bridge.walletFile?.exists).toBeTypeOf("function");
+    expect(bridge.walletFile?.write).toBeTypeOf("function");
     expect(bridge.onLifecycle).toBeTypeOf("function");
     expect(bridge.setBlurInAppSwitcher).toBeTypeOf("function");
     void bridge.biometric?.isAvailable("data");
@@ -102,6 +103,25 @@ describe("buildMobileBridgeInjection", () => {
       action: "clearClipboard",
     });
     expect(clearCmd).not.toHaveProperty("value");
+  });
+
+  it("rejects walletFile.write when native never replies", async () => {
+    vi.useFakeTimers();
+    try {
+      const script = buildMobileBridgeInjection("token");
+      Object.defineProperty(window, "ReactNativeWebView", {
+        value: { postMessage: vi.fn() },
+        configurable: true,
+      });
+      new Function(script)();
+      const bridge = window.gnhMobile as GnhMobileBridge;
+      const pending = bridge.walletFile?.write("{}");
+      const assertion = expect(pending).rejects.toThrow("wallet-file-timeout");
+      await vi.advanceTimersByTimeAsync(15_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("exposes onPokeToken / _dispatchPokeToken and dispatches correctly", () => {

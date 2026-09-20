@@ -15,7 +15,9 @@ death or WebView recreation. Mobile therefore installs a native
 
 Wallet create/import/update/delete awaits native file I/O via
 `persistWallet` / `removeWallet`. Ordinary prefs may flush after the Map
-updates.
+updates. Each wallet-file bridge call rejects after 15s if native does not
+reply (`wallet-file-timeout`), so a lost WebView message cannot wedge the
+persist queue. A late reply after that is ignored.
 
 ## Boot
 

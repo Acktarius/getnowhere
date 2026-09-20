@@ -60,6 +60,9 @@ import { useNotificationStore } from "@/state/notificationStore";
 import { toastError } from "@/state/toastStore";
 import { shortAddress, timeAgo } from "@/utils/format";
 
+/** First invite-scan cap. Matches the mempool sync race in ConcealSmartMessageAdapter. */
+const INVITE_CHECK_CAP_MS = 8_000;
+
 export function ContactDetailScreen() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
@@ -143,34 +146,46 @@ export function ContactDetailScreen() {
     [contact, invites],
   );
 
-  // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
-  // Always run once on mount; keep interval only while shouldPoll is true.
+  // One capped scan on mount so a stuck persist cannot hide Create room.
+  // Keep the interval only while shouldPoll is true.
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     let first = true;
+    let capTimer = 0;
     const run = async () => {
-      if (first) setRefreshingInvite(true);
+      const showSpinner = first;
+      first = false;
+      if (showSpinner) setRefreshingInvite(true);
       try {
-        await refreshInvites();
+        const pending = refreshInvites();
+        if (showSpinner) {
+          await Promise.race([
+            pending,
+            new Promise<void>((resolve) => {
+              capTimer = window.setTimeout(resolve, INVITE_CHECK_CAP_MS);
+            }),
+          ]);
+        } else {
+          await pending;
+        }
       } catch {
         /* wallet may still be syncing */
       } finally {
-        if (first && !cancelled) setRefreshingInvite(false);
-        first = false;
+        if (showSpinner) window.clearTimeout(capTimer);
+        if (showSpinner && !cancelled) setRefreshingInvite(false);
       }
     };
     void run();
-    if (!shouldPoll)
-      return () => {
-        cancelled = true;
-      };
-    const timerId = window.setInterval(() => {
-      void run();
-    }, 3000);
+    const timerId = shouldPoll
+      ? window.setInterval(() => {
+          void run();
+        }, 3000)
+      : 0;
     return () => {
       cancelled = true;
-      window.clearInterval(timerId);
+      window.clearTimeout(capTimer);
+      if (timerId) window.clearInterval(timerId);
     };
   }, [id, refreshInvites, shouldPoll]);
 
