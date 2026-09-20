@@ -1586,7 +1586,8 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/** Mobile WebView chat room — fixed composer above keyboard + home indicator. */
+/** Mobile WebView chat room — fixed composer above keyboard + home indicator.
+ * Room shell pins to visualViewport; see docs/architecture/web-vs-wrapper.md. */
 .chat-room-composer--mobile {
   position: fixed;
   left: 50%;

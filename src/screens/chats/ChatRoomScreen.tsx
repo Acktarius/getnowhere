@@ -224,8 +224,27 @@ export function ChatRoomScreen() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const composerBarRef = useRef<HTMLDivElement>(null);
   const mobileHost = isMobileHost();
-  const keyboardInset = useVisualViewportBottomInset(mobileHost);
+  /** @see docs/architecture/web-vs-wrapper.md — chat room keyboard */
+  const keyboardFrame = useVisualViewportBottomInset(mobileHost);
+  const keyboardInset = keyboardFrame.bottomInset;
   const [composerBarHeight, setComposerBarHeight] = useState(64);
+
+  function scrollThreadToEnd() {
+    const el = scrollerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  /** Keyboard / flex layout settle after the first paint — retry briefly. */
+  function scheduleScrollThreadToEnd() {
+    scrollThreadToEnd();
+    requestAnimationFrame(() => {
+      scrollThreadToEnd();
+      requestAnimationFrame(scrollThreadToEnd);
+    });
+    window.setTimeout(scrollThreadToEnd, 50);
+    window.setTimeout(scrollThreadToEnd, 150);
+    window.setTimeout(scrollThreadToEnd, 300);
+  }
 
   useEffect(() => {
     const el = composerBarRef.current;
@@ -238,6 +257,15 @@ export function ChatRoomScreen() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [mobileHost]);
+
+  /** Undo document scroll iOS applies on focus; shell may pin when offsetTop > 0. */
+  useEffect(() => {
+    if (!mobileHost) return;
+    if (keyboardInset <= 0 && keyboardFrame.offsetTop <= 0) return;
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [mobileHost, keyboardInset, keyboardFrame.offsetTop]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -465,9 +493,27 @@ export function ChatRoomScreen() {
   );
 
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    scheduleScrollThreadToEnd();
   }, [visibleMessages.length]);
+
+  /** Stick latest bubble above composer when keyboard / frame changes. */
+  useEffect(() => {
+    if (!mobileHost) return;
+    scheduleScrollThreadToEnd();
+  }, [mobileHost, keyboardInset, keyboardFrame.height, composerBarHeight]);
+
+  useEffect(() => {
+    if (!mobileHost) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (keyboardInset > 0 || document.activeElement === composerRef.current) {
+        scrollThreadToEnd();
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobileHost, keyboardInset]);
 
   useEffect(() => {
     const status = displayRoom.lifecycleStatus;
@@ -607,15 +653,38 @@ export function ChatRoomScreen() {
 
   const offline = displayRoom.peerStatus === "offline";
 
+  // Pin only when iOS pans the visual viewport; Android overlays keep offsetTop 0.
+  const pinToVisualViewport = mobileHost && keyboardFrame.offsetTop > 0;
+  // When pinned to vv.height the shell already excludes the keyboard — don't
+  // double-count inset in padding. Android (no pin) needs inset in padding.
+  const threadBottomPad = mobileHost
+    ? composerBarHeight + (pinToVisualViewport ? 0 : keyboardInset) + 8
+    : 0;
+
   return (
     <div
       className="screen"
-      style={{
-        paddingBottom: 0,
-        height: "100dvh",
-        maxHeight: "100dvh",
-        overflow: "hidden",
-      }}
+      style={
+        pinToVisualViewport
+          ? {
+              position: "fixed",
+              top: keyboardFrame.offsetTop,
+              left: 0,
+              right: 0,
+              width: "100%",
+              height: keyboardFrame.height,
+              maxHeight: keyboardFrame.height,
+              overflow: "hidden",
+              paddingBottom: 0,
+              zIndex: 2,
+            }
+          : {
+              paddingBottom: 0,
+              height: "100dvh",
+              maxHeight: "100dvh",
+              overflow: "hidden",
+            }
+      }
     >
       <ChatRoomHeader
         contact={displayContact}
@@ -704,7 +773,7 @@ export function ChatRoomScreen() {
             overflowY: "auto",
             overflowX: "hidden",
             padding: mobileHost
-              ? `16px 14px ${composerBarHeight + 8}px`
+              ? `16px 14px ${threadBottomPad}px`
               : "16px 14px 8px",
             display: "flex",
             flexDirection: "column",
@@ -923,12 +992,7 @@ export function ChatRoomScreen() {
             }}
             onFocus={() => {
               if (!mobileHost) return;
-              const scroller = scrollerRef.current;
-              if (!scroller) return;
-              const scrollTop = scroller.scrollTop;
-              requestAnimationFrame(() => {
-                scroller.scrollTop = scrollTop;
-              });
+              scheduleScrollThreadToEnd();
             }}
           />
           <ChainSendFlyout

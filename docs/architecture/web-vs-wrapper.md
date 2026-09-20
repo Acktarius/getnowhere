@@ -95,6 +95,25 @@ Rules:
 - Treat wrapper changes as release-engineering unless they change runtime
   behavior documented elsewhere
 
+### Chat room keyboard (mobile WebView only)
+
+Desktop Electron is out of scope. On iOS/Android the Vite UI runs in a WebView
+with `interactive-widget=overlays-content`. The chat room:
+
+1. Floats the composer with `bottom` = keyboard overlap
+   (`useVisualViewportBottomInset`) and reserves that overlap in the thread’s
+   bottom padding so the latest bubble can sit above the input.
+2. Scrolls the message list to the end on focus, keyboard/frame resize, scroller
+   resize, and new messages (with short deferred retries — Android keyboard
+   animation settles late).
+3. Pins the shell to `visualViewport` (`top` / `height`) only when
+   `offsetTop > 0` (typical iOS focus pan) so the contact header stays visible.
+
+Same code path for iOS and Android (`isMobileHost()`). Implementers:
+`src/hooks/useVisualViewportBottomInset.ts`,
+`src/screens/chats/ChatRoomScreen.tsx`, `.chat-room-composer--mobile` in
+`src/styles/global.css`.
+
 ## Packaged desktop (Ubuntu)
 
 CI builds Vite `dist/`, then a Linux **Electron Forge** zip/deb that embeds that
