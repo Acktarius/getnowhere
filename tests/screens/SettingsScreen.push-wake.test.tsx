@@ -41,6 +41,7 @@ vi.mock("@/lib/network/node-preference", () => ({
 vi.mock("@/services/conceal/ConcealWalletService", () => ({
   getInternalWalletNodeUrl: () => "https://example.node/",
   updateWalletSyncSettings: vi.fn(async () => undefined),
+  setWalletCreationHeight: vi.fn(async (h: number) => h),
 }));
 
 vi.mock("@/hooks/useNavNotificationBadges", () => ({

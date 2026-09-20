@@ -34,8 +34,10 @@ import {
   syncSpeedFromReadSpeed,
 } from "@/lib/sync-speed";
 import { getNodeUrlFormatHints } from "@/lib/validation/node-url";
+import { parseCreationHeightInput } from "@/lib/wallet/creation-height";
 import {
   getInternalWalletNodeUrl,
+  setWalletCreationHeight,
   updateWalletSyncSettings,
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
@@ -46,7 +48,7 @@ import {
   resetAppData,
 } from "@/services/storage/appDataLifecycle";
 import { useSettingsStore } from "@/state/settingsStore";
-import { toastError } from "@/state/toastStore";
+import { toastError, toastSuccess } from "@/state/toastStore";
 import { useWalletStore } from "@/state/walletStore";
 import { version } from "../../../package.json";
 
@@ -73,6 +75,9 @@ export function SettingsScreen() {
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [resyncBusy, setResyncBusy] = useState(false);
   const [creationHeight, setCreationHeight] = useState<number | null>(null);
+  const [creationHeightDraft, setCreationHeightDraft] = useState("");
+  const [editingCreationHeight, setEditingCreationHeight] = useState(false);
+  const [creationHeightBusy, setCreationHeightBusy] = useState(false);
   const [wipeConfirm, setWipeConfirm] = useState<WipeConfirm | null>(null);
 
   useEffect(() => {
@@ -84,7 +89,9 @@ export function SettingsScreen() {
       );
       setReadMinerTx(Boolean(rt.raw.options.checkMinerTx));
       setCurrentNode(getInternalWalletNodeUrl());
-      setCreationHeight(Math.max(0, Number(rt.raw.creationHeight ?? 0) || 0));
+      const height = Math.max(0, Number(rt.raw.creationHeight ?? 0) || 0);
+      setCreationHeight(height);
+      setCreationHeightDraft(String(height));
     }
   }, []);
 
@@ -115,6 +122,50 @@ export function SettingsScreen() {
       await updateWalletSyncSettings({ checkMinerTx: on });
     } finally {
       setSettingsBusy(false);
+    }
+  }
+
+  function beginEditCreationHeight() {
+    if (creationHeight === null || creationHeightBusy) return;
+    setCreationHeightDraft(String(creationHeight));
+    setEditingCreationHeight(true);
+  }
+
+  function cancelEditCreationHeight() {
+    setCreationHeightDraft(
+      creationHeight !== null ? String(creationHeight) : "",
+    );
+    setEditingCreationHeight(false);
+  }
+
+  async function commitCreationHeight() {
+    if (creationHeight === null || creationHeightBusy) return;
+    const parsed = parseCreationHeightInput(creationHeightDraft);
+    if (Number.isNaN(parsed)) {
+      toastError("Enter a valid creation height.");
+      cancelEditCreationHeight();
+      return;
+    }
+    if (parsed === creationHeight) {
+      setEditingCreationHeight(false);
+      return;
+    }
+    setCreationHeightBusy(true);
+    try {
+      const saved = await setWalletCreationHeight(parsed);
+      setCreationHeight(saved);
+      setCreationHeightDraft(String(saved));
+      setEditingCreationHeight(false);
+      toastSuccess(
+        saved !== parsed
+          ? `Creation height saved as ${saved} (clamped below tip).`
+          : "Creation height saved.",
+      );
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Could not save creation height.");
+      cancelEditCreationHeight();
+    } finally {
+      setCreationHeightBusy(false);
     }
   }
 
@@ -391,9 +442,73 @@ export function SettingsScreen() {
                 <div className="row__main">
                   <div className="row__title">Blockchain rescan</div>
                   <span className="field__hint">
-                    {creationHeight !== null
-                      ? `Creation height: ${creationHeight}. Resync rewinds the scan cursor; delete and resync clears stored transactions first.`
-                      : "Resync from wallet creation height (unlock wallet first)."}
+                    {creationHeight !== null ? (
+                      <>
+                        Creation height:{" "}
+                        {editingCreationHeight ? (
+                          <input
+                            className="input input--mono"
+                            type="text"
+                            inputMode="numeric"
+                            aria-label="Creation height"
+                            value={creationHeightDraft}
+                            disabled={creationHeightBusy}
+                            autoFocus
+                            onChange={(e) =>
+                              setCreationHeightDraft(
+                                e.target.value.replace(/[^0-9]/g, ""),
+                              )
+                            }
+                            onBlur={() => void commitCreationHeight()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                (e.target as HTMLInputElement).blur();
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                cancelEditCreationHeight();
+                              }
+                            }}
+                            style={{
+                              display: "inline-block",
+                              width: "8.5rem",
+                              padding: "2px 8px",
+                              fontSize: 13,
+                              verticalAlign: "baseline",
+                            }}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            aria-label="Edit creation height"
+                            disabled={
+                              creationHeightBusy ||
+                              resyncBusy ||
+                              settingsBusy ||
+                              syncStatus === "syncing"
+                            }
+                            onClick={() => beginEditCreationHeight()}
+                            style={{
+                              display: "inline",
+                              padding: "0 4px",
+                              minHeight: 0,
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 13,
+                              textDecoration: "underline",
+                              textUnderlineOffset: 2,
+                            }}
+                          >
+                            {creationHeight}
+                          </button>
+                        )}
+                        . Resync rewinds the scan cursor; delete and resync
+                        clears stored transactions first.
+                      </>
+                    ) : (
+                      "Resync from wallet creation height (unlock wallet first)."
+                    )}
                   </span>
                 </div>
               </div>

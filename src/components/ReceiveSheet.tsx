@@ -1,13 +1,10 @@
-import { Eye, EyeOff, Link2 } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { CopyButton } from "@/components/CopyButton";
 import { NonSelectableText } from "@/components/NonSelectableText";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
-import {
-  buildCcxPaymentUri,
-  makeIntegratedCcxAddress,
-} from "@/services/conceal/ConcealWalletAdapter";
-import { generatePaymentId, shortAddress } from "@/utils/format";
+import { buildCcxPaymentUri } from "@/services/conceal/ConcealWalletAdapter";
+import { shortAddress } from "@/utils/format";
 
 type Props = {
   address: string;
@@ -18,30 +15,13 @@ type QrFace = "address" | "paymentId";
 
 export function ReceiveSheet({ address, paymentId }: Props) {
   const [showFull, setShowFull] = useState(false);
-  const [integrated, setIntegrated] = useState<string | null>(null);
-  const [intError, setIntError] = useState<string | null>(null);
   const [qrFace, setQrFace] = useState<QrFace>("address");
 
-  function generateIntegrated() {
-    setIntError(null);
-    try {
-      const pid16 = generatePaymentId().slice(0, 16);
-      const intAddr = makeIntegratedCcxAddress(address, pid16);
-      setIntegrated(intAddr);
-      setQrFace("address");
-    } catch (e) {
-      setIntError((e as Error).message);
-    }
-  }
+  const paymentUri = paymentId
+    ? buildCcxPaymentUri({ address, paymentId })
+    : buildCcxPaymentUri({ address });
 
-  const paymentUri = integrated
-    ? buildCcxPaymentUri({ address: integrated })
-    : paymentId
-      ? buildCcxPaymentUri({ address, paymentId })
-      : buildCcxPaymentUri({ address });
-
-  const showingPid =
-    qrFace === "paymentId" && Boolean(paymentId) && !integrated;
+  const showingPid = qrFace === "paymentId" && Boolean(paymentId);
   const qrValue = showingPid ? (paymentId as string) : paymentUri;
   const qrKind = showingPid ? "paymentId" : "address";
 
@@ -50,11 +30,7 @@ export function ReceiveSheet({ address, paymentId }: Props) {
       <div className="center stack stack--gap-3">
         <WalletQrCode value={qrValue} kind={qrKind} />
         <div className="eyebrow">
-          {integrated
-            ? "Integrated address"
-            : showingPid
-              ? "Payment ID"
-              : "Your Conceal address"}
+          {showingPid ? "Payment ID" : "Your Conceal address"}
         </div>
         <NonSelectableText
           className="mono"
@@ -70,13 +46,11 @@ export function ReceiveSheet({ address, paymentId }: Props) {
               ? paymentId
               : shortAddress(paymentId ?? "", 12, 12)
             : showFull
-              ? (integrated ?? address)
-              : shortAddress(integrated ?? address, 12, 12)}
+              ? address
+              : shortAddress(address, 12, 12)}
         </NonSelectableText>
         <div className="row-flex" style={{ gap: 8, justifyContent: "center" }}>
-          <CopyButton
-            value={showingPid ? (paymentId ?? "") : (integrated ?? address)}
-          />
+          <CopyButton value={showingPid ? (paymentId ?? "") : address} />
           <button
             className="btn btn--sm btn--ghost"
             onClick={() => setShowFull((s) => !s)}
@@ -85,7 +59,7 @@ export function ReceiveSheet({ address, paymentId }: Props) {
             {showFull ? "Hide" : "Reveal"}
           </button>
         </div>
-        {paymentId && !integrated && (
+        {paymentId && (
           <div
             className="row-flex"
             style={{ gap: 8, justifyContent: "center" }}
@@ -107,35 +81,6 @@ export function ReceiveSheet({ address, paymentId }: Props) {
           </div>
         )}
       </div>
-
-      <button
-        className="btn btn--block btn--secondary"
-        onClick={generateIntegrated}
-      >
-        <Link2 size={15} /> Generate integrated address
-      </button>
-      {intError && <div className="field__error">{intError}</div>}
-      {integrated && (
-        <div className="card card--pad-md">
-          <div className="eyebrow" style={{ marginBottom: 6 }}>
-            Integrated payment ID (embedded)
-          </div>
-          <NonSelectableText
-            className="mono"
-            style={{ fontSize: 11.5, wordBreak: "break-all" }}
-          >
-            {integrated}
-          </NonSelectableText>
-          <div style={{ marginTop: 10 }}>
-            <CopyButton value={integrated} />
-          </div>
-        </div>
-      )}
-
-      <p className="field__hint center">
-        Gold mark = address. Grey mark = payment ID. Share out of band; an
-        integrated address embeds the payment ID for the sender.
-      </p>
     </div>
   );
 }

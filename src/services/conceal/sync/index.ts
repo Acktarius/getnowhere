@@ -31,6 +31,7 @@ export {
   resyncFromCreationHeight,
   type SdkRuntime,
   setRuntimePassword,
+  setWalletCreationHeight,
   sync,
   syncRuntime,
   unlock,

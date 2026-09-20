@@ -1,41 +1,41 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { walletSessionExit } from "@/services/storage/walletSessionExit";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  walletSessionExit,
+  withBudget,
+} from "@/services/storage/walletSessionExit";
 
 describe("walletSessionExit", () => {
-  const persistContacts = vi.fn(async () => undefined);
-  const saveChatRooms = vi.fn(async () => undefined);
+  const flushWallet = vi.fn(async () => undefined);
   const softLeaveAll = vi.fn(async () => undefined);
   const lockWallet = vi.fn(async () => undefined);
   const clearSession = vi.fn();
   const navigate = vi.fn();
 
   beforeEach(() => {
-    persistContacts.mockClear();
-    saveChatRooms.mockClear();
+    flushWallet.mockClear();
     softLeaveAll.mockClear();
     lockWallet.mockClear();
     clearSession.mockClear();
     navigate.mockClear();
   });
 
-  it("persists contacts, soft-leaves topics, locks wallet, clears session, navigates to /welcome", async () => {
+  it("flushes wallet, soft-leaves, locks, clears session, navigates to /welcome", async () => {
     await walletSessionExit({
-      persistContacts,
+      flushWallet,
       softLeaveAll,
       lockWallet,
       clearSession,
       navigate,
     });
 
-    expect(persistContacts).toHaveBeenCalledTimes(1);
-    expect(saveChatRooms).not.toHaveBeenCalled();
+    expect(flushWallet).toHaveBeenCalledTimes(1);
     expect(softLeaveAll).toHaveBeenCalledTimes(1);
     expect(lockWallet).toHaveBeenCalledTimes(1);
     expect(clearSession).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith("/welcome");
 
     const order = [
-      persistContacts.mock.invocationCallOrder[0],
+      flushWallet.mock.invocationCallOrder[0],
       softLeaveAll.mock.invocationCallOrder[0],
       lockWallet.mock.invocationCallOrder[0],
       clearSession.mock.invocationCallOrder[0],
@@ -44,22 +44,45 @@ describe("walletSessionExit", () => {
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it("saves chat rooms after contacts when saveChatRooms is provided (retention on)", async () => {
-    await walletSessionExit({
-      persistContacts,
-      saveChatRooms,
+  it("continues Exit when flushWallet exceeds budget", async () => {
+    vi.useFakeTimers();
+    flushWallet.mockImplementation(
+      () => new Promise<void>(() => undefined /* never settles */),
+    );
+
+    const done = walletSessionExit({
+      flushWallet,
       softLeaveAll,
       lockWallet,
       clearSession,
       navigate,
+      flushBudgetMs: 50,
+      softLeaveBudgetMs: 50,
     });
 
-    expect(saveChatRooms).toHaveBeenCalledTimes(1);
-    expect(persistContacts.mock.invocationCallOrder[0]).toBeLessThan(
-      saveChatRooms.mock.invocationCallOrder[0]!,
-    );
-    expect(saveChatRooms.mock.invocationCallOrder[0]).toBeLessThan(
-      softLeaveAll.mock.invocationCallOrder[0]!,
-    );
+    await vi.advanceTimersByTimeAsync(50);
+    await vi.advanceTimersByTimeAsync(50);
+    await done;
+
+    expect(lockWallet).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith("/welcome");
+  });
+});
+
+describe("withBudget", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves when the work finishes first", async () => {
+    await expect(withBudget(Promise.resolve(), 1_000)).resolves.toBeUndefined();
+  });
+
+  it("resolves when the timer wins over a hung promise", async () => {
+    vi.useFakeTimers();
+    const hung = new Promise<void>(() => undefined);
+    const raced = withBudget(hung, 25);
+    await vi.advanceTimersByTimeAsync(25);
+    await expect(raced).resolves.toBeUndefined();
   });
 });

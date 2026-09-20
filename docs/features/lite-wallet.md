@@ -61,6 +61,10 @@ chat rooms. Settings **Resync** re-scans txs for balance integrity only.
 
 - **Sync speed** — DOOM-labeled profiles; persisted as `options.readSpeed`.
 - **Read miner transactions** — persisted as `options.checkMinerTx`.
+- **Blockchain rescan** — Settings → Sync: creation height is editable (click the
+  value); clamped to `[0, tip)` and stored on the wallet for later Resync /
+  Delete and resync. Those buttons still only rewind or wipe+rewind from the
+  stored height — they do not change it.
 - **Wallet password** — re-encrypts the local wallet blob (`/settings/wallet-password`).
   Distinct from the app unlock passcode.
 - **Backup** — `/settings/backup`: reveal seed & keys, show export QR, download

@@ -19,6 +19,26 @@ updates. Each wallet-file bridge call rejects after 15s if native does not
 reply (`wallet-file-timeout`), so a lost WebView message cannot wedge the
 persist queue. A late reply after that is ignored.
 
+## Nav Exit and hung writes
+
+Exit (`walletSessionExit` / `persistWalletForExit`) does **one** encrypt+write,
+budget-capped (~5s) so **Disconnecting…** cannot stall on a slow native I/O.
+Contacts still go to durable prefs synchronously before that write. The flush
+promise is **not** cancelled when the budget wins — lock drops the runtime from
+the cache, but an in-flight `persistWallet` keeps the blob object and may finish
+in the background.
+
+**Known failure mode (mobile only):** if the native write is broken or hangs
+until `wallet-file-timeout` (15s) and then rejects, the encrypted `"wallet"`
+file may **lag** that Exit (chat bodies / addressBook in the blob not updated).
+Local contacts prefs are still current. Desktop/Electron Exit does not use this
+bridge and is not affected. If users report missing chat history or contacts
+after Exit→reopen on a phone, check logcat/`GnhWalletFile` and whether Exit
+flushes were timing out.
+
+@see `docs/architecture/web-vs-wrapper.md` (Nav Exit)
+@see `src/services/storage/walletSessionExit.ts` (`EXIT_WALLET_FLUSH_MS`)
+
 ## Boot
 
 `main.tsx` awaits `installMobileNativeStorageAdapter()` before importing

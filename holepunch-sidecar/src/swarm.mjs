@@ -415,14 +415,15 @@ export function createSwarmMesh(opts = {}) {
 
       if (state.localClients.size === 0) {
         stopRefreshNudge(state);
-        try {
-          await state.discovery?.destroy?.();
-        } catch {
-          /* ignore */
-        }
+        // Do not await DHT unannounce — it can stall tens of seconds and block
+        // the bridge session loop. Topic is dropped immediately.
+        const discovery = state.discovery;
         state.discovery = null;
         state.remotePeerIds.clear();
         topics.delete(topicRef);
+        if (discovery?.destroy) {
+          void Promise.resolve(discovery.destroy()).catch(() => {});
+        }
       }
     },
 

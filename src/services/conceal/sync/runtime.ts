@@ -79,6 +79,7 @@ import { readAutoNode, readPreferredNode } from "@/lib/network/node-preference";
 import { probeNodes, rankNodes } from "@/lib/network/node-probe";
 import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
 import { syncProfileFromReadSpeed } from "@/lib/sync-speed";
+import { clampCreationHeight } from "@/lib/wallet/creation-height";
 import {
   notifyHistoryPossiblyChanged,
   prepareRawForHistoryPublish,
@@ -639,6 +640,22 @@ export async function resetAndRescanFromCreationHeight(
   rt.raw = clearReceivedRecords(rt.raw);
   await persistRuntime(rt);
   return syncRuntime(rt);
+}
+
+/**
+ * Persist a new wallet creation height for later Resync / Delete and rescan.
+ * Does not rewind scan cursor or wipe history — those buttons stay unchanged.
+ * @see clampCreationHeight — `[0, tip)` (SDK has no height sanitizer)
+ */
+export async function setWalletCreationHeight(
+  height: number,
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const tip = await rt.daemon.getHeight();
+  const clamped = clampCreationHeight(height, tip);
+  rt.raw = { ...rt.raw, creationHeight: clamped };
+  await persistRuntime(rt);
+  return clamped;
 }
 
 /** Warn once per runtime when mempool RPC is unavailable (#109). */

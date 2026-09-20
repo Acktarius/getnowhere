@@ -12,17 +12,7 @@ vi.mock("@/components/qr/WalletQrCode", () => ({
 
 vi.mock("@/services/conceal/ConcealWalletAdapter", () => ({
   buildCcxPaymentUri: ({ address }: { address: string }) => `ccx:${address}`,
-  makeIntegratedCcxAddress: (address: string, pid: string) =>
-    `int-${address}-${pid}`,
 }));
-
-vi.mock("@/utils/format", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/utils/format")>();
-  return {
-    ...actual,
-    generatePaymentId: () => "aabbccddeeff00112233445566778899",
-  };
-});
 
 import { ReceiveSheet } from "@/components/ReceiveSheet";
 
@@ -54,17 +44,12 @@ describe("ReceiveSheet copy", () => {
     expect(copySensitive).toHaveBeenCalledWith(PID);
   });
 
-  it("Copy integrated address calls copySensitive with the raw integrated address", () => {
+  it("does not offer integrated address generation", () => {
     render(<ReceiveSheet address={ADDRESS} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /generate integrated address/i }),
-    );
-    fireEvent.click(screen.getAllByRole("button", { name: /^copy$/i })[0]!);
-
-    expect(copySensitive).toHaveBeenCalledTimes(1);
-    expect(copySensitive).toHaveBeenCalledWith(
-      `int-${ADDRESS}-aabbccddeeff0011`,
-    );
+    expect(
+      screen.queryByRole("button", { name: /generate integrated address/i }),
+    ).toBeNull();
+    expect(screen.queryByText(/gold mark/i)).toBeNull();
   });
 });

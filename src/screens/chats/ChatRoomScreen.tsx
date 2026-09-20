@@ -134,7 +134,9 @@ function LoadingDiagnosticsSheet({
         <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
           <span>
             Room id:{" "}
-            <NonSelectableText className="mono">{shortRoomId(roomId)}</NonSelectableText>
+            <NonSelectableText className="mono">
+              {shortRoomId(roomId)}
+            </NonSelectableText>
           </span>
           <CopyButton value={shortRoomId(roomId)} />
         </div>

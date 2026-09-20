@@ -1493,8 +1493,8 @@ export function pruneExpiredTtlRoomMessages(nowUnixSec: number): void {
   scheduleTtlPruneTimer();
 }
 
-/** Save in-memory room messages into the encrypted wallet blob. */
-export async function saveChatRoomsToWallet(): Promise<void> {
+/** Fold in-memory room messages into `rt.raw` (no encrypt/write). */
+export function stageChatRoomsInWallet(): void {
   if (!localMessageRetentionOn()) return;
   const rt = getRuntime();
   if (!rt) return;
@@ -1503,6 +1503,14 @@ export async function saveChatRoomsToWallet(): Promise<void> {
     bag[roomId] = [...list];
   }
   rt.raw = saveActiveMessages(rt.raw, bag);
+}
+
+/** Save in-memory room messages into the encrypted wallet blob. */
+export async function saveChatRoomsToWallet(): Promise<void> {
+  stageChatRoomsInWallet();
+  if (!localMessageRetentionOn()) return;
+  const rt = getRuntime();
+  if (!rt) return;
   await persistRuntime(rt);
 }
 

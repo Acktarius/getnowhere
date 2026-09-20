@@ -26,6 +26,7 @@ import {
   persistRuntime,
   resetAndRescanFromCreationHeight as runtimeResetAndRescanFromCreationHeight,
   resyncFromCreationHeight as runtimeResyncFromCreationHeight,
+  setWalletCreationHeight as runtimeSetWalletCreationHeight,
   sendCcx,
   sync,
   unlock,
@@ -535,6 +536,11 @@ export async function updateWalletSyncSettings(input: {
   checkMinerTx?: boolean;
 }): Promise<void> {
   await updateRuntimeOptions(input);
+}
+
+/** Persist creation height only; Resync / Delete and resync stay unchanged. */
+export async function setWalletCreationHeight(height: number): Promise<number> {
+  return runtimeSetWalletCreationHeight(height);
 }
 
 export {
