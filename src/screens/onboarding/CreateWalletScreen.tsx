@@ -105,7 +105,7 @@ export function CreateWalletScreen() {
     <div className="screen">
       <TopBar
         title="Create wallet"
-        leading={<BackLink to="/welcome" />}
+        leading={<BackLink to="/welcome" onClick={clearSeed} />}
         subtitle={
           step === "creating"
             ? "Generating fresh Conceal identity"

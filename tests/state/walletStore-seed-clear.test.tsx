@@ -133,6 +133,23 @@ describe("CreateWalletScreen — clearSeed on seed backup confirm", () => {
 
     await waitFor(() => expect(clearSeed).toHaveBeenCalled());
   });
+
+  it("calls clearSeed when navigating back before backup confirm", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <CreateWalletScreen />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /create my wallet/i }));
+    await screen.findByRole("button", { name: /reveal seed phrase/i });
+
+    clearSeed.mockClear();
+    await user.click(screen.getByRole("link", { name: /^back$/i }));
+
+    expect(clearSeed).toHaveBeenCalled();
+  });
 });
 
 // ── RestoreWalletScreen ─────────────────────────────────────────────────────

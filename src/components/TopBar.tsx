@@ -28,9 +28,20 @@ export function TopBar({
   );
 }
 
-export function BackLink({ to }: { to: string }) {
+export function BackLink({
+  to,
+  onClick,
+}: {
+  to: string;
+  onClick?: () => void;
+}) {
   return (
-    <MobileInstantLink to={to} className="topbar__icon-btn" aria-label="Back">
+    <MobileInstantLink
+      to={to}
+      className="topbar__icon-btn"
+      aria-label="Back"
+      onClick={onClick}
+    >
       <svg
         width="20"
         height="20"
