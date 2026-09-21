@@ -21,6 +21,7 @@ import {
   persistContacts,
   persistInvites,
   removePendingInitiatorKey,
+  removePendingInitiatorKeysForRoom,
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
@@ -291,8 +292,9 @@ async function applyRoomDestroyLocally(
   );
   for (const id of ids) {
     pendingPrivateKeys.delete(id);
-    removePendingInitiatorKey(id);
+    await removePendingInitiatorKey(id);
   }
+  await removePendingInitiatorKeysForRoom(roomId);
 
   set((s) => {
     // Drop the invite entirely — tombstone alone still let loadRooms re-seed
@@ -1068,7 +1070,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       handshake: composed.handshake,
       contactId,
     });
-    upsertPendingInitiatorKey({
+    await upsertPendingInitiatorKey({
       inviteId: composed.inviteId,
       contactId,
       roomId: composed.roomId,
@@ -1216,7 +1218,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       contactId: inv.contactId,
       register,
     });
-    upsertPendingInitiatorKey({
+    await upsertPendingInitiatorKey({
       inviteId: register.inviteId,
       contactId: inv.contactId,
       roomId: inv.roomId,
@@ -1332,7 +1334,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         ).loadRoomSession(roomId);
         if (saved) {
           pendingPrivateKeys.delete(register.inviteId);
-          removePendingInitiatorKey(register.inviteId);
+          await removePendingInitiatorKey(register.inviteId);
         }
       } catch {
         // ChatRoomScreen retry / refreshInvites will continue connect.
@@ -1346,6 +1348,8 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     await smartMessageService.declineInvite(inviteId);
     const inv = get().invites.find((i) => i.id === inviteId);
     if (inv) {
+      pendingPrivateKeys.delete(inv.inviteId);
+      await removePendingInitiatorKey(inv.inviteId);
       const { invite: wiped } = tombstoneInvite(inv, "rejected");
       set((s) => ({
         invites: s.invites.map((i) => (i.id === inviteId ? wiped : i)),
@@ -1447,7 +1451,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     });
     for (const inv of doomed) {
       pendingPrivateKeys.delete(inv.inviteId);
-      removePendingInitiatorKey(inv.inviteId);
+      await removePendingInitiatorKey(inv.inviteId);
       try {
         await chatTransport.leaveRoom(inv.roomId);
       } catch {
@@ -1596,7 +1600,7 @@ export async function completeResponderReconnect(
   ).loadRoomSession(roomId);
   if (saved) {
     pendingPrivateKeys.delete(pending.handshake.inviteId);
-    removePendingInitiatorKey(pending.handshake.inviteId);
+    await removePendingInitiatorKey(pending.handshake.inviteId);
   }
   return connected.lifecycleStatus === "connected";
 }
@@ -1696,8 +1700,8 @@ export async function completeInitiatorHandoff(
   if (saved) {
     pendingPrivateKeys.delete(pending.handshake.inviteId);
     pendingPrivateKeys.delete(inviteId);
-    removePendingInitiatorKey(pending.handshake.inviteId);
-    removePendingInitiatorKey(inviteId);
+    await removePendingInitiatorKey(pending.handshake.inviteId);
+    await removePendingInitiatorKey(inviteId);
   }
 }
 

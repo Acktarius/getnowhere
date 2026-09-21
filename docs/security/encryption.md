@@ -388,6 +388,12 @@ Rules:
   `localStorage` calls. On mobile the adapter is native (encrypted wallet
   file + secure prefs). Do not log the wallet blob or Keystore material.
   @see `docs/storage/mobile-durable-storage.md`
+- **Pending invite ECDH ephemerals** (create/register handoff): persist only as
+  `pendingInviteEphemerals` inside the **encrypted wallet blob**. Do not write
+  plaintext `privateKeyHex` to `gnh.pendingInitiatorKeys` (legacy KV is
+  migrated once then deleted). Wipe on successful handoff, decline/abandon,
+  invite-expiry retirement, leave room / L1 revoke / local destroy, and wallet
+  wipe. In-memory map may hold refs while unlocked.
 - **Room transcripts:** L2 is sealed frames, not a shared Hypercore log. Persist
   what this device already saw in the encrypted wallet blob (`chatRooms`) when
   Settings **P2P message retention** is on: background write ~1s after live

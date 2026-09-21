@@ -1,0 +1,95 @@
+<!-- forge-brief-specs-hash:48f969bce5c9c9b1 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brief: Seal pending invite ephemerals</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; background: #fff; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+  ul { padding-left: 1.4rem; }
+  li { margin-bottom: 0.3rem; }
+  code { background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+  .muted { color: #666; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<h1>Seal pending invite ephemerals</h1>
+<p class="muted">Change brief — for operator approval (SEC-2026-006)</p>
+
+<h2>TL;DR</h2>
+<p>
+  While a chat invite is waiting to finish, the app currently parks a one-time
+  private key in ordinary app storage as readable text. After this change that
+  key lives only inside the <strong>encrypted wallet</strong>, and is deleted
+  when the room is done — including leave / revoke — so overnight invites still
+  work without leaving plaintext secrets on disk.
+</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>Send / Accept invite still works after phone off or app kill (until accept window ends).</li>
+  <li>No plaintext invite private keys in browser or prefs KV.</li>
+  <li>Keys cleared after successful connect handoff, decline, abandon, expiry cleanup, and leave/revoke.</li>
+  <li>Old plaintext leftovers migrated into the wallet once, then deleted.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>
+  Alice (or Bob) still keeps a temporary key in memory while the wallet is open.
+  For survival across restarts, a copy is saved inside the same encrypted wallet
+  file you already unlock with your password (on phones, the Keystore-backed
+  wallet file). When the invite finishes or the room is destroyed, that copy is
+  removed.
+</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant User
+  participant App
+  participant WalletBlob as Encrypted wallet
+  User->>App: Send or Accept invite
+  App->>App: Keep key in memory
+  App->>WalletBlob: Save pending key (sealed)
+  Note over App,WalletBlob: Phone off OK
+  User->>App: Unlock later / peer accepts
+  WalletBlob->>App: Restore key
+  App->>App: Finish session handoff
+  App->>WalletBlob: Delete pending key
+  Note over App: Leave or revoke also deletes
+</pre>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>No new screens or settings.</li>
+  <li>Same invite UX; safer storage underneath.</li>
+  <li>If you somehow still had an in-flight invite from an older build, the next unlock migrates it automatically.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li>If the wallet fails to finish saving before a hard kill, a brand-new invite might still need a resend (same class of risk as other wallet writes).</li>
+  <li>While the wallet is unlocked, in-memory keys can still be read by compromised UI code — this fix is about <em>at-rest</em> plaintext storage.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Restore-wallet weak password issue (separate finding).</li>
+  <li>Accept-after-expiry, misnamed “encrypt” helpers, register spam gate.</li>
+  <li>Changing how Hyperswarm topics are derived on the wire.</li>
+</ul>
+
+<h2>Work overview</h2>
+<ul>
+  <li>Blob helpers + migration tests (~3 tasks)</li>
+  <li>Wire send/accept/wipe paths (~3 tasks)</li>
+  <li>Docs + security ledger (~2 tasks)</li>
+  <li>Verify / grep (~2 tasks)</li>
+</ul>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

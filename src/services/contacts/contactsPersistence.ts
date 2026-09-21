@@ -17,7 +17,7 @@ import type { ChatInviteHandshake } from "@/types/protocol";
 
 const CONTACTS_KEY = "gnh.contacts";
 const INVITES_KEY = "gnh.invites";
-/** Initiator X25519 secrets + handshake until Alice scans Bob's register. */
+/** Legacy plaintext KV — migrated into wallet blob then deleted. Do not write. */
 const PENDING_INITIATOR_KEYS_KEY = "gnh.pendingInitiatorKeys";
 /** Set once we have written or loaded contacts so demo-seed does not refill. */
 const CONTACTS_READY_KEY = "gnh.contacts.ready";
@@ -262,37 +262,114 @@ function isPendingInitiatorRecord(
   );
 }
 
-export function loadPendingInitiatorKeys(): PendingInitiatorRecord[] {
+/** GNH wallet-blob field for invite ECDH ephemerals. @see docs/security/encryption.md */
+type RawWithPendingEphemerals = RawWalletV1 & {
+  pendingInviteEphemerals?: unknown;
+};
+
+/** Read pending invite ephemerals from an encrypted wallet blob. */
+export function readPendingInviteEphemerals(
+  raw: RawWalletV1,
+): PendingInitiatorRecord[] {
+  const list = (raw as RawWithPendingEphemerals).pendingInviteEphemerals;
+  if (!Array.isArray(list)) return [];
+  return list.filter(isPendingInitiatorRecord);
+}
+
+/** Return a copy of `raw` with pending invite ephemerals replaced. */
+export function withPendingInviteEphemerals(
+  raw: RawWalletV1,
+  records: PendingInitiatorRecord[],
+): RawWalletV1 {
+  return {
+    ...raw,
+    pendingInviteEphemerals: records,
+  } as RawWalletV1;
+}
+
+function loadLegacyPendingInitiatorKeysFromKv(): PendingInitiatorRecord[] {
   try {
-    const raw = getStorage().getItem(PENDING_INITIATOR_KEYS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter(isPendingInitiatorRecord) : [];
+    const stored = getStorage().getItem(PENDING_INITIATOR_KEYS_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(isPendingInitiatorRecord)
+      : [];
   } catch {
     return [];
   }
 }
 
-export function savePendingInitiatorKeys(
-  records: PendingInitiatorRecord[],
-): void {
-  getStorage().setItem(PENDING_INITIATOR_KEYS_KEY, JSON.stringify(records));
+/** Load pending ephemerals from the unlocked wallet blob (empty when locked). */
+export function loadPendingInitiatorKeys(): PendingInitiatorRecord[] {
+  const rt = getRuntime();
+  if (!rt) return [];
+  return readPendingInviteEphemerals(rt.raw);
 }
 
-export function upsertPendingInitiatorKey(
+/** Upsert one pending ephemeral into the encrypted wallet blob. */
+export async function upsertPendingInitiatorKey(
   record: PendingInitiatorRecord,
-): void {
-  const next = loadPendingInitiatorKeys().filter(
+): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  const next = readPendingInviteEphemerals(rt.raw).filter(
     (r) => r.inviteId !== record.inviteId,
   );
   next.push(record);
-  savePendingInitiatorKeys(next);
+  rt.raw = withPendingInviteEphemerals(rt.raw, next);
+  await persistRuntime(rt);
 }
 
-export function removePendingInitiatorKey(inviteId: string): void {
-  savePendingInitiatorKeys(
-    loadPendingInitiatorKeys().filter((r) => r.inviteId !== inviteId),
+/** Remove one pending ephemeral from the encrypted wallet blob. */
+export async function removePendingInitiatorKey(
+  inviteId: string,
+): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  const next = readPendingInviteEphemerals(rt.raw).filter(
+    (r) => r.inviteId !== inviteId,
   );
+  rt.raw = withPendingInviteEphemerals(rt.raw, next);
+  await persistRuntime(rt);
+}
+
+/** Remove all pending ephemerals for a room (leave / revoke). */
+export async function removePendingInitiatorKeysForRoom(
+  roomId: string,
+): Promise<void> {
+  const rt = getRuntime();
+  if (!rt) return;
+  const next = readPendingInviteEphemerals(rt.raw).filter(
+    (r) => r.roomId !== roomId,
+  );
+  if (next.length === readPendingInviteEphemerals(rt.raw).length) return;
+  rt.raw = withPendingInviteEphemerals(rt.raw, next);
+  await persistRuntime(rt);
+}
+
+/**
+ * Merge legacy plaintext KV into the wallet blob, then delete the KV key.
+ * Blob wins on inviteId conflict. No-op when wallet locked (KV kept for next unlock).
+ */
+export async function migrateLegacyPendingInitiatorKeys(): Promise<void> {
+  const legacy = loadLegacyPendingInitiatorKeysFromKv();
+  const storage = getStorage();
+  const rt = getRuntime();
+  if (!rt) {
+    if (legacy.length === 0) storage.removeItem(PENDING_INITIATOR_KEYS_KEY);
+    return;
+  }
+  if (legacy.length > 0) {
+    const blob = readPendingInviteEphemerals(rt.raw);
+    const byId = new Map(blob.map((r) => [r.inviteId, r]));
+    for (const rec of legacy) {
+      if (!byId.has(rec.inviteId)) byId.set(rec.inviteId, rec);
+    }
+    rt.raw = withPendingInviteEphemerals(rt.raw, [...byId.values()]);
+    await persistRuntime(rt);
+  }
+  storage.removeItem(PENDING_INITIATOR_KEYS_KEY);
 }
 
 /** Write contacts into the open wallet blob and persist encrypted storage. */
@@ -329,6 +406,7 @@ export async function hydrateContacts(): Promise<{
   contacts: Contact[];
   invites: SmartMessageInvite[];
 }> {
+  await migrateLegacyPendingInitiatorKeys();
   const local = loadContactsFromLocal();
   const invites = loadInvitesFromLocal();
   const rt = getRuntime();
