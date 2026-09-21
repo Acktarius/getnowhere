@@ -4,8 +4,9 @@ import { contactsPersistenceReady } from "@/services/contacts/contactsPersistenc
 import { useContactsStore } from "@/state/contactsStore";
 
 /**
- * Seeds demo contacts only on a brand-new install (no persisted contacts yet).
- * Once contacts have been saved or hydrated, this never re-fills an empty list.
+ * Seeds demo contacts only in DEV on a brand-new install (no persisted contacts yet).
+ * Production builds never run this path. Once contacts have been saved or hydrated,
+ * this never re-fills an empty list.
  */
 export function useSeedDemoContacts() {
   const contacts = useContactsStore((s) => s.contacts);
@@ -14,6 +15,7 @@ export function useSeedDemoContacts() {
   const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     if (!hydrated || contacts.length > 0 || seeded) return;
     if (contactsPersistenceReady()) return;
     let cancelled = false;

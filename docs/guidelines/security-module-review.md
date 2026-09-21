@@ -182,16 +182,18 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Fix commit: `260906c`
   - Verification (re-review e17bc73): Electron strip + shutdown `clearData` still present; acceptance unchanged.
 
-- [ ] `SEC-2026-004` — severity: low
+- [x] `SEC-2026-004` — resolved
   - Date found: 2026-09-18
   - Commit reviewed: fe7419d
   - Affected files: `src/hooks/useSeedDemoContacts.ts`, `src/App.tsx`
-  - Evidence: `RequireWallet` always mounts `useSeedDemoContacts`; hook creates real Conceal accounts and persists demo contacts whenever contacts storage is not yet marked ready — no `import.meta.env.DEV` guard
-  - Description: Production builds seed synthetic contacts with generated wallet material on first empty install
+  - Evidence (original): `RequireWallet` always mounts `useSeedDemoContacts`; hook creates real Conceal accounts and persists demo contacts whenever contacts storage is not yet marked ready — no `import.meta.env.DEV` guard
+  - Description: Production builds could seed synthetic contacts with generated wallet material on first empty install
   - Impact: Users may treat demo peers as real; demo payment IDs and addresses clutter the relationship graph and increase accidental-invite risk
   - Recommended remediation: Restrict demo seeding to development builds, or require an explicit user action to install sample contacts
-  - Status: open
-  - Re-verified 2026-09-20 (e17bc73): still no DEV / explicit-consent gate; unchanged.
+  - Resolution date: 2026-09-20
+  - Fix commit: pending (working tree)
+  - Verification: Hook early-returns unless `import.meta.env.DEV` (Vite built-in; no `.env` required). Note: hydrate already marks contacts ready in normal flows, so the path was largely inert — DEV gate prevents revival if timing changes.
+  - Status: resolved
 
 - [x] `SEC-2026-005` — resolved
   - Date found: 2026-09-20
@@ -236,8 +238,7 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 
 **Remaining work (priority):**
 
-1. **`SEC-2026-004` (low)** — gate `useSeedDemoContacts` to DEV or explicit user action.
-2. **Residual `SEC-2026-001`** — clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
+1. **Residual `SEC-2026-001`** — clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
 
 **Verification gaps:**
 

@@ -46,4 +46,9 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/Room \{roomId\}/);
     expect(src).not.toMatch(/roomId:/);
   });
+
+  it("useSeedDemoContacts is gated to Vite DEV", () => {
+    const src = readSrc("src/hooks/useSeedDemoContacts.ts");
+    expect(src).toMatch(/if\s*\(\s*!import\.meta\.env\.DEV\s*\)\s*return/);
+  });
 });
