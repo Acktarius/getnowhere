@@ -47,8 +47,11 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/roomId:/);
   });
 
-  it("useSeedDemoContacts is gated to Vite DEV", () => {
-    const src = readSrc("src/hooks/useSeedDemoContacts.ts");
-    expect(src).toMatch(/if\s*\(\s*!import\.meta\.env\.DEV\s*\)\s*return/);
+  it("walletStore.clearSeed also wipes ConcealWalletService mnemonic memory", () => {
+    const src = readSrc("src/state/walletStore.ts");
+    expect(src).toMatch(/clearSeedPhraseMemory/);
+    expect(src).toMatch(
+      /clearSeed\(\)\s*\{[\s\S]*clearSeedPhraseMemory\(\);[\s\S]*set\(\{\s*seedPhrase:\s*null\s*\}\)/,
+    );
   });
 });

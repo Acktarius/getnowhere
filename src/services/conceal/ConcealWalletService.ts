@@ -491,6 +491,12 @@ export function getInternalWalletState(): WalletSnapshot | null {
   return snapshot;
 }
 
+/** Drop one-time mnemonic from process memory after UI reveal/abandon. */
+export function clearSeedPhraseMemory(): void {
+  seedPhraseMemory = "";
+  if (snapshot) snapshot.seedPhrase = "";
+}
+
 export function isWalletInitialized(): boolean {
   return snapshot !== null || getRuntime() !== null;
 }

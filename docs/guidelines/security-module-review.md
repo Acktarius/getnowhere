@@ -149,7 +149,7 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Resolution date: 2026-09-20
   - Fix commit: `09ec0cd`
   - Verification (re-review e17bc73): Create confirms via `SeedBackupPanel.onConfirm` → `clearSeed()`; Restore/Import call `clearSeed()` after success; regression tests in `tests/state/walletStore-seed-clear.test.tsx`
-  - Residual / follow-up: (1) ~~Create abandon before backup confirm~~ — `BackLink` calls `clearSeed` on leave. (2) `ConcealWalletService` `seedPhraseMemory` is outside this module’s file list and is not cleared by `clearSeed()` — defer to MOD-002.
+  - Residual / follow-up: `ConcealWalletService` `seedPhraseMemory` cleared via `clearSeedPhraseMemory()` from `walletStore.clearSeed()` (app fix). Optional upstream: conceal-wallet-sdk `omitMnemonic` / docs — separate PR.
 
 - [x] `SEC-2026-002` — resolved
   - Date found: 2026-09-18
@@ -238,7 +238,7 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 
 **Remaining work (priority):**
 
-1. **Residual `SEC-2026-001`** — clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
+1. *(none on MOD-001)* — optional conceal-wallet-sdk mnemonic-ephemeral API (separate upstream PR).
 
 **Verification gaps:**
 

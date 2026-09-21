@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
 import {
+  clearSeedPhraseMemory,
   getInternalWalletNodeUrl,
   setInternalWalletNetwork,
   setInternalWalletNodeUrl,
@@ -358,6 +359,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   },
 
   clearSeed() {
+    clearSeedPhraseMemory();
     set({ seedPhrase: null });
   },
 }));
