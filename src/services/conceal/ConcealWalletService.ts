@@ -6,10 +6,10 @@ import {
 } from "conceal-wallet-sdk";
 import {
   buildDaemon,
-  createConcealAccount,
   DEFAULT_DAEMON_NODES,
   encodeCcxAddress,
   ensureWasmReady,
+  generateConcealMnemonic,
   makeIntegratedCcxAddress,
   openEncryptedWalletFile,
   previewKeysFromSpend,
@@ -181,39 +181,11 @@ async function adoptBuiltWallet(
 export const ConcealWalletService: WalletService = {
   async createWallet(): Promise<CreateWalletResult> {
     await ensureWasmReady();
-    const account = await createConcealAccount("english");
-    // Create path still needs a password before adopt — use a temporary session
-    // password; Settings → Change wallet password replaces it. Callers that
-    // create via onboarding should set a real password soon after.
+    // generateMnemonic + buildFromMnemonic applies omitMnemonic on the Account
+    // while keeping the phrase only on BuiltWallet for one-time UI reveal.
+    const phrase = await generateConcealMnemonic("english");
     const tempPassword = `tmp-${uid("pw")}`;
-    const built: BuiltWallet = {
-      keys: {
-        pub: { spend: account.keys.spend.pub, view: account.keys.view.pub },
-        priv: { spend: account.keys.spend.sec, view: account.keys.view.sec },
-      },
-      raw: {
-        deposits: [],
-        withdrawals: [],
-        transactions: [],
-        txPrivateKeys: {},
-        lastHeight: 0,
-        nonce: "",
-        keys: {
-          pub: { spend: account.keys.spend.pub, view: account.keys.view.pub },
-          priv: { spend: account.keys.spend.sec, view: account.keys.view.sec },
-        },
-        creationHeight: 0,
-        options: {
-          readSpeed: 4,
-          checkMinerTx: false,
-          customNode: false,
-          nodeUrl: "",
-        },
-      },
-      mnemonic: account.mnemonic ?? "",
-      address: account.address,
-    };
-    return adoptBuiltWallet(built, tempPassword);
+    return adoptBuiltWallet(buildFromMnemonic(phrase, 0), tempPassword);
   },
 
   async restoreWallet({

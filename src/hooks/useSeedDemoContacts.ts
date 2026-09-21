@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { omitMnemonic } from "conceal-wallet-sdk";
 import { createConcealAccount } from "@/services/conceal/ConcealWalletAdapter";
 import { contactsPersistenceReady } from "@/services/contacts/contactsPersistence";
 import { useContactsStore } from "@/state/contactsStore";
@@ -22,9 +23,10 @@ export function useSeedDemoContacts() {
     setSeeded(true);
     (async () => {
       try {
+        // Address-only — drop mnemonic from SDK Account immediately.
         const [acctA, acctB] = await Promise.all([
-          createConcealAccount("english"),
-          createConcealAccount("english"),
+          createConcealAccount("english").then(omitMnemonic),
+          createConcealAccount("english").then(omitMnemonic),
         ]);
         if (cancelled) return;
         await addContact({

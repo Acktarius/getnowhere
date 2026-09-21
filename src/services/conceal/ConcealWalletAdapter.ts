@@ -1,8 +1,9 @@
-// ConcealWalletAdapter — wraps the real conceal-wallet-sdk (v0.2.10).
+// ConcealWalletAdapter — wraps the real conceal-wallet-sdk (v0.2.18).
 //
 // CONFIRMED SDK surface (verified against dist/index.d.ts + README):
 //   - createAccount / restoreFromMnemonic / restoreFromSpendKey   (WASM)
 //   - generateMnemonic / isValidMnemonic / mnemonicToSeed          (WASM)
+//   - omitMnemonic — drop ephemeral phrase from Account copies
 //   - isValidAddress / decodeAddress / encodeAddress               (pure JS)
 //   - makeIntegratedAddress / encodeIntegratedAddress              (pure JS)
 //   - buildPaymentUri / parsePaymentUri                            (pure JS)
