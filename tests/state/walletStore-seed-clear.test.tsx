@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const clearSeed = vi.fn();
 const createWallet = vi.fn(async () => ({ seedPhrase: "word1 word2" }));
-const restoreWallet = vi.fn(async () => undefined);
 const importWallet = vi.fn(async () => undefined);
 
 type StoreMock = {
@@ -20,7 +19,6 @@ type StoreMock = {
   initializing: boolean;
   clearSeed: () => void;
   createWallet: () => Promise<{ seedPhrase: string }>;
-  restoreWallet: (s: string) => Promise<void>;
   importWallet: (i: unknown) => Promise<void>;
 };
 
@@ -31,7 +29,6 @@ const storeMock: StoreMock = {
   initializing: false,
   clearSeed,
   createWallet,
-  restoreWallet,
   importWallet,
 };
 
@@ -152,65 +149,12 @@ describe("CreateWalletScreen — clearSeed on seed backup confirm", () => {
   });
 });
 
-// ── RestoreWalletScreen ─────────────────────────────────────────────────────
-
-import { RestoreWalletScreen } from "@/screens/onboarding/RestoreWalletScreen";
-
-const VALID_SEED =
-  "abandon ability able about above absent absorb abstract absurd abuse access accident account accuse achieve acid acoustic acquire across act action actor actress actual";
-
-describe("RestoreWalletScreen — clearSeed after restore", () => {
-  beforeEach(() => {
-    clearSeed.mockClear();
-    restoreWallet.mockClear();
-    mockNavigate.mockClear();
-    storeMock.initializing = false;
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it("calls clearSeed after successful restore", async () => {
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <RestoreWalletScreen />
-      </MemoryRouter>,
-    );
-
-    const textarea = screen.getByRole("textbox");
-    await user.clear(textarea);
-    await user.type(textarea, VALID_SEED);
-
-    await user.click(screen.getByRole("button", { name: /restore wallet/i }));
-
-    await waitFor(() => expect(restoreWallet).toHaveBeenCalled());
-    await waitFor(() => expect(clearSeed).toHaveBeenCalled());
-  });
-
-  it("does not call clearSeed when restore fails", async () => {
-    restoreWallet.mockRejectedValueOnce(new Error("bad seed"));
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <RestoreWalletScreen />
-      </MemoryRouter>,
-    );
-
-    const textarea = screen.getByRole("textbox");
-    await user.clear(textarea);
-    await user.type(textarea, VALID_SEED);
-
-    await user.click(screen.getByRole("button", { name: /restore wallet/i }));
-
-    expect(clearSeed).not.toHaveBeenCalled();
-  });
-});
-
 // ── ImportWalletScreen ──────────────────────────────────────────────────────
 
 import { ImportWalletScreen } from "@/screens/onboarding/ImportWalletScreen";
+
+const VALID_SEED =
+  "abandon ability able about above absent absorb abstract absurd abuse access accident account accuse achieve acid acoustic acquire across act action actor actress actual";
 
 describe("ImportWalletScreen — clearSeed after import", () => {
   beforeEach(() => {

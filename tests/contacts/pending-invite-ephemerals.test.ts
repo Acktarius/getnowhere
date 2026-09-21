@@ -51,12 +51,12 @@ import {
   hydrateContacts,
   loadPendingInitiatorKeys,
   migrateLegacyPendingInitiatorKeys,
+  type PendingInitiatorRecord,
   readPendingInviteEphemerals,
   removePendingInitiatorKey,
   removePendingInitiatorKeysForRoom,
   upsertPendingInitiatorKey,
   withPendingInviteEphemerals,
-  type PendingInitiatorRecord,
 } from "@/services/contacts/contactsPersistence";
 
 function emptyRaw(): RawWalletV1 {
@@ -203,7 +203,10 @@ describe("migrateLegacyPendingInitiatorKeys", () => {
   });
 
   it("merges legacy KV into blob then deletes the KV key", async () => {
-    const legacy = sampleRecord({ inviteId: "legacy01", privateKeyHex: "cc".repeat(32) });
+    const legacy = sampleRecord({
+      inviteId: "legacy01",
+      privateKeyHex: "cc".repeat(32),
+    });
     mem.set(LEGACY_KV, JSON.stringify([legacy]));
 
     await migrateLegacyPendingInitiatorKeys();

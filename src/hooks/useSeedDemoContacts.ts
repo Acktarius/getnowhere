@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import { omitMnemonic } from "conceal-wallet-sdk";
+import { useEffect, useState } from "react";
 import { createConcealAccount } from "@/services/conceal/ConcealWalletAdapter";
 import { contactsPersistenceReady } from "@/services/contacts/contactsPersistence";
 import { useContactsStore } from "@/state/contactsStore";

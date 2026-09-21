@@ -26,7 +26,6 @@ import { ChatRoomScreen } from "@/screens/chats/ChatRoomScreen";
 import { ContactDetailScreen } from "@/screens/contacts/ContactDetailScreen";
 import { CreateWalletScreen } from "@/screens/onboarding/CreateWalletScreen";
 import { ImportWalletScreen } from "@/screens/onboarding/ImportWalletScreen";
-import { RestoreWalletScreen } from "@/screens/onboarding/RestoreWalletScreen";
 import { WelcomeScreen } from "@/screens/onboarding/WelcomeScreen";
 import { AboutScreen } from "@/screens/settings/AboutScreen";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
@@ -102,7 +101,6 @@ function AppInner() {
     <Routes>
       <Route path="/welcome" element={<WelcomeScreen />} />
       <Route path="/onboarding/create" element={<CreateWalletScreen />} />
-      <Route path="/onboarding/restore" element={<RestoreWalletScreen />} />
       <Route path="/onboarding/import" element={<ImportWalletScreen />} />
 
       <Route element={<RequireWallet />}>

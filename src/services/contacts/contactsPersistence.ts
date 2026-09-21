@@ -292,9 +292,7 @@ function loadLegacyPendingInitiatorKeysFromKv(): PendingInitiatorRecord[] {
     const stored = getStorage().getItem(PENDING_INITIATOR_KEYS_KEY);
     if (!stored) return [];
     const parsed = JSON.parse(stored) as unknown;
-    return Array.isArray(parsed)
-      ? parsed.filter(isPendingInitiatorRecord)
-      : [];
+    return Array.isArray(parsed) ? parsed.filter(isPendingInitiatorRecord) : [];
   } catch {
     return [];
   }
