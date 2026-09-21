@@ -132,48 +132,55 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - Confirm UI state does not treat connection or discovery as authorization.
 - Check that development-only diagnostics are unavailable or appropriately controlled in production.
 
-- [x] Reviewed — latest review: 2026-09-18 — commit: fe7419d — reviewer: Composer (Cursor Agent)
+- [x] Reviewed — latest review: 2026-09-20 — commit: e17bc73 — reviewer: Composer (Cursor Agent)
 
 
 
 ### Findings
 
-- [x] `SEC-2026-001` — severity: high
+- [x] `SEC-2026-001` — resolved
   - Date found: 2026-09-18
   - Commit reviewed: fe7419d
-  - Affected files: `src/state/walletStore.ts`, `src/screens/onboarding/CreateWalletScreen.tsx`, `src/screens/onboarding/RestoreWalletScreen.tsx`
-  - Evidence: `createWallet` / `restoreWallet` / `importWallet` set `seedPhrase`; `clearSeed()` is defined but never called from application code; Create/Restore finish paths navigate without clearing
-  - Description: Full mnemonic remains in global Zustand UI state for the lifetime of the page session after wallet create, restore, or import
+  - Affected files: `src/state/walletStore.ts`, `src/screens/onboarding/CreateWalletScreen.tsx`, `src/screens/onboarding/RestoreWalletScreen.tsx`, `src/screens/onboarding/ImportWalletScreen.tsx`
+  - Evidence (original): `createWallet` / `restoreWallet` / `importWallet` set `seedPhrase`; `clearSeed()` was defined but never called from application code
+  - Description: Full mnemonic remained in global Zustand UI state for the lifetime of the page session after wallet create, restore, or import
   - Impact: Any XSS, malicious extension, Electron DevTools inspection, or renderer dump can recover the wallet seed without re-entering the encryption password
-  - Recommended remediation: Call `clearSeed()` immediately after the user confirms backup (create) and immediately after successful restore/import; never retain mnemonic in the store once the one-time reveal UI closes
-  - Status: open
+  - Recommended remediation: Call `clearSeed()` immediately after the user confirms backup (create) and immediately after successful restore/import
+  - Resolution date: 2026-09-20
+  - Fix commit: `09ec0cd`
+  - Verification (re-review e17bc73): Create confirms via `SeedBackupPanel.onConfirm` → `clearSeed()`; Restore/Import call `clearSeed()` after success; regression tests in `tests/state/walletStore-seed-clear.test.tsx`
+  - Residual / follow-up: (1) Create abandon before backup confirm can leave `seedPhrase` in the store while the wallet is already initialized — clear on unmount/back. (2) `ConcealWalletService` `seedPhraseMemory` is outside this module’s file list and is not cleared by `clearSeed()` — defer to MOD-002.
 
-- [x] `SEC-2026-002` — severity: medium
+- [x] `SEC-2026-002` — resolved
   - Date found: 2026-09-18
   - Commit reviewed: fe7419d
   - Affected files: `src/screens/chats/ChatRoomScreen.tsx`
-  - Evidence: Room diagnostics sheet always reachable via header; shows full `roomId` with `CopyButton` and shortened `discoveryTopicRef` via `shortTopicRef`
-  - Description: Production chat UI exposes Layer-2 capability material (`roomId`, topicRef prefix/suffix) on an ungated diagnostics surface
-  - Impact: Screenshots, shoulder surfing, shared support captures, or local malware reading the DOM can obtain room join capability hints that protocol docs treat as secrets
-  - Recommended remediation: Gate diagnostics behind explicit debug mode / `import.meta.env.DEV`, or remove copyable `roomId` / topicRef from production builds; keep only non-capability status fields
-  - Mitigations applied: `shortRoomId()` truncates room id at both sheet call sites; `CopyButton` copies truncated label only; topic stays `shortTopicRef` + non-selectable; source-guard test enforces the invariant (OpenSpec change `redact-room-diagnostics`)
-  - Status: **addressed** (see `.repo-kit/findings/02-room-diagnostics-capability-leak.md`)
+  - Evidence (original): Room diagnostics sheet showed full `roomId` with `CopyButton` and shortened `discoveryTopicRef`
+  - Description: Production chat UI exposed Layer-2 capability material on an ungated diagnostics surface
+  - Impact: Screenshots, shoulder surfing, shared support captures, or local malware reading the DOM can obtain room join capability hints
+  - Recommended remediation: Gate diagnostics behind debug mode, or remove copyable full `roomId` / topicRef from production builds
+  - Mitigations applied: `shortRoomId()` at both sheet call sites; `CopyButton` copies truncated label only; topic stays `shortTopicRef` + non-selectable; source-guard test `tests/components/sensitive-identifier-copy.test.ts` (OpenSpec `redact-room-diagnostics`)
+  - Resolution date: 2026-09-20
+  - Fix commit: `260906c`
+  - Verification (re-review e17bc73): Both `LoadingDiagnosticsSheet` and full diagnostics sheet use `shortRoomId` / `shortTopicRef`; ungated diagnostics remain a product choice (accepted with redaction). Related residual tracked as `SEC-2026-005`.
 
-- [x] `SEC-2026-003` — severity: ~~medium~~ → **low / accepted**
+- [x] `SEC-2026-003` — resolved (accepted low residual)
   - Date found: 2026-09-18
   - Commit reviewed: fe7419d
   - Affected files: `src/App.tsx`, `src/screens/chats/ChatRoomScreen.tsx`, `desktop-electron/main.mjs`
-  - Evidence: `HashRouter` route `/chats/:roomId`; `useParams().roomId` drives open/bootstrap without opaque routing
+  - Evidence: `HashRouter` route `/chats/:roomId`; `useParams().roomId` drives open/bootstrap
   - Description: `roomId` (documented capability secret) is placed in the browser location hash and history for every open room
   - Impact analysis (per platform):
     - **Browser+sidecar**: dev-only path, never ships to end users — not a production concern
     - **iOS/Android WebView**: no address bar; WKWebView/Android WebView do not persist navigation history across cold starts — no exposure
     - **Electron (packaged)**: `file://` origin in `persist:gnh` Chromium partition — the only production surface with any residual risk
   - Mitigations applied:
-    - `ChatRoomScreen` strips the hash via `window.history.replaceState(null, "", "#/chats")` on mount (Electron-only guard: `window.gnhDesktop != null`); `replaceState` does not fire `hashchange`/`popstate` so React Router state is unaffected; roomId captured in `useState` on mount before the strip
-    - `desktop-electron/main.mjs shutdown()` calls `session.fromPartition(PARTITION).clearData({ dataTypes: ["browsing_history"] })` before window destroy — clears the on-disk Chromium History file on every clean exit
-  - Residual / accepted: crash/kill bypasses exit-time clear; `file://` hash-only navigations may not be recorded by Chromium at all (undocumented behaviour, leans toward not recorded); `roomId` alone is insufficient to join (requires `relationshipId` + post-connect L1 proof)
-  - Status: **addressed / accepted low risk**
+    - `ChatRoomScreen` strips the hash via `window.history.replaceState(null, "", "#/chats")` on mount (Electron-only guard: `window.gnhDesktop != null`); roomId captured in `useState` on mount before the strip
+    - `desktop-electron/main.mjs shutdown()` calls `session.fromPartition(PARTITION).clearData({ dataTypes: ["browsing_history"] })` before window destroy
+  - Residual / accepted: crash/kill bypasses exit-time clear; `file://` hash-only navigations may not be recorded by Chromium at all; `roomId` alone is insufficient to join (requires `relationshipId` + post-connect L1 proof)
+  - Resolution date: 2026-09-20
+  - Fix commit: `260906c`
+  - Verification (re-review e17bc73): Electron strip + shutdown `clearData` still present; acceptance unchanged.
 
 - [ ] `SEC-2026-004` — severity: low
   - Date found: 2026-09-18
@@ -184,12 +191,58 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Impact: Users may treat demo peers as real; demo payment IDs and addresses clutter the relationship graph and increase accidental-invite risk
   - Recommended remediation: Restrict demo seeding to development builds, or require an explicit user action to install sample contacts
   - Status: open
+  - Re-verified 2026-09-20 (e17bc73): still no DEV / explicit-consent gate; unchanged.
+
+- [ ] `SEC-2026-005` — severity: medium
+  - Date found: 2026-09-20
+  - Commit reviewed: e17bc73
+  - Affected files: `src/components/ChatRoomHeader.tsx` (caller: `src/screens/chats/ChatRoomScreen.tsx`)
+  - Evidence: `<span className="sr-only">Room {roomId}</span>` embeds the full `roomId` in the DOM whenever a chat room is open
+  - Description: After diagnostics redaction (`SEC-2026-002`), the chat header still places the complete room capability id in an always-present accessibility/DOM node
+  - Impact: DOM scrapers, malicious extensions, screen-reader capture, or support HTML dumps can recover the full `roomId` without opening diagnostics — undoes the least-knowledge intent of truncated diagnostics
+  - Recommended remediation: Remove the `sr-only` full id, or render `shortRoomId(roomId)` only; do not put raw capability material in always-mounted DOM
+  - Status: open
 
 
 
 ### Review history
 
 
+
+#### 2026-09-20 — e17bc73 — Composer (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: UI still stays off Hyperswarm; composer uses `canComposeMessages` / lifecycle — discovery is not treated as authorization.
+- Least knowledge: onboarding Zustand seed retention fixed (`SEC-2026-001`); diagnostics copy redacted (`SEC-2026-002`); full `roomId` still in header `sr-only` (`SEC-2026-005`); demo contacts still auto-seed (`SEC-2026-004`).
+- Trust boundaries: Electron hash strip + history clear remain for `SEC-2026-003`; Backup reveal still clears modal secrets on close.
+- Failure paths: send failures still toast `Error.message`; fatal boot still uses `textContent`.
+- Privacy claims: Holepunch vs chain-relay UI wording remains conservative.
+
+**Checklist highlights:**
+
+- Event chain (UI): onboarding → wallet init → tab shell → room open/bootstrap → composer gate → send — re-traced.
+- Secrets: create/restore/import `clearSeed` paths verified; backup modal timer still auto-closes; service-layer `seedPhraseMemory` out of scope.
+- Logs: no seed/password/full topicRef console logging in screens/state/hooks.
+- Storage: auth onboarded flag only; `walletStore` does not persist mnemonic.
+- Dependencies / network capture: not re-validated in this UI module pass.
+
+**Findings this review:** closed `SEC-2026-001`, `SEC-2026-002`, `SEC-2026-003`; confirmed still open `SEC-2026-004`; new `SEC-2026-005`.
+
+**Remaining work (priority):**
+
+1. **`SEC-2026-005` (medium)** — remove or truncate `ChatRoomHeader` `sr-only` full `roomId`.
+2. **`SEC-2026-004` (low)** — gate `useSeedDemoContacts` to DEV or explicit user action.
+3. **Residual `SEC-2026-001`** — clear seed on create abandon/back; clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
+
+**Verification gaps:**
+
+- No controlled XSS / renderer-dump test against live seed retention or header DOM.
+- `ConcealWalletService` mnemonic memory lifecycle deferred to MOD-002.
+- `gnh.pendingInitiatorKeys` / `privateKeyHex` on disk deferred to MOD-011.
+- Always-on room diagnostics product intent still undocumented (accepted with redaction + new header finding).
 
 #### 2026-09-18 — fe7419d — Composer (Cursor Agent)
 
@@ -1074,6 +1127,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-20 | MOD-001 | e17bc73 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001 (resolved), SEC-2026-002 (resolved), SEC-2026-003 (resolved/accepted), SEC-2026-004 (open), SEC-2026-005 (new/open) |
 | 2026-09-18 | MOD-001 | fe7419d | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001, SEC-2026-002, SEC-2026-003, SEC-2026-004 |
 
 
