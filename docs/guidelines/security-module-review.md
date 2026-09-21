@@ -193,15 +193,18 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Status: open
   - Re-verified 2026-09-20 (e17bc73): still no DEV / explicit-consent gate; unchanged.
 
-- [ ] `SEC-2026-005` — severity: medium
+- [x] `SEC-2026-005` — resolved
   - Date found: 2026-09-20
   - Commit reviewed: e17bc73
   - Affected files: `src/components/ChatRoomHeader.tsx` (caller: `src/screens/chats/ChatRoomScreen.tsx`)
   - Evidence: `<span className="sr-only">Room {roomId}</span>` embeds the full `roomId` in the DOM whenever a chat room is open
   - Description: After diagnostics redaction (`SEC-2026-002`), the chat header still places the complete room capability id in an always-present accessibility/DOM node
   - Impact: DOM scrapers, malicious extensions, screen-reader capture, or support HTML dumps can recover the full `roomId` without opening diagnostics — undoes the least-knowledge intent of truncated diagnostics
-  - Recommended remediation: Remove the `sr-only` full id, or render `shortRoomId(roomId)` only; do not put raw capability material in always-mounted DOM
-  - Status: open
+  - Recommended remediation: Remove the `sr-only` full id; do not put raw capability material in always-mounted DOM
+  - Resolution date: 2026-09-20
+  - Fix commit: pending (working tree)
+  - Verification: Removed `sr-only` node and unused `roomId` prop from `ChatRoomHeader`; call sites updated; source-guard in `tests/components/sensitive-identifier-copy.test.ts`
+  - Status: resolved
 
 
 
@@ -233,9 +236,8 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 
 **Remaining work (priority):**
 
-1. **`SEC-2026-005` (medium)** — remove or truncate `ChatRoomHeader` `sr-only` full `roomId`.
-2. **`SEC-2026-004` (low)** — gate `useSeedDemoContacts` to DEV or explicit user action.
-3. **Residual `SEC-2026-001`** — clear seed on create abandon/back; clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
+1. **`SEC-2026-004` (low)** — gate `useSeedDemoContacts` to DEV or explicit user action.
+2. **Residual `SEC-2026-001`** — clear seed on create abandon/back; clear or scope `ConcealWalletService.seedPhraseMemory` in MOD-002.
 
 **Verification gaps:**
 

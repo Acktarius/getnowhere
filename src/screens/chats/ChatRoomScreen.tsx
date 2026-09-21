@@ -615,7 +615,6 @@ export function ChatRoomScreen() {
         <ChatRoomHeader
           contact={displayContact}
           peerStatus="offline"
-          roomId={roomId}
           roomTopic={displayRoom.roomTopic}
           onShowDiagnostics={() => setDiagOpen(true)}
           onLeaveRoom={() => setLeaveOpen(true)}
@@ -689,7 +688,6 @@ export function ChatRoomScreen() {
       <ChatRoomHeader
         contact={displayContact}
         peerStatus={displayRoom.peerStatus}
-        roomId={roomId}
         roomTopic={displayRoom.roomTopic}
         onShowDiagnostics={() => setDiagOpen(true)}
         onLeaveRoom={() => setLeaveOpen(true)}

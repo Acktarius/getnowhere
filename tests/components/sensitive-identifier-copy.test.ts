@@ -39,4 +39,11 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/CopyButton value=\{discoveryTopicRef\}/);
     expect(src).not.toMatch(/copySensitive\(discoveryTopicRef\)/);
   });
+
+  it("ChatRoomHeader does not mount raw roomId in the DOM", () => {
+    const src = readSrc("src/components/ChatRoomHeader.tsx");
+    expect(src).not.toMatch(/sr-only/);
+    expect(src).not.toMatch(/Room \{roomId\}/);
+    expect(src).not.toMatch(/roomId:/);
+  });
 });
