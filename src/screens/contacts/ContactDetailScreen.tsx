@@ -869,7 +869,7 @@ function shareIdentityClipboard(
 ): string {
   return [
     "## Share your Info:",
-    "### your CCX address so they write to you:",
+    "### your CCX address, so they can write to you:",
     ccxAddress,
     "### payment Id , they use to identify themselves when they write TO you:",
     paymentIdFrom,
