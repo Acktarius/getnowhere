@@ -363,7 +363,7 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Verification (re-review d241144): Restore route/screen/API absent; `CreateWalletScreen` / `ImportWalletScreen` only; `adoptBuiltWallet` rejects weak passwords via `describePasswordFailure`; create/import pass user password before first persist
   - Status: resolved
 
-- [ ] `SEC-2026-008` — severity: medium
+- [x] `SEC-2026-008` — resolved
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
   - Reconfirmed: 2026-09-22 (d241144)
@@ -372,15 +372,13 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Description: Accept/register (and Alice handoff on late register) can proceed after `inviteExpiry` despite protocol “fail closed / trash” rule
   - Impact: Stale invites that have not yet been retired can still open rooms and broadcast register after the accept window; initiator may complete Holepunch handoff on a late register
   - Recommended remediation: Fail closed in adapter + store `acceptInvite` and initiator handoff; filter expired invites from queue; hide Accept for expired invites
-  - Status: resolved
-
-- [x] `SEC-2026-008` — resolved
   - Resolution date: 2026-09-22
   - Fix commit: pending (working tree)
   - Verification: `isInviteExpired` guard in adapter + store `acceptInvite` (before keygen/broadcast); `completeInitiatorHandoff` rejects registers whose tx time (`fetchIncomingRegisters` `sentAtUnix`, defaults to now) is past `inviteExpiry`; `getInviteQueue` drops expired invites so Accept is hidden. Tests `tests/contacts/invite-expiry-fail-closed.test.ts`, `tests/contacts/invite-queue.test.ts`, `tests/p2p/poke-invite-accepted.test.ts` fail without the fix; full suite + `tsc -b` + Biome clean. Documented in `p2pchatprotocol.md` §7.
   - Residual: Alice’s retirement sweep may still drop an on-time register scanned after expiry (pre-existing availability behavior, not a security gap).
+  - Status: resolved
 
-- [ ] `SEC-2026-009` — severity: low
+- [x] `SEC-2026-009` — resolved
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
   - Reconfirmed: 2026-09-22 (d241144)
@@ -389,9 +387,12 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Description: APIs named as encryption only base64-encode plaintext capability / handshake material
   - Impact: Future callers may treat these as a confidentiality boundary; invites in `gnh.invites` carry a misleading “encrypted” field
   - Recommended remediation: Rename to non-crypto names or remove; document that on-chain Conceal MESSAGE is the real L1 encryption
-  - Status: open
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `encryptInvitePayload` removed; send path uses `smartBody`. `bootstrapEncrypted` no longer written (`composeInviteMessage`, ingest, `sendInvite`, `roomChainRestore`); tombstone still strips the legacy key. Tests updated. Documented in `encryption.md` and `p2pchatprotocol.md` §11.
+  - Status: resolved
 
-- [ ] `SEC-2026-010` — severity: low
+- [x] `SEC-2026-010` — resolved
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
   - Reconfirmed: 2026-09-22 (d241144)
@@ -400,9 +401,12 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Description: Register intake lacks the known-`paymentIdFrom` spam/authz gate used for create and relay
   - Impact: Defense-in-depth gap if an adversary can deliver a MESSAGE and target a pending `inviteId` (including cross-contact injection when `inviteId` is known)
   - Recommended remediation: Gate registers on known contact payment ID / invite contact binding
-  - Status: open
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `fetchIncomingRegisters` drops unknown `paymentIdFrom` and returns `contactId`. Handoff, wake-handle store, and the accepted notification run only when that contact owns the pending invite. Tests `tests/conceal/register-paymentid-gate.test.ts`, `tests/contacts/invite-expiry-fail-closed.test.ts`. Documented in `p2pchatprotocol.md` §6.
+  - Status: resolved
 
-- [ ] `SEC-2026-011` — severity: medium
+- [x] `SEC-2026-011` — resolved
   - Date found: 2026-09-22
   - Commit reviewed: d241144
   - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`, `src/state/contactsStore.ts`
@@ -410,7 +414,10 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Description: Leave-forever revoke intake lacks the known-`paymentIdFrom` gate used for create and relay
   - Impact: A MESSAGE sender who learns or guesses a live `roomId`/`inviteId` can force local room destroy and topic-epoch sync without being the relationship counterparty
   - Recommended remediation: Gate revokes on known contact `paymentIdFrom` (and bind destroy to that contact’s rooms); reject unbound revoke bodies
-  - Status: open
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `fetchIncomingRevokes` drops unknown `paymentIdFrom` and returns `contactId`; `refreshInvites` destroys only when that contact owns the `roomId` (or the `inviteId`, for decline) and applies topic epoch only then. Tests `tests/conceal/revoke-paymentid-gate.test.ts`, `tests/contacts/revoke-counterpart-destroy.test.ts`. Documented in `p2pchatprotocol.md` §10.
+  - Status: resolved
 
 ### Review history
 
@@ -1264,7 +1271,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
-| 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (open), SEC-2026-009 (open), SEC-2026-010 (open), SEC-2026-011 (new/open) |
+| 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (resolved), SEC-2026-009 (resolved), SEC-2026-010 (resolved), SEC-2026-011 (resolved) |
 | 2026-09-20 | MOD-002 | cd7cd34 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006, SEC-2026-007, SEC-2026-008, SEC-2026-009, SEC-2026-010 |
 | 2026-09-20 | MOD-001 | e17bc73 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001 (resolved), SEC-2026-002 (resolved), SEC-2026-003 (resolved/accepted), SEC-2026-004 (open), SEC-2026-005 (new/open) |
 | 2026-09-18 | MOD-001 | fe7419d | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001, SEC-2026-002, SEC-2026-003, SEC-2026-004 |

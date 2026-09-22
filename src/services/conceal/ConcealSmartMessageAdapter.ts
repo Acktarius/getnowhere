@@ -137,7 +137,6 @@ function toInviteFromCreate(
     roomTtl: composed.roomTtl,
     senderAlias: composed.senderAlias,
     capabilities: composed.capabilities,
-    bootstrapEncrypted: composed.bootstrapEncrypted,
     status,
     createdAt: new Date().toISOString(),
     ...(txHash ? { txHash } : {}),
@@ -218,7 +217,6 @@ async function inviteFromCreateBody(
     senderAlias: meta.senderAlias ?? parsed.payload.senderAlias,
     capabilities: parsed.payload.capabilities,
     roomTopic: hs.roomTopic,
-    bootstrapEncrypted: btoa(`${hs.roomId}:${hs.replayId}:${meta.contactId}`),
     status: meta.status,
     createdAt: meta.createdAt,
     txHash: meta.txHash,
@@ -252,7 +250,7 @@ async function broadcastSmartBody(input: {
   });
 }
 
-/** Decode local envelope (btoa JSON) or accept a raw smart-message body. */
+/** Raw smart-message body, or a legacy base64 JSON envelope. Conceal MESSAGE encrypts on send. @see docs/security/encryption.md */
 function decodeOutboundPayload(payload: string): {
   smartBody: string;
   composed?: ComposedInvite;
@@ -330,8 +328,6 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       relationshipEligible: true,
     });
 
-    const bootstrapEncrypted = btoa(`${roomId}:${replayId}:${input.contactId}`);
-
     return {
       roomId,
       inviteId,
@@ -343,21 +339,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       senderAlias: input.senderAlias,
       capabilities,
       roomTopic: handshake.roomTopic,
-      bootstrapEncrypted,
       handshake,
       smartBody: envelope.smartBody,
     };
-  },
-
-  async encryptInvitePayload(payload: ComposedInvite): Promise<string> {
-    const smartBody =
-      payload.smartBody ||
-      encodeCreateSmartBody(
-        payload.handshake,
-        payload.senderAlias,
-        payload.capabilities,
-      );
-    return btoa(JSON.stringify({ smartBody, payload }));
   },
 
   async sendInviteMessage(contactId, payload, delivery) {
@@ -408,7 +392,6 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       roomTtl: parsed.payload.handshake.roomTtl,
       senderAlias: parsed.payload.senderAlias,
       capabilities: parsed.payload.capabilities,
-      bootstrapEncrypted: "",
       handshake: parsed.payload.handshake,
       smartBody,
     };
@@ -492,23 +475,23 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       const out: Array<{
         register: import("@/types/protocol").ChatRegisterPayload;
         txHash: string;
+        contactId: string;
         sentAtUnix?: number;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
+        // Counterpart only. @see docs/security/p2pchatprotocol.md §6
+        const contact = matchContactByPaymentId(record.paymentIdFrom);
+        if (!contact) continue;
         const parsed = parseChatSmartBody(record.body, {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "register") continue;
-        if (parsed.payload.pokeHandle) {
-          const hs = handshakesByInviteId.get(parsed.payload.inviteId);
-          if (hs?.roomId)
-            storePartnerPokeHandle(hs.roomId, parsed.payload.pokeHandle);
-        }
         const sentMs = Date.parse(record.timestamp);
         out.push({
           register: parsed.payload,
           txHash: record.id,
+          contactId: contact.contactId,
           ...(Number.isFinite(sentMs)
             ? { sentAtUnix: Math.floor(sentMs / 1000) }
             : {}),
@@ -624,14 +607,22 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       const out: Array<{
         revoke: import("@/types/protocol").ChatRevokePayload;
         txHash: string;
+        contactId: string;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
+        // Counterpart only. @see docs/security/p2pchatprotocol.md §10
+        const contact = matchContactByPaymentId(record.paymentIdFrom);
+        if (!contact) continue;
         const parsed = parseChatSmartBody(record.body, {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "revoke") continue;
-        out.push({ revoke: parsed.payload, txHash: record.id });
+        out.push({
+          revoke: parsed.payload,
+          txHash: record.id,
+          contactId: contact.contactId,
+        });
       }
       return out;
     } catch {

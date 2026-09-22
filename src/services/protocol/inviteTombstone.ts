@@ -21,9 +21,13 @@ export function tombstoneInvite(
     tombstonedAt: nowIso,
   };
 
+  // Older rows may still carry this plaintext key. @see docs/security/p2pchatprotocol.md §11
+  const legacy = invite as SmartMessageInvite & {
+    bootstrapEncrypted?: unknown;
+  };
+  const { bootstrapEncrypted: _legacyBootstrap, ...rest } = legacy;
   const wiped: SmartMessageInvite = {
-    ...invite,
-    bootstrapEncrypted: undefined,
+    ...rest,
     status:
       status === "destroyed"
         ? "failed"

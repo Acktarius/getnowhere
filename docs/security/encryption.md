@@ -382,8 +382,9 @@ Rules:
 - Persist session counters and key **refs** (or sealed key material) so reconnect
   can restore seal/open without rewinding nonces.
 - Never log raw session keys, ephemeral privates, or plaintext chat.
-- Tombstone flows must wipe bootstrap ciphertext and session secrets per
-  `p2pchatprotocol.md`.
+- Tombstone flows must wipe session secrets per `p2pchatprotocol.md`.
+  Local invite records store `roomId`, `inviteId`, and `replayId` in the clear.
+  L1 confidentiality is Conceal MESSAGE on the chain, not a local field.
 - Prefer the active `StorageAdapter`; do not scatter secrets into ad hoc
   `localStorage` calls. On mobile the adapter is native (encrypted wallet
   file + secure prefs). Do not log the wallet blob or Keystore material.

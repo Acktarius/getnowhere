@@ -139,7 +139,12 @@ describe("initiator handoff expiry", () => {
     const hs = handshake(now - 3600);
     seedInitiator(hs);
     svc.fetchIncomingRegisters.mockResolvedValue([
-      { register: register(hs), txHash: "tx-r", sentAtUnix: now },
+      {
+        register: register(hs),
+        txHash: "tx-r",
+        contactId: "c1",
+        sentAtUnix: now,
+      },
     ]);
 
     const probe = await probeInitiatorHandoff(hs.roomId);
@@ -157,6 +162,7 @@ describe("initiator handoff expiry", () => {
       {
         register: register(hs),
         txHash: "tx-r",
+        contactId: "c1",
         sentAtUnix: hs.inviteExpiry - 60,
       },
     ]);
@@ -165,5 +171,24 @@ describe("initiator handoff expiry", () => {
 
     expect(svc.deriveSession).toHaveBeenCalled();
     expect(probe.detail).toBe("derive reached");
+  });
+
+  it("ignores a register from a contact who does not own the invite", async () => {
+    const hs = handshake(now + 3600);
+    seedInitiator(hs);
+    svc.fetchIncomingRegisters.mockResolvedValue([
+      {
+        register: register(hs),
+        txHash: "tx-other",
+        contactId: "c-other",
+        sentAtUnix: now,
+      },
+    ]);
+
+    const probe = await probeInitiatorHandoff(hs.roomId);
+
+    expect(probe.handoffCompleted).toBe(false);
+    expect(probe.matchingRegister).toBe(false);
+    expect(svc.deriveSession).not.toHaveBeenCalled();
   });
 });

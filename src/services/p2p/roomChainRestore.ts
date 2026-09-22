@@ -125,7 +125,6 @@ async function inviteFromCreateRecord(
     senderAlias: parsed.payload.senderAlias,
     capabilities: parsed.payload.capabilities,
     roomTopic: hs.roomTopic,
-    bootstrapEncrypted: btoa(`${hs.roomId}:${hs.replayId}:${contact.id}`),
     status,
     createdAt: record.timestamp,
     txHash: record.id,

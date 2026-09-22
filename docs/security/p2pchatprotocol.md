@@ -200,7 +200,9 @@ Alice                                         Bob
 
 **Accept is not the end of the chat lifecycle.** Steps 6–9 are mandatory.
 Alice must observe Bob’s on-chain `register` on her wallet (not only Bob’s
-Accept UI). Initiator ephemeral keys are stashed locally until that handoff.
+Accept UI). The sender’s `paymentIdFrom` must be the contact that invite was
+created for. A register from anyone else is ignored, including its wake handle.
+Initiator ephemeral keys are stashed locally until that handoff.
 
 ---
 
@@ -447,9 +449,13 @@ accepted rooms.
 **Leave forever (revoke):** either peer may end a room before `roomTtl` by
 sending `chat.revoke` (`room_revoked`) to the other over L1. Wire fields:
 `inviteId`, optional `replayId`, `reasonCode`, and **`roomId`** (required for
-leave-forever). Receiver rule: **`{contact, revoke, roomId}` → destroy that
-room** (catalog + session + UI), and record a durable revoke tombstone so a
-later scan of the original on-chain `create` cannot resurrect it. Sender
+leave-forever). `roomId` is a capability of that room's counterpart only.
+Receiver rule: the sender's `paymentIdFrom` must match the contact that owns
+that `roomId` (or `inviteId`, for `user_declined`). Otherwise ignore the
+revoke — do not destroy and do not apply its topic epoch. Then
+**`{contact, revoke, roomId}` → destroy that room** (catalog + session + UI),
+and record a durable revoke tombstone so a later scan of the original on-chain
+`create` cannot resurrect it. Sender
 **destroys locally immediately** and fires the L1 revoke in the background —
 do **not** block leave on broadcast/confirm. The room **MUST** disappear from
 Chats at once. Decline of a pending invite still uses `user_declined`
@@ -483,8 +489,11 @@ only when connect reaches `connected`. `pending` never enables send.
 
 ## 11. Tombstones
 
-On decline/expiry/destroy: wipe bootstrap ciphertext and ephemeral/session secrets;
-retain minimal `{ inviteId, replayId, roomId, contactId, status, TTLs, tombstonedAt }`
+On decline/expiry/destroy: wipe ephemeral/session secrets and any legacy
+`bootstrapEncrypted` key still on an old invite row. Local invite records store
+`roomId`, `inviteId`, and `replayId` in the clear. L1 confidentiality is Conceal
+MESSAGE on the chain. Retain minimal
+`{ inviteId, replayId, roomId, contactId, status, TTLs, tombstonedAt }`
 for replay/idempotency. GC after `max(inviteExpiry, roomTtl) + 7d` (keep replay ids).
 
 ---

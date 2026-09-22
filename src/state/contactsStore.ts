@@ -25,6 +25,7 @@ import {
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
+import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
 import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isInviteRevoked,
@@ -390,16 +391,34 @@ function findPendingInitiator(inviteId: string): PendingKey | undefined {
   return undefined;
 }
 
-/** Initiator lookup for notification scan — inviteId + contactId only. */
+function registerSenderOwnsInvite(
+  pending: PendingKey,
+  senderContactId: string | undefined,
+): boolean {
+  return Boolean(senderContactId) && pending.contactId === senderContactId;
+}
+
+/** Initiator lookup for notification scan — sender must own the invite. */
 export function findPendingInitiatorForNotification(
   registerInviteId: string,
-): { inviteId: string; contactId?: string } | undefined {
+  senderContactId: string,
+): { inviteId: string; contactId: string } | undefined {
   const pending = findPendingInitiator(registerInviteId);
-  if (!pending) return undefined;
+  if (!pending || !registerSenderOwnsInvite(pending, senderContactId)) {
+    return undefined;
+  }
   return {
     inviteId: pending.handshake.inviteId,
     contactId: pending.contactId,
   };
+}
+
+function noteRegisterPokeHandle(
+  pending: PendingKey,
+  register: import("@/types/protocol").ChatRegisterPayload,
+): void {
+  if (!register.pokeHandle) return;
+  storePartnerPokeHandle(pending.handshake.roomId, register.pokeHandle);
 }
 
 /** True when Alice still holds initiator material for this room. */
@@ -498,7 +517,7 @@ export async function probeInitiatorHandoff(
           normalizeInviteId(r.register.inviteId) ===
           normalizeInviteId(pending.handshake.inviteId),
       );
-      if (hit) {
+      if (hit && registerSenderOwnsInvite(pending, hit.contactId)) {
         attempts.push({
           pending,
           register: hit.register,
@@ -506,9 +525,10 @@ export async function probeInitiatorHandoff(
         });
       }
     }
-    for (const { register, sentAtUnix } of registers) {
+    for (const { register, sentAtUnix, contactId } of registers) {
       const pending = findPendingInitiator(register.inviteId);
       if (!pending || pending.handshake.roomId !== roomId) continue;
+      if (!registerSenderOwnsInvite(pending, contactId)) continue;
       if (
         attempts.some(
           (a) => a.pending.handshake.inviteId === pending.handshake.inviteId,
@@ -524,8 +544,9 @@ export async function probeInitiatorHandoff(
       localInvite &&
       registers.some(
         (r) =>
+          r.contactId === localInvite.contactId &&
           normalizeInviteId(r.register.inviteId) ===
-          normalizeInviteId(localInvite.inviteId),
+            normalizeInviteId(localInvite.inviteId),
       )
     ) {
       matchingRegister = true;
@@ -534,6 +555,7 @@ export async function probeInitiatorHandoff(
 
     for (const { pending, register, sentAtUnix } of attempts) {
       try {
+        noteRegisterPokeHandle(pending, register);
         await completeInitiatorHandoff(
           pending.handshake.inviteId,
           { ...register, inviteId: pending.handshake.inviteId },
@@ -765,27 +787,38 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     // Peer leave-forever revokes — never recreate a room we are about to destroy.
     const revokes = await smartMessageService.fetchIncomingRevokes();
-    for (const { revoke } of revokes) {
+    for (const { revoke, contactId } of revokes) {
+      if (!contactId) continue;
+      // Counterpart must own the roomId. @see docs/security/p2pchatprotocol.md §10
       const inv = get().invites.find(
         (i) =>
+          i.contactId === contactId &&
           normalizeInviteId(i.inviteId) === normalizeInviteId(revoke.inviteId),
       );
       const catalogHit = (await import("@/services/p2p/roomCatalogStore"))
         .listCatalogRooms()
         .find(
           (r) =>
-            (revoke.roomId && r.id === revoke.roomId) ||
-            (r.inviteId &&
-              normalizeInviteId(r.inviteId) ===
-                normalizeInviteId(revoke.inviteId)),
+            r.contactId === contactId &&
+            ((revoke.roomId && r.id === revoke.roomId) ||
+              (r.inviteId &&
+                normalizeInviteId(r.inviteId) ===
+                  normalizeInviteId(revoke.inviteId))),
         );
+      const ownedRoomId = revoke.roomId
+        ? (inv?.roomId === revoke.roomId ? inv.roomId : undefined) ||
+          (catalogHit?.id === revoke.roomId ? catalogHit.id : undefined)
+        : inv?.roomId || catalogHit?.id;
+      if (!ownedRoomId) continue;
       let syncedEpochFromPeer = false;
       if (
         revoke.topicEpoch !== undefined &&
         revoke.reasonCode === "room_revoked"
       ) {
-        const handshake = getHandshakeForInvite(revoke.inviteId);
-        const contactId = inv?.contactId || catalogHit?.contactId;
+        const handshake =
+          inv?.contactId === contactId
+            ? getHandshakeForInvite(revoke.inviteId)
+            : undefined;
         let relationshipId = handshake?.relationshipId;
         if (!relationshipId && contactId) {
           const contact = get().contacts.find((c) => c.id === contactId);
@@ -805,8 +838,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           syncedEpochFromPeer = true;
         }
       }
-      const roomId = revoke.roomId || inv?.roomId || catalogHit?.id;
-      if (!roomId) continue;
+      const roomId = ownedRoomId;
       const destroyOpts = syncedEpochFromPeer
         ? { skipEpochBump: true as const }
         : undefined;
@@ -1008,10 +1040,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     // Alice: scan Bob's on-chain register and finish Holepunch handoff.
     const registers = await smartMessageService.fetchIncomingRegisters();
-    for (const { register, sentAtUnix } of registers) {
+    for (const { register, sentAtUnix, contactId } of registers) {
       const pending = findPendingInitiator(register.inviteId);
-      if (!pending) continue;
+      if (!pending || !registerSenderOwnsInvite(pending, contactId)) continue;
       if (isRoomRevoked(pending.handshake.roomId)) continue;
+      noteRegisterPokeHandle(pending, register);
       if (pending.contactId) {
         const { useNotificationStore } = await import(
           "@/state/notificationStore"
@@ -1094,8 +1127,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       getRelationshipTopicEpoch(relationshipId);
     await applyRelationshipTopicEpoch(relationshipId, inviteEpoch, contactId);
 
-    // Local envelope for the adapter (tx encryption is on-chain). Pass smartBody
-    // directly so unicode aliases cannot break btoa.
+    // Conceal MESSAGE encrypts this body on send. @see docs/security/encryption.md
     const sent = await smartMessageService.sendInviteMessage(
       contactId,
       composed.smartBody,
@@ -1145,7 +1177,6 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           senderAlias: composed.senderAlias,
           capabilities: composed.capabilities,
           roomTopic: composed.roomTopic ?? roomTopic,
-          bootstrapEncrypted: composed.bootstrapEncrypted,
           status: "sent" as const,
           createdAt: new Date().toISOString(),
           txHash: sent.txHash,

@@ -219,8 +219,6 @@ export type SmartMessageInvite = {
   capabilities: string[];
   /** Display topic selected at create (mirrored from handshake.roomTopic). */
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
-  /** Wiped on tombstone. */
-  bootstrapEncrypted?: string;
   status:
     | "draft"
     | "sent"

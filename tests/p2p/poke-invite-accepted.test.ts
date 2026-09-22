@@ -109,11 +109,9 @@ async function sendCreateInvite(): Promise<{
     senderAlias: "alice",
     relationshipId: "ab".repeat(32),
   });
-  const payload =
-    await ConcealSmartMessageAdapter.encryptInvitePayload(composed);
   const sent = await ConcealSmartMessageAdapter.sendInviteMessage(
     CONTACT_ID,
-    payload,
+    composed.smartBody,
     {
       recipientAddress: RECIPIENT_ADDRESS,
       paymentId: PAYMENT_ID_TO,

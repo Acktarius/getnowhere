@@ -161,12 +161,12 @@ describe("tombstone", () => {
       roomTtl: 2,
       senderAlias: "a",
       capabilities: ["chat.v1"],
-      bootstrapEncrypted: "SECRET",
       status: "received",
       createdAt: new Date().toISOString(),
     };
-    const { tombstone, invite: wiped } = tombstoneInvite(invite, "rejected");
-    expect(wiped.bootstrapEncrypted).toBeUndefined();
+    const legacy = { ...invite, bootstrapEncrypted: "SECRET" };
+    const { tombstone, invite: wiped } = tombstoneInvite(legacy, "rejected");
+    expect("bootstrapEncrypted" in wiped).toBe(false);
     expect(tombstone.replayId).toBe("rep1");
     expect(tombstone.status).toBe("rejected");
   });

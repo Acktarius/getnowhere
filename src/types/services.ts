@@ -160,14 +160,12 @@ export type ComposedInvite = {
   senderAlias: string;
   capabilities: string[];
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
-  bootstrapEncrypted: string;
   handshake: ChatInviteHandshake;
   smartBody: string;
 };
 
 export type SmartMessageService = {
   composeInviteMessage(input: ComposeInviteInput): Promise<ComposedInvite>;
-  encryptInvitePayload(payload: ComposedInvite): Promise<string>;
   sendInviteMessage(
     contactId: string,
     payload: string,
@@ -186,6 +184,8 @@ export type SmartMessageService = {
     Array<{
       register: import("@/types/protocol").ChatRegisterPayload;
       txHash: string;
+      /** Contact whose paymentIdFrom matches the sender. */
+      contactId: string;
       /** Register tx time (block, or first-seen for mempool), unix seconds. */
       sentAtUnix?: number;
     }>
@@ -216,6 +216,8 @@ export type SmartMessageService = {
     Array<{
       revoke: import("@/types/protocol").ChatRevokePayload;
       txHash: string;
+      /** Contact whose paymentIdFrom matches the sender. */
+      contactId: string;
     }>
   >;
   /** Broadcast L1 chat.relay (SMS-class fallback; Conceal MESSAGE encrypts). */
