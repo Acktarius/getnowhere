@@ -322,7 +322,7 @@ broken by nonce reuse under the same key.
 
 ### Strategy: `counter_from_seed`
 
-- `nonceSeed`: 256-bit random from handshake (hex).
+- `nonceSeed`: 8 random bytes (64-bit hex) from the handshake. Slim create packs that width (`p2pchatprotocol.md` §4, `capabilities-and-derivation.md`). HKDF stretches it to the 12-byte nonce. Uniqueness is the per-direction counter under the session key, not the seed width.
 - Per seal under the **send** key:
   - `nonce_12 = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"|"recv"), info=UTF8("nonce|" + counter), L=12)`
   - persist and increment `sendCounter` **after** successful seal preparation

@@ -539,17 +539,56 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - Confirm replay handling is explicit.
 - Confirm errors do not disclose sensitive cryptographic state.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-22 — commit: 01d6d85 — reviewer: Grok 4.7 (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-012` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: 01d6d85
+  - Affected files: `src/services/protocol/SmartMessageProtocolAdapter.ts`, `src/services/conceal/ConcealSmartMessageAdapter.ts`, `docs/security/encryption.md`
+  - Evidence: `CREATE_PACK_FIELDS` `nonceSeed` is 8 bytes; `composeInviteMessage` uses `randomHex(8)`; `encryption.md` nonce rules require a 256-bit handshake seed
+  - Description: Shipped create packs a 64-bit `nonceSeed` while the module doc specifies 256-bit
+  - Impact: Nonce uniqueness still comes from the per-direction counter under the session key, so this is not reuse by itself. A reader of the doc will overstate seed entropy, and any later derivation that assumes 32 seed bytes will not match the wire
+  - Recommended remediation: Document the shipped 8-byte seed, or widen it in a protocol bump and update `encryption.md` in the same change
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `encryption.md` nonce rules now state the shipped 8-byte seed. Pack width was already `nonceSeed(8)` in `p2pchatprotocol.md` and `capabilities-and-derivation.md`. No wire change.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-22 — 01d6d85 — Grok 4.7 (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: Protocol helpers own create/register/revoke/relay parse and AAD construction. ChaCha20-Poly1305 seal/open stays in the P2P encryption adapter (MOD-004). Hyperswarm is not imported here.
+- Least knowledge: Slim create omits `relationshipId` and salt on the wire; both peers derive them. Legacy 136-byte packs still parse and do carry those fields.
+- Trust boundaries: Packed create rejects an unsupported `protocolVersion`. Legacy wire verbs `invite` / `accept` / `reject` parse to null. AEAD open failure returns null; the frame handler drops it.
+- Capabilities lifecycle: Create parse fails closed on expired `inviteExpiry` unless the caller opts out. Register and revoke authorization is the sender binding added in MOD-002, not this parser.
+- Discovery is not authorization: Proof frames are recognized by plaintext `kind === "proof"` after a successful open and are not inserted as chat. Chat AAD is `v1|roomId|sessionId`; epoch proof AAD adds epoch and suite. Trying both AAD values fails closed per candidate.
+- Privacy claims: `encryption.md` overstates `nonceSeed` width (`SEC-2026-012`). It does not claim the in-memory replay set is durable.
+
+**Checklist highlights:**
+
+- Event chain: pack create → scan parse (`allowSeenReplay`) → register parse → session derive (MOD-004) → frame seal with counter nonce → open with chat or proof AAD.
+- Secrets: `randomHex` uses `crypto.getRandomValues`. `generatePokeId` uses the same. `encryptWithSecret` (AES-GCM, random 12-byte IV) has no production caller in `src/`.
+- Logs: protocol parse returns null or throws short errors; no key or body dumps in the reviewed helpers.
+- Failure paths: malformed pack, bad version, and expired create return null. `allowExpiredInvite` is limited to chain restore.
+- Replay: `seenReplayIds` is process memory. Every production `parseChatSmartBody` call passes `allowSeenReplay: true`, so the set does not reject a rescanned create.
+- Layer 1: room id and topic derivation stay separate (`deriveTopicRef` vs handshake `roomId`). v1 and v2 are explicit (`protocolVersion` 1 → `SHA256_V1`, ≥2 → `HKDF_EPOCH_V1`).
+
+**Findings this review:** `SEC-2026-012`
+
+**Verification gaps:**
+
+- Seal/open, nonce counter persistence, and key wipe live in `P2PEncryptionAdapter` (MOD-004) and were not re-audited past the open-fails-closed and counter-increment behavior.
+- Durable replay of a create after process restart depends on tombstones, not `seenReplayIds`. That interaction was not re-tested here.
+- `src/lib/**` and `src/utils/**` outside the protocol and crypto helpers (UI, mobile bridge, node selection) were not line-reviewed.
 
 ---
 
@@ -1271,6 +1310,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-22 | MOD-003 | 01d6d85 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-012 (resolved) |
 | 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (resolved), SEC-2026-009 (resolved), SEC-2026-010 (resolved), SEC-2026-011 (resolved) |
 | 2026-09-20 | MOD-002 | cd7cd34 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006, SEC-2026-007, SEC-2026-008, SEC-2026-009, SEC-2026-010 |
 | 2026-09-20 | MOD-001 | e17bc73 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001 (resolved), SEC-2026-002 (resolved), SEC-2026-003 (resolved/accepted), SEC-2026-004 (open), SEC-2026-005 (new/open) |
