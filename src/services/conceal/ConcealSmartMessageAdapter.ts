@@ -30,7 +30,7 @@ import {
   randomHex,
 } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
-import { nowUnix } from "@/services/protocol/roomLifecycle";
+import { isInviteExpired, nowUnix } from "@/services/protocol/roomLifecycle";
 import {
   encodeCreateSmartBody,
   encodeRegisterSmartBody,
@@ -492,6 +492,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       const out: Array<{
         register: import("@/types/protocol").ChatRegisterPayload;
         txHash: string;
+        sentAtUnix?: number;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
@@ -504,7 +505,14 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
           if (hs?.roomId)
             storePartnerPokeHandle(hs.roomId, parsed.payload.pokeHandle);
         }
-        out.push({ register: parsed.payload, txHash: record.id });
+        const sentMs = Date.parse(record.timestamp);
+        out.push({
+          register: parsed.payload,
+          txHash: record.id,
+          ...(Number.isFinite(sentMs)
+            ? { sentAtUnix: Math.floor(sentMs / 1000) }
+            : {}),
+        });
       }
       return out;
     } catch {
@@ -533,6 +541,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     if (!inv) throw new Error("Invite not found.");
     if (inv.status !== "received" && inv.status !== "sent") {
       throw new Error("Invite cannot be accepted in current state.");
+    }
+    if (inv.inviteExpiry && isInviteExpired(inv.inviteExpiry)) {
+      throw new Error("Invite expired — ask them to send a new one.");
     }
     // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
     let ownPokeHandle = getOwnPokeHandle() ?? undefined;

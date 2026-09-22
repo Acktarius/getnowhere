@@ -260,6 +260,21 @@ describe("acceptInvite wake poke", () => {
     expect(result.roomId).toBe(roomId);
   });
 
+  it("rejects accept after inviteExpiry without broadcasting register", async () => {
+    const { inviteId } = await sendCreateInvite();
+    sendSmartMessage.mockClear();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 2 * 86400 * 1000);
+      await expect(
+        ConcealSmartMessageAdapter.acceptInvite(inviteId),
+      ).rejects.toThrow(/expired/i);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(sendSmartMessage).not.toHaveBeenCalled();
+  });
+
   it("stores received create ph and pokes on accept even if no catalog row existed", async () => {
     pushWakeEnabled = true;
     const { inviteId, roomId } = await ingestReceivedCreateWithPh();

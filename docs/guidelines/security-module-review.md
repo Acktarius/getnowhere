@@ -330,7 +330,7 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - Confirm replay, expiry, decline, revocation, and duplicate-delivery behavior fail safely.
 - Confirm a successful Layer 1 event does not bypass Layer 2 authorization checks.
 
-- [x] Reviewed — latest review: 2026-09-20 — commit: cd7cd34 — reviewer: Composer (Cursor Agent)
+- [x] Reviewed — latest review: 2026-09-22 — commit: d241144 — reviewer: Composer (Cursor Agent)
 
 
 
@@ -345,37 +345,45 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Impact: XSS, malicious extension, DevTools, or local malware can steal pending session ECDH material and complete or hijack invite handoff without the wallet password
   - Recommended remediation: Keep pending ephemerals in memory only, or seal with unlocked wallet / platform secure storage; wipe on handoff, decline, expiry, and lock
   - Resolution date: 2026-09-21
-  - Fix commit: pending (OpenSpec `seal-pending-ephemeral-keys` working tree)
-  - Verification: Pending records live in `raw.pendingInviteEphemerals` via `persistRuntime`; upsert/remove no longer write `gnh.pendingInitiatorKeys`; legacy KV migrated then deleted on hydrate; wipe on handoff, decline, abandon, leave/revoke (`removePendingInitiatorKeysForRoom`); tests in `tests/contacts/pending-invite-ephemerals.test.ts`
+  - Fix commit: `dd7df78`
+  - Verification (re-review d241144): Pending records live in `raw.pendingInviteEphemerals` via `persistRuntime`; upsert/remove no longer write `gnh.pendingInitiatorKeys`; legacy KV migrated then deleted on hydrate; wipe on handoff, decline, leave/revoke (`removePendingInitiatorKeysForRoom`); tests in `tests/contacts/pending-invite-ephemerals.test.ts`; matches `encryption.md` pending-ephemeral rule
   - Status: resolved
   - Overlap: also in scope for MOD-011 (storage substrate); write API lives in this module’s contacts files
 
-- [x] `SEC-2026-007` — severity: high
+- [x] `SEC-2026-007` — resolved
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
   - Affected files: `src/services/conceal/ConcealWalletService.ts`, former `src/screens/onboarding/RestoreWalletScreen.tsx`
-  - Evidence: `restoreWallet` → `adoptBuiltWallet(built, tempPassword)` with `tmp-${uid("pw")}` (`Math.random`); Restore screen never calls `setSessionWalletPassword`
+  - Evidence (original): `restoreWallet` → `adoptBuiltWallet(built, tempPassword)` with `tmp-${uid("pw")}` (`Math.random`); Restore screen never calls `setSessionWalletPassword`
   - Description: Restore (and create until password step) persists the encrypted wallet blob under a weak auto-generated password; restore completes onboarding without a user-chosen password
   - Impact: At-rest wallet confidentiality rests on a patterned weak secret; offline attack on the blob is far easier than against a real password; lock/reopen may also strand the user
   - Recommended remediation: Require user password before `adopt`/`persist` on restore (mirror create/import); do not use `Math.random` for any interim secret
   - Resolution date: 2026-09-21
-  - Fix commit: pending (OpenSpec `adopt-wallet-envelope-v3` working tree)
-  - Verification: unused restore route/screen/API removed; create validates and passes the user password before first persist; file import uses bounded SDK parsing and a distinct new local password; SDK 0.3.0 writes Argon2id Envelope 3
+  - Fix commit: `acb175b` (screen removal); Envelope 3 ship `c16bede`
+  - Verification (re-review d241144): Restore route/screen/API absent; `CreateWalletScreen` / `ImportWalletScreen` only; `adoptBuiltWallet` rejects weak passwords via `describePasswordFailure`; create/import pass user password before first persist
   - Status: resolved
 
 - [ ] `SEC-2026-008` — severity: medium
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
-  - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`, `src/state/contactsStore.ts`, `src/screens/contacts/ContactDetailScreen.tsx`
-  - Evidence: `acceptInvite` checks status only; no `isInviteExpired`; UI `showAccept` ignores expiry
-  - Description: Accept/register can proceed after `inviteExpiry` despite protocol “fail closed / trash” rule
-  - Impact: Stale invites that have not yet been retired can still open rooms and broadcast register after the accept window
-  - Recommended remediation: Fail closed in adapter + store `acceptInvite`; hide Accept for expired invites
-  - Status: open
+  - Reconfirmed: 2026-09-22 (d241144)
+  - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`, `src/state/contactsStore.ts`, `src/screens/contacts/ContactDetailScreen.tsx`, `src/services/contacts/inviteQueue.ts`
+  - Evidence: Adapter `acceptInvite` checks status only (no `isInviteExpired`); store `acceptInvite` / `completeInitiatorHandoff` likewise; UI `showAccept` and `getInviteQueue` ignore expiry (retirement is a separate sweep)
+  - Description: Accept/register (and Alice handoff on late register) can proceed after `inviteExpiry` despite protocol “fail closed / trash” rule
+  - Impact: Stale invites that have not yet been retired can still open rooms and broadcast register after the accept window; initiator may complete Holepunch handoff on a late register
+  - Recommended remediation: Fail closed in adapter + store `acceptInvite` and initiator handoff; filter expired invites from queue; hide Accept for expired invites
+  - Status: resolved
+
+- [x] `SEC-2026-008` — resolved
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `isInviteExpired` guard in adapter + store `acceptInvite` (before keygen/broadcast); `completeInitiatorHandoff` rejects registers whose tx time (`fetchIncomingRegisters` `sentAtUnix`, defaults to now) is past `inviteExpiry`; `getInviteQueue` drops expired invites so Accept is hidden. Tests `tests/contacts/invite-expiry-fail-closed.test.ts`, `tests/contacts/invite-queue.test.ts`, `tests/p2p/poke-invite-accepted.test.ts` fail without the fix; full suite + `tsc -b` + Biome clean. Documented in `p2pchatprotocol.md` §7.
+  - Residual: Alice’s retirement sweep may still drop an on-time register scanned after expiry (pre-existing availability behavior, not a security gap).
 
 - [ ] `SEC-2026-009` — severity: low
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
+  - Reconfirmed: 2026-09-22 (d241144)
   - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`
   - Evidence: `bootstrapEncrypted = btoa(\`${roomId}:${replayId}:${contactId}\`)`; `encryptInvitePayload` → `btoa(JSON.stringify(...))`
   - Description: APIs named as encryption only base64-encode plaintext capability / handshake material
@@ -386,14 +394,56 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - [ ] `SEC-2026-010` — severity: low
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
+  - Reconfirmed: 2026-09-22 (d241144)
   - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`
   - Evidence: `fetchIncomingRegisters` has no `matchContactByPaymentId`; create/relay paths do
   - Description: Register intake lacks the known-`paymentIdFrom` spam/authz gate used for create and relay
-  - Impact: Defense-in-depth gap if an adversary can deliver a MESSAGE and target a pending `inviteId`
+  - Impact: Defense-in-depth gap if an adversary can deliver a MESSAGE and target a pending `inviteId` (including cross-contact injection when `inviteId` is known)
   - Recommended remediation: Gate registers on known contact payment ID / invite contact binding
   - Status: open
 
+- [ ] `SEC-2026-011` — severity: medium
+  - Date found: 2026-09-22
+  - Commit reviewed: d241144
+  - Affected files: `src/services/conceal/ConcealSmartMessageAdapter.ts`, `src/state/contactsStore.ts`
+  - Evidence: `fetchIncomingRevokes` returns every decrypted revoke with no `matchContactByPaymentId`; `refreshInvites` destroys on matching `inviteId` / `roomId` alone
+  - Description: Leave-forever revoke intake lacks the known-`paymentIdFrom` gate used for create and relay
+  - Impact: A MESSAGE sender who learns or guesses a live `roomId`/`inviteId` can force local room destroy and topic-epoch sync without being the relationship counterparty
+  - Recommended remediation: Gate revokes on known contact `paymentIdFrom` (and bind destroy to that contact’s rooms); reject unbound revoke bodies
+  - Status: open
+
 ### Review history
+
+#### 2026-09-22 — d241144 — Composer (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: Conceal adapters still own L1 create/register/revoke/relay; Hyperswarm stays out of UI; discovery is not treated as authorization for composer live path.
+- Least knowledge: Pending invite ECDH material now sealed in the wallet blob (`SEC-2026-006` resolved); wallet at-rest path no longer uses temp restore passwords (`SEC-2026-007` resolved).
+- Trust boundaries: On-chain Conceal MESSAGE remains the real L1 confidentiality boundary; local `bootstrapEncrypted` / `encryptInvitePayload` remain misnamed (`SEC-2026-009`).
+- Capabilities lifecycle: Create parse still fails closed on expired invite (unless opted out); retirement sweeps exist; accept/handoff paths still do not (`SEC-2026-008`). Register and revoke intake remain ungated vs create/relay (`SEC-2026-010`, new `SEC-2026-011`).
+- Privacy claims: Docs correctly separate L1 view-key privacy from L2 IP exposure; module code does not overclaim beyond the misnamed bootstrap field.
+
+**Checklist highlights:**
+
+- Event chain: compose create → send → scan (paymentId gate) → accept/register → Alice register scan/handoff — re-traced; expiry hole on accept/handoff confirmed.
+- Secrets: `pendingInviteEphemerals` in encrypted wallet; mnemonic memory clear path intact; `randomHex` uses `crypto.getRandomValues`.
+- Logs: conceal sync `console.warn` paths reviewed — no body/key dumps in adapter/store paths.
+- Failure paths: inviteExpiry trash rule incomplete at accept; revoke destroy lacks sender binding.
+- Layer 1 checklist: roomId vs topicRef distinct; replay checked in `deriveSession`; register/revoke authz incomplete.
+- Tests: no negative test that Accept fails after `inviteExpiry`; pending-ephemeral and room-catalog expiry tests exist.
+
+**Findings this review:** `SEC-2026-008` (reconfirmed), `SEC-2026-009` (reconfirmed), `SEC-2026-010` (reconfirmed), `SEC-2026-011` (new); `SEC-2026-006` / `SEC-2026-007` re-verified resolved
+
+**Verification gaps:**
+
+- No packet capture / live daemon observation of smart-message metadata beyond code+docs review.
+- In-memory `seenReplayIds` durability across reload vs durable tombstones — deeper pass belongs with MOD-003.
+- Deep L1 session seal/open and nonce counters live primarily in P2P encryption adapters (MOD-003 / MOD-004) — not re-audited line-by-line here.
+- Mobile secure-storage adapter behavior for wallet-blob ephemerals not exercised in this pass (see MOD-009 / MOD-011).
+- Practical exploitability of 4-byte `roomId`/`inviteId` guessing for ungated revoke/register not measured against fee/rate limits.
 
 #### 2026-09-20 — cd7cd34 — Composer (Cursor Agent)
 
@@ -1214,6 +1264,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (open), SEC-2026-009 (open), SEC-2026-010 (open), SEC-2026-011 (new/open) |
 | 2026-09-20 | MOD-002 | cd7cd34 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006, SEC-2026-007, SEC-2026-008, SEC-2026-009, SEC-2026-010 |
 | 2026-09-20 | MOD-001 | e17bc73 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001 (resolved), SEC-2026-002 (resolved), SEC-2026-003 (resolved/accepted), SEC-2026-004 (open), SEC-2026-005 (new/open) |
 | 2026-09-18 | MOD-001 | fe7419d | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-001, SEC-2026-002, SEC-2026-003, SEC-2026-004 |

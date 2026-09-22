@@ -1,3 +1,4 @@
+import { isInviteExpired, nowUnix } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
 
 export type InviteQueue = {
@@ -7,13 +8,19 @@ export type InviteQueue = {
   others: SmartMessageInvite[];
 };
 
-/** Pending received invites for a contact — newest first. @see docs/features/chat-relay.md */
+/** Unexpired received invites for a contact — newest first. @see docs/features/chat-relay.md */
 export function getInviteQueue(
   contactId: string,
   invites: SmartMessageInvite[],
+  nowSec = nowUnix(),
 ): InviteQueue {
   const pending = invites
-    .filter((i) => i.contactId === contactId && i.status === "received")
+    .filter(
+      (i) =>
+        i.contactId === contactId &&
+        i.status === "received" &&
+        !(i.inviteExpiry && isInviteExpired(i.inviteExpiry, nowSec)),
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   return {

@@ -186,6 +186,8 @@ export type SmartMessageService = {
     Array<{
       register: import("@/types/protocol").ChatRegisterPayload;
       txHash: string;
+      /** Register tx time (block, or first-seen for mempool), unix seconds. */
+      sentAtUnix?: number;
     }>
   >;
   parseRelationshipMessages(): Promise<SmartMessageInvite[]>;

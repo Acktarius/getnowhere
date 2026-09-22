@@ -221,6 +221,8 @@ Conceal `tx_extra` TTL (`0x05`). Create / register / revoke always use
 | `roomTtl` | Chat-instance auto-destruct — room ends whether pending, connecting, or connected. |
 
 Clock skew allowance: ±120 seconds, then fail closed.
+Enforced at Accept (UI queue + `acceptInvite`) against local time, and at the
+initiator handoff against the register tx time (block, or first-seen mempool).
 
 ---
 

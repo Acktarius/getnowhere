@@ -489,6 +489,7 @@ export async function probeInitiatorHandoff(
     const attempts: Array<{
       pending: PendingKey;
       register: import("@/types/protocol").ChatRegisterPayload;
+      sentAtUnix?: number;
     }> = [];
 
     for (const pending of pendingForRoom) {
@@ -497,9 +498,15 @@ export async function probeInitiatorHandoff(
           normalizeInviteId(r.register.inviteId) ===
           normalizeInviteId(pending.handshake.inviteId),
       );
-      if (hit) attempts.push({ pending, register: hit.register });
+      if (hit) {
+        attempts.push({
+          pending,
+          register: hit.register,
+          sentAtUnix: hit.sentAtUnix,
+        });
+      }
     }
-    for (const { register } of registers) {
+    for (const { register, sentAtUnix } of registers) {
       const pending = findPendingInitiator(register.inviteId);
       if (!pending || pending.handshake.roomId !== roomId) continue;
       if (
@@ -509,7 +516,7 @@ export async function probeInitiatorHandoff(
       ) {
         continue;
       }
-      attempts.push({ pending, register });
+      attempts.push({ pending, register, sentAtUnix });
     }
 
     // Register exists for this room's invite even without a local key.
@@ -525,12 +532,13 @@ export async function probeInitiatorHandoff(
     }
     if (attempts.length > 0) matchingRegister = true;
 
-    for (const { pending, register } of attempts) {
+    for (const { pending, register, sentAtUnix } of attempts) {
       try {
         await completeInitiatorHandoff(
           pending.handshake.inviteId,
           { ...register, inviteId: pending.handshake.inviteId },
           pending.handshake,
+          sentAtUnix,
         );
         handoffCompleted = true;
         detail = "Register applied — connecting.";
@@ -1000,7 +1008,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     // Alice: scan Bob's on-chain register and finish Holepunch handoff.
     const registers = await smartMessageService.fetchIncomingRegisters();
-    for (const { register } of registers) {
+    for (const { register, sentAtUnix } of registers) {
       const pending = findPendingInitiator(register.inviteId);
       if (!pending) continue;
       if (isRoomRevoked(pending.handshake.roomId)) continue;
@@ -1018,6 +1026,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             inviteId: pending.handshake.inviteId,
           },
           pending.handshake,
+          sentAtUnix,
         );
       } catch {
         // Keep trying on next refresh (sync / key restore may still settle).
@@ -1192,6 +1201,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       throw new Error(
         "Missing create handshake for invite. Wait for wallet sync, then Accept again — or ask them to resend.",
       );
+    }
+    if (handshake.inviteExpiry && isInviteExpired(handshake.inviteExpiry)) {
+      throw new Error("Invite expired — ask them to send a new one.");
     }
 
     const localEpochBefore =
@@ -1605,14 +1617,24 @@ export async function completeResponderReconnect(
   return connected.lifecycleStatus === "connected";
 }
 
-/** Completes Alice's Holepunch handoff after Bob's register. */
+/**
+ * Completes Alice's Holepunch handoff after Bob's register.
+ * @param registerSentAtUnix register tx time; defaults to now (fail closed).
+ */
 export async function completeInitiatorHandoff(
   inviteId: string,
   register: import("@/types/protocol").ChatRegisterPayload,
   handshake: ChatInviteHandshake,
+  registerSentAtUnix: number = nowUnix(),
 ): Promise<void> {
   const pending = findPendingInitiator(inviteId);
   if (!pending) return;
+  if (
+    handshake.inviteExpiry &&
+    isInviteExpired(handshake.inviteExpiry, registerSentAtUnix)
+  ) {
+    throw new Error("Register arrived after invite expiry.");
+  }
 
   // Room already live (or mid-connect) — do not re-derive and churn the proof.
   const existingRoom = await chatTransport.getRoom(handshake.roomId);
