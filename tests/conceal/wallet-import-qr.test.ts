@@ -119,6 +119,7 @@ describe("ConcealWalletService.importWallet file", () => {
         newPassword: "NewLocalPassword1!",
       });
 
+      expect(ensureWasmReadyMock).toHaveBeenCalled();
       expect(openEncryptedWalletFileMock).toHaveBeenCalledWith(
         ' \uFEFF{"data":[]} ',
         "legacy-backup-password",

@@ -189,6 +189,7 @@ export const ConcealWalletService: WalletService = {
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {
     if (input.method === "file") {
       try {
+        await ensureWasmReady();
         const opened = openEncryptedWalletFile(input.file, input.password);
         if (opened === null) {
           throw new Error("Invalid wallet file or password.");
