@@ -32,7 +32,13 @@ const mnemonicFromSpendKey = vi.fn(
   () => "alpha bravo charlie delta echo foxtrot",
 );
 const persist = vi.fn(async () => undefined);
-const saveEncryptedWalletFile = vi.fn(() => ({ cipher: "x" }));
+const envelope3 = {
+  envelope: 3,
+  kdf: { alg: "argon2id", v: 19, m: 32768, t: 3, p: 1, salt: "00".repeat(16) },
+  nonce: "00".repeat(24),
+  data: [1, 2, 3],
+};
+const saveEncryptedWalletFile = vi.fn(() => envelope3);
 
 vi.mock("@/services/conceal/ConcealWalletService", () => ({
   getInternalWalletState: () => getInternalWalletState(),
@@ -77,7 +83,7 @@ describe("SeedBackupAdapter", () => {
     );
     persist.mockClear();
     saveEncryptedWalletFile.mockClear();
-    saveEncryptedWalletFile.mockReturnValue({ cipher: "x" });
+    saveEncryptedWalletFile.mockReturnValue(envelope3);
   });
 
   it("revealSecrets rejects bad wallet password", async () => {
@@ -152,6 +158,6 @@ describe("SeedBackupAdapter", () => {
       "wallet-secret",
     );
     expect(res.filename).toMatch(/getnowhere-wallet-.*\.json/);
-    expect(res.payload).toEqual({ cipher: "x" });
+    expect(res.payload).toEqual(envelope3);
   });
 });

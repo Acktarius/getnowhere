@@ -93,9 +93,18 @@ On welcome you **create** a wallet or **import** one.
 
 | How you get in | Password |
 | --- | --- |
-| New wallet | You choose a wallet encryption password |
-| QR or file backup | The password that backup already has |
-| Seed or keys | You choose a new wallet encryption password |
+| New wallet | You choose a wallet encryption password (must meet strength rules) |
+| Seed, keys, or QR | You choose a **new** local wallet password (must meet strength rules) |
+| File backup | **Backup password** opens the file (even if weak) **and** you set a **new** local password that meets strength rules |
+
+File import always asks for both passwords up front. Coming from Conceal Next
+Wallet with an Envelope 2 `.json` and a short/simple password: use that old
+password only to open the file, then pick a stronger local password for Get
+NowHere. The original file is not changed. Later **Download wallet .json**
+writes Envelope 3 (Argon2id); encrypting can take several seconds.
+
+See [wallet backup and import](/product/wallet-backup-and-import) for the full
+Envelope 2→3 story.
 
 You land in the wallet. Send, receive, and history are there. The app does
 **not** create Conceal deposits or withdrawals; those txs can still show in

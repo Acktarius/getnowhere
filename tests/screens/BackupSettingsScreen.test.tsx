@@ -168,6 +168,37 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows encrypting spinner while download is in progress", async () => {
+    let finishDownload!: (value: {
+      filename: string;
+      payload: { encrypted: boolean };
+    }) => void;
+    downloadWalletBackup.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDownload = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
+
+    expect(screen.getByRole("button", { name: /Encrypting…/i })).toBeDisabled();
+
+    finishDownload({ filename: "wallet.json", payload: { encrypted: true } });
+
+    expect(
+      await screen.findByText(/Downloaded wallet\.json/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    ).toBeEnabled();
+  });
+
   it("shows mobile save message when native file save is used", async () => {
     mockedDownloadJson.mockResolvedValue("saved");
     const user = userEvent.setup();

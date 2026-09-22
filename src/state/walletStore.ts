@@ -36,8 +36,7 @@ type WalletStore = WalletState & {
   pendingFileImportRoomRestore: boolean;
   /** Returns true once after file import, then clears the flag. */
   takeFileImportRoomRestore: () => boolean;
-  createWallet: () => Promise<{ seedPhrase: string }>;
-  restoreWallet: (seed: string) => Promise<void>;
+  createWallet: (password: string) => Promise<{ seedPhrase: string }>;
   importWallet: (input: ImportWalletInput) => Promise<void>;
   /** Open a wallet already stored on this device (encryption password). */
   openStoredWallet: (password: string) => Promise<void>;
@@ -88,10 +87,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     return pending;
   },
 
-  async createWallet() {
+  async createWallet(password) {
     set({ initializing: true, error: null });
     try {
-      const res = await walletService.createWallet();
+      const res = await walletService.createWallet(password);
       const addr = await walletService.getAddress();
       set({
         initialized: true,
@@ -110,33 +109,6 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       return { seedPhrase: res.seedPhrase };
-    } catch (e) {
-      set({ initializing: false, error: (e as Error).message });
-      throw e;
-    }
-  },
-
-  async restoreWallet(seed) {
-    set({ initializing: true, error: null });
-    try {
-      const res = await walletService.restoreWallet({ seedPhrase: seed });
-      const addr = await walletService.getAddress();
-      set({
-        initialized: true,
-        locked: false,
-        address: addr,
-        seedRef: res.seedRef,
-        seedPhrase: res.seedPhrase,
-        syncStatus: "syncing",
-        syncProgress: 0.05,
-        initializing: false,
-      });
-      // Erase any previous wallet's contacts/rooms before loading the restored identity.
-      wipeWalletScopedLocalData();
-      resetContactsAndChatRam();
-      await useContactsStore.getState().hydrate();
-      // Tip catch-up in background — UI (L2 chat) must not wait.
-      void get().resync();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;

@@ -350,15 +350,18 @@ A “no findings identified” result is not a permanent guarantee. It applies o
   - Status: resolved
   - Overlap: also in scope for MOD-011 (storage substrate); write API lives in this module’s contacts files
 
-- [ ] `SEC-2026-007` — severity: high
+- [x] `SEC-2026-007` — severity: high
   - Date found: 2026-09-20
   - Commit reviewed: cd7cd34
-  - Affected files: `src/services/conceal/ConcealWalletService.ts`, `src/screens/onboarding/RestoreWalletScreen.tsx`
+  - Affected files: `src/services/conceal/ConcealWalletService.ts`, former `src/screens/onboarding/RestoreWalletScreen.tsx`
   - Evidence: `restoreWallet` → `adoptBuiltWallet(built, tempPassword)` with `tmp-${uid("pw")}` (`Math.random`); Restore screen never calls `setSessionWalletPassword`
   - Description: Restore (and create until password step) persists the encrypted wallet blob under a weak auto-generated password; restore completes onboarding without a user-chosen password
   - Impact: At-rest wallet confidentiality rests on a patterned weak secret; offline attack on the blob is far easier than against a real password; lock/reopen may also strand the user
   - Recommended remediation: Require user password before `adopt`/`persist` on restore (mirror create/import); do not use `Math.random` for any interim secret
-  - Status: open
+  - Resolution date: 2026-09-21
+  - Fix commit: pending (OpenSpec `adopt-wallet-envelope-v3` working tree)
+  - Verification: unused restore route/screen/API removed; create validates and passes the user password before first persist; file import uses bounded SDK parsing and a distinct new local password; SDK 0.3.0 writes Argon2id Envelope 3
+  - Status: resolved
 
 - [ ] `SEC-2026-008` — severity: medium
   - Date found: 2026-09-20

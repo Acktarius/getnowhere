@@ -45,11 +45,11 @@ import type { Transaction, WalletState } from "@/types/models";
 import type {
   CreateWalletResult,
   ImportWalletInput,
-  RestoreWalletInput,
   SendTransactionInput,
   WalletService,
 } from "@/types/services";
 import { generatePaymentId, uid } from "@/utils/format";
+import { describePasswordFailure } from "@/utils/walletPassword";
 
 const M_COIN = 1_000_000;
 
@@ -144,9 +144,8 @@ async function adoptBuiltWallet(
   built: BuiltWallet,
   password: string,
 ): Promise<CreateWalletResult> {
-  if (!password) {
-    throw new Error("A wallet password is required to save this wallet.");
-  }
+  const passwordFailure = describePasswordFailure(password);
+  if (passwordFailure) throw new Error(passwordFailure);
   await adopt({
     raw: built.raw,
     keys: built.keys,
@@ -179,35 +178,18 @@ async function adoptBuiltWallet(
 }
 
 export const ConcealWalletService: WalletService = {
-  async createWallet(): Promise<CreateWalletResult> {
+  async createWallet(password: string): Promise<CreateWalletResult> {
     await ensureWasmReady();
     // generateMnemonic + buildFromMnemonic applies omitMnemonic on the Account
     // while keeping the phrase only on BuiltWallet for one-time UI reveal.
     const phrase = await generateConcealMnemonic("english");
-    const tempPassword = `tmp-${uid("pw")}`;
-    return adoptBuiltWallet(buildFromMnemonic(phrase, 0), tempPassword);
-  },
-
-  async restoreWallet({
-    seedPhrase,
-  }: RestoreWalletInput): Promise<CreateWalletResult> {
-    await ensureWasmReady();
-    const built = buildFromMnemonic(seedPhrase.trim(), 0);
-    const tempPassword = `tmp-${uid("pw")}`;
-    return adoptBuiltWallet(built, tempPassword);
+    return adoptBuiltWallet(buildFromMnemonic(phrase, 0), password);
   },
 
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {
     if (input.method === "file") {
       try {
-        const text = input.file.replace(/^\uFEFF/, "").trim();
-        let envelope: unknown;
-        try {
-          envelope = JSON.parse(text);
-        } catch {
-          throw new Error("The selected file is not valid JSON.");
-        }
-        const opened = openEncryptedWalletFile(envelope, input.password);
+        const opened = openEncryptedWalletFile(input.file, input.password);
         if (opened === null) {
           throw new Error("Invalid wallet file or password.");
         }
@@ -226,7 +208,7 @@ export const ConcealWalletService: WalletService = {
             mnemonic: mnemonic || undefined,
             viewOnly: opened.keys.priv.spend === "",
           },
-          input.password,
+          input.newPassword,
         );
       } catch (error) {
         throw toFriendlyImportError(error);
@@ -499,14 +481,6 @@ export async function changeWalletPassword(
   nextPassword: string,
 ): Promise<void> {
   await changeRuntimePassword(currentPassword, nextPassword);
-}
-
-/** Set wallet password on an already-unlocked session (onboarding create path). */
-export async function setSessionWalletPassword(
-  nextPassword: string,
-): Promise<void> {
-  const { setRuntimePassword } = await import("@/services/conceal/sync");
-  await setRuntimePassword(nextPassword);
 }
 
 export async function updateWalletSyncSettings(input: {

@@ -1,4 +1,4 @@
-import { Download, Eye, Lock, QrCode } from "lucide-react";
+import { Download, Eye, Loader2, Lock, QrCode } from "lucide-react";
 import { useState } from "react";
 import { ExportQrModal } from "@/components/ExportQrModal";
 import { SecureInput } from "@/components/SecureInput";
@@ -20,6 +20,7 @@ export function BackupSettingsScreen() {
   const [exportQrOpen, setExportQrOpen] = useState(false);
   const [exportQrUri, setExportQrUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
 
   function requirePassword(): boolean {
     setError(null);
@@ -74,6 +75,7 @@ export function BackupSettingsScreen() {
   async function downloadBackup() {
     if (!requirePassword()) return;
     setBusy(true);
+    setDownloadBusy(true);
     try {
       const { filename, payload } =
         await seedBackupService.downloadWalletBackup(password);
@@ -86,6 +88,7 @@ export function BackupSettingsScreen() {
     } catch (e) {
       setError((e as Error).message || "Could not download wallet backup.");
     } finally {
+      setDownloadBusy(false);
       setBusy(false);
     }
   }
@@ -173,7 +176,15 @@ export function BackupSettingsScreen() {
             onClick={downloadBackup}
             disabled={busy}
           >
-            <Download size={15} /> Download wallet .json
+            {downloadBusy ? (
+              <>
+                <Loader2 size={15} className="spin" /> Encrypting…
+              </>
+            ) : (
+              <>
+                <Download size={15} /> Download wallet .json
+              </>
+            )}
           </button>
         </div>
       </div>

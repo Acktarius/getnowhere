@@ -18,7 +18,7 @@ type StoreMock = {
   address: string;
   initializing: boolean;
   clearSeed: () => void;
-  createWallet: () => Promise<{ seedPhrase: string }>;
+  createWallet: (password: string) => Promise<{ seedPhrase: string }>;
   importWallet: (i: unknown) => Promise<void>;
 };
 
@@ -61,9 +61,6 @@ vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
 vi.mock("@/lib/auth/biometric-storage", () => ({
   initMobileBiometricStorage: vi.fn(async () => undefined),
 }));
-vi.mock("@/services/conceal/ConcealWalletService", () => ({
-  setSessionWalletPassword: vi.fn(async () => undefined),
-}));
 vi.mock("@/services/conceal/ConcealWalletAdapter", () => ({
   validateConcealMnemonic: vi.fn(() => true),
 }));
@@ -93,6 +90,17 @@ describe("walletStore.clearSeed", () => {
 import { CreateWalletScreen } from "@/screens/onboarding/CreateWalletScreen";
 
 describe("CreateWalletScreen — clearSeed on seed backup confirm", () => {
+  const password = "CorrectHorseBattery1!";
+
+  async function createFromForm(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(
+      screen.getByPlaceholderText("Encrypts your local wallet file"),
+      password,
+    );
+    await user.type(screen.getByPlaceholderText("Repeat password"), password);
+    await user.click(screen.getByRole("button", { name: /create my wallet/i }));
+  }
+
   beforeEach(() => {
     clearSeed.mockClear();
     createWallet.mockClear();
@@ -114,8 +122,9 @@ describe("CreateWalletScreen — clearSeed on seed backup confirm", () => {
       </MemoryRouter>,
     );
 
-    // Trigger wallet creation → moves to seed step
-    await user.click(screen.getByRole("button", { name: /create my wallet/i }));
+    // Confirm password and create → moves to seed step
+    await createFromForm(user);
+    expect(createWallet).toHaveBeenCalledWith(password);
 
     // Reveal seed phrase (required before confirm is enabled)
     await user.click(
@@ -139,7 +148,7 @@ describe("CreateWalletScreen — clearSeed on seed backup confirm", () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole("button", { name: /create my wallet/i }));
+    await createFromForm(user);
     await screen.findByRole("button", { name: /reveal seed phrase/i });
 
     clearSeed.mockClear();
@@ -223,5 +232,47 @@ describe("ImportWalletScreen — clearSeed after import", () => {
 
     await waitFor(() => expect(importWallet).toHaveBeenCalled());
     expect(clearSeed).not.toHaveBeenCalled();
+  });
+
+  it("separates backup and new local passwords for file import", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <MemoryRouter>
+        <ImportWalletScreen />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^file$/i }));
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="file"][accept*=".json"]',
+    );
+    expect(input).not.toBeNull();
+    if (input === null) return;
+    await user.upload(
+      input,
+      new File(['{"envelope":3}'], "wallet.json", {
+        type: "application/json",
+      }),
+    );
+
+    await user.type(
+      screen.getByPlaceholderText("Password used to encrypt this file"),
+      "old-backup-password",
+    );
+    await user.type(
+      screen.getByPlaceholderText("Encrypts your local wallet file"),
+      IMPORT_PW,
+    );
+    await user.type(screen.getByPlaceholderText("Repeat password"), IMPORT_PW);
+    await user.click(screen.getByRole("button", { name: /import wallet/i }));
+
+    await waitFor(() =>
+      expect(importWallet).toHaveBeenCalledWith({
+        method: "file",
+        file: '{"envelope":3}',
+        password: "old-backup-password",
+        newPassword: IMPORT_PW,
+      }),
+    );
   });
 });

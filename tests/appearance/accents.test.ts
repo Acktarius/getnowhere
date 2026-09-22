@@ -54,9 +54,7 @@ function primaryOf(accent: string, theme: "dark" | "light"): string {
 }
 
 describe("accent maps", () => {
-  const spec = readRepo(
-    "openspec/changes/appearance-contrast-and-accents/specs/app-appearance/spec.md",
-  );
+  const spec = readRepo("openspec/specs/app-appearance/spec.md");
   const expected = expectedPrimariesFromSpec(spec);
 
   it("sky Dark --primary matches the spec hex", () => {

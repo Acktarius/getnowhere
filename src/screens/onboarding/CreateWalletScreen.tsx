@@ -12,7 +12,6 @@ import {
   PasskeyError,
 } from "@/lib/auth/platform-unlock";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
-import { setSessionWalletPassword } from "@/services/conceal/ConcealWalletService";
 import { markOnboarded } from "@/state/authStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
@@ -21,7 +20,7 @@ import {
   walletPasswordStrength,
 } from "@/utils/walletPassword";
 
-type Step = "creating" | "seed" | "biometric" | "done";
+type Step = "creating" | "seed" | "biometric";
 
 export function CreateWalletScreen() {
   const navigate = useNavigate();
@@ -49,36 +48,26 @@ export function CreateWalletScreen() {
   }, []);
 
   async function handleCreate() {
+    setError(null);
+    const fail = describePasswordFailure(walletPassword);
+    if (fail) {
+      setError(fail);
+      return;
+    }
+    if (walletPassword !== walletPasswordConfirm) {
+      setError("Wallet passwords do not match.");
+      return;
+    }
     try {
-      await createWallet();
+      await createWallet(walletPassword);
       setStep("seed");
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function persistWalletPassword(): Promise<boolean> {
-    const fail = describePasswordFailure(walletPassword);
-    if (fail) {
-      setError(fail);
-      return false;
-    }
-    if (walletPassword !== walletPasswordConfirm) {
-      setError("Wallet passwords do not match.");
-      return false;
-    }
-    try {
-      await setSessionWalletPassword(walletPassword);
-      return true;
-    } catch (e) {
-      setError((e as Error).message);
-      return false;
-    }
-  }
-
   async function finish(enrollBiometric = false) {
     setError(null);
-    if (!(await persistWalletPassword())) return;
     if (enrollBiometric && biometricAvailable) {
       setEnrollBusy(true);
       try {
@@ -108,10 +97,10 @@ export function CreateWalletScreen() {
         leading={<BackLink to="/welcome" onClick={clearSeed} />}
         subtitle={
           step === "creating"
-            ? "Generating fresh Conceal identity"
+            ? "Choose wallet encryption password"
             : step === "seed"
               ? "Back up your seed"
-              : "Wallet password & biometrics"
+              : "Biometric unlock"
         }
       />
       <div
@@ -125,11 +114,50 @@ export function CreateWalletScreen() {
           >
             <BrandMark size={64} />
             <div className="stack stack--gap-2 center">
-              <h2 style={{ fontSize: 20 }}>Generating a private wallet</h2>
+              <h2 style={{ fontSize: 20 }}>Create a private wallet</h2>
               <p className="muted" style={{ maxWidth: 280, fontSize: 14 }}>
-                We are creating a fresh Conceal identity. This address becomes
-                the anchor for every trusted contact you add.
+                Choose the password that encrypts this wallet before it is saved
+                on this device.
               </p>
+            </div>
+            <div
+              className="stack stack--gap-3"
+              style={{ width: "100%", maxWidth: 280, textAlign: "left" }}
+            >
+              <SecureInput
+                label="Wallet password"
+                value={walletPassword}
+                onChange={setWalletPassword}
+                placeholder="Encrypts your local wallet file"
+                revealable
+              />
+              {walletPassword.length > 0 && (
+                <div className="row-flex" style={{ gap: 4 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <div
+                      key={n}
+                      style={{
+                        flex: 1,
+                        height: 4,
+                        borderRadius: 2,
+                        background:
+                          n <= passwordStrength
+                            ? passwordStrength >= 4
+                              ? "var(--success)"
+                              : "var(--primary)"
+                            : "var(--border)",
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+              <SecureInput
+                label="Confirm wallet password"
+                value={walletPasswordConfirm}
+                onChange={setWalletPasswordConfirm}
+                placeholder="Repeat password"
+                revealable
+              />
             </div>
             <button
               className="btn btn--primary btn--block"
@@ -168,42 +196,9 @@ export function CreateWalletScreen() {
         {step === "biometric" && (
           <div className="stack stack--gap-4 fade-in-up">
             <p className="muted" style={{ fontSize: 14 }}>
-              Choose a wallet encryption password. You will need it to open this
-              wallet after the app exits — or use biometrics if you enable them
-              below.
+              Your wallet is encrypted. Enable biometrics as a shortcut to the
+              password you just chose.
             </p>
-            <SecureInput
-              label="Wallet password"
-              value={walletPassword}
-              onChange={setWalletPassword}
-              revealable
-            />
-            {walletPassword.length > 0 && (
-              <div className="row-flex" style={{ gap: 4 }}>
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <div
-                    key={n}
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      borderRadius: 2,
-                      background:
-                        n <= passwordStrength
-                          ? passwordStrength >= 4
-                            ? "var(--success)"
-                            : "var(--primary)"
-                          : "var(--border)",
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-            <SecureInput
-              label="Confirm wallet password"
-              value={walletPasswordConfirm}
-              onChange={setWalletPasswordConfirm}
-              revealable
-            />
             {error && <div className="field__error">{error}</div>}
             {biometricAvailable ? (
               <button

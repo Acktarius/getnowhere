@@ -32,10 +32,6 @@ export type CreateWalletResult = {
   seedRef: string;
 };
 
-export type RestoreWalletInput = {
-  seedPhrase: string;
-};
-
 export type ImportWalletInput =
   | {
       method: "mnemonic";
@@ -61,7 +57,10 @@ export type ImportWalletInput =
       method: "file";
       /** Wallet envelope JSON (text read from a .json backup file). */
       file: string;
+      /** Password that decrypts the selected backup file. */
       password: string;
+      /** New compliant password used for local Envelope 3 storage. */
+      newPassword: string;
       label?: string;
     }
   | {
@@ -80,8 +79,7 @@ export type SendTransactionInput = {
 };
 
 export type WalletService = {
-  createWallet(): Promise<CreateWalletResult>;
-  restoreWallet(input: RestoreWalletInput): Promise<CreateWalletResult>;
+  createWallet(password: string): Promise<CreateWalletResult>;
   /** Import a wallet from a mnemonic, spend/view keys, or encrypted backup file. */
   importWallet(input: ImportWalletInput): Promise<CreateWalletResult>;
   /** True when an encrypted wallet blob exists on this device (no decrypt). */

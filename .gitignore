@@ -71,3 +71,5 @@ poke-gateway/*.db
 poke-gateway/*.db-wal
 poke-gateway/*.db-shm
 poke-gateway/secrets/
+# Local adb-pulled wallet backups (never commit)
+/getnowhere-wallet-*.json
