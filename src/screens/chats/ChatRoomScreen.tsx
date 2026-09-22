@@ -43,7 +43,11 @@ import {
   composerDisabledReason,
   composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
-import { isRoomExpired, nowUnix } from "@/services/protocol/roomLifecycle";
+import {
+  isRelayEligibleStatus,
+  isRoomExpired,
+  nowUnix,
+} from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
@@ -58,6 +62,14 @@ import { formatUnixDateTime, shortRoomId, shortTopicRef } from "@/utils/format";
 import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+
+/** L1′ mempool rescan while Holepunch is down (accepted / connecting / failed). */
+const ROOM_RELAY_POLL_MS = 2500;
+/**
+ * L2 live (or pre-accept): no room-level mempool hammer — wallet live sync owns
+ * relays; openRoom is only a slow peer/lifecycle safety net.
+ */
+const ROOM_CONNECTED_POLL_MS = 15_000;
 
 function placeholderContact(alias: string): Contact {
   return {
@@ -439,14 +451,18 @@ export function ChatRoomScreen() {
     };
   }, [room?.lifecycleStatus, room?.connectAttempts, roomId, openRoom]);
 
-  // Keep UI peer/lifecycle in sync; always rescan L3 (Holepunch can fail mid-chat).
+  // Peer/lifecycle safety net; fast L1′ mempool rescan only while Holepunch is down.
+  // When connected, wallet live sync already polls relays — avoid double mempool WASM.
   useEffect(() => {
+    const status = room?.lifecycleStatus;
+    const fastRelay = status != null && isRelayEligibleStatus(status);
+    const intervalMs = fastRelay ? ROOM_RELAY_POLL_MS : ROOM_CONNECTED_POLL_MS;
     let cancelled = false;
     const tick = async () => {
       try {
         if (cancelled) return;
         await openRoom(roomId);
-        await refreshRelays();
+        if (fastRelay) await refreshRelays();
       } catch {
         /* ignore */
       }
@@ -454,12 +470,12 @@ export function ChatRoomScreen() {
     void tick();
     const id = window.setInterval(() => {
       void tick();
-    }, 2500);
+    }, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [roomId, openRoom, refreshRelays]);
+  }, [roomId, room?.lifecycleStatus, openRoom, refreshRelays]);
 
   // One-shot rescan when room becomes relay-eligible (pending → accepted/…).
   useEffect(() => {

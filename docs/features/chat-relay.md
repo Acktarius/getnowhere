@@ -36,10 +36,14 @@ row at the same expiry (do not keep it for the 24h mempool lifetime).
 
 ## Inbound refresh
 
-- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L3 stays live).
+- Open room: **fast** L1′ mempool rescan (~2.5s) only while Holepunch is down
+  (`accepted` / `connecting` / `connect_failed`) so chain fallback stays fresh.
+- When L2 is **`connected`** (or still `pending`): slow `openRoom` safety net
+  (~15s), **no** room-level mempool scan — global wallet poll already refreshes
+  relays (Holepunch can fail mid-chat; reconnect + wallet poll cover L1′).
 - Also rescans on enter and when lifecycle becomes relay-eligible.
 - Global wallet poll calls `refreshRelays` while the wallet is unlocked — foreground
-  uses 2.5s / 20s cadence; **background** (hidden tab/window) uses 30s until Exit.
+  uses 2.5s / 5s cadence; **background** (hidden tab/window) uses 30s until Exit.
 
 ## Relay notification pins
 
