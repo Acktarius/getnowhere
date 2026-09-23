@@ -117,6 +117,8 @@ Implementation keeps the **same** `SidecarCommand` / `SidecarEvent` schema
 |---|---|
 | Remote network attacker | **Out of scope** — bridge is loopback only |
 | Local malware / other user | WS query token, or IPC first-message token plus `0700`/`0600` socket. Same-user code that can read the Electron process can still take the token |
+| Compromised renderer (Electron) | Main allowlists `ping`/`join`/`leave`/`frame` and never forwards `{ type: "auth" }`. Token stays in main |
+| Same-uid local DoS on IPC | 5s first-line auth deadline, max 8 IPC sockets, Bare-parity `rate_limited` buckets |
 | Compromised sidecar | Sees opaque frames + bridge metadata; **not** chat plaintext (L1 seal) |
 | Misconfigured LAN bind | **Blocked** by token requirement off loopback; still forbidden for prod |
 

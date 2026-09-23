@@ -1592,7 +1592,7 @@ export async function saveChatRoomsToWallet(): Promise<void> {
 
 /**
  * Load chatRooms (skip live bodies when retention off) then merge L1′ relays.
- * @see openspec/changes/p2p-message-retention/specs/chat-room-persistence/spec.md
+ * @see openspec/changes/archive/2026-09-22-p2p-message-retention/specs/chat-room-persistence/spec.md
  */
 export function hydrateChatRoomsFromWallet(): void {
   const rt = getRuntime();

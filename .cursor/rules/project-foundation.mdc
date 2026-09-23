@@ -5,8 +5,10 @@ alwaysApply: true
 
 ## Product and repo model
 
-- This repository is **web-first**.
+- This repository is **web-first for development**, not for shipping a browser product.
 - Daily development happens with `npm run dev` (Vite UI in `src/`).
+- **Ship surfaces:** packaged Electron (`desktop-electron/`) and Expo/EAS mobile (`native-wrapper/`).
+- **Do not ship** browser + `holepunch-sidecar` over loopback WebSocket. That path is **dev/test only**. Do not treat it as a production attacker surface in security reviews.
 - Expo is not the primary development environment; it is for mobile packaging.
 - Electron (`desktop-electron/`) is the desktop shell.
 - Expo.dev / EAS is used for mobile iOS/Android builds, signing, TestFlight, and store delivery.
@@ -55,6 +57,7 @@ alwaysApply: true
 
 ## Security and protocol rules
 
+- Production desktop threat model is the Electron renderer and sidecar child, not a public website talking to `holepunch-sidecar`.
 - Spec first, code second for crypto and protocol changes.
 - Keep protocol in `docs/security/p2pchatprotocol.md` and encryption threat model in `docs/security/encryption.md`.
 - Do not invent crypto primitives or change payload formats without updating docs first.
@@ -74,6 +77,6 @@ alwaysApply: true
 
 ## Preferred wording
 
-> Get NowHere is developed as a web-first application. Local work happens with `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare. Expo.dev / EAS covers store delivery.
+> Get NowHere is developed as a web-first application. Local work happens with `npm run dev`. Packaged desktop uses Electron. Mobile uses Expo + Bare. Expo.dev / EAS covers store delivery. Browser plus holepunch-sidecar does not ship.
 
 > Vite UI plus Pear-shaped Hyperswarm behind a typed bridge. L1 SmartMessage (+ session seal), L2 Noise, L1′ when L2 is down. The UI never joins Hyperswarm.

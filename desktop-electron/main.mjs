@@ -22,7 +22,16 @@ import {
 } from "./desktop-ipc-path.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
 import { createRoomSessionHost } from "./room-session-store.mjs";
+import {
+  authorizeSidecarCommandSender,
+  sanitizeSidecarCommand,
+} from "./sidecar-command.mjs";
 import { connectSidecarIpc } from "./sidecar-ipc-client.mjs";
+import {
+  installUiNavigationGuards,
+  isAllowedUiUrl,
+  uiPolicyFromTarget,
+} from "./ui-navigation.mjs";
 
 const require = createRequire(import.meta.url);
 const { resolveDesktopInfoReply } = require("./desktop-info-ipc.cjs");
@@ -217,6 +226,8 @@ let ufwAdvisory = { state: "unknown", reason: "not-checked" };
 let desktopInfo = null;
 /** @type {number | null} */
 let allowedWebContentsId = null;
+/** @type {import("./ui-navigation.mjs").UiNavPolicy | null} */
+let allowedUi = null;
 let sidecarIpcPath = "";
 /** @type {import("./sidecar-ipc-client.mjs").SidecarIpcConnection | null} */
 let sidecarIpcConn = null;
@@ -245,18 +256,26 @@ function installSidecarBridgeHandlers() {
   ipcMain.removeHandler(SIDECAR_COMMAND_CHANNEL);
   ipcMain.handle(SIDECAR_COMMAND_CHANNEL, (event, cmd) => {
     if (
-      allowedWebContentsId != null &&
-      event.sender.id !== allowedWebContentsId
+      !authorizeSidecarCommandSender({
+        allowedWebContentsId,
+        senderId: event.sender.id,
+        senderFrame: event.senderFrame,
+        mainFrame: event.sender.mainFrame,
+      })
     ) {
+      throw new Error("unauthorized sidecar command");
+    }
+    if (!isAllowedUiUrl(event.senderFrame?.url, allowedUi)) {
       throw new Error("unauthorized sidecar command");
     }
     if (!sidecarIpcConn) {
       throw new Error("sidecar IPC not connected");
     }
-    if (!cmd || typeof cmd !== "object" || typeof cmd.type !== "string") {
+    const safe = sanitizeSidecarCommand(cmd);
+    if (!safe) {
       throw new Error("invalid sidecar command");
     }
-    sidecarIpcConn.send(cmd);
+    sidecarIpcConn.send(safe);
   });
 }
 
@@ -278,6 +297,9 @@ function assertRoomSessionSender(event) {
     allowedWebContentsId == null ||
     event.sender.id !== allowedWebContentsId
   ) {
+    throw new Error("unauthorized room session request");
+  }
+  if (!isAllowedUiUrl(event.senderFrame?.url, allowedUi)) {
     throw new Error("unauthorized room session request");
   }
 }
@@ -707,6 +729,9 @@ function createWindow() {
       ];
   if (ROLE) argvBridge.push(`--gnh-role=${ROLE}`);
 
+  const ui = resolveUiTarget();
+  allowedUi = uiPolicyFromTarget(ui);
+
   mainWindow = new BrowserWindow({
     width: 600,
     height: 800,
@@ -730,6 +755,7 @@ function createWindow() {
   mainWindow.once("closed", () => {
     desktopInfo = null;
     allowedWebContentsId = null;
+    allowedUi = null;
     ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
   });
 
@@ -739,7 +765,7 @@ function createWindow() {
     void shutdown("window-close");
   });
 
-  const ui = resolveUiTarget();
+  installUiNavigationGuards(mainWindow.webContents, allowedUi);
   const uiLabel =
     ui.kind === "file" ? pathToFileURL(ui.value).href : ui.value;
   log(

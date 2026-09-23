@@ -7,6 +7,13 @@
 import b4a from "b4a";
 import Hyperswarm from "hyperswarm";
 import { config } from "./config.mjs";
+import { BRIDGE_ERRORS, bridgeError } from "./errors.mjs";
+import {
+  DEFAULT_MAX_INGRESS_VIOLATIONS,
+  DEFAULT_MAX_REMOTE_CONNECTIONS,
+  SWARM_INGRESS_LIMITS,
+  createTokenBucket,
+} from "./rateLimit.mjs";
 
 /**
  * @typedef {{
@@ -51,6 +58,12 @@ export function refreshNudgeDelayMs(attempts) {
 /** Encode one bridge message as a single NDJSON line (Noise streams coalesce). */
 export function encodeSwarmLine(obj) {
   return b4a.from(`${JSON.stringify(obj)}\n`);
+}
+
+/** Byte length of a Hyperswarm data chunk. */
+function chunkByteLength(data) {
+  if (typeof data === "string") return b4a.byteLength(data);
+  return data.byteLength ?? data.length ?? 0;
 }
 
 /** Pending NDJSON line exceeded maxNdjsonLineBytes. */
@@ -108,10 +121,21 @@ export function createLineReader(maxBytes = config.maxNdjsonLineBytes) {
  * @param {{
  *   swarm?: { dht?: { ready?: () => Promise<void> }, join?: Function, on?: Function, destroy?: () => Promise<void> }
  *   disableDiscovery?: boolean
- * }} [opts] Test hooks: inject swarm / skip DHT announce for local fan-out tests.
+ *   maxRemoteConnections?: number
+ *   maxIngressViolations?: number
+ *   ingress?: { frame?: { capacity: number, refillPerMs: number }, bytes?: { capacity: number, refillPerMs: number } }
+ * }} [opts] Test hooks: inject swarm / skip DHT announce / override ingress caps.
  */
 export function createSwarmMesh(opts = {}) {
   const disableDiscovery = opts.disableDiscovery === true;
+  const maxRemoteConnections =
+    opts.maxRemoteConnections ?? DEFAULT_MAX_REMOTE_CONNECTIONS;
+  const maxIngressViolations =
+    opts.maxIngressViolations ?? DEFAULT_MAX_INGRESS_VIOLATIONS;
+  const ingressCfg = {
+    frame: opts.ingress?.frame ?? SWARM_INGRESS_LIMITS.frame,
+    bytes: opts.ingress?.bytes ?? SWARM_INGRESS_LIMITS.bytes,
+  };
   const swarm =
     opts.swarm ??
     (disableDiscovery
@@ -140,6 +164,24 @@ export function createSwarmMesh(opts = {}) {
   const connTopics = new Map();
   /** @type {Set<object>} */
   const conns = new Set();
+  /** @type {Map<object, number>} */
+  const ingressViolations = new Map();
+
+  function emitRemoteRateLimited(conn) {
+    const joined = connTopics.get(conn);
+    if (!joined) return;
+    /** @type {Set<LocalClient>} */
+    const seen = new Set();
+    for (const topicRef of joined) {
+      const state = topics.get(topicRef);
+      if (!state) continue;
+      for (const client of state.localClients) {
+        if (seen.has(client)) continue;
+        seen.add(client);
+        client.send(bridgeError(BRIDGE_ERRORS.remote_rate_limited.code));
+      }
+    }
+  }
 
   function getTopic(topicRef) {
     let state = topics.get(topicRef);
@@ -273,8 +315,23 @@ export function createSwarmMesh(opts = {}) {
   }
 
   swarm.on("connection", (conn, info) => {
+    const inbound = info?.client !== true;
+    if (inbound && conns.size >= maxRemoteConnections) {
+      console.warn(
+        `[swarm] inbound rejected: max remote connections (${maxRemoteConnections})`,
+      );
+      try {
+        conn.destroy();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     conns.add(conn);
     connTopics.set(conn, new Set());
+    ingressViolations.set(conn, 0);
+    const frameBucket = createTokenBucket(ingressCfg.frame);
+    const byteBucket = createTokenBucket(ingressCfg.bytes);
 
     const peerId = conn.remotePublicKey
       ? b4a.toString(conn.remotePublicKey, "hex")
@@ -293,6 +350,18 @@ export function createSwarmMesh(opts = {}) {
 
     const lines = createLineReader();
     conn.on("data", (data) => {
+      if (!byteBucket.tryConsume(chunkByteLength(data))) {
+        emitRemoteRateLimited(conn);
+        console.warn(
+          `[swarm] remote byte limit peer=${short(peerId)}; destroying connection`,
+        );
+        try {
+          conn.destroy();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
       /** @type {object[]} */
       let msgs;
       try {
@@ -323,6 +392,24 @@ export function createSwarmMesh(opts = {}) {
           if (!joined?.has(frameTopic)) continue;
           const state = topics.get(frameTopic);
           if (!state) continue;
+          if (!frameBucket.tryConsume()) {
+            const n = (ingressViolations.get(conn) ?? 0) + 1;
+            ingressViolations.set(conn, n);
+            emitRemoteRateLimited(conn);
+            if (n >= maxIngressViolations) {
+              console.warn(
+                `[swarm] remote frame limit peer=${short(peerId)}; destroying connection`,
+              );
+              try {
+                conn.destroy();
+              } catch {
+                /* ignore */
+              }
+              return;
+            }
+            continue;
+          }
+          ingressViolations.set(conn, 0);
           for (const client of state.localClients) {
             client.send({
               type: "frame",
@@ -343,6 +430,7 @@ export function createSwarmMesh(opts = {}) {
     conn.once("close", () => {
       console.log(`[swarm] connection closed peer=${short(peerId)}`);
       conns.delete(conn);
+      ingressViolations.delete(conn);
       const joined = connTopics.get(conn) ?? new Set();
       connTopics.delete(conn);
       for (const topicRef of joined) {

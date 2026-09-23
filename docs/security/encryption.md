@@ -419,7 +419,7 @@ Rules:
   hydrate, re-creating in-memory room shells (`listRooms` / `ensureRoom`) MUST
   NOT clear an existing transcript bag — required after iOS WKWebView process
   death. No peer catch-up in this model — a later change if we add a request
-  protocol or a log. @see `openspec/changes/p2p-message-retention/design.md`
+  protocol or a log. @see `openspec/changes/archive/2026-09-22-p2p-message-retention/design.md`
 
 ## Implementation boundaries
 

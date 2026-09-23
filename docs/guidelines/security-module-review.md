@@ -27,7 +27,7 @@ A checked box means that the module has been reviewed at least once.
 Use this exact status format before the first review:
 
 ```md
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: 637c405 — reviewer: GPT-5.3 Codex (Cursor Agent)
 ```
 
 After the first review, regardless of whether findings exist:
@@ -911,17 +911,75 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm sensitive events are minimized and redacted.
 - Confirm disconnect and restart behavior cannot leave stale privileged sessions active.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: 637c405 — reviewer: Grok 4.6 (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-019` — resolved
+  - Date found: 2026-09-23
+  - Commit reviewed: 637c405
+  - Affected files: `desktop-electron/main.mjs`, `desktop-electron/preload.cjs`, `holepunch-sidecar/src/bridge-ipc.mjs`
+  - Evidence: `installSidecarBridgeHandlers` (`gnh:sidecar-command`); `createIpcBridgeServer` repeated-auth close; `createSidecarIpcConnection.send`
+  - Description: Electron main forwards any renderer object with a string `type` onto the already-authenticated sidecar NDJSON socket. Sender binding is fail-open when `allowedWebContentsId` is null (before the window id is bound and after `closed`). Protocol-control `auth` and oversize lines close that privileged session. Main does not reconnect unless the sidecar child exits.
+  - Impact: Script that can call `window.gnhDesktop.sendCommand` (compromised renderer, hostile `GNH_UI_URL`, or a future DOM XSS) can join arbitrary Hyperswarm topics with this device’s swarm key, tear down live P2P until restart (`auth` or oversize), or issue commands while no window is bound. This is not the unshipped browser+sidecar path. Chat plaintext remains L1-sealed; this is availability plus unauthorized topic announce, not message decrypt. The current React UI has no `dangerouslySetInnerHTML`; peer-message HTML XSS is not demonstrated.
+  - Recommended remediation: Fail closed when `allowedWebContentsId` is null (same pattern as room-session IPC). Allowlist `ping` / `join` / `leave` / `frame` with the same field and size checks as `bridge-session.mjs` before `sidecarIpcConn.send`. Treat socket close as a reconnect or user-visible hard failure, not a silent dead client.
+  - Resolution date: 2026-09-23
+  - Fix commit: pending (working tree)
+  - Verification: `sanitizeSidecarCommand` drops `auth` and extra keys; sender fails closed when unbound; `createSidecarIpcConnection` emits `sidecar_error` on post-auth close. Tests: `desktop-electron/test/sidecar-command.test.mjs`, `desktop-electron/test/sidecar-ipc-client.test.mjs`. Residual: a bound renderer can still `join` any 64-hex topic (product API).
+  - Status: resolved
+
+- [x] `SEC-2026-020` — resolved
+  - Date found: 2026-09-23
+  - Commit reviewed: 637c405
+  - Affected files: `holepunch-sidecar/src/bridge-ipc.mjs`, `holepunch-sidecar/src/server.mjs`, `holepunch-sidecar/src/bridge-session.mjs`
+  - Evidence: `attachSocket` has no auth/idle timer and no max-connection cap; `createBridgeSession` has no token-bucket (unlike Bare `rate_limited`)
+  - Description: Any local principal that can open the Unix socket can hold unauthenticated connections indefinitely. Authenticated clients can send `join`/`leave`/`frame`/`ping` without a rate limit. Line and payload size caps exist (`maxNdjsonLineBytes` / `maxWsMessageBytes` / `maxFramePayloadBytes`).
+  - Impact: Same-uid local DoS via FD exhaustion or swarm join churn. Cross-user connect is still blocked on Linux by the `0700` directory and `0600` socket when those ACLs hold. Windows named-pipe DACL was not verified.
+  - Recommended remediation: Close sockets that do not complete `{ type: "auth", token }` within a short deadline; cap concurrent IPC clients; adopt the existing `rate_limited` token-bucket on `join`/`leave`/`frame`/`ping`.
+  - Resolution date: 2026-09-23
+  - Fix commit: pending (working tree)
+  - Verification: 5s first-line auth timeout (injectable in tests); max 8 IPC clients (not rooms); Bare-parity buckets in `createBridgeSession`; UI `sidecarErrorMarksOffline("rate_limited")` is false. Tests: `holepunch-sidecar/test/bridge-session-rate.test.mjs`, `holepunch-sidecar/test/bridge-ipc-limits.test.mjs`, `tests/p2p/sidecar-error-offline.test.ts`. Residual: Windows named-pipe DACL; no process-wide bucket; WS connection cap still unset (web-dev).
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — 637c405 — Grok 4.6 (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: NDJSON command/event schema is shared (`bridge-session.mjs`); IPC is a local transport plus first-line token (`bridge-ipc.mjs` / `server.mjs` `armIpcAuthToken`). Hyperswarm stays in the sidecar. Electron main is the only holder of the IPC token; renderer `gnhDesktop` in IPC mode does not receive it.
+- Least knowledge: token is not in sidecar env/argv (`delete childEnv.GNH_SIDECAR_TOKEN`; parent `{ type: "ipc-auth-token" }`). Logs warn on bad token without printing it. Socket path is logged. Renderer still receives full `topicRef` and sealed `payload` on events (needed for the UI; L1 seal is the content boundary).
+- Explicit trust boundaries: Linux socket `0177` umask + `chmod 0600` and Electron `0700` runtime dir (`ensureSidecarIpcRuntimeDir`) bind the filesystem ACL. First NDJSON line must match `tokensEqual`. Peer-credential checks are explicitly out of scope. Electron `gnh:sidecar-command` is a confused-deputy proxy (see `SEC-2026-019`).
+- Discovery is not authorization: IPC `join` is local-session gated; `frame` requires that socket’s `joined` set. Remote peer authorization is not this module’s job (MOD-007).
+- Failure paths: missing `GNH_IPC_PATH`, empty `ipc-auth-token`, and no parent IPC channel exit non-zero. Wrong/missing/repeated auth closes that socket only. Oversize sends a coded error then ends the socket. Main does not recover that client (`SEC-2026-019`). `cleanupStaleIpcPath` unlinks a leftover path before bind.
+- Capability lifecycle: per-launch `randomUUID` token when packaged; shared-mode default `gnh-desktop-shared` plus tmp lockfiles is a documented dev-harness exception. Second `ipc-auth-token` is ignored.
+- Privacy claims: `local-bridge-transport.md` and `electron-desktop.md` match the token + `0700`/`0600` story. They do not claim peer-cred or renderer command allowlisting. Direct P2P IP exposure is an L2 claim, not this bridge.
+
+**Checklist highlights:**
+
+- Event chain: Electron generates path → spawn with `GNH_BRIDGE_TRANSPORT=ipc` → parent sends token → sidecar listen → `{ type: "listening", transport: "ipc" }` → `connectSidecarIpc` first-line auth → renderer `sendCommand` / `onBridgeEvent` reviewed.
+- Trust boundaries: WS token query vs IPC first-message token verified in `bridge-ipc.test.mjs`. Renderer→main→sidecar command path is not allowlisted.
+- Secrets: `tokensEqual` is length-checked + `timingSafeEqual`. Token lockfile `0600` is shared-mode only.
+- Logs: no token or frame body in IPC logs reviewed; oversize logs size and error code only.
+- Storage: Unix socket file and optional tmp path/token locks; packaged skips token lockfile.
+- Dependencies: `node:net` IPC; no new networking library on this path.
+- Tests: auth order, wrong token, repeated auth, oversize, stale unlink, empty token exit, second parent token ignored, socket mode `0600`. No test for renderer allowlist, sender fail-closed, auth timeout, or reconnect after socket drop.
+- Component-specific (local bridge): message types are enumerated in docs; long-term secrets stay off the IPC token path; loopback WS override still puts the token on argv (documented, not the default ship path).
+
+**Findings this review:** `SEC-2026-019`, `SEC-2026-020`
+
+**Verification gaps:**
+
+- Cross-user connect denial (`0700`/`0600`) was not exercised on a multi-user packaged host.
+- Windows named-pipe default DACL / enumeration was not verified in this review.
+- Bind-vs-`chmod 0600` race is assumed covered by the parent `0700` directory; not packet- or race-tested.
+- No controlled test that a dead main↔sidecar NDJSON socket is detected in the UI.
+- Per-command rate limits remain documented as mobile-only (`holepunch-bridge-errors.md`).
+- Review used commit `637c405` plus the current working tree for IPC token/ACL code that resolved `SEC-2026-018` (fix commit still pending in that record).
 
 ---
 
@@ -982,17 +1040,55 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm failure and relay behavior is documented and safe.
 - Confirm peer IP exposure limitations are accurately represented in product claims.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: 637c405 — reviewer: GPT-5.3 Codex (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-021` — resolved
+  - Date found: 2026-09-23
+  - Commit reviewed: 637c405
+  - Affected files: `holepunch-sidecar/src/swarm.mjs`, `holepunch-sidecar/src/config.mjs`
+  - Evidence: `createSwarmMesh` accepts every `swarm.on("connection")` stream into `conns` without a cap, and `conn.on("data")` forwards each valid `frame` for joined topics to local clients immediately. Bounds exist for NDJSON line and payload size, but there is no per-peer/per-topic/per-process frame-rate limiter on swarm ingress.
+  - Description: Remote swarm peers are membership-gated by shared topic only; once connected, they can push arbitrarily many syntactically valid sealed frames within size caps, and sidecar fan-out forwards each frame without throughput controls.
+  - Impact: A malicious or compromised peer that knows the topic can trigger CPU/event-loop pressure and UI churn (repeated decrypt attempts and frame handling), degrading chat availability and battery life without breaking encryption.
+  - Recommended remediation: Add swarm-ingress abuse limits (for example: per-connection token bucket and a process-level remote-peer cap), emit a coded diagnostics event when tripped, and close peers that sustain over-limit behavior.
+  - Resolution date: 2026-09-23
+  - Fix commit: pending (working tree)
+  - Verification: Per-connection frame bucket (burst 20 / 10/s) drops then destroys after 8 consecutive misses; byte bucket (8 MiB burst / 4 MiB/s) destroys on miss; max 8 inbound remote streams (outbound still accepted). `remote_rate_limited` does not mark the UI offline. Bare has the same limits. Tests: `holepunch-sidecar/test/swarm-ingress-limits.test.mjs`, `native-wrapper/bare/test/swarm-ingress-limits.test.mjs`, `tests/p2p/sidecar-error-offline.test.ts`. Residual: a topic-knowing sybil can still occupy the 8 inbound slots; this bounds CPU/FDs, it does not pick the real contact.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — 637c405 — GPT-5.3 Codex (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: sidecar swarm code (`swarm.mjs`) keeps ciphertext transport separate from app-layer session keys; L1 proof/decrypt stays in app transport, not sidecar.
+- Explicit trust boundaries: topic membership controls forwarding (`connTopics`) and foreign-topic labels are dropped; this is a discovery/membership gate, not peer intent validation.
+- Input bounds: NDJSON line and frame sizes are capped and oversize lines destroy the offending peer connection.
+- Failure behavior: connection open/error/close paths are observable in logs and topic peer counts update cleanly on close; refresh nudge backoff avoids immediate tight loops.
+- Privacy claims: docs correctly frame direct peer IP exposure as intrinsic to Hyperswarm and treat DHT discovery as non-auth identity.
+
+**Checklist highlights:**
+
+- Event chain: join/announce (`swarm.join`) -> connection adoption (`info.topics`) -> frame fan-out -> peer-close cleanup reviewed in code and tests.
+- Trust boundaries: inbound frames are forwarded only for topics that this connection shares (`connTopics`) and that local clients joined.
+- Secrets/capabilities: sidecar carries opaque payload strings only; no L1 session key material in swarm runtime.
+- Dependency behavior: `hyperswarm` defaults are consumed directly; no explicit app-level cap on accepted remote streams.
+- Tests: covered NDJSON overflow disconnect, topic-isolation fan-out, and server lifecycle; missing adversarial flood and peer-cap tests.
+
+**Findings this review:** `SEC-2026-021`
+
+**Verification gaps:**
+
+- No swarm-ingress token-bucket tests (remote flood within valid size limits).
+- No explicit max-remote-peer cap or rejection telemetry under connection pressure.
+- No long-run soak test confirming sidecar/UI behavior under sustained malicious frame cadence.
+- Review used commit `637c405`; previous MOD-006 fixes in working tree were treated as contextual baseline only.
 
 ---
 
@@ -1037,6 +1133,7 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - `desktop-electron/preload.cjs`
 - `desktop-electron/preload-bridge.cjs`
 - `desktop-electron/sidecar-ipc-client.mjs`
+- `desktop-electron/ui-navigation.mjs`
 - `desktop-electron/desktop-identity.mjs`
 - `desktop-electron/desktop-info-ipc.cjs`
 - `desktop-electron/desktop-ipc-path.mjs`
@@ -1056,17 +1153,57 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm sidecar credentials and long-term secrets remain outside renderer access.
 - Confirm packaging and build configuration does not weaken runtime protections.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: 637c405 — reviewer: GPT-5.3 Codex (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-022` — resolved
+  - Date found: 2026-09-23
+  - Commit reviewed: 637c405
+  - Affected files: `desktop-electron/main.mjs`, `desktop-electron/preload.cjs`, `desktop-electron/sidecar-command.mjs`
+  - Evidence: `main.mjs` creates a hardened window (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`) but does not install `webContents.setWindowOpenHandler` or `will-navigate`/navigation allowlists. `preload.cjs` always exposes `window.gnhDesktop` in that window, and main-process guards (`authorizeSidecarCommandSender`, `assertRoomSessionSender`) bind by `webContents.id` only, not by origin.
+  - Description: Any web page that is navigated into the existing BrowserWindow (for example by an unhandled external link or a hostile `GNH_UI_URL` override) inherits the full privileged preload surface.
+  - Impact: Untrusted remote content in the bound renderer can invoke `gnh:sidecar-command` and room-session IPC (`gnh:room-sessions-load/save/clear`), including reading persisted room session material and issuing sidecar control commands. This is renderer-to-main privilege exposure across an origin boundary.
+  - Recommended remediation: Enforce strict navigation confinement to the intended app origin/file (`loadFile` packaged UI and approved dev URL only), route external URLs via `shell.openExternal`, and add sender-origin checks on privileged IPC handlers in addition to `webContents.id`.
+  - Resolution date: 2026-09-23
+  - Fix commit: pending (working tree)
+  - Verification: `uiPolicyFromTarget` / `isAllowedUiUrl` confine the window to the resolved packaged `file:` UI directory or loopback `http(s)`. `will-navigate` cancels other document loads; `setWindowOpenHandler` denies new windows (no `openExternal`). Privileged IPC additionally requires `senderFrame.url` on that origin. Remote `GNH_UI_URL` is refused before `BrowserWindow` is created. Tests: `desktop-electron/test/ui-navigation.test.mjs`. Existing `sanitizeSidecarCommand` / sender-id checks unchanged. Residual: same-origin renderer can still `join` any 64-hex topic (`SEC-2026-019`). Severity after reassessment: medium (checklist / origin-widening), not a default-path remote exploit.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — 637c405 — GPT-5.3 Codex (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: main process owns sidecar lifecycle, IPC proxying, desktop identity, and session-store host; renderer stays Node-disabled and sandboxed.
+- Least knowledge: packaged IPC path keeps sidecar auth token out of renderer env/argv and out of preload exports; WS debug override still carries token in argv by design.
+- Explicit trust boundaries: sender binding is fail-closed by `webContents.id` + main-frame checks for sidecar commands and room-session handlers, but no origin binding is enforced once that renderer is bound.
+- Discovery/authorization: sidecar command allowlist and payload bounds are enforced in main before NDJSON send; discovery is not treated as message authorization here (L1/L2 checks are out of module scope).
+- Failure behavior: sidecar IPC disconnect emits typed `sidecar_error`; shutdown clears partition history and tears down owned sidecar.
+- Privacy claims: desktop docs accurately describe token handling and IPC hardening, but current navigation policy allows cross-origin privilege inheritance (`SEC-2026-022`).
+
+**Checklist highlights:**
+
+- Event chain: app start → identity resolve → sidecar spawn/attach (`ipc-auth-token`) → preload bridge setup (`additionalArguments` + sync IPC) → renderer command proxy traced end-to-end.
+- Trust boundaries: `contextIsolation`/sandbox posture validated; command and room-session IPC authorization checked; origin-confinement controls missing.
+- Secrets/capabilities: sidecar token handling and lockfile behavior reviewed; no token logging in reviewed paths.
+- Logs/observability: no sensitive frame/session dumps in reviewed Electron main/preload logs.
+- Dependency/build posture: Forge config reviewed for embedded resources and runtime packaging assumptions; no hardening regression found there.
+- Tests/validation: module tests cover identity, IPC path permissions, command sanitization, desktop-info race handling, and sidecar IPC disconnect/error propagation.
+
+**Findings this review:** `SEC-2026-022`
+
+**Verification gaps:**
+
+- No automated tests currently assert navigation confinement (`will-navigate` / `setWindowOpenHandler`) or external-link routing behavior.
+- No controlled proof-of-concept test was executed in this pass that loads a foreign origin in the bound window and attempts privileged IPC calls.
+- Windows named-pipe ACL behavior remains inherited from prior IPC module reviews and was not re-validated in this module-specific pass.
+- `GNH_UI_URL` operational override trust expectations are documented but not policy-enforced by an explicit runtime allowlist.
 
 ---
 
@@ -1442,6 +1579,9 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-23 | MOD-008 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-022 |
+| 2026-09-23 | MOD-007 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-021 (resolved) |
+| 2026-09-23 | MOD-006 | 637c405 | Grok 4.6 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-019 (resolved), SEC-2026-020 (resolved) |
 | 2026-09-22 | MOD-005 | cfb7e83 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-018 (resolved) |
 | 2026-09-22 | MOD-004 | e2d7db3 | Claude Opus 5.5 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-013 (resolved), SEC-2026-014 (resolved), SEC-2026-015 (resolved), SEC-2026-016 (resolved), SEC-2026-017 (resolved) |
 | 2026-09-22 | MOD-003 | 01d6d85 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-012 (resolved) |

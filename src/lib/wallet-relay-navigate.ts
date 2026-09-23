@@ -1,7 +1,7 @@
 /**
  * Pure resolver: given a relay roomId + runtime snapshots, return the best
  * navigation target or null.
- * @see openspec/changes/wallet-history-live-relay-dots/tasks.md
+ * @see openspec/changes/archive/2026-09-22-wallet-history-live-relay-dots/tasks.md
  */
 
 export type RelayRoute =

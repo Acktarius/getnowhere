@@ -20,6 +20,8 @@ import { cleanupStaleIpcPath } from "./ipc-path.mjs";
  *   token: string
  *   onListening?: (path: string) => void
  *   onClientConnected?: () => void
+ *   authTimeoutMs?: number
+ *   maxConnections?: number
  * }} opts
  */
 export function createIpcBridgeServer(mesh, opts) {
@@ -28,18 +30,31 @@ export function createIpcBridgeServer(mesh, opts) {
     throw new Error("ipc bridge requires a token");
   }
   cleanupStaleIpcPath(ipcPath);
+  const authTimeoutMs = opts.authTimeoutMs ?? 5_000;
+  const maxConnections = opts.maxConnections ?? 8;
 
   /** @type {import('node:net').Server | null} */
   let server = null;
+  let liveSockets = 0;
 
   /**
    * @param {import('node:net').Socket} socket
    */
   function attachSocket(socket) {
+    if (liveSockets >= maxConnections) {
+      console.warn(
+        `[holepunch-sidecar] IPC rejected: max connections (${maxConnections})`,
+      );
+      socket.destroy();
+      return;
+    }
+    liveSockets += 1;
     opts.onClientConnected?.();
     let buffer = "";
     let closed = false;
     let authed = false;
+    /** @type {ReturnType<typeof setTimeout>} */
+    let authTimer;
 
     /**
      * @param {string} line
@@ -102,6 +117,8 @@ export function createIpcBridgeServer(mesh, opts) {
     function endSocket() {
       if (closed) return;
       closed = true;
+      clearTimeout(authTimer);
+      liveSockets = Math.max(0, liveSockets - 1);
       session.close();
       try {
         socket.end();
@@ -109,6 +126,17 @@ export function createIpcBridgeServer(mesh, opts) {
         /* ignore */
       }
     }
+
+    authTimer = setTimeout(() => {
+      if (authed || closed) return;
+      console.warn("[holepunch-sidecar] IPC rejected: auth timeout");
+      endSocket();
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
+    }, authTimeoutMs);
 
     socket.on("data", async (chunk) => {
       buffer += chunk.toString();
@@ -135,6 +163,7 @@ export function createIpcBridgeServer(mesh, opts) {
             return;
           }
           authed = true;
+          clearTimeout(authTimer);
           send({ type: "auth-ok" });
           continue;
         }
@@ -162,6 +191,7 @@ export function createIpcBridgeServer(mesh, opts) {
   server = createServer((socket) => {
     attachSocket(socket);
   });
+  server.maxConnections = maxConnections;
 
   server.on("error", (err) => {
     console.error(`[holepunch-sidecar] IPC server error: ${err.message}`);

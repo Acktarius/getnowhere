@@ -1,6 +1,6 @@
 /**
  * L1′ relay TTL send path (RED). Named caller: HolepunchChatTransport.sendRelayText.
- * @see openspec/changes/l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
+ * @see openspec/changes/archive/2026-09-03-l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {

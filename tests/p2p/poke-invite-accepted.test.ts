@@ -1,6 +1,6 @@
 /**
  * Invite-accepted wake after successful chat.register (acceptor).
- * @see openspec/changes/wake-only-notifications/specs/wake-only-notifications/spec.md
+ * @see openspec/changes/archive/2026-09-22-wake-only-notifications/specs/wake-only-notifications/spec.md
  */
 import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { beforeEach, describe, expect, it, vi } from "vitest";

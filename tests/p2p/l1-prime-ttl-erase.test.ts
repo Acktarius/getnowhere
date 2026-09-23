@@ -1,6 +1,6 @@
 /**
  * L1′ TTL erase (RED). Room memory, no chatRooms persist, hydrate skip.
- * @see openspec/changes/l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
+ * @see openspec/changes/archive/2026-09-03-l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
  */
 import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

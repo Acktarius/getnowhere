@@ -117,6 +117,7 @@ holepunch-sidecar/
                         # maxFramePayloadBytes / reserved maxFileBytes
   src/config.mjs        # load limits with defaults
   src/errors.mjs        # BRIDGE_ERRORS map + bridgeError()
+  src/rateLimit.mjs     # Bare-parity bridge buckets + swarm ingress limits
   src/swarm.mjs         # one Hyperswarm; multi-topic join + local/remote fan-out
   src/server.mjs        # WebSocket bridge (default ws://127.0.0.1:7901)
   src/parent-death.mjs  # exit when Electron parent dies
@@ -140,6 +141,27 @@ lines are capped by `maxNdjsonLineBytes` (default **262144**, from
 connection handler logs the peer and calls `conn.destroy()`. Other connections
 and the sidecar process stay up. `maxFileBytes` is reserved for a future media
 path and is not applied to chat NDJSON frames.
+
+### Swarm ingress abuse limits
+
+Remote Hyperswarm streams are unauthenticated (topic membership only). After
+the Noise stream is already up — this is **not** the DHT holepunch wait —
+each connection has:
+
+- **Frame bucket:** burst 20, refill 10/s. Excess frames are dropped (not
+  forwarded, so the UI does not decrypt). The stream stays up until **8**
+  consecutive drops, then `conn.destroy()`.
+- **Byte bucket:** burst **8 MiB**, refill **4 MiB/s**. Sized so a photo or
+  chunked file at the 256 KiB line cap is not the limiter (10 max-size
+  frames/s ≈ 2.5 MiB/s). A byte-budget miss destroys that peer immediately
+  (parsing further would desync NDJSON).
+- **Inbound cap:** 8 live remote streams. A 9th **inbound** is destroyed;
+  **outbound** (we dialed) is still accepted so a sybil pile-on cannot block
+  our own connect. This is not `Hyperswarm({ maxPeers: 8 })`.
+
+Tripped limits emit `{ type: "error", code: "remote_rate_limited" }` to local
+clients. The UI must not treat that as sidecar offline (same as
+`rate_limited`). Mobile Bare uses the same numbers.
 
 ## Packaged desktop bridge (ephemeral port)
 
@@ -183,6 +205,16 @@ generates the path):
 4. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
 5. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
 6. Stale Unix socket files are unlinked before bind when safe.
+7. First-line `{ type: "auth" }` must complete within **5 seconds** (local
+   socket only — not DHT/holepunch). Concurrent IPC clients are capped at **8**
+   (one connection per Electron process, not per room).
+8. After auth, `join` / `leave` / `frame` / `ping` use the same token buckets
+   as Bare (`rate_limited`, session stays up).
+
+Electron main (`gnh:sidecar-command`) allowlists `ping` / `join` / `leave` /
+`frame` and does not forward `{ type: "auth" }`. A dead NDJSON socket after
+auth is a hard fail (`sidecar_error` to the renderer), not a silent drop.
+@see `docs/architecture/electron-desktop.md`
 
 Web-dev keeps default `GNH_BRIDGE_TRANSPORT=ws` (unset).
 

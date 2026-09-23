@@ -132,6 +132,13 @@ export function createSidecarIpcConnection(socket) {
   socket.on("close", () => {
     closed = true;
     failAuth(new Error("sidecar IPC closed during auth"));
+    if (authenticated) {
+      emit({
+        type: "error",
+        code: "sidecar_error",
+        message: "sidecar IPC disconnected",
+      });
+    }
   });
   socket.on("error", () => {
     closed = true;

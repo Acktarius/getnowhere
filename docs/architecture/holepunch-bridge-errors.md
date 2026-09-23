@@ -29,7 +29,8 @@ Bridge command/event schema: `docs/architecture/holepunch-sidecar.md`.
 | `frame_requires_join` | `frame requires join for topicRef` | `frame` for a `topicRef` this socket has not `join`ed. No fan-out. |
 | `unknown_type` | `unknown type` | JSON object with unrecognized `type` (message may include the type). |
 | `sidecar_error` | `sidecar error` | Unexpected exception while handling a command (message may be the exception text). |
-| `rate_limited` | `rate limited` | Per-command token bucket exceeded (`join`, `leave`, `frame`, `ping`). Mobile Bare bridge; sidecar may adopt later. |
+| `rate_limited` | `rate limited` | Per-command token bucket exceeded (`join`, `leave`, `frame`, `ping`). Sidecar and mobile Bare. Socket stays open. UI does not treat this as offline. |
+| `remote_rate_limited` | `remote peer rate limited` | A remote Hyperswarm peer exceeded the swarm ingress frame or byte bucket. Local bridge stays up. UI does not treat this as offline. The offending peer stream may be destroyed after sustained abuse. |
 
 ## Size rejection and close 1009
 
@@ -54,6 +55,8 @@ NDJSON budget (256 KiB payload + small JSON wrapper headroom). See
 3. After `message_too_large` / `payload_too_large`, expect the socket to close
    (1009). Reconnect UX is app-owned; normal sealed-frame chat stays under the
    defaults.
+4. After `rate_limited` or `remote_rate_limited`, keep the session; do not
+   mark the bridge offline.
 
 See also: `docs/architecture/holepunch-sidecar.md`,
 `docs/security/encryption.md` (L1 sealed frames; no L3).

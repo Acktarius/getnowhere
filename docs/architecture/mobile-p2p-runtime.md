@@ -194,12 +194,13 @@ Controls match packaged desktop / sidecar where applicable:
 | CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
 | `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
 | Bridge command rate limits (`rate_limited`) | `bare/bridge.mjs` + `bare/rateLimit.mjs` |
+| Swarm ingress limits (`remote_rate_limited`) | `bare/swarm.mjs` + `bare/rateLimit.mjs` (sidecar parity) |
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
 **Pending hardening (2026-08 review):** findings 08–15 addressed in code/docs;
 manual Android smoke (task 6.2) and Hermes `crypto.randomUUID` device check remain.
-OpenSpec `openspec/changes/mobile-bridge-hardening/`.
+OpenSpec `openspec/changes/archive/2026-08-06-mobile-bridge-hardening/`.
 
 ### WebView trust model
 
@@ -219,7 +220,11 @@ Bridge tokens are UUID v4 from CSPRNG. On Hermes/RN, `expo-crypto` provides nati
 fallback. The
 worklet enforces per-type token-bucket rate limits on `join`, `leave`, `frame`,
 and `ping` (default burst: 8 join/leave, 40 frame/s sustained); excess commands
-return `{ type: "error", code: "rate_limited" }`.
+return `{ type: "error", code: "rate_limited" }`. The Node sidecar uses the same
+buckets (`holepunch-sidecar/src/rateLimit.mjs`). Remote Hyperswarm ingress uses
+a tighter pair of buckets (20 burst / 10 frames/s, 8 MiB burst / 4 MiB/s) plus
+an 8-stream inbound cap; excess emits `remote_rate_limited` and does not mark
+the bridge offline (`docs/architecture/holepunch-sidecar.md`).
 
 Bridge tokens are UUID v4 (`crypto.randomUUID`) — fixed 36-character length. The
 constant-time compare may short-circuit on length mismatch; this is acceptable

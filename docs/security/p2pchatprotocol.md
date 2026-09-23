@@ -519,7 +519,7 @@ Persist separately (do not collapse these):
   restore chat rooms (chain scan cannot recover both sides of the handshake).
   Accepted replays stay `awaitingChainSync` until near chain tip (revoke scan).
   Expired invite without accept → silent skip + revoked `roomId` tombstone.
-  @see `openspec/changes/repair-room-restoration/design.md`
+  @see `openspec/changes/archive/2026-09-22-repair-room-restoration/design.md`
 - Metadata export (`Settings → Backup`) includes contacts in the downloaded
   `.json` (no seed).
 - Raw session keys: memory / secure storage path; never in logs.

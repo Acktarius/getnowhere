@@ -1,6 +1,6 @@
 /**
  * Mobile Bare bridge auth + rate limits.
- * @see openspec/changes/mobile-bridge-hardening
+ * @see openspec/changes/archive/2026-08-06-mobile-bridge-hardening
  */
 
 import assert from "node:assert/strict";

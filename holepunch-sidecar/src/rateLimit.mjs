@@ -1,6 +1,7 @@
 /**
- * Token-bucket rate limiter for bridge commands.
- * @see docs/architecture/mobile-p2p-runtime.md
+ * Token-bucket rate limiter for bridge commands (Bare parity).
+ * @see native-wrapper/bare/rateLimit.mjs
+ * @see docs/architecture/holepunch-sidecar.md
  */
 
 /**
@@ -38,8 +39,8 @@ export const BRIDGE_RATE_LIMITS = Object.freeze({
 const MiB = 1024 * 1024;
 
 /**
- * Unauthenticated Hyperswarm ingress (sidecar parity).
- * @see docs/architecture/mobile-p2p-runtime.md
+ * Unauthenticated Hyperswarm ingress (tighter than the local bridge).
+ * @see docs/architecture/holepunch-sidecar.md
  */
 export const SWARM_INGRESS_LIMITS = Object.freeze({
   frame: { capacity: 20, refillPerMs: 10 / 1000 },

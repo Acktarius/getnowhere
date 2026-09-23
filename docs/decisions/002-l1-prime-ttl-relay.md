@@ -2,7 +2,7 @@
 
 Status: **Accepted**  
 Date: 2026-09-03  
-Source: `openspec/changes/l1-prime-ttl-relay` (archived)
+Source: `openspec/changes/archive/2026-09-03-l1-prime-ttl-relay`
 
 ## Context
 

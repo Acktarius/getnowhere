@@ -1,6 +1,6 @@
 /**
  * Replay chat rooms from wallet file backup messages (sent + received).
- * @see openspec/changes/repair-room-restoration/design.md
+ * @see openspec/changes/archive/2026-09-22-repair-room-restoration/design.md
  */
 import { messages } from "conceal-wallet-sdk";
 import {

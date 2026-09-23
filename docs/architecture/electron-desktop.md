@@ -94,6 +94,24 @@ Main hands `{ role?, bridgeTransport, … }` to preload via
 (`bridgeTransport: "ipc"`, `sendCommand` / `onBridgeEvent` on `window.gnhDesktop`).
 Set `GNH_HOLEPUNCH_WS_URL` to force loopback WebSocket (debug override).
 
+`gnh:sidecar-command` is fail-closed: only the bound `BrowserWindow` may invoke
+it, and only after `sanitizeSidecarCommand` copies `ping` / `join` / `leave` /
+`frame` (64-hex `topicRef`, payload ≤ 262144 bytes). `{ type: "auth" }` never
+crosses this proxy. If the NDJSON socket closes after auth, main emits
+`{ type: "error", code: "sidecar_error" }` so the UI goes offline (no automatic
+reconnect). `gnh:get-desktop-info` stays fail-open while the window id is
+unbound (about:blank preload race). Privileged IPC also requires
+`event.senderFrame.url` to match the resolved UI origin (packaged `file:` UI
+directory, or loopback `http(s)` such as Vite `127.0.0.1:5173`). `will-navigate`
+cancels any other document navigation; `setWindowOpenHandler` denies new
+windows. Hash-router changes stay in-page and are not blocked. `GNH_UI_URL`
+must be a local file or loopback URL — a remote override is refused before
+the window is created. The sidecar IPC path itself requires
+first-line auth within 5s, at most 8 concurrent Unix-socket clients, and
+Bare-parity command rate limits (`rate_limited` is not treated as offline).
+Remote swarm ingress is capped in the sidecar (`remote_rate_limited`; also not
+offline).
+
 Legacy WS fields when `bridgeTransport === "ws"`: `holepunchWsUrl`, `wsToken`.
 Preload prefers argv when present. Do **not** use `executeJavaScript` into the
 page main-world (XSS surface).
@@ -233,6 +251,8 @@ Same live schema as web-dev (`HolepunchSidecarClient.ts`):
 desktop-electron/
   package.json
   desktop-identity.mjs  # packaged vs Alice/Bob decision table
+  sidecar-command.mjs   # renderer command allowlist for gnh:sidecar-command
+  ui-navigation.mjs     # UI origin allowlist + will-navigate / window-open deny
   main.mjs              # window + sidecar child lifecycle; owns gnh:get-desktop-info IPC
   preload-bridge.cjs    # pure normalize/resolve helpers for node:test (mirror of preload.cjs)
   preload.cjs           # self-contained sandboxed preload → exposeInMainWorld("gnhDesktop", ...)

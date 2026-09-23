@@ -1,6 +1,6 @@
 /**
  * Live spawn/WS cases for bridge auth policy (startup guard + ?token=).
- * @see openspec/changes/bridge-auth
+ * @see openspec/changes/archive/2026-08-02-bridge-auth
  */
 
 import assert from "node:assert/strict";

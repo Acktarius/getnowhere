@@ -76,4 +76,26 @@ describe("sidecar-ipc-client", () => {
     assert.equal(got[0].type, "peers");
     conn.close();
   });
+
+  it("emits sidecar_error after auth when the socket closes", async () => {
+    const fake = new EventEmitter();
+    fake.destroyed = false;
+    fake.destroy = () => {
+      fake.destroyed = true;
+    };
+    fake.write = () => {
+      fake.emit("data", Buffer.from('{"type":"auth-ok"}\n'));
+    };
+    const conn = createSidecarIpcConnection(
+      /** @type {import('node:net').Socket} */ (fake),
+    );
+    await conn.authenticate("test-token");
+    const got = [];
+    conn.onEvent((m) => got.push(m));
+    fake.emit("close");
+    assert.equal(got.length, 1);
+    assert.equal(got[0].type, "error");
+    assert.equal(got[0].code, "sidecar_error");
+    conn.close();
+  });
 });

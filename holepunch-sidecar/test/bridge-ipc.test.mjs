@@ -1,6 +1,6 @@
 /**
  * IPC bridge transport (GNH_BRIDGE_TRANSPORT=ipc).
- * @see openspec/changes/electron-ipc-sidecar
+ * @see openspec/changes/archive/2026-08-12-electron-ipc-sidecar
  */
 
 import assert from "node:assert/strict";
