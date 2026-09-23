@@ -12,13 +12,14 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, session } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, safeStorage, session } from "electron";
 import { resolveDesktopIdentity } from "./desktop-identity.mjs";
 import {
   generateSidecarIpcPath,
   sharedIpcLockBasename,
 } from "./desktop-ipc-path.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
+import { createRoomSessionHost } from "./room-session-store.mjs";
 import { connectSidecarIpc } from "./sidecar-ipc-client.mjs";
 
 const require = createRequire(import.meta.url);
@@ -67,6 +68,9 @@ const SIDECAR_EVENT_CHANNEL = "gnh:sidecar-event";
  * @see docs/architecture/electron-desktop.md
  */
 const DESKTOP_INFO_CHANNEL = "gnh:get-desktop-info";
+const ROOM_SESSIONS_LOAD = "gnh:room-sessions-load";
+const ROOM_SESSIONS_SAVE = "gnh:room-sessions-save";
+const ROOM_SESSIONS_CLEAR = "gnh:room-sessions-clear";
 
 function bridgeWsBase() {
   return BASE_WS_URL_OVERRIDE ?? `ws://${SWARM_HOST}:${swarmPort}`;
@@ -250,6 +254,46 @@ function installSidecarBridgeHandlers() {
       throw new Error("invalid sidecar command");
     }
     sidecarIpcConn.send(cmd);
+  });
+}
+
+/** @type {ReturnType<typeof createRoomSessionHost> | null} */
+let roomSessionHost = null;
+
+function getRoomSessionHost() {
+  if (!roomSessionHost) {
+    roomSessionHost = createRoomSessionHost({
+      userData: app.getPath("userData"),
+      safeStorage,
+    });
+  }
+  return roomSessionHost;
+}
+
+function assertRoomSessionSender(event) {
+  if (
+    allowedWebContentsId == null ||
+    event.sender.id !== allowedWebContentsId
+  ) {
+    throw new Error("unauthorized room session request");
+  }
+}
+
+function installRoomSessionHandlers() {
+  ipcMain.removeHandler(ROOM_SESSIONS_LOAD);
+  ipcMain.removeHandler(ROOM_SESSIONS_SAVE);
+  ipcMain.removeHandler(ROOM_SESSIONS_CLEAR);
+  ipcMain.handle(ROOM_SESSIONS_LOAD, (event) => {
+    assertRoomSessionSender(event);
+    return getRoomSessionHost().load();
+  });
+  ipcMain.handle(ROOM_SESSIONS_SAVE, (event, json) => {
+    assertRoomSessionSender(event);
+    return getRoomSessionHost().save(json);
+  });
+  ipcMain.handle(ROOM_SESSIONS_CLEAR, (event) => {
+    assertRoomSessionSender(event);
+    getRoomSessionHost().clear();
   });
 }
 
@@ -691,6 +735,7 @@ if (isPrimaryInstance) {
         reason: "check-failed",
       }));
       log(`UFW advisory: ${ufwAdvisory.state} (${ufwAdvisory.reason})`);
+      installRoomSessionHandlers();
       await ensureLocalSwarm();
       createWindow();
     } catch (e) {

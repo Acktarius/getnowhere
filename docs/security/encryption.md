@@ -228,9 +228,15 @@ After transport peer presence (`peers.count >= 1`), the connecting side sends a
 sealed `kind: "proof"` frame (`text: proof:v1:<sessionId>`). A peer that is not
 itself mid-handshake answers with `proof-ack:v1:<sessionId>` (acks never re-ack,
 so no ping-pong). AEAD open success on either proof or ack proves L1 session
-keys. Outcomes: AEAD failure → `crypto_mismatch` (session wiped, rekey);
-no reply within the window → `timeout` (retryable, session kept). Topic + Noise
-alone is not trust.
+keys. Outcomes: AEAD failure → `crypto_mismatch` (session row kept, counters do not rewind);
+no reply within the window → `timeout` (retryable). A later handoff resumes the saved
+session instead of deriving again. Topic + Noise alone is not trust.
+
+Peer count never sets `connected`. A return from `connecting` starts a new proof
+attempt when a peer is present and no attempt is in flight. Only that attempt's
+proof or proof-ack sets `connected`. An opened chat frame does not. The early-proof
+flag belongs to the attempt that received the frame; an open still in flight from
+an earlier attempt cannot satisfy the next wait.
 
 ## Default primitive (L1 session seal)
 
@@ -325,7 +331,9 @@ broken by nonce reuse under the same key.
 - `nonceSeed`: 8 random bytes (64-bit hex) from the handshake. Slim create packs that width (`p2pchatprotocol.md` §4, `capabilities-and-derivation.md`). HKDF stretches it to the 12-byte nonce. Uniqueness is the per-direction counter under the session key, not the seed width.
 - Per seal under the **send** key:
   - `nonce_12 = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"|"recv"), info=UTF8("nonce|" + counter), L=12)`
-  - persist and increment `sendCounter` **after** successful seal preparation
+  - persist and increment `sendCounter` **after** successful seal preparation, and **before** the frame is sent
+- The session row (keys and counters) is written before the first proof seal. A later handoff resumes that row instead of deriving again. `connect` never installs a lower counter.
+- On open, derive that same nonce with salt `send` (the peer's seal direction) for each counter in `[recvCounter, recvCounter + 64)`. Accept the frame only when the 12-byte wire nonce matches one of them and the AEAD tag checks. Set `recvCounter` to the matched counter + 1. A replay, a counter below `recvCounter`, a wire nonce that matches none of those counters, or a gap of 64 or more fails closed and leaves `recvCounter` unchanged.
 - Directions never share a key, so Alice’s send counter space is independent of Bob’s.
 - After reconnect or app restart: restore `sendCounter` / `recvCounter` before any seal.
 - Do not generate nonces in UI code.
@@ -379,8 +387,13 @@ Rules:
 
 ## Local storage rules
 
-- Persist session counters and key **refs** (or sealed key material) so reconnect
-  can restore seal/open without rewinding nonces.
+- Persist session counters and key material so reconnect can restore seal/open
+  without rewinding nonces. Browser debug may use `localStorage`. Electron
+  writes `safeStorage` ciphertext to `room-sessions.bin` under `userData`.
+  When Linux has no secret service (`basic_text`), the row lives on the
+  wallet blob as `roomSessions` and is stripped from `downloadWalletBackup`.
+  Mobile keeps the native secure-prefs adapter.
+  @see `docs/architecture/electron-desktop.md`
 - Never log raw session keys, ephemeral privates, or plaintext chat.
 - Tombstone flows must wipe session secrets per `p2pchatprotocol.md`.
   Local invite records store `roomId`, `inviteId`, and `replayId` in the clear.

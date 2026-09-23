@@ -43,6 +43,15 @@ Pre-release note: renaming `userData` / partition orphans older
 After a hard kill, a stale Chromium `SingletonLock` under `~/.config/getnowhere`
 can block relaunch until removed.
 
+## Room session keys
+
+Live send/recv keys are not part of the wallet export. Electron main encrypts
+them with `safeStorage` into `room-sessions.bin` in `userData` (Alice and Bob
+already have separate directories). If the Linux backend is `basic_text`,
+there is no OS secret service, so the renderer stores the row on the open
+wallet instead and the backup download omits it. The browser debug build
+still uses `localStorage`.
+
 ## Dev: two instances on one PC (Alice / Bob)
 
 Goal: two Electron windows, two Conceal wallets, Hyperswarm via sidecar child(ren).

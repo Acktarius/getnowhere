@@ -263,7 +263,8 @@ only**. Switching to XChaCha requires a new suite id, doc update, and
 version bump — never a silent swap.
 
 Post-connect: after transport peer presence, prove L1 session/invite binding
-before `connected` / composer enable. Topic + Noise alone is not trust.
+before `connected` / composer enable. A blip re-runs that proof. Topic + Noise
+alone is not trust.
 
 ### Key schedule (session derive)
 
@@ -291,7 +292,7 @@ Rules (enforced in `P2PEncryptionService`):
 - For each seal under `sendKey`:
   - `nonce = HKDF-SHA256(nonceSeed, salt=direction, info="nonce|{counter}", 12)`
   - then increment persisted `sendCounter` (never rewind after reconnect).
-- Open uses the peer’s counter space via `recvKey` + received nonce bytes.
+- Open uses `recvKey` and accepts the wire nonce only when it equals the peer's send nonce for a counter in `[recvCounter, recvCounter + 64)`. `recvCounter` becomes that counter + 1 only after the tag checks. A replay or a larger gap fails closed.
 - Counters persist with the session; app restart must restore counters before seal.
 - UI and transport must not invent nonces.
 
@@ -551,6 +552,10 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 - Reaction / edit / delete / reply metadata (`replyToMessageId`,
   `replyPreview`) remain **live-only**. L1′ is text only and has no reply
   metadata (§16).
+- A live frame is dropped unless it parses: `schemaVersion` 1, known `kind`,
+  string ids ≤128, `sentAt` a date, `text` ≤8000 (`proof` text ≤128),
+  `replyPreview` ≤100, `reaction` ≤16. Edit and delete apply only to a row
+  with the same direction. An inbound id does not replace a stored row.
 
 ---
 

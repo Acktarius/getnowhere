@@ -4,8 +4,8 @@
  * Suite CHACHA20_POLY1305_V1 uses the 96-bit-nonce IETF construction from
  * @noble/ciphers `chacha20poly1305` — NOT XChaCha20-Poly1305.
  *
- * Nonce: HKDF(nonceSeed, direction, "nonce|{counter}") → 12 bytes; counters
- * must never rewind. See docs/security/encryption.md.
+ * Nonce: HKDF(nonceSeed, direction, "nonce|{counter}") → 12 bytes. Open accepts
+ * only the peer send nonce in the receive window. @see docs/security/encryption.md
  */
 
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
@@ -15,6 +15,9 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { deriveTopicRefForSuite, randomHex } from "@/services/protocol/ids";
 import type { P2PSessionConfig, TopicSuiteId } from "@/types/protocol";
 import type { P2PEncryptionService } from "@/types/services";
+
+/** Look-ahead for dropped frames. A larger gap fails closed. */
+export const RECV_NONCE_WINDOW = 64;
 
 const privateKeys = new Map<string, Uint8Array>();
 
@@ -40,6 +43,13 @@ function encodeInfo(info: {
   return new TextEncoder().encode(
     `${info.protocolVersion}|${info.cipherSuite}|${info.relationshipId}|${info.roomId}`,
   );
+}
+
+function nonceEquals(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
 }
 
 function deriveNonce(
@@ -183,17 +193,25 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
 
   async open({ session, ciphertext, nonce, aad }) {
     const key = privateKeys.get(session.recvKeyRef);
-    if (!key) return null;
-    try {
-      const aead = chacha20poly1305(key, nonce, aad);
-      const plaintext = aead.decrypt(ciphertext);
-      return {
-        plaintext,
-        session: { ...session, recvCounter: session.recvCounter + 1 },
-      };
-    } catch {
-      return null;
+    if (!key || nonce.length !== 12) return null;
+    const start = session.recvCounter;
+    if (!Number.isSafeInteger(start) || start < 0) return null;
+    for (let counter = start; counter < start + RECV_NONCE_WINDOW; counter++) {
+      // Peer sealed with salt "send". Decrypt only after that nonce matches.
+      const expected = deriveNonce(session.nonceSeed, counter, "send");
+      if (!nonceEquals(expected, nonce)) continue;
+      try {
+        const aead = chacha20poly1305(key, expected, aad);
+        const plaintext = aead.decrypt(ciphertext);
+        return {
+          plaintext,
+          session: { ...session, recvCounter: counter + 1 },
+        };
+      } catch {
+        return null;
+      }
     }
+    return null;
   },
 };
 

@@ -31,6 +31,7 @@ import {
   holepunchBackoffMs,
   L2_RECONNECT_GRACE_MS,
 } from "@/services/p2p/holepunchPolicy";
+import { parseLiveContentEnvelope } from "@/services/p2p/liveContentEnvelope";
 import {
   exportKeyHex,
   importKeyHex,
@@ -49,6 +50,7 @@ import {
   upsertCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import {
+  hydrateRoomSessions,
   loadRoomSession,
   removeRoomSession,
   saveRoomSession,
@@ -217,12 +219,28 @@ function runConnectSingleFlight(
 
 /** Post-connect L1 proof before `connected`. @see docs/security/encryption.md */
 const PROOF_TIMEOUT_MS = 5_000;
+let proofTimeoutMs = PROOF_TIMEOUT_MS;
+
+/** Test hook: shorten the proof wait so a silent peer fails fast. */
+export function __setHolepunchProofTimeoutMs(ms: number | null): void {
+  proofTimeoutMs = ms ?? PROOF_TIMEOUT_MS;
+}
 /** Rooms currently waiting for the peer's proof frame. */
 const pendingProofRooms = new Set<string>();
 /** Resolve callbacks for awaited proof frames. */
 const proofResolvers = new Map<string, (ok: boolean) => void>();
-/** Proof arrived before we entered the proof phase (rare race). */
-const proofArrivedEarly = new Map<string, boolean>();
+/** Attempt generation. An early proof counts only for the generation that received it. */
+const proofAttemptGen = new Map<string, number>();
+/** Proof opened before `waitForProof` registered, keyed by attempt generation. */
+const proofArrivedEarly = new Map<string, number>();
+
+/** Invalidate early-proof credit from the previous attempt. @see docs/security/encryption.md */
+function beginProofAttempt(roomId: string): number {
+  const next = (proofAttemptGen.get(roomId) ?? 0) + 1;
+  proofAttemptGen.set(roomId, next);
+  proofArrivedEarly.delete(roomId);
+  return next;
+}
 
 function backend(): HolepunchSidecarBackend {
   return getHolepunchSidecarBackend();
@@ -256,6 +274,7 @@ function wireBackendOnce(): void {
           ) {
             if (state.room.lifecycleStatus === "connected") {
               noteL2Blip(state.room.id);
+              beginProofAttempt(state.room.id);
             }
             state.room = {
               ...state.room,
@@ -308,7 +327,7 @@ async function sendProofFrame(
     aad,
   });
   state.session = sealed.session;
-  updateRoomSessionCounters(state.room.id, {
+  await updateRoomSessionCounters(state.room.id, {
     sendCounter: sealed.session.sendCounter,
     recvCounter: sealed.session.recvCounter,
   });
@@ -333,7 +352,8 @@ async function waitForProof(
   } catch {
     return "mismatch";
   }
-  if (proofArrivedEarly.has(state.room.id)) {
+  const attemptGen = proofAttemptGen.get(state.room.id) ?? 0;
+  if (proofArrivedEarly.get(state.room.id) === attemptGen) {
     return "ok";
   }
   const proofPromise = new Promise<boolean>((resolve) => {
@@ -342,7 +362,7 @@ async function waitForProof(
   const TIMED_OUT = Symbol();
   const result = await Promise.race([
     proofPromise,
-    sleep(PROOF_TIMEOUT_MS).then(() => TIMED_OUT),
+    sleep(proofTimeoutMs).then(() => TIMED_OUT),
   ]);
   proofResolvers.delete(state.room.id);
   if (result === TIMED_OUT) return "timeout";
@@ -427,6 +447,45 @@ export async function ingestChatRelay(
   return msg;
 }
 
+/**
+ * Write keys and counters before the first proof so a failed connect can resume.
+ * No-op once a row exists. @see docs/security/encryption.md
+ */
+export async function persistSessionBeforeSeal(
+  contactId: string,
+  contract: HolepunchBootstrapContract,
+): Promise<boolean> {
+  await hydrateRoomSessions();
+  if (loadRoomSession(contract.roomId)) return true;
+  const sendKeyHex = exportKeyHex(contract.sendKeyRef);
+  const recvKeyHex = exportKeyHex(contract.recvKeyRef);
+  if (!sendKeyHex || !recvKeyHex) return false;
+  await saveRoomSession({
+    roomId: contract.roomId,
+    contactId,
+    contract,
+    sendKeyHex,
+    recvKeyHex,
+    sendCounter: contract.sendCounter,
+    recvCounter: contract.recvCounter,
+    savedAt: new Date().toISOString(),
+  });
+  return true;
+}
+
+/** Reload a saved session into memory and return its contract. */
+export function contractFromSavedSession(
+  saved: NonNullable<ReturnType<typeof loadRoomSession>>,
+): HolepunchBootstrapContract {
+  importKeyHex(saved.contract.sendKeyRef, saved.sendKeyHex);
+  importKeyHex(saved.contract.recvKeyRef, saved.recvKeyHex);
+  return {
+    ...saved.contract,
+    sendCounter: saved.sendCounter,
+    recvCounter: saved.recvCounter,
+  };
+}
+
 function persistLiveSession(state: RoomState): void {
   const contract = state.contract ?? contractsByRoom.get(state.room.id);
   const session = state.session;
@@ -434,7 +493,7 @@ function persistLiveSession(state: RoomState): void {
   const sendKeyHex = exportKeyHex(session.sendKeyRef);
   const recvKeyHex = exportKeyHex(session.recvKeyRef);
   if (!sendKeyHex || !recvKeyHex) return;
-  saveRoomSession({
+  void saveRoomSession({
     roomId: state.room.id,
     contactId: state.room.contactId,
     contract: {
@@ -455,8 +514,9 @@ export async function restoreRoomSession(
   roomId: string,
   opts?: { backgroundConnect?: boolean },
 ): Promise<ChatRoom | null> {
+  await hydrateRoomSessions();
   if (isRoomRevoked(roomId)) {
-    removeRoomSession(roomId);
+    void removeRoomSession(roomId);
     removeCatalogRoom(roomId);
     rooms.delete(roomId);
     return null;
@@ -464,7 +524,7 @@ export async function restoreRoomSession(
   const saved = loadRoomSession(roomId);
   if (!saved) return null;
   if (isRoomExpired(saved.contract.roomTtl)) {
-    removeRoomSession(roomId);
+    void removeRoomSession(roomId);
     return null;
   }
   importKeyHex(saved.contract.sendKeyRef, saved.sendKeyHex);
@@ -510,23 +570,13 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
       emitRoom(state.room);
       continue;
     }
-    // Brief peer blip: session still valid — skip full proof round-trip.
-    if (state.room.lifecycleStatus === "connecting" && state.session) {
-      state.room = {
-        ...state.room,
-        lifecycleStatus: "connected",
-        peerStatus: "online",
-        lastConnectError: undefined,
-      };
-      rooms.set(roomId, state);
-      patchCatalogRoom(state.room.id, {
-        lifecycleStatus: "connected",
-        lastConnectError: undefined,
-      });
-      clearL2Blip(roomId);
-      touchLastLiveAt(roomId);
-      persistLiveSession(state);
-      emitRoom(state.room);
+    // Blip recovery re-runs the proof. Peer count does not set connected.
+    if (
+      state.room.lifecycleStatus === "connecting" &&
+      state.session &&
+      !inFlightConnects.has(roomId)
+    ) {
+      void runConnectSingleFlight(roomId, () => attemptConnect(state));
     }
   }
 }
@@ -537,6 +587,7 @@ function maybeMarkPeerLost(topicRef: string): void {
     if (!state) continue;
     if (state.room.lifecycleStatus !== "connected") continue;
     noteL2Blip(roomId);
+    beginProofAttempt(roomId);
     state.room = {
       ...state.room,
       peerStatus: "connecting",
@@ -551,6 +602,7 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
   const state = rooms.get(roomId);
   const session = state?.session;
   if (!state || !session) return;
+  const attemptGen = proofAttemptGen.get(roomId) ?? 0;
   void (async () => {
     try {
       const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
@@ -585,28 +637,32 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         return;
       }
       state.session = opened.session;
-      updateRoomSessionCounters(roomId, {
+      await updateRoomSessionCounters(roomId, {
         sendCounter: opened.session.sendCounter,
         recvCounter: opened.session.recvCounter,
       });
       const text = new TextDecoder().decode(opened.plaintext);
       let envelope: ChatContentEnvelopeV1 | null = null;
       try {
-        envelope = JSON.parse(text) as ChatContentEnvelopeV1;
+        envelope = parseLiveContentEnvelope(JSON.parse(text));
       } catch {
         envelope = null;
       }
+      if (!envelope) return;
 
-      if (envelope?.kind === "proof") {
-        const text = typeof envelope.text === "string" ? envelope.text : "";
+      if (envelope.kind === "proof") {
+        const text = envelope.text ?? "";
         const isRequest = text.startsWith("proof:v1:");
         const proofOk = isRequest || text.startsWith("proof-ack:v1:");
         const resolver = proofResolvers.get(roomId);
         if (resolver) {
           proofResolvers.delete(roomId);
           resolver(proofOk);
-        } else if (proofOk) {
-          proofArrivedEarly.set(roomId, true);
+        } else if (
+          proofOk &&
+          attemptGen === (proofAttemptGen.get(roomId) ?? 0)
+        ) {
+          proofArrivedEarly.set(roomId, attemptGen);
         }
         // Idle side answers a reconnecting peer's request; acks never re-ack,
         // so this cannot ping-pong.
@@ -616,41 +672,25 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         return;
       }
 
-      const msgKind = (envelope?.kind ??
-        "text") as import("@/types/models").ChatMessageKind;
+      const msgKind = envelope.kind;
       const msg: ChatMessage = {
-        id: envelope?.messageId ?? uid("m"),
+        id: envelope.messageId,
         roomId,
         direction: "in",
-        text: msgKind === "delete" ? "" : (envelope?.text ?? text),
-        createdAt: envelope?.sentAt ?? new Date().toISOString(),
+        text: msgKind === "delete" ? "" : (envelope.text ?? ""),
+        createdAt: envelope.sentAt,
         status: "delivered",
         channel: "live",
-        clientId: envelope?.clientId,
+        clientId: envelope.clientId,
         kind: msgKind,
-        targetMessageId: envelope?.targetMessageId,
-        reaction: envelope?.reaction,
-        replyToMessageId: envelope?.replyToMessageId,
-        replyPreview: envelope?.replyPreview,
+        targetMessageId: envelope.targetMessageId,
+        reaction: envelope.reaction,
+        replyToMessageId: envelope.replyToMessageId,
+        replyPreview: envelope.replyPreview,
         deletedAt: msgKind === "delete" ? new Date().toISOString() : undefined,
         editedAt: msgKind === "edit" ? new Date().toISOString() : undefined,
       };
       touchLastLiveAt(roomId);
-      if (state.room.lifecycleStatus === "connecting") {
-        state.room = {
-          ...state.room,
-          lifecycleStatus: "connected",
-          peerStatus: "online",
-          lastConnectError: undefined,
-        };
-        rooms.set(roomId, state);
-        patchCatalogRoom(roomId, {
-          lifecycleStatus: "connected",
-          lastConnectError: undefined,
-        });
-        clearL2Blip(roomId);
-        emitRoom(state.room);
-      }
       notify(roomId, msg);
     } catch {
       /* fail closed */
@@ -660,6 +700,7 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
 
 async function attemptConnect(state: RoomState): Promise<ChatRoom> {
   wireBackendOnce();
+  beginProofAttempt(state.room.id);
   const contract = state.contract ?? contractsByRoom.get(state.room.id);
   if (!contract) throw new Error("Missing Holepunch bootstrap contract.");
   if (isRoomExpired(contract.roomTtl)) {
@@ -735,8 +776,8 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       proofArrivedEarly.delete(state.room.id);
 
       if (proofResult !== "ok") {
-        // timeout = peer silent → retryable, keep session.
-        // mismatch = AEAD open failed → wipe so a fresh derive can rekey.
+        if (state.room.lifecycleStatus !== "connecting") return state.room;
+        // Keep the session row either way so a retry cannot re-seal nonce 0.
         const code = proofResult === "timeout" ? "timeout" : "crypto_mismatch";
         state.room = {
           ...state.room,
@@ -750,12 +791,10 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
           lastConnectError: code,
         });
         scheduleAutoRetryBackoff(state);
-        if (code === "crypto_mismatch") {
-          removeRoomSession(state.room.id);
-        }
         return state.room;
       }
 
+      if (state.room.lifecycleStatus !== "connecting") return state.room;
       state.room = {
         ...state.room,
         lifecycleStatus: "connected",
@@ -812,7 +851,7 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
     transcriptSubscribers.delete(id);
     contractsByRoom.delete(id);
     removeCatalogRoom(id);
-    removeRoomSession(id);
+    void removeRoomSession(id);
     throw new Error("Room revoked.");
   }
   const existing = rooms.get(id);
@@ -1015,6 +1054,7 @@ export const HolepunchChatTransport: ChatTransport = {
   },
 
   async connect(contract) {
+    await hydrateRoomSessions();
     return runConnectSingleFlight(contract.roomId, async () => {
       const existing = rooms.get(contract.roomId)?.room;
       assertRoomInteractive(
@@ -1037,24 +1077,58 @@ export const HolepunchChatTransport: ChatTransport = {
       if (contract.roomTtl && !state.room.roomTtl) {
         state.room = { ...state.room, roomTtl: contract.roomTtl };
       }
-      const topicSuite = contract.transport.topicSuite ?? "SHA256_V1";
-      const topicEpoch = contract.transport.topicEpoch ?? 0;
+      await persistSessionBeforeSeal(state.room.contactId, contract);
+      const saved = loadRoomSession(contract.roomId);
+      const sameSession =
+        state.session &&
+        state.session.sessionId ===
+          (saved?.contract.sessionId ?? contract.sessionId)
+          ? state.session
+          : undefined;
+      const resumed = saved ? contractFromSavedSession(saved) : contract;
+      const sendCounter = Math.max(
+        resumed.sendCounter,
+        contract.sendCounter,
+        sameSession?.sendCounter ?? 0,
+      );
+      const recvCounter = Math.max(
+        resumed.recvCounter,
+        contract.recvCounter,
+        sameSession?.recvCounter ?? 0,
+      );
+      if (
+        saved &&
+        (sendCounter > saved.sendCounter || recvCounter > saved.recvCounter)
+      ) {
+        await updateRoomSessionCounters(contract.roomId, {
+          sendCounter,
+          recvCounter,
+        });
+      }
+      const topicSuite = resumed.transport.topicSuite ?? "SHA256_V1";
+      const topicEpoch = resumed.transport.topicEpoch ?? 0;
       state.session = {
-        sessionId: contract.sessionId,
-        roomId: contract.roomId,
-        relationshipId: contract.relationshipId,
-        cipherSuite: contract.cipherSuite,
+        sessionId: resumed.sessionId,
+        roomId: resumed.roomId,
+        relationshipId: resumed.relationshipId,
+        cipherSuite: resumed.cipherSuite,
         topicSuite,
         topicEpoch,
-        topicRef: contract.transport.topicRef,
-        sendKeyRef: contract.sendKeyRef,
-        recvKeyRef: contract.recvKeyRef,
-        nonceSeed: contract.nonceSeed,
-        nonceStrategy: contract.nonceStrategy,
-        sendCounter: contract.sendCounter,
-        recvCounter: contract.recvCounter,
-        createdAt: contract.establishedAt,
+        topicRef: resumed.transport.topicRef,
+        sendKeyRef: resumed.sendKeyRef,
+        recvKeyRef: resumed.recvKeyRef,
+        nonceSeed: resumed.nonceSeed,
+        nonceStrategy: resumed.nonceStrategy,
+        sendCounter,
+        recvCounter,
+        createdAt: resumed.establishedAt,
       };
+      state.contract = {
+        ...resumed,
+        sendCounter,
+        recvCounter,
+      };
+      contractsByRoom.set(contract.roomId, state.contract);
       if (state.room.lifecycleStatus === "pending") {
         state.room.lifecycleStatus = "accepted";
       }
@@ -1109,7 +1183,7 @@ export const HolepunchChatTransport: ChatTransport = {
       ntfyUnsubscribeRoom(roomId);
       clearPokeIds(roomId);
       removeCatalogRoom(roomId);
-      removeRoomSession(roomId);
+      await removeRoomSession(roomId);
       rememberRevokedRoom(roomId);
       await persistChatRoomTombstone(roomId);
       return;
@@ -1121,6 +1195,7 @@ export const HolepunchChatTransport: ChatTransport = {
     }
     pendingProofRooms.delete(roomId);
     proofArrivedEarly.delete(roomId);
+    proofAttemptGen.delete(roomId);
 
     const topicRef = state.topicRef ?? state.contract?.transport.topicRef;
     if (topicRef) {
@@ -1140,7 +1215,7 @@ export const HolepunchChatTransport: ChatTransport = {
     transcriptSubscribers.delete(roomId);
     contractsByRoom.delete(roomId);
     nextAutoRetryAt.delete(roomId);
-    removeRoomSession(roomId);
+    await removeRoomSession(roomId);
     ntfyUnsubscribeRoom(roomId);
     clearPokeIds(roomId);
     removeCatalogRoom(roomId);
@@ -1166,6 +1241,7 @@ export const HolepunchChatTransport: ChatTransport = {
           state.room.lifecycleStatus === "connected" ||
           state.room.lifecycleStatus === "connecting"
         ) {
+          beginProofAttempt(roomId);
           state.room = {
             ...state.room,
             peerStatus: "offline",
@@ -1268,7 +1344,7 @@ export const HolepunchChatTransport: ChatTransport = {
       aad,
     });
     state.session = sealed.session;
-    updateRoomSessionCounters(roomId, {
+    await updateRoomSessionCounters(roomId, {
       sendCounter: sealed.session.sendCounter,
       recvCounter: sealed.session.recvCounter,
     });
@@ -1674,6 +1750,7 @@ export function __resetHolepunchTransport(): void {
   lastSidecarDetail = undefined;
   connectTimeoutMs = HOLEPUNCH_CONNECT_TIMEOUT_MS;
   skipPostConnectProofForTests = false;
+  proofTimeoutMs = PROOF_TIMEOUT_MS;
   l2SendHoldMs = L2_RECONNECT_GRACE_MS;
   rooms.clear();
   messagesByRoom.clear();
@@ -1686,6 +1763,10 @@ export function __resetHolepunchTransport(): void {
   nextAutoRetryAt.clear();
   lastLiveAtMsByRoom.clear();
   l2BlipStartedAtByRoom.clear();
+  proofResolvers.clear();
+  pendingProofRooms.clear();
+  proofArrivedEarly.clear();
+  proofAttemptGen.clear();
   __setHolepunchSidecarBackend(null);
 }
 

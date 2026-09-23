@@ -143,8 +143,10 @@ describe("L2 reconnect grace", () => {
     expect(lost?.lifecycleStatus).toBe("connecting");
 
     setPeerCount(contract.transport.topicRef, 1);
-    const restored = await HolepunchChatTransport.getRoom("room-grace");
-    expect(restored?.lifecycleStatus).toBe("connected");
+    await vi.waitFor(async () => {
+      const restored = await HolepunchChatTransport.getRoom("room-grace");
+      expect(restored?.lifecycleStatus).toBe("connected");
+    });
   });
 
   it("waits for L2 reconnect before L1′ when live traffic was recent", async () => {

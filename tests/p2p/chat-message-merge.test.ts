@@ -38,4 +38,25 @@ describe("mergeContentMessage", () => {
     };
     expect(mergeContentMessage(list, edit).map((m) => m.id)).toEqual(["m1"]);
   });
+
+  it("does not let an inbound edit change an outbound row", () => {
+    const list = [textMsg("m1", "hello")];
+    const edit: ChatMessage = {
+      ...textMsg("m2", "replaced"),
+      direction: "in",
+      kind: "edit",
+      targetMessageId: "m1",
+    };
+    expect(mergeContentMessage(list, edit)[0]?.text).toBe("hello");
+  });
+
+  it("does not let an inbound id replace an outbound row", () => {
+    const list = [textMsg("m1", "hello")];
+    const inbound: ChatMessage = {
+      ...textMsg("m1", "replaced"),
+      direction: "in",
+    };
+    expect(mergeContentMessage(list, inbound)[0]?.text).toBe("hello");
+    expect(mergeContentMessage(list, inbound)[0]?.direction).toBe("out");
+  });
 });

@@ -644,17 +644,110 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - Confirm connection, disconnect, retry, background, and fallback state transitions are explicit.
 - Confirm the UI does not receive unnecessary transport secrets.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-22 — commit: e2d7db3 — reviewer: Claude Opus 5.5 (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-013` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: e2d7db3
+  - Affected files: `src/state/contactsStore.ts`, `src/services/p2p/HolepunchChatTransport.ts`, `src/services/p2p/P2PEncryptionAdapter.ts`
+  - Evidence: `restorePendingInitiatorKeys` re-imports the stashed ephemeral on every probe; `completeInitiatorHandoff` and `completeResponderReconnect` re-derive when the room is not `connected`/`connecting`; `deriveSessionConfig` returns `sendCounter: 0`; `HolepunchChatTransport.connect` rebuilds `state.session` from the contract counters (before the backoff gate); `waitForProof` seals `proof-<roomId>-0` with a fresh `sentAt`; `persistLiveSession` only runs on `connected`
+  - Description: A connect attempt that seals a proof and does not reach `connected` (timeout or mismatch) leaves no persisted counter. The next `ChatRoomScreen` poll tick (4 s) re-derives the same send key and `nonceSeed` from the same stashed ephemerals, resets `sendCounter` to 0, and seals a different proof plaintext under the same (key, nonce).
+  - Impact: ChaCha20-Poly1305 nonce reuse. The sidecar writes frames to every connection associated with the topic, so a topic joiner collects both ciphertexts. It can recover the keystream for the known proof layout and the Poly1305 one-time key for nonce 0, then forge frames the peer accepts (see `SEC-2026-014`). If a pre-proof `connected` window (`SEC-2026-015`) let chat frames be sealed before a `crypto_mismatch` wipe, re-derive also reuses nonces on chat content.
+  - Recommended remediation: Persist the derived session (key material and counters) before the first seal, and resume it instead of re-deriving from the stash. `connect` must never lower a counter below the persisted value. Add a test that runs two failed attempts and asserts no (key, nonce) pair repeats.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `tests/p2p/session-counter-no-rewind.test.ts` derives twice at counter 0 after a timed-out proof and asserts the two nonces differ and the saved counter is 2. `saveRoomSession` and `connect` refuse a lower counter. Handoff resumes a saved row and drops the ephemeral stash once that row exists. `encryption.md` nonce rules describe the order.
+  - Status: resolved
+
+- [x] `SEC-2026-014` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: e2d7db3
+  - Affected files: `src/services/p2p/P2PEncryptionAdapter.ts`, `src/services/p2p/HolepunchChatTransport.ts`
+  - Evidence: `P2PEncryptionAdapter.open` decrypts with the 12-byte nonce taken from the wire and increments `recvCounter` without comparing them; `handleIncomingFrame` splits `raw.slice(0, 12)` as the nonce
+  - Description: The L1 session seal does not enforce the receive counter. Any previously valid frame opens again, in any order, any number of times. `recvCounter` is persisted but never checked.
+  - Impact: A topic joiner that captured sealed frames can replay them. A replayed proof or proof-ack satisfies `waitForProof`, marking the room `connected` without the real peer, so live sends go nowhere while showing `delivered` and L1′ fallback and poke are suppressed. Replayed edit/delete envelopes re-apply. This also makes the nonce-0 forgery in `SEC-2026-013` acceptable at any time. The L1 seal is meant to hold without trusting Noise (`encryption.md`).
+  - Recommended remediation: Derive the expected nonce from `recvCounter` on the receiver and reject frames whose nonce is not for a counter at or above it, within a bounded look-ahead window for dropped frames. Advance `recvCounter` to the matched counter + 1 only after a successful open. Document the rule in `encryption.md` nonce rules.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `open` decrypts only when the wire nonce matches the peer send nonce for a counter in `[recvCounter, recvCounter + 64)`, then sets `recvCounter` to that counter + 1. `tests/p2p/recv-counter-window.test.ts` covers replay, an in-window gap, and a gap of 64. `encryption.md` and `p2pchatprotocol.md` state the rule.
+  - Status: resolved
+
+- [x] `SEC-2026-015` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: e2d7db3
+  - Affected files: `src/services/p2p/HolepunchChatTransport.ts`, `docs/security/encryption.md`
+  - Evidence: `maybeMarkConnected` promotes `connecting` → `connected` when `peerCount >= 1` and `state.session` exists ("Brief peer blip"); `attemptConnect` sets `connecting` with a session before `waitForProof`, so a `peers` event during the join marks `connected` before the proof; `proofArrivedEarly` is set by the idle side's handler and only cleared inside `attemptConnect`/`leaveRoom`
+  - Description: Peer presence on the topic alone can mark a room `connected`, bypassing the required post-connect proof. It happens on every blip reconnect and transiently (up to `PROOF_TIMEOUT_MS`) on first connect. A stale `proofArrivedEarly` flag from an earlier session lets a later `waitForProof` return `ok` with no fresh proof.
+  - Impact: Anyone who can join the topic (DHT nodes that stored the announce, or a holder of old material) can enable the live composer and route sends to L2 while the real peer is absent. Messages stay sealed but are silently lost as `delivered`, and L1′ and poke fallback do not fire. This contradicts `encryption.md` "Topic + Noise alone is not trust."
+  - Recommended remediation: Only mark `connected` after a successful AEAD open of a proof or chat frame in the current attempt. Drop the blip shortcut, or run a proof on the blip path too. Clear `proofArrivedEarly` when a room leaves `connected` and when an attempt starts. Add tests for a blip with a non-proving peer and a stale early flag.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: Peer count refreshes `peerStatus` only while `connected`. A `connecting` room with a peer and no attempt in flight re-runs the proof. Only that proof sets `connected`; a chat frame does not. Early-proof credit is the attempt generation captured when the frame arrives. `tests/p2p/proof-on-blip.test.ts` covers a silent peer and a proof opened before the attempt. `encryption.md` states the rule.
+  - Status: resolved
+
+- [x] `SEC-2026-016` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: e2d7db3
+  - Affected files: `src/services/p2p/HolepunchChatTransport.ts`, `src/services/p2p/chatMessageMerge.ts`
+  - Evidence: `handleIncomingFrame` casts `JSON.parse` output to `ChatContentEnvelopeV1` with no shape check; `kind`, `messageId`, `sentAt`, `targetMessageId`, `reaction`, `replyPreview` pass through; `mergeContentMessage` edits/deletes any row whose id matches `targetMessageId` and replaces any row with the same `id`, regardless of `direction`
+  - Description: Inbound live envelopes are not schema-validated, and edit/delete/id collisions are not restricted to the peer's own inbound messages.
+  - Impact: The authenticated counterparty, or a forger via `SEC-2026-013`, can rewrite or blank the local user's own outbound messages in the local transcript, overwrite rows by id, and inject arbitrary `kind` or non-string fields into UI state. Confidentiality is not affected.
+  - Recommended remediation: Validate the envelope (schema version, allowed `kind`, string types, length caps) and drop on failure. Only apply edit/delete to `direction: "in"` targets, and never let an inbound id replace an outbound row.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: `parseLiveContentEnvelope` drops a bad shape. Edit and delete apply only when the target row has the same direction. An inbound id does not replace a stored row. Tests: `tests/p2p/live-content-envelope.test.ts`, `tests/p2p/chat-message-merge.test.ts`. `p2pchatprotocol.md` §14 states the rule.
+  - Status: resolved
+
+- [x] `SEC-2026-017` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: e2d7db3
+  - Affected files: `src/services/p2p/roomSessionStore.ts`, `src/services/p2p/HolepunchChatTransport.ts`, `docs/security/encryption.md`
+  - Evidence: `persistLiveSession` writes `sendKeyHex` / `recvKeyHex` into `gnh.roomSessions` via `getStorage()`, which is `window.localStorage` on web and Electron
+  - Description: Raw live-session AEAD keys persist in plaintext key-value storage outside the encrypted wallet blob. `encryption.md` allows persisting key refs or sealed key material, and pending ephemerals already moved into the encrypted blob.
+  - Impact: Local disk or profile access (or any script in the renderer origin) reads session keys and can open captured frames for the life of the room. Mobile uses the native adapter and is less exposed.
+  - Recommended remediation: Store live-session keys and counters in the encrypted wallet blob next to `pendingInviteEphemerals`, migrate and delete `gnh.roomSessions`, and update `encryption.md` Local storage rules. Coordinate with MOD-011.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: Electron main stores `safeStorage` ciphertext in `room-sessions.bin`. `basic_text` (no Linux secret service) keeps the row on the open wallet, and `downloadWalletBackup` strips `roomSessions`. Browser debug still uses `localStorage`. Native secure prefs are unchanged. Tests: `desktop-electron/test/room-session-store.test.mjs`, `tests/p2p/room-session-export.test.ts`.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-22 — e2d7db3 — Claude Opus 5.5 (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: UI imports no `hyperswarm`. Seal/open runs in the app before `sendFrame` and after `onFrame`. The sidecar sees opaque base64 frames plus `topicRef` and `roomId` only.
+- Least knowledge: Session keys never cross the bridge. The bridge carries `roomId` in the clear with each frame, and the sidecar relays a remote-supplied `roomId` to local clients. Frames still have to AEAD-open under that room's keys.
+- Trust boundaries: AEAD failure fails closed, and proof frames are not inserted as chat. Receive-side replay and ordering are not enforced (`SEC-2026-014`). Inbound envelopes are trusted after open without shape checks (`SEC-2026-016`).
+- Capabilities lifecycle: `restoreRoomSession` and `ensureRoom` refuse revoked rooms, and expired `roomTtl` blocks connect and relay. Session derive can repeat from the stash with counters reset (`SEC-2026-013`).
+- Discovery is not authorization: The post-connect proof exists but can be bypassed by peer presence and a stale early-proof flag (`SEC-2026-015`).
+- Privacy claims: L2 IP exposure is documented in `encryption.md`. Plaintext session keys in local storage do not match "sealed key material" (`SEC-2026-017`).
+
+**Checklist highlights:**
+
+- Event chain: accept/handoff → `deriveSession` → `buildHolepunchContract` → `connect` (session from contract) → sidecar `join` → `peers` → proof seal/open → `connected` → `persistLiveSession`, then counters updated after each seal and open.
+- Secrets: ephemeral privates are wiped after derive, but the disk stash is re-imported on each probe until a session is persisted. `leaveRoom` removes the session store entry. In-memory key refs are not wiped on leave.
+- Logs: transport paths log nothing sensitive. The sidecar `error` message reaches `lastSidecarDetail` as a sidecar-controlled string.
+- Failure paths: a timeout keeps the session and retries with backoff. A mismatch wipes the persisted session only. Rebuilding the session in `connect` happens before the backoff gate.
+- Replay: no receive-counter check at L1. Durable replay of L1 signaling stays with tombstones (MOD-002/003).
+- Layer 2: the sidecar forwards frames to every connection associated with the topic (`writeSwarm` topic filter), so any topic joiner receives sealed frames. `roomId` on the wire comes from the sender.
+
+**Findings this review:** `SEC-2026-013`, `SEC-2026-014`, `SEC-2026-015`, `SEC-2026-016`, `SEC-2026-017`
+
+**Verification gaps:**
+
+- The `SEC-2026-013` repeat was traced through code, not reproduced with two live peers. It needs a peer present on the topic that does not answer the proof.
+- Hyperswarm `PeerInfo.topics` association for inbound and outbound connections (which decides who receives `writeSwarm` frames) belongs to MOD-007 and was not verified against the library.
+- In-memory key refs (`privateKeys` map) are not wiped on `leaveRoom` or revoke. Whether a later derive could reuse a ref was not checked.
+- `notificationEventLedger` stores `roomId` next to the hashed event id (MOD-011 scope).
+- `docs/background-remote-sync.md` and `docs/features/**` were not line-reviewed against the reconnect behavior.
 
 ---
 
@@ -1310,6 +1403,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-22 | MOD-004 | e2d7db3 | Claude Opus 5.5 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-013 (resolved), SEC-2026-014 (resolved), SEC-2026-015 (resolved), SEC-2026-016 (resolved), SEC-2026-017 (resolved) |
 | 2026-09-22 | MOD-003 | 01d6d85 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-012 (resolved) |
 | 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (resolved), SEC-2026-009 (resolved), SEC-2026-010 (resolved), SEC-2026-011 (resolved) |
 | 2026-09-20 | MOD-002 | cd7cd34 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006, SEC-2026-007, SEC-2026-008, SEC-2026-009, SEC-2026-010 |

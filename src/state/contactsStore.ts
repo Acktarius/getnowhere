@@ -24,8 +24,12 @@ import {
   removePendingInitiatorKeysForRoom,
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
+import {
+  contractFromSavedSession,
+  persistSessionBeforeSeal,
+  storePartnerPokeHandle,
+} from "@/services/p2p/HolepunchChatTransport";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
-import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
 import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
   isInviteRevoked,
@@ -44,6 +48,10 @@ import {
   pruneRoomsForMissingContacts,
 } from "@/services/p2p/roomChainRestore";
 import {
+  hydrateRoomSessions,
+  loadRoomSession,
+} from "@/services/p2p/roomSessionStore";
+import {
   applyRelationshipTopicEpoch,
   syncAndMirrorRelationshipTopicEpoch,
 } from "@/services/p2p/topicEpochContactSync";
@@ -57,7 +65,10 @@ import {
   shouldAwaitChainSyncForInvite,
 } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
-import type { ChatInviteHandshake } from "@/types/protocol";
+import type {
+  ChatInviteHandshake,
+  HolepunchBootstrapContract,
+} from "@/types/protocol";
 import { resolveTopicSuite } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
 
@@ -389,6 +400,22 @@ function findPendingInitiator(inviteId: string): PendingKey | undefined {
     }
   }
   return undefined;
+}
+
+function resumeSavedContract(
+  roomId: string,
+): HolepunchBootstrapContract | null {
+  const saved = loadRoomSession(roomId);
+  if (!saved) return null;
+  return contractFromSavedSession(saved);
+}
+
+async function discardHandoffStash(...inviteIds: string[]): Promise<void> {
+  for (const id of inviteIds) {
+    if (!id) continue;
+    pendingPrivateKeys.delete(id);
+    await removePendingInitiatorKey(id);
+  }
 }
 
 function registerSenderOwnsInvite(
@@ -1352,6 +1379,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     // Holepunch connect can take seconds — do not block redirect. Chat room
     // screen already reconnects if peers are not live yet.
     const roomId = inv.roomId;
+    if (await persistSessionBeforeSeal(inv.contactId, contract)) {
+      await discardHandoffStash(register.inviteId);
+    }
     void (async () => {
       try {
         const connected = await chatTransport.connect(contract);
@@ -1372,13 +1402,6 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           ),
         }));
         schedulePersistContacts(get);
-        const saved = (
-          await import("@/services/p2p/roomSessionStore")
-        ).loadRoomSession(roomId);
-        if (saved) {
-          pendingPrivateKeys.delete(register.inviteId);
-          await removePendingInitiatorKey(register.inviteId);
-        }
       } catch {
         // ChatRoomScreen retry / refreshInvites will continue connect.
       }
@@ -1543,12 +1566,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 }));
 
-/**
- * Bob: after refresh, re-derive + connect from stashed responder key + register.
- */
+/** Bob: resume a saved session, or derive once from the stashed responder key. */
 export async function completeResponderReconnect(
   roomId: string,
 ): Promise<boolean> {
+  await hydrateRoomSessions();
   await restorePendingInitiatorKeys();
   const live = await chatTransport.getRoom(roomId);
   if (
@@ -1557,6 +1579,30 @@ export async function completeResponderReconnect(
       live.lifecycleStatus === "connected")
   ) {
     return live.lifecycleStatus === "connected";
+  }
+  const resumed = resumeSavedContract(roomId);
+  if (resumed) {
+    const pending = [...pendingPrivateKeys.values()].find(
+      (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
+    );
+    if (pending) await discardHandoffStash(pending.handshake.inviteId);
+    await chatTransport.createRoom({
+      contactId: pending?.contactId || loadRoomSession(roomId)?.contactId || "",
+      bootstrap: {
+        roomId,
+        roomKeyRef: resumed.sessionId,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+        inviteId: resumed.inviteId,
+        roomTtl: resumed.roomTtl,
+      },
+    });
+    const connected = await chatTransport.connect(resumed);
+    const { useChatStore } = await import("@/state/chatStore");
+    useChatStore.setState((s) => ({
+      rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+    }));
+    return connected.lifecycleStatus === "connected";
   }
   let pending = [...pendingPrivateKeys.values()].find(
     (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
@@ -1613,6 +1659,8 @@ export async function completeResponderReconnect(
     invite: pending.handshake,
     peerRole: "responder",
   });
+  await persistSessionBeforeSeal(pending.contactId, contract);
+  await discardHandoffStash(pending.handshake.inviteId);
   await chatTransport.createRoom({
     contactId: pending.contactId,
     bootstrap: {
@@ -1638,13 +1686,6 @@ export async function completeResponderReconnect(
       roomId,
     });
   }
-  const saved = (
-    await import("@/services/p2p/roomSessionStore")
-  ).loadRoomSession(roomId);
-  if (saved) {
-    pendingPrivateKeys.delete(pending.handshake.inviteId);
-    await removePendingInitiatorKey(pending.handshake.inviteId);
-  }
   return connected.lifecycleStatus === "connected";
 }
 
@@ -1658,6 +1699,7 @@ export async function completeInitiatorHandoff(
   handshake: ChatInviteHandshake,
   registerSentAtUnix: number = nowUnix(),
 ): Promise<void> {
+  await hydrateRoomSessions();
   const pending = findPendingInitiator(inviteId);
   if (!pending) return;
   if (
@@ -1677,28 +1719,6 @@ export async function completeInitiatorHandoff(
     return;
   }
 
-  const session = await sessionBootstrap.deriveSession({
-    invite: handshake,
-    acceptance: {
-      ...register,
-      inviteId: handshake.inviteId,
-      replayId:
-        register.replayId.toLowerCase() === handshake.replayId.toLowerCase()
-          ? handshake.replayId
-          : register.replayId,
-    },
-    peerRole: "initiator",
-    localPrivateKeyRef: pending.privateKeyRef,
-  });
-  const contract = await sessionBootstrap.buildHolepunchContract({
-    session,
-    invite: {
-      ...handshake,
-      receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
-    },
-    peerRole: "initiator",
-  });
-
   const contactId =
     pending.contactId ||
     useContactsStore
@@ -1706,11 +1726,44 @@ export async function completeInitiatorHandoff(
       .invites.find((i) => i.inviteId === handshake.inviteId)?.contactId ||
     "";
   const roomId = handshake.roomId;
+  const resumed = resumeSavedContract(roomId);
+  let contract: HolepunchBootstrapContract;
+  if (resumed) {
+    contract = resumed;
+  } else {
+    const replayId =
+      register.replayId.toLowerCase() === handshake.replayId.toLowerCase()
+        ? handshake.replayId
+        : register.replayId;
+    const session = await sessionBootstrap.deriveSession({
+      invite: handshake,
+      acceptance: {
+        ...register,
+        inviteId: handshake.inviteId,
+        replayId,
+      },
+      peerRole: "initiator",
+      localPrivateKeyRef: pending.privateKeyRef,
+    });
+    contract = await sessionBootstrap.buildHolepunchContract({
+      session,
+      invite: {
+        ...handshake,
+        receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
+      },
+      peerRole: "initiator",
+    });
+    await persistSessionBeforeSeal(contactId, contract);
+  }
+  if (loadRoomSession(roomId)) {
+    await discardHandoffStash(pending.handshake.inviteId, inviteId);
+  }
+
   await chatTransport.createRoom({
     contactId,
     bootstrap: {
       roomId,
-      roomKeyRef: session.sessionId,
+      roomKeyRef: contract.sessionId,
       bootstrapSource: "conceal-smart-message",
       lifecycleStatus: "accepted",
       inviteId: handshake.inviteId,
@@ -1744,18 +1797,6 @@ export async function completeInitiatorHandoff(
     ),
   }));
   persistInvites(useContactsStore.getState().invites);
-  // Keep initiator stash until room session is persisted (reload reconnect).
-  // Keys are wiped from the live map by deriveSessionConfig; disk stash stays
-  // only as a last-resort re-handoff if session save failed.
-  const saved = (
-    await import("@/services/p2p/roomSessionStore")
-  ).loadRoomSession(roomId);
-  if (saved) {
-    pendingPrivateKeys.delete(pending.handshake.inviteId);
-    pendingPrivateKeys.delete(inviteId);
-    await removePendingInitiatorKey(pending.handshake.inviteId);
-    await removePendingInitiatorKey(inviteId);
-  }
 }
 
 bindSmartMessageContacts({

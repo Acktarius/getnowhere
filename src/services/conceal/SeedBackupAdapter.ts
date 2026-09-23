@@ -2,6 +2,7 @@ import { saveEncryptedWalletFile } from "@/services/conceal/ConcealWalletAdapter
 import { getInternalWalletState } from "@/services/conceal/ConcealWalletService";
 import { getRuntime, persist } from "@/services/conceal/sync";
 import { mnemonicFromSpendKey } from "@/services/conceal/walletBuild";
+import { withoutRoomSessions } from "@/services/p2p/roomSessionStore";
 import type { SeedBackupService } from "@/types/services";
 
 let backedUp = false;
@@ -50,7 +51,10 @@ export const SeedBackupAdapter: SeedBackupService = {
   async downloadWalletBackup(password: string) {
     const rt = requireOpenRuntime(password);
     await persist();
-    const payload = saveEncryptedWalletFile(rt.raw, password);
+    const payload = saveEncryptedWalletFile(
+      withoutRoomSessions(rt.raw),
+      password,
+    );
     const stamp = new Date().toISOString().slice(0, 10);
     return {
       filename: `getnowhere-wallet-${stamp}.json`,

@@ -10,6 +10,7 @@ import {
   persistRuntime,
   requireRuntime,
 } from "@/services/conceal/sync/runtime";
+import { clearRoomSessionStore } from "@/services/p2p/roomSessionStore";
 import { seedTopicEpochStoreFromContacts } from "@/services/p2p/topicEpochContactSync";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { Contact, SmartMessageInvite } from "@/types/models";
@@ -186,6 +187,7 @@ export function wipeWalletScopedLocalData(): void {
   storage.removeItem("gnh.roomCatalog");
   storage.removeItem("gnh.roomSessions");
   storage.removeItem("gnh.revokedRooms");
+  clearRoomSessionStore();
 }
 
 function markReady(): void {

@@ -1,13 +1,15 @@
 import type { ChatMessage } from "@/types/models";
 
-/** Merge a content envelope into the room transcript (edit/delete patch targets). */
+/** Edit or delete only a row the sender owns. @see docs/security/p2pchatprotocol.md */
 export function mergeContentMessage(
   list: ChatMessage[],
   msg: ChatMessage,
 ): ChatMessage[] {
   if (msg.kind === "edit" && msg.targetMessageId) {
     const editedAt = msg.editedAt ?? msg.createdAt;
-    const idx = list.findIndex((m) => m.id === msg.targetMessageId);
+    const idx = list.findIndex(
+      (m) => m.id === msg.targetMessageId && m.direction === msg.direction,
+    );
     if (idx < 0) return list;
     const next = [...list];
     next[idx] = { ...next[idx], text: msg.text, editedAt };
@@ -15,7 +17,9 @@ export function mergeContentMessage(
   }
   if (msg.kind === "delete" && msg.targetMessageId) {
     const deletedAt = msg.deletedAt ?? msg.createdAt;
-    const idx = list.findIndex((m) => m.id === msg.targetMessageId);
+    const idx = list.findIndex(
+      (m) => m.id === msg.targetMessageId && m.direction === msg.direction,
+    );
     if (idx < 0) return list;
     const next = [...list];
     next[idx] = {
@@ -28,6 +32,7 @@ export function mergeContentMessage(
   }
   const idx = list.findIndex((m) => m.id === msg.id);
   if (idx >= 0) {
+    if (msg.direction !== "out" || list[idx]?.direction !== "out") return list;
     const next = [...list];
     next[idx] = msg;
     return next;

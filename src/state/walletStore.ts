@@ -7,6 +7,10 @@ import {
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
 import { wipeWalletScopedLocalData } from "@/services/contacts/contactsPersistence";
+import {
+  hydrateRoomSessions,
+  lockRoomSessionMemory,
+} from "@/services/p2p/roomSessionStore";
 import { useContactsStore } from "@/state/contactsStore";
 import type { Transaction, WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
@@ -108,6 +112,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       wipeWalletScopedLocalData();
       resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
@@ -138,6 +143,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       wipeWalletScopedLocalData();
       resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       void get().resync();
       if (input.method === "file") {
         void useContactsStore.getState().refreshInvites();
@@ -168,6 +174,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       const { hydrateChatRoomsFromWallet } = await import(
         "@/services/p2p/HolepunchChatTransport"
       );
@@ -186,6 +193,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   async lock() {
     await walletService.lockWallet();
+    lockRoomSessionMemory();
     set({ locked: true });
     void import("@/lib/mobile/walletSessionBridge").then((m) => {
       m.clearNativeWalletSession();
@@ -195,6 +203,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     await walletService.unlockWallet("");
     set({ locked: false });
     await useContactsStore.getState().hydrate();
+    await hydrateRoomSessions();
     const { hydrateChatRoomsFromWallet } = await import(
       "@/services/p2p/HolepunchChatTransport"
     );

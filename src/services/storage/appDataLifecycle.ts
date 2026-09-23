@@ -108,6 +108,10 @@ export async function deleteWalletData(): Promise<void> {
   settings.setAppAccessBiometric(false);
   settings.setDataUnlockBiometric(false);
   await removeAdapterKeys(WALLET_TIED_KEYS);
+  const { clearRoomSessionStore } = await import(
+    "@/services/p2p/roomSessionStore"
+  );
+  clearRoomSessionStore();
   clearSessionRam();
   goWelcomeAndReload();
 }
@@ -125,6 +129,10 @@ export async function resetAppData(): Promise<void> {
     await mobile.resetAdapterOwned();
   } else {
     await removeAdapterKeys(WALLET_TIED_KEYS);
+    const { clearRoomSessionStore } = await import(
+      "@/services/p2p/roomSessionStore"
+    );
+    clearRoomSessionStore();
     await removeAdapterKeys(APP_PREF_ADAPTER_KEYS);
   }
   for (const key of APP_PREF_LOCAL_SIDE_KEYS) {

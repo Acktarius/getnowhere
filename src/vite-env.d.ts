@@ -42,6 +42,12 @@ interface GnhDesktopBridge {
    * @see docs/architecture/electron-desktop.md
    */
   ufwState?: "active" | "inactive" | "unknown";
+  /** Electron main: OS keystore, or wallet when Linux has no secret service. */
+  loadRoomSessions?(): Promise<
+    { mode: "os"; json: string | null } | { mode: "wallet" }
+  >;
+  saveRoomSessions?(json: string): Promise<{ mode: "os" } | { mode: "wallet" }>;
+  clearRoomSessions?(): Promise<void>;
 }
 
 /** Mobile Expo WebView bridge (Bare worklet behind postMessage). Token is RN-only. */
