@@ -15,7 +15,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, Menu, safeStorage, session } from "electron";
 import { resolveDesktopIdentity } from "./desktop-identity.mjs";
 import {
+  ensureSidecarIpcRuntimeDir,
   generateSidecarIpcPath,
+  resolveSharedBridgeToken,
   sharedIpcLockBasename,
 } from "./desktop-ipc-path.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
@@ -62,9 +64,10 @@ const SIDECAR_EVENT_CHANNEL = "gnh:sidecar-event";
 
 /**
  * Renderer pulls its bridge config over this synchronous channel instead of
- * `additionalArguments` / `executeJavaScript`, so the auth token never sits
- * in this process's command line (readable via /proc/<pid>/cmdline or `ps`
- * by any co-resident process) or in the page's main-world scope.
+ * `executeJavaScript`, so it never lands in the page's main-world scope.
+ * The default IPC transport sends no token to the renderer at all. The
+ * `GNH_HOLEPUNCH_WS_URL` debug override still passes `--gnh-ws-token` in
+ * renderer argv (readable via /proc/<pid>/cmdline) — dev-only, not a ship path.
  * @see docs/architecture/electron-desktop.md
  */
 const DESKTOP_INFO_CHANNEL = "gnh:get-desktop-info";
@@ -300,7 +303,7 @@ function installRoomSessionHandlers() {
 /** @param {string} path */
 async function attachSidecarIpc(path) {
   sidecarIpcPath = path;
-  sidecarIpcConn = await connectSidecarIpc(path);
+  sidecarIpcConn = await connectSidecarIpc(path, { token: authToken });
   sidecarIpcEventOff = sidecarIpcConn.onEvent(forwardSidecarEvent);
 }
 
@@ -362,14 +365,21 @@ function windowTitle(tag) {
 }
 
 /** Attacher: reuse owner's token from lockfile (or shared default / env). */
-function adoptSharedToken() {
-  const fromLock = readTokenLock();
-  const fromEnv = process.env.GNH_SIDECAR_TOKEN?.trim() || null;
-  authToken = fromLock ?? fromEnv ?? "gnh-desktop-shared";
-  if (fromLock) {
+function adoptSharedToken({ hasIpcLock = false } = {}) {
+  const resolved = resolveSharedBridgeToken({
+    fromLock: readTokenLock(),
+    fromEnv: process.env.GNH_SIDECAR_TOKEN?.trim() || null,
+    hasIpcLock,
+  });
+  authToken = resolved.token;
+  if (resolved.source === "lock") {
     log(`shared token from lockfile ${tokenLockPath()}`);
-  } else if (fromEnv) {
+  } else if (resolved.source === "env") {
     log("shared token from GNH_SIDECAR_TOKEN env");
+  } else if (resolved.stale) {
+    log(
+      `stale IPC lock ${ipcLockPath()} without ${tokenLockPath()} — attach auth will fail`,
+    );
   } else {
     log("shared token default gnh-desktop-shared");
   }
@@ -449,7 +459,10 @@ async function spawnSidecar() {
   const requestedPort = USES_EPHEMERAL_PORT ? 0 : swarmPort;
   const spawnIpc = USE_SIDECAR_IPC || USES_EPHEMERAL_PORT;
   if (USE_SIDECAR_IPC) {
-    sidecarIpcPath = generateSidecarIpcPath();
+    const runtimeDir = ensureSidecarIpcRuntimeDir();
+    sidecarIpcPath = generateSidecarIpcPath(
+      runtimeDir ? { dir: runtimeDir } : {},
+    );
   }
 
   log(
@@ -496,8 +509,21 @@ async function spawnSidecar() {
     void disconnectSidecarIpc();
   });
 
-  if (spawnIpc) {
-    const listening = await waitForSidecarListening(swarmChild);
+  const listeningPromise = spawnIpc
+    ? waitForSidecarListening(swarmChild)
+    : null;
+  if (USE_SIDECAR_IPC) {
+    const sent = swarmChild.send({
+      type: "ipc-auth-token",
+      token: authToken,
+    });
+    if (!sent) {
+      throw new Error("failed to send sidecar IPC auth token");
+    }
+  }
+
+  if (listeningPromise) {
+    const listening = await listeningPromise;
     if (listening.transport === "ipc") {
       sidecarIpcPath = listening.path;
       await attachSidecarIpc(listening.path);
@@ -543,9 +569,9 @@ async function ensureLocalSwarm() {
     const fromLock = readIpcLock();
     if (fromLock) {
       try {
+        adoptSharedToken({ hasIpcLock: true });
         await attachSidecarIpc(fromLock);
         ownsSwarm = false;
-        adoptSharedToken();
         log(`attaching to existing Hyperswarm IPC at ${fromLock}`);
         return;
       } catch {
@@ -566,9 +592,9 @@ async function ensureLocalSwarm() {
       const fromLock = readIpcLock();
       if (fromLock) {
         try {
+          adoptSharedToken({ hasIpcLock: true });
           await attachSidecarIpc(fromLock);
           ownsSwarm = false;
-          adoptSharedToken();
           log(`attached to peer-owned Hyperswarm IPC at ${fromLock}`);
           return;
         } catch {

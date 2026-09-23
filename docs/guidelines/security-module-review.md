@@ -804,17 +804,56 @@ A “no findings identified” result is not a permanent guarantee. It applies o
 - Confirm parent death shuts down the sidecar safely.
 - Confirm errors do not expose topic material, keys, endpoints, or full request payloads.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-22 — commit: cfb7e83 — reviewer: GPT-5.3 Codex (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-018` — resolved
+  - Date found: 2026-09-22
+  - Commit reviewed: cfb7e83
+  - Affected files: `holepunch-sidecar/src/server.mjs`, `holepunch-sidecar/src/bridge-ipc.mjs`, `holepunch-sidecar/src/bridge-session.mjs`, `desktop-electron/desktop-ipc-path.mjs`
+  - Evidence: IPC mode has no per-connection auth (`server.mjs` sets `GNH_BRIDGE_TRANSPORT=ipc` and deletes `GNH_SIDECAR_TOKEN`; `bridge-ipc` accepts any socket and `bridge-session` immediately permits `join`/`frame` command handling). Desktop IPC path is created under `tmpdir()` (`desktop-ipc-path.mjs`) and socket ACL is not tightened after bind.
+  - Description: Native IPC bridge authorization relies only on "knowing and reaching the socket path"; there is no capability token or peer-credential check in IPC mode.
+  - Impact: A local unprivileged process that can discover and connect to the socket can inject sidecar commands, join topics, and transmit/observe opaque frame metadata for active rooms. L1 frame sealing protects plaintext, but sidecar control and availability boundaries are widened beyond the intended desktop principal.
+  - Recommended remediation: Add IPC principal binding (peer-credential check where available and/or per-session capability on first command), place sockets in a user-private runtime directory, and force restrictive socket permissions after bind.
+  - Resolution date: 2026-09-22
+  - Fix commit: pending (working tree)
+  - Verification: IPC listens only after a parent `ipc-auth-token` message. The first NDJSON line must be `{ type: "auth", token }` (`tokensEqual`); a command before auth, a wrong token, or a second `auth` closes the socket. The socket binds under a `0177` umask and is
+`chmod` `0600` after bind. An empty `ipc-auth-token` exits the sidecar; a second
+one is ignored. Shared-mode attach logs a stale path lock that has no token lock. Electron keeps the socket under a `0700` directory and sends the token over Node IPC, not argv or `GNH_SIDECAR_TOKEN`. Tests: `holepunch-sidecar/test/bridge-ipc.test.mjs`, `desktop-electron/test/sidecar-ipc-client.test.mjs`, `desktop-electron/test/desktop-ipc-path.test.mjs`. Native peer-credential checks stay out of scope.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-22 — cfb7e83 — GPT-5.3 Codex (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: sidecar auth/config/lifecycle logic is centralized (`auth.mjs`, `config.mjs`, `parent-death.mjs`, `server.mjs`) and distinct from swarm runtime data-plane logic.
+- Least knowledge: WS token stays query-scoped and is not logged; IPC mode intentionally carries no token, which widens local trust to socket-path reachability.
+- Explicit trust boundaries: non-loopback WS bind fails closed without `GNH_SIDECAR_TOKEN`; IPC boundary is implicit and currently not cryptographically or OS-principal bound.
+- Failure paths: startup guard for invalid transport and missing IPC path exits non-zero; bind collisions fail closed; parent-death watch avoids false exits from `ppid` drift.
+- Privacy claims: docs describe token enforcement for WS and "none on IPC"; implementation matches that claim but leaves a local authorization gap for higher-assurance desktop threat models.
+
+**Checklist highlights:**
+
+- Event chain: startup env parse → transport mode gate → listen announce (`process.send`) → per-client command session → shutdown (`SIGINT`/`SIGTERM`/parent death) reviewed end to end.
+- Trust boundaries: WS token gate and loopback policy verified in code and tests (`auth.test`, `bridge-auth.test`); IPC accepts any local connector to path.
+- Secrets/capabilities: token compare is length-checked + `timingSafeEqual`; no token value logging found.
+- Config and errors: `config.json` limits load with defaults; bridge errors are stable coded values and do not include frame payloads or keys.
+- Parent lifecycle: `startParentDeathWatch` tracks the initial parent PID and treats `EPERM` as alive, reducing accidental termination.
+
+**Findings this review:** `SEC-2026-018`
+
+**Verification gaps:**
+
+- Socket-path ACLs were code-reviewed, but no controlled multi-user host test validated cross-user connect denial in packaged desktop environments.
+- IPC transport currently has no explicit per-command or per-session rate-limiting in this module scope; abuse limits depend on downstream modules.
+- Config-value hard validation (e.g., explicit numeric range checks for env-derived port/limits) is partial and not exercised under adversarial env mutation in tests.
 
 ---
 
@@ -1403,6 +1442,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-22 | MOD-005 | cfb7e83 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-018 (resolved) |
 | 2026-09-22 | MOD-004 | e2d7db3 | Claude Opus 5.5 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-013 (resolved), SEC-2026-014 (resolved), SEC-2026-015 (resolved), SEC-2026-016 (resolved), SEC-2026-017 (resolved) |
 | 2026-09-22 | MOD-003 | 01d6d85 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-012 (resolved) |
 | 2026-09-22 | MOD-002 | d241144 | Composer (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-006 (resolved), SEC-2026-007 (resolved), SEC-2026-008 (resolved), SEC-2026-009 (resolved), SEC-2026-010 (resolved), SEC-2026-011 (resolved) |

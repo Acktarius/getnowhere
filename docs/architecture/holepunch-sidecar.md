@@ -170,11 +170,19 @@ When `GNH_BRIDGE_TRANSPORT=ipc` and `GNH_IPC_PATH` is set (Electron main
 generates the path):
 
 1. The sidecar listens on a Unix domain socket (Linux/macOS) or named pipe
-   (Windows) — no loopback TCP bridge.
-2. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
-3. One NDJSON line per message; same `SidecarCommand` / `SidecarEvent` schema.
-4. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
-5. Stale Unix socket files are unlinked before bind when safe.
+   (Windows) — no loopback TCP bridge. Electron places the socket in a `0700`
+   directory (`$XDG_RUNTIME_DIR/gnh-sidecar` or a private directory under the
+   user temp dir). After bind the sidecar sets the socket mode to `0600`.
+2. The sidecar does not listen until the parent sends
+   `{ type: "ipc-auth-token", token }` on the Node IPC channel. The token is
+   not read from the environment or argv.
+3. The first NDJSON line on each connection must be `{ type: "auth", token }`.
+   A match replies `{ type: "auth-ok" }` and later lines use the
+   `SidecarCommand` / `SidecarEvent` schema. Any other first line, a wrong
+   token, or a second `auth` closes the socket. Comparison is timing-safe.
+4. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
+5. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
+6. Stale Unix socket files are unlinked before bind when safe.
 
 Web-dev keeps default `GNH_BRIDGE_TRANSPORT=ws` (unset).
 
@@ -401,10 +409,12 @@ pinning, then IPC/Unix socket — ranked options and hardening checklist in
 process exits before listen if missing. Loopback without a token remains the
 explicit web-dev exception (`npm run holepunch`).
 
-When a token is set, clients must connect with `?token=<value>` or the upgrade
-is closed (`4001`). Comparison is timing-safe (`crypto.timingSafeEqual` on
-equal-length buffers). Electron main always sets a per-launch token
-(packaged builds use a fresh UUID) — `docs/architecture/electron-desktop.md`.
+When a token is set, WebSocket clients must connect with `?token=<value>` or
+the upgrade is closed (`4001`). Comparison is timing-safe
+(`crypto.timingSafeEqual` on equal-length buffers). IPC uses the same compare
+on the first NDJSON `auth` line. Electron main keeps a per-launch token
+(packaged builds use a fresh UUID) and delivers it to the sidecar over Node
+IPC — `docs/architecture/electron-desktop.md`.
 
 ## Env
 
@@ -415,7 +425,7 @@ equal-length buffers). Electron main always sets a per-launch token
 | `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar (WS mode) |
 | `GNH_BRIDGE_TRANSPORT` | `ws` | `ws` \| `ipc` — desktop uses `ipc` |
 | `GNH_IPC_PATH` | (unset) | sidecar — required when transport is `ipc` |
-| `GNH_SIDECAR_TOKEN` | (unset) | sidecar WS auth — not used in `ipc` mode |
+| `GNH_SIDECAR_TOKEN` | (unset) | sidecar WS auth. IPC auth uses the parent `ipc-auth-token` message |
 | `GNH_PARENT_POLL_MS` | `1000` | sidecar parent-death poll |
 | `GNH_DISABLE_DISCOVERY` | unset | test-only: skip Hyperswarm DHT |
 

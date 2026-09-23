@@ -3,22 +3,30 @@
  * @see docs/architecture/local-bridge-transport.md
  */
 
+import { chmodSync } from "node:fs";
 import { createServer } from "node:net";
+import { tokensEqual } from "./auth.mjs";
+import { createBridgeSession } from "./bridge-session.mjs";
 import { config } from "./config.mjs";
 import { BRIDGE_ERRORS, bridgeError } from "./errors.mjs";
 import { cleanupStaleIpcPath } from "./ipc-path.mjs";
-import { createBridgeSession } from "./bridge-session.mjs";
 
 /**
+ * First NDJSON line must be `{ type: "auth", token }` before any bridge command.
  * @param {import('./swarm.mjs').ReturnType<typeof import('./swarm.mjs').createSwarmMesh>} mesh
+ * @see docs/architecture/local-bridge-transport.md
  * @param {{
  *   path: string
+ *   token: string
  *   onListening?: (path: string) => void
  *   onClientConnected?: () => void
  * }} opts
  */
 export function createIpcBridgeServer(mesh, opts) {
-  const { path: ipcPath } = opts;
+  const { path: ipcPath, token } = opts;
+  if (typeof token !== "string" || token.length === 0) {
+    throw new Error("ipc bridge requires a token");
+  }
   cleanupStaleIpcPath(ipcPath);
 
   /** @type {import('node:net').Server | null} */
@@ -31,6 +39,38 @@ export function createIpcBridgeServer(mesh, opts) {
     opts.onClientConnected?.();
     let buffer = "";
     let closed = false;
+    let authed = false;
+
+    /**
+     * @param {string} line
+     * @returns {boolean}
+     */
+    function authLineOk(line) {
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        return false;
+      }
+      return (
+        !!msg &&
+        msg.type === "auth" &&
+        typeof msg.token === "string" &&
+        tokensEqual(msg.token, token)
+      );
+    }
+
+    /**
+     * @param {string} line
+     * @returns {boolean}
+     */
+    function isAuthLine(line) {
+      try {
+        return JSON.parse(line)?.type === "auth";
+      } catch {
+        return false;
+      }
+    }
 
     /** @param {object} msg */
     function send(msg) {
@@ -88,6 +128,21 @@ export function createIpcBridgeServer(mesh, opts) {
         const line = buffer.slice(0, nl);
         buffer = buffer.slice(nl + 1);
         if (!line.trim()) continue;
+        if (!authed) {
+          if (!authLineOk(line)) {
+            console.warn("[holepunch-sidecar] IPC rejected: bad or missing token");
+            endSocket();
+            return;
+          }
+          authed = true;
+          send({ type: "auth-ok" });
+          continue;
+        }
+        if (isAuthLine(line)) {
+          console.warn("[holepunch-sidecar] IPC rejected: repeated auth");
+          endSocket();
+          return;
+        }
         const keepOpen = await session.handleRawMessage(line);
         if (!keepOpen) {
           endSocket();
@@ -116,12 +171,22 @@ export function createIpcBridgeServer(mesh, opts) {
   return {
     listen() {
       return new Promise((resolve, reject) => {
-        server?.listen(ipcPath, () => {
-          console.log(`[holepunch-sidecar] listening ipc://${ipcPath}`);
-          opts.onListening?.(ipcPath);
-          resolve(undefined);
-        });
-        server?.once("error", reject);
+        // umask makes the bind itself 0600; chmod covers a deferred bind.
+        const prevUmask =
+          process.platform === "win32" ? null : process.umask(0o177);
+        try {
+          server?.listen(ipcPath, () => {
+            if (process.platform !== "win32") {
+              chmodSync(ipcPath, 0o600);
+            }
+            console.log(`[holepunch-sidecar] listening ipc://${ipcPath}`);
+            opts.onListening?.(ipcPath);
+            resolve(undefined);
+          });
+          server?.once("error", reject);
+        } finally {
+          if (prevUmask !== null) process.umask(prevUmask);
+        }
       });
     },
     close() {

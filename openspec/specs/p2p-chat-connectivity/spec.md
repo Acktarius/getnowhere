@@ -210,9 +210,34 @@ binding the WebSocket server when no loopback TCP bridge is required.
 #### Scenario: IPC mode listens on the configured path
 
 - GIVEN `GNH_BRIDGE_TRANSPORT=ipc` and `GNH_IPC_PATH` is set
+- AND the parent has sent `{ type: "ipc-auth-token", token }`
 - WHEN the sidecar starts
 - THEN it listens on that IPC path
-- AND a connected client may send bridge commands
+- AND a client may send bridge commands only after `{ type: "auth", token }` matches
+
+### Requirement: IPC bridge requires a per-launch token
+
+In `ipc` mode the sidecar SHALL NOT listen until the parent process sends
+`{ type: "ipc-auth-token", token }` on the Node IPC channel. It SHALL NOT read
+that token from the environment or argv. Each connection SHALL accept bridge
+commands only after the first NDJSON line is `{ type: "auth", token }` and the
+token matches under a timing-safe compare. A missing token, a mismatch, a
+non-auth first line, or a second `auth` SHALL close that connection. On Linux
+and macOS the socket mode SHALL be `0600` after bind.
+
+#### Scenario: Command before auth is rejected
+
+- GIVEN the IPC listener is up with a token
+- WHEN a client sends `ping` before `auth`
+- THEN the socket closes
+- AND no `pong` is sent
+
+#### Scenario: Matching auth then allows commands
+
+- GIVEN the IPC listener is up with a token
+- WHEN the client sends `{ type: "auth", token }` with that token
+- THEN the sidecar replies `{ type: "auth-ok" }`
+- AND a following `ping` receives `pong`
 
 #### Scenario: IPC mode announces path over Node child IPC
 

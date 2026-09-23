@@ -21,6 +21,9 @@ describe("sidecar-ipc-client", () => {
         const lines = chunk.toString().split("\n").filter(Boolean);
         for (const line of lines) {
           const msg = JSON.parse(line);
+          if (msg.type === "auth" && msg.token === "test-token") {
+            socket.write(`${JSON.stringify({ type: "auth-ok" })}\n`);
+          }
           if (msg.type === "ping") {
             socket.write(`${JSON.stringify({ type: "pong" })}\n`);
           }
@@ -34,6 +37,7 @@ describe("sidecar-ipc-client", () => {
     });
 
     const conn = await connectSidecarIpc(ipcPath, {
+      token: "test-token",
       retries: 5,
       delayMs: 20,
     });
@@ -48,13 +52,19 @@ describe("sidecar-ipc-client", () => {
     assert.deepEqual(events, [{ type: "pong" }]);
   });
 
-  it("createSidecarIpcConnection parses fragmented NDJSON", () => {
+  it("createSidecarIpcConnection parses fragmented NDJSON", async () => {
     const fake = new EventEmitter();
     fake.destroyed = false;
     fake.destroy = () => {
       fake.destroyed = true;
     };
-    const conn = createSidecarIpcConnection(/** @type {import('node:net').Socket} */ (fake));
+    fake.write = () => {
+      fake.emit("data", Buffer.from('{"type":"auth-ok"}\n'));
+    };
+    const conn = createSidecarIpcConnection(
+      /** @type {import('node:net').Socket} */ (fake),
+    );
+    await conn.authenticate("test-token");
     const got = [];
     conn.onEvent((m) => got.push(m));
     fake.emit(

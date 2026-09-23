@@ -73,6 +73,21 @@ windows always match. Owner also writes `$TMPDIR/gnh-sidecar-<host>-<port>.token
 
 **Isolated mode:** each role gets a random UUID token for its own sidecar.
 
+**IPC (default desktop transport):** Electron main sends that same token to the
+sidecar with `{ type: "ipc-auth-token", token }` on the Node parent channel,
+then the IPC client’s first line is `{ type: "auth", token }`. The token is
+not placed in the sidecar environment or argv, and the renderer never receives
+it. An empty token exits the sidecar; a second one is ignored. Shared-mode
+attach reads the existing `0600` token lockfile before that auth line — a path
+lock with no token lock is logged as stale, since the default would fail auth.
+The socket lives in a `0700` directory and is bound under a `0177` umask, then
+`chmod` `0600`. Peer-credential checks (`SO_PEERCRED`, `getpeereid`,
+named-pipe ACL) are not used.
+
+The `GNH_HOLEPUNCH_WS_URL` debug override still passes `--gnh-ws-token` in
+renderer argv, so that token is readable from `/proc/<pid>/cmdline` by a
+same-user process. That override is dev-only and is not a ship path.
+
 Main hands `{ role?, bridgeTransport, … }` to preload via
 `additionalArguments` (primary — same path as v0.1.6) and sync IPC
 `gnh:get-desktop-info` (secondary). Default desktop transport is **native IPC**

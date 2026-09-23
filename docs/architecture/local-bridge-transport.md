@@ -57,8 +57,8 @@ WebSocket longest (no Electron main to proxy IPC).
 | Surface | Transport | Bind | Auth |
 |---|---|---|---|
 | Browser web-dev | `ws://127.0.0.1:7901` | Loopback default | Token optional |
-| Electron dev harness | Native IPC (default) or `ws://` when `GNH_HOLEPUNCH_WS_URL` set | UDS / named pipe or loopback | None on IPC; token on WS override |
-| Packaged desktop | Native IPC (default) | Per-launch socket path | None on IPC |
+| Electron dev harness | Native IPC (default) or `ws://` when `GNH_HOLEPUNCH_WS_URL` set | UDS in a `0700` dir / named pipe, or loopback | First-message token on IPC; query token on WS override |
+| Packaged desktop | Native IPC (default) | Per-launch socket in a `0700` dir, mode `0600` | First-message token |
 | Mobile | Bare IPC | In-process | N/A |
 
 Packaged desktop: `HOLEPUNCH_PORT=0` → OS ephemeral port; sidecar reports port
@@ -116,7 +116,7 @@ Implementation keeps the **same** `SidecarCommand` / `SidecarEvent` schema
 | Adversary | Local bridge concern |
 |---|---|
 | Remote network attacker | **Out of scope** — bridge is loopback only |
-| Local malware / other user | Can attempt loopback connect; mitigated by token + (future) wss/IPC |
+| Local malware / other user | WS query token, or IPC first-message token plus `0700`/`0600` socket. Same-user code that can read the Electron process can still take the token |
 | Compromised sidecar | Sees opaque frames + bridge metadata; **not** chat plaintext (L1 seal) |
 | Misconfigured LAN bind | **Blocked** by token requirement off loopback; still forbidden for prod |
 
