@@ -20,6 +20,9 @@ WebView loads bundled Vite UI; native Expo shell routes `postMessage` JSON.
 - **Locked-state reject:** while app access is locked, reject `gnh-bridge`
   commands and biometric enroll except unlock/lifecycle/securePrefs reads needed
   for unlock.
+- **Native stale-response drop:** RN drops security responses whose
+  `lockGeneration` no longer matches the current native generation before
+  injecting `_resolveSecurity(...)` into WebView JS.
 
 ## Message envelope
 
@@ -36,6 +39,22 @@ All security channels use:
 
 `requestId` correlates command ↔ response. `lockGeneration` optional on
 lifecycle events; required on biometric commands/responses.
+
+## Native lock-gate policy
+
+When the RN host marks app access locked (generation `N`), commands are handled
+as follows:
+
+- `gnh-bridge`: reject while locked.
+- `gnh-biometric`: allow only `isAvailable` and `unlockAppAccess`, and only when
+  command `lockGeneration === N`.
+- `gnh-secure-prefs`: allow only `get` for
+  `gnh.appAccessCredentialId` / `gnh-biometric-enrollment`, and only when
+  `lockGeneration === N`.
+- `gnh-wallet-file`: reject while locked.
+
+Unlock success (`unlockAppAccess` with `{ ok: true }`) clears native locked
+state for the matching generation only.
 
 ## Channels
 

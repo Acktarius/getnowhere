@@ -27,7 +27,7 @@ A checked box means that the module has been reviewed at least once.
 Use this exact status format before the first review:
 
 ```md
-- [x] Reviewed — latest review: 2026-09-23 — commit: 637c405 — reviewer: GPT-5.3 Codex (Cursor Agent)
+- [ ] Reviewed — no review recorded yet
 ```
 
 After the first review, regardless of whether findings exist:
@@ -1265,17 +1265,94 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm production-build settings disable debugging and development endpoints.
 - Confirm Android and iOS privacy/permission behavior is documented separately where it differs.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: 3b1e5d2 — reviewer: Grok 4.6 (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-023` — severity: medium
+  - Date found: 2026-09-23
+  - Commit reviewed: 3b1e5d2
+  - Affected files: `native-wrapper/App.tsx`, `native-wrapper/src/webviewNavigation.ts`, `native-wrapper/src/bundledUiUri.ts`
+  - Evidence: `App.tsx` `allowNav` returns true for every `file://` URL on iOS; `getBundledUiReadAccessUrl()` grants WKWebView read access to the entire `.app` bundle root. `isAllowedWebViewNavigationUrl` (and its tests) prefix-scope iOS to `…/ui/`, but production iOS does not call that helper.
+  - Description: iOS WebView confinement is weaker than Android and weaker than the documented “packaged `ui/` only” rule. Any `file://` document load gets `injectedJavaScriptBeforeContentLoaded` (`gnhMobile` + bridge token + wallet-session restore). `allowFileAccessFromFileURLs` plus bundle-root read access lets a file-origin page fetch other bundled files.
+  - Impact: Not a remote `http(s)` drive-by (originWhitelist is `file://*`). A same-app `file://` navigation or XSS `location` assignment can leave the `ui/` tree while keeping the full native bridge. Android stays path-scoped to `file:///android_asset/ui/`.
+  - Recommended remediation: Normalize the iOS `/var` → `/private/var` symlink and apply the same prefix allowlist as `isAllowedWebViewNavigationUrl`. Set `allowingReadAccessToURL` to the `ui/` directory once that prefix matches. Add a test that the App.tsx iOS branch cannot accept a non-`ui/` `file://` URL.
+  - Status: resolved
+  - Verification: `normalizeIosFileUrl` added to `webviewNavigation.ts`; normalizes both stored prefix (`getIosUiAssetPrefix`) and incoming URL inside `isAllowedWebViewNavigationUrl`. `App.tsx` iOS bypass removed — both platforms now call `isAllowedWebViewNavigationUrl`. `getBundledUiReadAccessUrl` narrowed to `ui/` directory. 5 new tests added (12 total in webview-navigation suite, 746 passing). `docs/architecture/mobile-p2p-runtime.md` updated.
+
+- [x] `SEC-2026-024` — severity: low
+  - Date found: 2026-09-23
+  - Commit reviewed: 3b1e5d2
+  - Affected files: `native-wrapper/src/GnhMobileBridge.ts`, `native-wrapper/src/handleSecurityWebViewMessage.ts`, `native-wrapper/docs/gnh-mobile-security-bridge.md`
+  - Evidence: Security-bridge contract requires native reject of `gnh-bridge` and biometric enroll while app access is locked, and discard of stale `lockGeneration`. `handleWebViewMessage` checks only the per-launch token. `handleSecurityWebViewMessage` echoes `lockGeneration` and never compares it. `AppAccessController` / `HolepunchSidecarClient.send` are WebView JS only.
+  - Description: The app-access lock is a UI gate (wallet stays mounted, by feature design). The stronger native lock gate written in `gnh-mobile-security-bridge.md` is not implemented. Security, file-export, notifications, ntfy, and wallet-session channels have no bridge token.
+  - Impact: A human at the lock overlay is still blocked by UI. Script that can `postMessage` (compromised bundled UI) can still enroll biometrics, read/write the wallet file and secure prefs, and send Bare commands. A late biometric success still injects `{ password }` into the WebView; JS discard happens after the secret crossed.
+  - Recommended remediation: Track lock generation in the RN shell; refuse `gnh-bridge` / enroll / wallet-file / session-keep while locked except unlock and required prefs reads; drop stale biometric results before `injectJavaScript`. Align the security-bridge doc with the feature doc if native reject would break intended background sync.
+  - Status: resolved
+  - Verification: RN host now enforces a native app-access lock gate in `native-wrapper/App.tsx` and `native-wrapper/src/handleSecurityWebViewMessage.ts`: while locked, `gnh-bridge` commands are dropped, `gnh-wallet-file` is rejected, `gnh-secure-prefs` is allowlisted to unlock metadata reads only, and `gnh-biometric` allows only `isAvailable`/`unlockAppAccess` for the current `lockGeneration`. Stale generation responses are dropped before `injectJavaScript`. Coverage added in `tests/native-wrapper/handle-security-webview.test.ts` (12 passing).
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — 3b1e5d2 — Grok 4.6 (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: WebView is UI only; Hyperswarm stays in the Bare worklet (`GnhMobileBridge` + `bare/`). Wallet crypto stays in the Vite app; Keystore/Keychain hold biometric-wrapped secrets.
+- Least knowledge: P2P bridge token is closure-only (`injectMobileBridge.ts`), not `window.gnhMobile.bridgeToken`. Wallet password still enters the WebView for session restore (`_pendingWalletRestore`) and data-unlock responses — intended, and a larger WebView secret surface than desktop IPC.
+- Explicit trust boundaries: Android navigation is `android_asset/ui/`. iOS navigation is `ui/` prefix-scoped via `normalizeIosFileUrl` (resolves `/var`→`/private/var`); `allowingReadAccessToURL` narrowed to `ui/` (`SEC-2026-023` resolved). `http(s)` / `intent://` are blocked.
+- Discovery is not authorization: Bare `connTopics` + L1 proof remain the remote-peer gate (MOD-007). Topic join from the WebView is a product API once the token is present.
+- Failure paths: oversize Bare IPC terminates the worklet; WebView process death reloads; biometric busy/single-flight exists natively. App-access lock failure path is JS-only (`SEC-2026-024`).
+- Privacy claims: local notification extras/userInfo carry only an opaque eventId; banner title/body are whatever the WebView sends. Docs claim generic invite copy — enforced in JS, not in the native publisher.
+
+**Checklist highlights:**
+
+- Event chain: bundled `file://` UI → `gnhMobile` postMessage → RN handlers / Bare IPC → worklet swarm reviewed.
+- Trust boundaries: `gnh-bridge` token + `tokensEqual`; other channels trust the WebView origin.
+- Secrets/capabilities: Android `allowBackup: false`; wallet file is platform-encrypted; session password persisted under `gnh.walletSession` in secure prefs/Keychain.
+- Logs: wallet-file errors log action + value length only; lifecycle logs do not print tokens or passwords in reviewed paths.
+- Storage: Keystore/Keychain for prefs and biometric secrets; notification ledger stores opaque event ids.
+- Dependencies: `react-native-webview` 13.16, `react-native-bare-kit`, Expo 55; no WebView debug flag found in wrapper sources.
+- Tests: navigation helper, security/privacy/poke handlers, Bare swarm/auth/ingress. No test that App.tsx iOS `allowNav` matches the helper.
+- Component-specific (native wrapper): notification extras are opaque; APNs token is injected for poke registration; ntfy subscribe is Android-only and takes topic/token from the WebView.
+
+**Findings this review:** `SEC-2026-023`, `SEC-2026-024`
+
+**Verification gaps:**
+
+- Native `publishEvent` does not enforce the generic title/body rules in `docs/features/local-background-notifications.md`.
+- iOS device P2P sign-off is still deferred (`mobile-p2p-runtime.md`).
+- Hermes `crypto.randomUUID` on-device check from the 2026-08 mobile-bridge review is still pending.
+- `NSMicrophoneUsageDescription` is present for “future voice features”; no microphone use was verified in this pass.
+- No packet-capture or jailbroken-device test of iOS `file://` reads outside `ui/`.
+- Background-sync WebView injection was reviewed at the registration seam only, not as a full Android WorkManager / iOS BGAppRefresh soak.
+
+#### 2026-09-23 — remediation — Grok 4.6 (Cursor Agent)
+
+**Outcome:** SEC-2026-023 resolved
+
+- Added `normalizeIosFileUrl` to `webviewNavigation.ts`; normalizes `file:///var/` → `file:///private/var/` on both stored prefix and incoming URL.
+- `getIosUiAssetPrefix` now returns the `/private/var/…/ui/` form.
+- `isAllowedWebViewNavigationUrl` normalizes both sides before comparison — no more platform branch in `allowNav`.
+- `getBundledUiReadAccessUrl` narrowed from `.app` bundle root to `ui/` directory (symlink issue fixed, broadening no longer needed).
+- `App.tsx` iOS bypass removed; both platforms use the shared allowlist helper.
+- 5 new tests (normalization round-trips, symlink cross-form, `ui-evil` sibling rejection, traversal rejection); 746 total passing.
+- `docs/architecture/mobile-p2p-runtime.md` updated.
+
+#### 2026-09-23 — remediation — Grok 4.6 (Cursor Agent)
+
+**Outcome:** SEC-2026-024 resolved
+
+- Added native lock gate in `handleSecurityWebViewMessage`: while locked, deny `gnh-wallet-file`, deny non-allowlisted `gnh-secure-prefs`, and deny biometric actions except `isAvailable` / `unlockAppAccess`.
+- Added lock-generation checks while locked (`msg.lockGeneration` must match native generation).
+- `unlockAppAccess` success now clears native locked state only for the matching generation.
+- Added stale-response guard (`shouldInjectSecurityResponse`) so outdated security responses are dropped before `injectJavaScript`.
+- `App.tsx` now blocks `gnh-bridge` commands while native locked and wires gate callbacks into security message handling.
+- Added tests in `tests/native-wrapper/handle-security-webview.test.ts` for locked denies/allowlist, generation mismatch, unlock success callback, and stale response dropping.
+- Updated `native-wrapper/docs/gnh-mobile-security-bridge.md` with implemented native lock-gate policy.
 
 ---
 
@@ -1579,6 +1656,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-23 | MOD-009 | 3b1e5d2 | Grok 4.6 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-023, SEC-2026-024 |
 | 2026-09-23 | MOD-008 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-022 |
 | 2026-09-23 | MOD-007 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-021 (resolved) |
 | 2026-09-23 | MOD-006 | 637c405 | Grok 4.6 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-019 (resolved), SEC-2026-020 (resolved) |

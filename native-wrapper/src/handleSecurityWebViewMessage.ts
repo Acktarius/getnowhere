@@ -17,6 +17,13 @@ export type SecurityWebViewResolve = (
   response: Record<string, unknown>,
 ) => void;
 
+export type SecurityLockState = {
+  isLocked: () => boolean;
+  getGeneration: () => number;
+  allowedSecurePrefsGetKeys?: readonly string[];
+  onAppAccessUnlockSuccess?: (generation: number) => void;
+};
+
 type IncomingMessage = {
   channel?: string;
   direction?: string;
@@ -32,6 +39,55 @@ type IncomingMessage = {
   passcode?: string;
 };
 
+const LOCKED_SECURE_PREFS_ALLOWLIST = Object.freeze([
+  "gnh.appAccessCredentialId",
+  "gnh-biometric-enrollment",
+]);
+
+function lockGenerationMatchesCurrent(
+  msg: IncomingMessage,
+  lockState?: SecurityLockState,
+): boolean {
+  if (!lockState) return true;
+  if (typeof msg.lockGeneration !== "number") return false;
+  return msg.lockGeneration === lockState.getGeneration();
+}
+
+function securePrefsGetAllowedWhileLocked(
+  msg: IncomingMessage,
+  lockState: SecurityLockState,
+): boolean {
+  if (msg.action !== "get" || !msg.key) return false;
+  const allowlist =
+    lockState.allowedSecurePrefsGetKeys ?? LOCKED_SECURE_PREFS_ALLOWLIST;
+  return allowlist.includes(msg.key);
+}
+
+function rejectLocked(
+  msg: IncomingMessage,
+  resolve: SecurityWebViewResolve,
+): void {
+  if (msg.channel === "gnh-wallet-file") {
+    resolve(buildResponse(msg, { reason: "locked" }));
+    return;
+  }
+  resolve(buildResponse(msg, { error: "locked" }));
+}
+
+function canRunWhileLocked(
+  msg: IncomingMessage,
+  lockState: SecurityLockState,
+): boolean {
+  if (!lockGenerationMatchesCurrent(msg, lockState)) return false;
+  if (msg.channel === "gnh-biometric") {
+    return msg.action === "isAvailable" || msg.action === "unlockAppAccess";
+  }
+  if (msg.channel === "gnh-secure-prefs") {
+    return securePrefsGetAllowedWhileLocked(msg, lockState);
+  }
+  return false;
+}
+
 function buildResponse(
   msg: IncomingMessage,
   body: Record<string, unknown>,
@@ -41,6 +97,7 @@ function buildResponse(
     direction: "response",
     requestId: msg.requestId,
     lockGeneration: msg.lockGeneration ?? 0,
+    action: msg.action,
     ...body,
   };
 }
@@ -49,6 +106,7 @@ function buildResponse(
 export function handleSecurityWebViewMessage(
   raw: string,
   resolve: SecurityWebViewResolve,
+  lockState?: SecurityLockState,
 ): boolean {
   let msg: IncomingMessage;
   try {
@@ -57,6 +115,10 @@ export function handleSecurityWebViewMessage(
     return false;
   }
   if (msg.direction !== "command" || !msg.requestId) return false;
+  if (lockState?.isLocked() && !canRunWhileLocked(msg, lockState)) {
+    rejectLocked(msg, resolve);
+    return true;
+  }
 
   if (msg.channel === "gnh-biometric") {
     void (async () => {
@@ -68,6 +130,13 @@ export function handleSecurityWebViewMessage(
         credentialId: msg.credentialId,
         passcode: msg.passcode,
       });
+      if (
+        msg.action === "unlockAppAccess" &&
+        result?.ok === true &&
+        typeof msg.lockGeneration === "number"
+      ) {
+        lockState?.onAppAccessUnlockSuccess?.(msg.lockGeneration);
+      }
       resolve(buildResponse(msg, result));
     })();
     return true;
@@ -136,4 +205,14 @@ export function buildSecurityResolveScript(
   response: Record<string, unknown>,
 ): string {
   return `(function(){try{window.gnhMobile&&window.gnhMobile._resolveSecurity&&window.gnhMobile._resolveSecurity(${JSON.stringify(response)});}catch(e){}})();true;`;
+}
+
+/** Drop stale security responses after lock generation changed in native host. */
+export function shouldInjectSecurityResponse(
+  response: Record<string, unknown>,
+  currentGeneration: number,
+): boolean {
+  const generation = response.lockGeneration;
+  if (typeof generation !== "number") return true;
+  return generation === currentGeneration;
 }

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { walletFileWrite } from "../../native-wrapper/src/gnhSecurityNative";
-import { handleSecurityWebViewMessage } from "../../native-wrapper/src/handleSecurityWebViewMessage";
+import {
+  handleSecurityWebViewMessage,
+  shouldInjectSecurityResponse,
+} from "../../native-wrapper/src/handleSecurityWebViewMessage";
 
 vi.mock("../../native-wrapper/src/gnhSecurityNative", () => ({
   invokeBiometricCommand: vi.fn(async (payload: Record<string, unknown>) => {
@@ -125,5 +128,136 @@ describe("handleSecurityWebViewMessage", () => {
     );
     expect(handled).toBe(false);
     expect(called).toBe(false);
+  });
+
+  it("rejects wallet-file actions while locked", async () => {
+    let resolved: Record<string, unknown> | null = null;
+    const handled = handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-wallet-file",
+        direction: "command",
+        requestId: "req-locked-wf",
+        action: "read",
+        lockGeneration: 3,
+      }),
+      (r) => {
+        resolved = r;
+      },
+      {
+        isLocked: () => true,
+        getGeneration: () => 3,
+      },
+    );
+    expect(handled).toBe(true);
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({ reason: "locked" });
+  });
+
+  it("allows biometric unlockAppAccess while locked when generation matches", async () => {
+    const unlockSpy = vi.fn();
+    let resolved: Record<string, unknown> | null = null;
+    const handled = handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-biometric",
+        direction: "command",
+        requestId: "req-unlock",
+        action: "unlockAppAccess",
+        lockGeneration: 5,
+      }),
+      (r) => {
+        resolved = r;
+      },
+      {
+        isLocked: () => true,
+        getGeneration: () => 5,
+        onAppAccessUnlockSuccess: unlockSpy,
+      },
+    );
+    expect(handled).toBe(true);
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({ ok: true });
+    expect(unlockSpy).toHaveBeenCalledWith(5);
+  });
+
+  it("rejects biometric unlockAppAccess while locked when generation mismatches", async () => {
+    let resolved: Record<string, unknown> | null = null;
+    const handled = handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-biometric",
+        direction: "command",
+        requestId: "req-unlock-stale",
+        action: "unlockAppAccess",
+        lockGeneration: 6,
+      }),
+      (r) => {
+        resolved = r;
+      },
+      {
+        isLocked: () => true,
+        getGeneration: () => 7,
+      },
+    );
+    expect(handled).toBe(true);
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({ error: "locked" });
+  });
+
+  it("allows only allowlisted secure-prefs get while locked", async () => {
+    let allowed: Record<string, unknown> | null = null;
+    let denied: Record<string, unknown> | null = null;
+
+    handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-secure-prefs",
+        direction: "command",
+        requestId: "req-allowed-pref",
+        action: "get",
+        key: "gnh-biometric-enrollment",
+        lockGeneration: 2,
+      }),
+      (r) => {
+        allowed = r;
+      },
+      {
+        isLocked: () => true,
+        getGeneration: () => 2,
+      },
+    );
+    handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-secure-prefs",
+        direction: "command",
+        requestId: "req-denied-pref",
+        action: "get",
+        key: "gnh.walletSession",
+        lockGeneration: 2,
+      }),
+      (r) => {
+        denied = r;
+      },
+      {
+        isLocked: () => true,
+        getGeneration: () => 2,
+      },
+    );
+
+    await vi.waitFor(() => expect(allowed).not.toBeNull());
+    await vi.waitFor(() => expect(denied).not.toBeNull());
+    expect(allowed).toMatchObject({ value: '{"version":2}' });
+    expect(denied).toMatchObject({ error: "locked" });
+  });
+});
+
+describe("shouldInjectSecurityResponse", () => {
+  it("drops stale generation responses", () => {
+    expect(shouldInjectSecurityResponse({ lockGeneration: 2 }, 3)).toBe(false);
+  });
+
+  it("allows current-generation responses", () => {
+    expect(shouldInjectSecurityResponse({ lockGeneration: 3 }, 3)).toBe(true);
+  });
+
+  it("allows legacy responses without lockGeneration", () => {
+    expect(shouldInjectSecurityResponse({}, 3)).toBe(true);
   });
 });

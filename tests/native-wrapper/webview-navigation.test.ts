@@ -3,6 +3,7 @@ import {
   ANDROID_UI_ASSET_PREFIX,
   getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
+  normalizeIosFileUrl,
 } from "../../native-wrapper/src/webviewNavigation";
 
 describe("isAllowedWebViewNavigationUrl", () => {
@@ -49,6 +50,72 @@ describe("isAllowedWebViewNavigationUrl", () => {
 
   it("allows about:blank for WebView internals", () => {
     expect(isAllowedWebViewNavigationUrl("about:blank")).toBe(true);
+  });
+});
+
+describe("normalizeIosFileUrl", () => {
+  it("rewrites /var/ prefix to /private/var/", () => {
+    expect(
+      normalizeIosFileUrl(
+        "file:///var/containers/Bundle/Application/App.app/ui/index.html",
+      ),
+    ).toBe(
+      "file:///private/var/containers/Bundle/Application/App.app/ui/index.html",
+    );
+  });
+
+  it("leaves already-resolved /private/var/ paths unchanged", () => {
+    const url =
+      "file:///private/var/containers/Bundle/Application/App.app/ui/index.html";
+    expect(normalizeIosFileUrl(url)).toBe(url);
+  });
+
+  it("leaves Android paths unchanged", () => {
+    expect(normalizeIosFileUrl("file:///android_asset/ui/index.html")).toBe(
+      "file:///android_asset/ui/index.html",
+    );
+  });
+});
+
+describe("isAllowedWebViewNavigationUrl — iOS symlink normalization", () => {
+  const iosPrefix = "file:///var/containers/Bundle/Application/App.app/ui/";
+  const privatePref =
+    "file:///private/var/containers/Bundle/Application/App.app/ui/";
+
+  it("allows /private/var/ URL when prefix uses /var/ form (normalization bridges both sides)", () => {
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file:///private/var/containers/Bundle/Application/App.app/ui/index.html",
+        [iosPrefix],
+      ),
+    ).toBe(true);
+  });
+
+  it("allows /var/ URL when prefix uses /private/var/ form", () => {
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file:///var/containers/Bundle/Application/App.app/ui/index.html",
+        [privatePref],
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a sibling directory whose name starts with 'ui' (ui-evil bypass)", () => {
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file:///private/var/containers/Bundle/Application/App.app/ui-evil/x.html",
+        [iosPrefix],
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects a non-ui file:// path (bundle root traversal)", () => {
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file:///private/var/containers/Bundle/Application/App.app/secrets.db",
+        [iosPrefix],
+      ),
+    ).toBe(false);
   });
 });
 

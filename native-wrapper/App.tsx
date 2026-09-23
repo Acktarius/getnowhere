@@ -45,6 +45,7 @@ import { handlePrivacyWebViewMessage } from "./src/handlePrivacyWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
+  shouldInjectSecurityResponse,
 } from "./src/handleSecurityWebViewMessage";
 import {
   buildBridgeEventDispatchScript,
@@ -76,6 +77,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
 const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
+const LOCKED_SECURE_PREFS_ALLOWLIST = [
+  "gnh.appAccessCredentialId",
+  "gnh-biometric-enrollment",
+] as const;
 
 type PendingForeground = {
   backgroundElapsedMs?: number;
@@ -137,6 +142,18 @@ export default function App() {
   const backgroundAtMsRef = useRef<number | null>(null);
   const pendingForegroundRef = useRef<PendingForeground | null>(null);
   const flushTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const nativeLockRef = useRef({ locked: false, generation: 0 });
+  const lockNativeSecurityGate = useCallback(() => {
+    if (nativeLockRef.current.locked) return;
+    nativeLockRef.current.locked = true;
+    nativeLockRef.current.generation += 1;
+  }, []);
+
+  const unlockNativeSecurityGate = useCallback((generation: number) => {
+    if (generation !== nativeLockRef.current.generation) return;
+    nativeLockRef.current.locked = false;
+  }, []);
+
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
   /** Native cover for OS app-switcher snapshots (critical on iOS). */
   const obscureInSwitcher =
@@ -193,6 +210,7 @@ export default function App() {
   }, [clearForegroundFlushTimeouts, flushPendingForeground]);
 
   const noteBackground = useCallback(() => {
+    lockNativeSecurityGate();
     if (backgroundAtMsRef.current == null) {
       backgroundAtMsRef.current = Date.now();
     }
@@ -202,7 +220,7 @@ export default function App() {
     });
     setNativeAppInBackground(true);
     injectLifecycle("background");
-  }, [injectLifecycle]);
+  }, [injectLifecycle, lockNativeSecurityGate]);
 
   const noteForeground = useCallback(() => {
     const elapsedMs =
@@ -421,17 +439,51 @@ export default function App() {
         return;
       }
       if (
-        handleSecurityWebViewMessage(raw, (response) => {
-          webViewRef.current?.injectJavaScript(
-            buildSecurityResolveScript(response),
-          );
-        })
+        handleSecurityWebViewMessage(
+          raw,
+          (response) => {
+            const currentGeneration = nativeLockRef.current.generation;
+            if (!shouldInjectSecurityResponse(response, currentGeneration)) {
+              return;
+            }
+            webViewRef.current?.injectJavaScript(
+              buildSecurityResolveScript(response),
+            );
+          },
+          {
+            isLocked: () => nativeLockRef.current.locked,
+            getGeneration: () => nativeLockRef.current.generation,
+            allowedSecurePrefsGetKeys: LOCKED_SECURE_PREFS_ALLOWLIST,
+            onAppAccessUnlockSuccess: unlockNativeSecurityGate,
+          },
+        )
       ) {
         return;
       }
+      if (nativeLockRef.current.locked) {
+        try {
+          const parsed = JSON.parse(raw) as {
+            channel?: string;
+            direction?: string;
+          };
+          if (
+            parsed.channel === "gnh-bridge" &&
+            parsed.direction === "command"
+          ) {
+            return;
+          }
+        } catch {
+          /* ignore parse failures for non-JSON messages */
+        }
+      }
       bridgeRef.current?.handleWebViewMessage(raw);
     },
-    [clearForegroundFlushTimeouts, flushPendingForeground, injectPokeToken],
+    [
+      clearForegroundFlushTimeouts,
+      flushPendingForeground,
+      injectPokeToken,
+      unlockNativeSecurityGate,
+    ],
   );
 
   const uiUri = useMemo(() => getBundledUiIndexUri(), []);
@@ -445,18 +497,11 @@ export default function App() {
     () => getWebViewOriginWhitelist(extraPrefixes),
     [extraPrefixes],
   );
-  // iOS WKWebView resolves /var → /private/var symlink, so the URL fired in
-  // onShouldStartLoadWithRequest won't match a prefix built from bundleDirectory.
-  // Allow all file:// on iOS; external URLs are already blocked by originWhitelist.
-  // Android keeps strict path-based filtering unchanged. @see docs/builds/expo-eas-ios-build.md
+  // Delegate to the shared allowlist helper; normalizeIosFileUrl inside it
+  // bridges the /var → /private/var symlink so iOS and Android use the same path.
+  // @see docs/architecture/mobile-p2p-runtime.md
   const allowNav = useCallback(
-    (url: string) => {
-      if (Platform.OS === "ios") {
-        const lower = url.toLowerCase();
-        return lower === "about:blank" || lower.startsWith("file://");
-      }
-      return isAllowedWebViewNavigationUrl(url, extraPrefixes);
-    },
+    (url: string) => isAllowedWebViewNavigationUrl(url, extraPrefixes),
     [extraPrefixes],
   );
 

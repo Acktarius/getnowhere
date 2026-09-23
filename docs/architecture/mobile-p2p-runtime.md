@@ -189,7 +189,8 @@ Controls match packaged desktop / sidecar where applicable:
 | Opaque L1-sealed frames | Unchanged app crypto path |
 | Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
 | RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
-| WebView navigation restricted to packaged `ui/` (Android `android_asset`, iOS app-bundle folder) | `App.tsx` → `webviewNavigation.ts` / `bundledUiUri.ts` |
+| WebView navigation restricted to packaged `ui/` (Android `android_asset`, iOS app-bundle `ui/`) — iOS `/var`→`/private/var` symlink normalized by `normalizeIosFileUrl` | `App.tsx` → `webviewNavigation.ts` / `bundledUiUri.ts` |
+| `allowingReadAccessToURL` scoped to `ui/` only (not the whole `.app` bundle root) | `bundledUiUri.getBundledUiReadAccessUrl()` |
 | Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
 | CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
 | `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
@@ -207,7 +208,10 @@ OpenSpec `openspec/changes/archive/2026-08-06-mobile-bridge-hardening/`.
 The bundled Vite UI runs inside a mobile WebView loading only the packaged `ui/`
 tree (`file:///android_asset/ui/` on Android; `…/App.app/ui/` on iOS). Top-level
 navigation to `http(s)://`, `intent://`, or other asset paths is blocked via
-`onShouldStartLoadWithRequest`. The per-launch
+`onShouldStartLoadWithRequest` using `isAllowedWebViewNavigationUrl`. On iOS,
+`normalizeIosFileUrl` resolves the `/var`→`/private/var` symlink on both the stored
+prefix and the incoming URL so the comparison is reliable across iOS versions and
+simulator/device. `allowingReadAccessToURL` is scoped to `ui/` only. The per-launch
 bridge token lives in the RN host and in the injected script closure — it is **not**
 published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
 still attaches the token in postMessage payloads validated by RN), but cannot read

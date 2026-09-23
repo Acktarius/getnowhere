@@ -5,7 +5,10 @@
  */
 import { bundleDirectory } from "expo-file-system/legacy";
 import { Platform } from "react-native";
-import { ANDROID_UI_ASSET_PREFIX } from "./webviewNavigation";
+import {
+  ANDROID_UI_ASSET_PREFIX,
+  normalizeIosFileUrl,
+} from "./webviewNavigation";
 
 /** Absolute file:// URI to index.html, or null if unavailable. */
 export function getBundledUiIndexUri(): string | null {
@@ -19,20 +22,29 @@ export function getBundledUiIndexUri(): string | null {
   return null;
 }
 
-/** Trailing-slash prefix for iOS allowlist; null on Android. */
+/**
+ * Trailing-slash prefix for the iOS navigation allowlist.
+ * Normalizes /var → /private/var so the prefix matches the symlink-resolved
+ * URL that WKWebView reports in onShouldStartLoadWithRequest.
+ */
 export function getIosUiAssetPrefix(): string | null {
   if (Platform.OS !== "ios" || !bundleDirectory) return null;
-  return `${bundleDirectory}ui/`;
+  const base = bundleDirectory.endsWith("/")
+    ? bundleDirectory
+    : `${bundleDirectory}/`;
+  return normalizeIosFileUrl(`${base}ui/`);
 }
 
 /**
- * iOS WKWebView allowingReadAccessToURL.
- * Use the .app bundle root (not just ui/) so iOS grants access even after
- * WKWebView resolves the /var → /private/var symlink.
+ * iOS WKWebView allowingReadAccessToURL — scoped to ui/ only.
+ * The /var → /private/var normalization ensures WKWebView accepts the URL
+ * without broadening read access to the whole .app bundle root.
+ * @see docs/architecture/mobile-p2p-runtime.md
  */
 export function getBundledUiReadAccessUrl(): string | undefined {
   if (Platform.OS !== "ios" || !bundleDirectory) return undefined;
-  return bundleDirectory.endsWith("/")
-    ? bundleDirectory.slice(0, -1)
-    : bundleDirectory;
+  const base = bundleDirectory.endsWith("/")
+    ? bundleDirectory
+    : `${bundleDirectory}/`;
+  return normalizeIosFileUrl(`${base}ui`);
 }

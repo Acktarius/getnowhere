@@ -7,6 +7,18 @@
 export const ANDROID_UI_ASSET_PREFIX = "file:///android_asset/ui/";
 
 /**
+ * Normalize iOS /var → /private/var symlink in a file:// URL.
+ * WKWebView fires onShouldStartLoadWithRequest with the resolved path while
+ * expo-file-system may return the /var form. Normalizing both sides allows a
+ * reliable prefix comparison. @see docs/architecture/mobile-p2p-runtime.md
+ */
+export function normalizeIosFileUrl(url: string): string {
+  return url.startsWith("file:///var/")
+    ? `file:///private/var/${url.slice("file:///var/".length)}`
+    : url;
+}
+
+/**
  * react-native-webview originWhitelist entries for the bundled UI.
  * Pass iOS `bundleDirectory + "ui/"` (with trailing slash) when available.
  */
@@ -31,11 +43,13 @@ export function isAllowedWebViewNavigationUrl(
   extraPrefixes: readonly string[] = [],
 ): boolean {
   if (!url) return false;
-  const lower = url.toLowerCase();
+  // Normalize /var → /private/var on both sides so iOS symlink form never matters.
+  const lower = normalizeIosFileUrl(url).toLowerCase();
   if (lower === "about:blank") return true;
   if (lower.startsWith(ANDROID_UI_ASSET_PREFIX)) return true;
   for (const prefix of extraPrefixes) {
-    if (prefix && lower.startsWith(prefix.toLowerCase())) return true;
+    if (prefix && lower.startsWith(normalizeIosFileUrl(prefix).toLowerCase()))
+      return true;
   }
   return false;
 }
