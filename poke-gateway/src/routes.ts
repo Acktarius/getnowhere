@@ -10,9 +10,11 @@ import {
   type PushEnv,
   updateHandleToken,
 } from "./db.js";
-import { consumePokeSlot } from "./rateLimit.js";
+import { consumeGlobalPokeSlot, consumePokeSlot } from "./rateLimit.js";
 
 const HANDLE_RE = /^[A-Za-z0-9_-]{14}$/;
+/** Bound a slow ntfy upstream so a poke cannot sit on the event loop. */
+const NTFY_FETCH_TIMEOUT_MS = 5_000;
 
 type RegisterBody = {
   token: string;
@@ -104,9 +106,20 @@ export function registerRoutes(app: FastifyInstance): void {
       if (!HANDLE_RE.test(to)) {
         return reply.code(400).send({ error: "bad_request" });
       }
+      // Global cap first: a new handle must not spend an ntfy publish or a map slot.
+      if (!consumeGlobalPokeSlot()) {
+        app.log.info({ event: "poke", result: "rate_limited" });
+        return reply
+          .code(429)
+          .header("Retry-After", "1")
+          .send({ error: "rate_limited" });
+      }
       if (!consumePokeSlot(to)) {
         app.log.info({ event: "poke", result: "rate_limited" });
-        return reply.code(429).send({ error: "rate_limited" });
+        return reply
+          .code(429)
+          .header("Retry-After", "300")
+          .send({ error: "rate_limited" });
       }
 
       const row = getHandle(to);
@@ -122,6 +135,7 @@ export function registerRoutes(app: FastifyInstance): void {
                 "Content-Type": "text/plain",
               },
               body: "wake",
+              signal: AbortSignal.timeout(NTFY_FETCH_TIMEOUT_MS),
             });
             app.log.info({ event: "poke", result: "ntfy_sent" });
           } catch {

@@ -5,11 +5,11 @@
 
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerRoutes } from "./routes.js";
+import { registerRoutes } from "../src/routes.js";
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
-vi.mock("./db.js", () => ({
+vi.mock("../src/db.js", () => ({
   getHandle: vi.fn(),
   createHandle: vi.fn(),
   deleteHandle: vi.fn(),
@@ -18,19 +18,20 @@ vi.mock("./db.js", () => ({
   closeDb: vi.fn(),
 }));
 
-vi.mock("./apns.js", () => ({
+vi.mock("../src/apns.js", () => ({
   sendApns: vi.fn(),
   PushConfigError: class PushConfigError extends Error {},
 }));
 
-vi.mock("./rateLimit.js", () => ({
+vi.mock("../src/rateLimit.js", () => ({
+  consumeGlobalPokeSlot: vi.fn(),
   consumePokeSlot: vi.fn(),
   pruneRateLimits: vi.fn(),
 }));
 
-import { sendApns } from "./apns.js";
-import { getHandle } from "./db.js";
-import { consumePokeSlot } from "./rateLimit.js";
+import { sendApns } from "../src/apns.js";
+import { getHandle } from "../src/db.js";
+import { consumeGlobalPokeSlot, consumePokeSlot } from "../src/rateLimit.js";
 
 const VALID_TO = "abcdefghijklmn"; // 14 chars, matches HANDLE_RE
 
@@ -45,6 +46,7 @@ describe("/poke route", () => {
 
   beforeEach(() => {
     app = buildApp();
+    vi.mocked(consumeGlobalPokeSlot).mockReturnValue(true);
     vi.mocked(consumePokeSlot).mockReturnValue(true);
     // Default: no ntfy env vars
     delete process.env.NTFY_BASE_URL;
@@ -88,6 +90,45 @@ describe("/poke route", () => {
       payload: { to: VALID_TO },
     });
     expect(res.statusCode).toBe(429);
+    expect(res.headers["retry-after"]).toBe("300");
+  });
+
+  it("returns 429 before ntfy or the per-handle map when the global cap is spent", async () => {
+    vi.mocked(consumeGlobalPokeSlot).mockReturnValue(false);
+    vi.mocked(getHandle).mockReturnValue(undefined);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/poke",
+      payload: { to: VALID_TO },
+    });
+
+    expect(res.statusCode).toBe(429);
+    expect(res.headers["retry-after"]).toBe("1");
+    expect(consumePokeSlot).not.toHaveBeenCalled();
+    expect(getHandle).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts a slow ntfy publish after 5 seconds", async () => {
+    process.env.NTFY_BASE_URL = "https://ntfy.example.com";
+    process.env.NTFY_PUBLISH_TOKEN = "tok_secret";
+    vi.mocked(getHandle).mockReturnValue(undefined);
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await app.inject({
+      method: "POST",
+      url: "/poke",
+      payload: { to: VALID_TO },
+    });
+
+    const opts = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    vi.unstubAllGlobals();
   });
 
   // ── ntfy fallback on DB miss ────────────────────────────────────────────────

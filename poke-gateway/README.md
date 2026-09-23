@@ -132,7 +132,12 @@ Listens on `0.0.0.0:3456`. Tests: `npm test`.
 |---|---|---|---|
 | `GET` | `/health` | — | `{ ok: true }` |
 | `POST` | `/register` | `{ token, platform: "apns", env, pokeHandle? }` | `{ pokeHandle }` (iOS) |
-| `POST` | `/poke` | `{ to }` 14-char base64url | `202` (or `400` / `429` / `502` / `503`) |
+| `POST` | `/poke` | `{ to }` 14-char base64url | `202` (or `400` / `429` / `502` / `503`). `429` carries `Retry-After`: `1` when the process cap is spent, `300` when that handle was poked in the last 5 minutes. |
 | `DELETE` | `/register` | `{ pokeHandle }` | `204` |
 
 Logs are aggregates only (no handle, token, or IP).
+
+`/poke` keeps the per-handle window (1 per 5 minutes) and also a process-wide
+bucket (burst 10, refill 1/s) checked before that window. A spent bucket returns
+`429` and does not call ntfy or APNs. The ntfy publish aborts after 5 seconds.
+Client IP is not read from `X-Forwarded-For`. See `docs/features/peer-wake-notification.md`.

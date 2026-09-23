@@ -306,8 +306,12 @@ spams Alice with chain messages pays real fees. Poke-spamming is therefore not f
 **App-side rule eliminates most abuse:** at most one poke per 5 minutes per room while on
 relay (plus an immediate poke when first dropping from L2 after `lastPokedAt` was cleared).
 
-**Gateway rate limit:** 1 poke per 5 minutes per pokeHandle. This backstop covers edge cases
-where the app-side rule does not apply (e.g. unusual reconnect patterns, bugs).
+**Gateway rate limit:** 1 poke per 5 minutes per pokeHandle, plus a process-wide cap
+(burst 10, then 1 per second). The wide cap is checked first and returns `429`
+with `Retry-After: 1` before ntfy or APNs. It stops a caller from rotating fresh
+handles to publish once per id. The gateway does not trust `X-Forwarded-For`;
+client IP limiting belongs at the reverse proxy. The ntfy publish aborts after
+5 seconds.
 
 **Bearer capability:** a pokeHandle is a bearer token. Any party who holds it can poke that
 device. Alice holds Bob's handle by design (she accepted his invite). She cannot share it
@@ -353,7 +357,8 @@ Minimal HTTP service (single Node process or serverless):
 - APNs adapter: `.p8` key + ES256 JWT (1-hour cache), `apns-topic = im.getnowhere.app`
 - ntfy fallback: `POST https://ntfy.getnowhere.im/gnh-<pokeHandle>` on DB miss
 - Token store: `pokeHandle TEXT PK, token TEXT, platform TEXT, env TEXT, updatedAt INT`
-- Rate limit: 1 poke per 5 min per `pokeHandle`
+- Rate limit: 1 poke per 5 min per `pokeHandle`, and a process-wide burst of 10
+  refilling at 1/s (`429` + `Retry-After` before ntfy or APNs)
 - On APNs `410`: delete mapping (future pokes fall through to ntfy)
 - Logs: poke count and error rates only — no handle, no IP, no timestamp in persistent logs
 

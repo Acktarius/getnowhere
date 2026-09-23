@@ -27,7 +27,7 @@ A checked box means that the module has been reviewed at least once.
 Use this exact status format before the first review:
 
 ```md
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: d850dbc — reviewer: GPT-5.3 Codex (Cursor Agent)
 ```
 
 After the first review, regardless of whether findings exist:
@@ -1416,17 +1416,65 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm proxy-trust configuration is explicit.
 - Confirm container runtime configuration does not expose secrets or unnecessary ports.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-23 — commit: d850dbc — reviewer: GPT-5.3 Codex (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-025` — severity: medium
+  - Date found: 2026-09-23
+  - Commit reviewed: d850dbc
+  - Affected files: `poke-gateway/src/routes.ts`, `poke-gateway/src/rateLimit.ts`
+  - Evidence: `POST /poke` accepts any 14-char handle and, on DB miss, posts to `\${NTFY_BASE_URL}/gnh-\${to}` using the server-held `NTFY_PUBLISH_TOKEN` (`routes.ts`). Abuse control is only `consumePokeSlot(to)` (in-memory per-handle, 5-minute window) so callers can bypass by rotating handles (`rateLimit.ts`).
+  - Description: The gateway exposes an unauthenticated ntfy publish path for arbitrary opaque handles, with no source-auth and no cross-handle/global abuse limiter.
+  - Impact: Internet callers can generate high-cardinality `/poke` requests and force gateway→ntfy publishes despite per-handle limits, creating avoidable load/cost pressure and wake-channel abuse.
+  - Recommended remediation: Add source-scoped + global rate limits (proxy-aware IP keying plus process bucket), and gate DB-miss ntfy fallback behind stricter abuse controls or authenticated caller policy.
+  - Status: resolved
+  - Verification: `consumeGlobalPokeSlot` (burst 10, refill 1/s) runs before `consumePokeSlot`. A miss returns `429` with `Retry-After: 1` and does not call ntfy, APNs, or the per-handle map. ntfy `fetch` uses `AbortSignal.timeout(5000)`. Per-handle `429` sends `Retry-After: 300`. Tests: `poke-gateway/test/rateLimit.test.ts`, `poke-gateway/test/routes.test.ts`. `X-Forwarded-For` is still not trusted; caller auth was not added (pokeHandle stays a bearer wake capability).
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — d850dbc — GPT-5.3 Codex (Cursor Agent)
+
+**Outcome:** Findings and verification gaps recorded
+
+**Posture evaluation (summary):**
+
+- Separation of concerns: gateway wake payloads remain generic (`wake` / fixed APNs alert) and do not carry chat content.
+- Least knowledge: persistence stays limited to `pokeHandle -> token/platform/env/updatedAt`; no room/contact identity is stored in this module.
+- Explicit trust boundaries: public `/poke` has no caller authentication before consuming server-held publish credentials.
+- Failure paths: APNs failures are coded and non-secret; ntfy fallback returns `202` and best-effort logs, which is privacy-safe but can mask abuse pressure.
+- Privacy claims: docs correctly describe generic wake semantics, but current abuse controls rely primarily on handle entropy and per-handle throttling.
+
+**Checklist highlights:**
+
+- Event chain reviewed end-to-end: app `sendPoke` -> gateway `/poke` -> DB hit APNs or DB miss ntfy.
+- Trust boundary/authn/authz: strict JSON schema + handle regex present; no source authentication policy for `/poke`.
+- Secrets/capabilities: `NTFY_PUBLISH_TOKEN` and APNs key remain server-side; structured logs omit token/handle/ip.
+- Abuse controls: only per-handle in-memory limiter; no cross-handle, per-source, or distributed limiter.
+- Container/release posture: compose binds localhost behind reverse proxy; runtime user is non-root; secrets are env/mounted key file.
+- Tests: `routes.test.ts` covers schema, fallback, APNs path, and per-handle 429; no adversarial high-cardinality abuse tests.
+
+**Findings this review:** `SEC-2026-025`
+
+**Verification gaps:**
+
+- No automated adversarial test for high-cardinality `/poke` spray (many unique handles from one source) or limiter reset after restart.
+- No proxy-trust + source identity policy is implemented/tested for rate limiting (`X-Forwarded-For` handling).
+- No ntfy timeout/abort control was validated in DB-miss fallback under upstream slowness.
+- No caller authn/authz binds `/poke` requests to intended Alice↔Bob relationship scope.
+
+#### 2026-09-23 — remediation — GPT-5.3 Codex (Cursor Agent)
+
+**Outcome:** SEC-2026-025 resolved
+
+- Added a process-wide poke bucket (burst 10, refill 1/s) checked before the per-handle map.
+- Global misses return `429` and `Retry-After: 1` without ntfy, APNs, or a new map entry.
+- ntfy publish aborts after 5 seconds.
+- Per-handle misses now send `Retry-After: 300`.
+- Documented in `docs/features/peer-wake-notification.md` and `poke-gateway/README.md`.
+- Left `X-Forwarded-For` untrusted. Caller authentication stays out of scope: the poke handle is the bearer wake capability.
 
 ---
 
@@ -1656,6 +1704,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-23 | MOD-010 | d850dbc | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-025 |
 | 2026-09-23 | MOD-009 | 3b1e5d2 | Grok 4.6 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-023, SEC-2026-024 |
 | 2026-09-23 | MOD-008 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-022 |
 | 2026-09-23 | MOD-007 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-021 (resolved) |
