@@ -32,18 +32,21 @@ cp .env.example .env
 | Variable | Required | Purpose |
 |---|---|---|
 | `VITE_HOLEPUNCH_WS_URL` | local P2P only | WS bridge address (`ws://127.0.0.1:7901`) |
-| `VITE_NTFY_READ_TOKEN` | F-Droid push wake | Bearer token for SSE subscribe on `ntfy.getnowhere.im` |
 | `VITE_POKE_GATEWAY_URL` | F-Droid / iOS poke | Public origin of `poke-gateway/` (see that folder’s README) |
 
-**ntfy token setup (F-Droid / Android push wake):**
-Your ntfy server should run with `auth-default-access: deny-all` and two scoped users:
-- `gnh-publisher` → `write-only` on `gnh-*` (used by `poke-gateway`)
-- `gnh-reader` → `read-only` on `gnh-*` (token goes in `VITE_NTFY_READ_TOKEN`)
+**ntfy setup (F-Droid / Android push wake):**
+Your ntfy server runs with `auth-default-access: deny-all`, one write user, and
+anonymous read on the wake namespace:
 
-Generate tokens with `sudo ntfy token add gnh-reader` on your VPS.
-See `poke-gateway/.env.example` for the server-side `NTFY_PUBLISH_TOKEN`.
+```bash
+ntfy access gnh-publisher 'gnh-*' write-only   # poke-gateway publishes
+ntfy access everyone      'gnh-*' read-only    # app subscribes, no token
+```
 
-**TODO (production cutover):** Pre-production `mobile:sync-ui` bakes `VITE_NTFY_READ_TOKEN` into `native-wrapper/assets/ui` (and that JS may have been committed). Before store / public F-Droid: rotate `gnh-reader` on ntfy, update root `.env` and GitHub secret `VITE_NTFY_READ_TOKEN`, rebuild so old baked copies stop working.
+The app ships **no ntfy credential**. A wake topic is `gnh-<pokeId>`, where
+`pokeId` is 10 random bytes delivered only inside the encrypted L1 payload — the
+unguessable topic name is the read capability. See `poke-gateway/.env.example`
+for the server-side `NTFY_PUBLISH_TOKEN` (never in the app).
 Full setup: `docs/features/peer-wake-notification.md`.
 
 ## Test scenarios

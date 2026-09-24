@@ -53,6 +53,7 @@
       "./plugins/withGnhSecurity.js",
       "./plugins/withGnhBackgroundSync.js",
       "./plugins/withGnhNotifications.js",
+      "./plugins/withGnhNtfyWake.js",
       [
         "expo-notifications",
         {

@@ -222,7 +222,7 @@ it in the L1 `ph` field exactly like iOS — no gateway registration needed. The
 subscribes to:
 
 ```
-https://ntfy.getnowhere.im/gnh-<ownPokeId>/json   (OkHttp SSE, persistent)
+https://ntfy.getnowhere.im/gnh-<ownPokeId>/json   (OkHttp SSE, persistent, no Authorization header)
 ```
 
 When Alice pokes Bob's gateway handle and no APNs token is found (DB miss), the gateway
@@ -245,6 +245,7 @@ revoke, `roomTtl` expiry, or invite expiry. A new room with the same partner gen
 |---|---|
 | **Apple (APNs)** | our bundle ID, device token, push timestamp — not room, not sender, not message content |
 | **ntfy server** | topic `gnh-<pokeHandle>` (opaque), push timestamp — not room, not sender, not message content |
+| **Anyone who learns a `pokeHandle`** | wake timing on that one topic (`gnh-*` is anonymous read-only) — not room, not sender, not message content |
 | **Our gateway** | `pokeHandle → token` (iOS only), Alice's IP on poke request, poke timestamp and frequency — not room, not sender, not message |
 | **Alice (sender)** | Bob's opaque `pokeHandle` only — not his OS, not his platform, not his token |
 | **Chain observers** | same as today — L1′ body encrypted by Conceal MESSAGE (ChaCha + DH) |
@@ -254,6 +255,15 @@ If a passive observer can watch both the public blockchain mempool and the gatew
 could correlate a chain transaction timestamp with a poke timestamp and associate an IP with the
 transaction. This is a real, acknowledged metadata risk. It is the same trade-off that Session
 and SimpleX have accepted at the notification-server level.
+
+**Wake-topic read capability:** `gnh-*` is anonymous read-only on the ntfy server,
+so the 10-byte random `pokeHandle` in the topic name *is* the read capability
+(`SEC-2026-031`). There is no enumeration API, and a `pokeHandle` travels only
+inside the encrypted L1 payload. Anyone who does learn one — including a former
+room member — can observe wake *timing* on that topic until the room rotates it
+(see § Forget-on-destroy). The payload is the literal `wake`, so no content or
+room identity leaks. Operators should keep the ntfy message cache short and avoid
+logging topic names.
 
 Mitigations:
 - The gateway must keep minimal logs (no poke→room linkage, short retention)
@@ -430,9 +440,11 @@ Toggles adjacent to the Notifications master switch (`SettingsScreen.tsx`):
 
 ## 12. Open questions / future
 
-- **TODO (production cutover):** Rotate ntfy `gnh-reader` / `VITE_NTFY_READ_TOKEN`
-  (local `.env`, GitHub secret, then rebuild) before public store or F-Droid.
-  Pre-production `assets/ui` JS may already contain the test token. See root `README.md`.
+- **Wake-topic read model (resolved, `SEC-2026-031`):** the app ships no ntfy
+  credential. Server-side grant is `ntfy access everyone 'gnh-*' read-only`;
+  publishing stays on the gateway's `NTFY_PUBLISH_TOKEN`. Any shared read bearer
+  compiled into a build is public by definition, and ntfy tokens are user-scoped
+  (not per-topic), so per-install tokens would carry the same ACL.
 - **Multi-device:** current design is one pokeHandle per room per peer. If a user has multiple
   devices, only the device used to accept the invite gets poked. Acceptable for v1.
 - **Protocol version bump:** adding `ph` to the slim-pack body is a minor protocol extension.

@@ -1792,7 +1792,7 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
   - Verification: `desktop-linux` / `desktop-windows` now set `permissions: contents: read`. AppImage step downloads linuxdeploy `1-alpha-20250213-2` and plugin `1-alpha-20250213-1`, then `sha256sum -c` against committed hashes. `prepare-sidecar.mjs` verifies the Node archive against official `SHASUMS256.txt` before extract. Tests: `desktop-electron/test/node-archive-integrity.test.mjs`.
   - Residual: linuxdeploy does not publish a vendor checksum file; pins are hashes of the tagged GitHub assets. Node check uses `SHASUMS256.txt` from the same `nodejs.org` host (no GPG of `SHASUMS256.txt.sig`).
 
-- [ ] `SEC-2026-031` — severity: medium
+- [x] `SEC-2026-031` — resolved
   - Date found: 2026-09-24
   - Commit reviewed: ae05da2
   - Affected files: `.github/workflows/build-signed-apk.yml`, `src/lib/mobile/ntfyWakeBridge.ts`, `src/vite-env.d.ts`
@@ -1800,9 +1800,13 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
   - Description: A shared ntfy read bearer is injected as a Vite public env var and compiled into the client bundle
   - Impact: Anyone who unpacks a release APK holds the shared read credential for `gnh-*` wake topics they can name; revoking it requires a new build for every install
   - Recommended remediation: Do not ship one shared read bearer via `VITE_*`; use a per-install wake credential, or topics that do not depend on a secret compiled into the app
-  - Status: open
+  - Resolution date: 2026-09-24
+  - Fix commit: pending
+  - Verification: `VITE_NTFY_READ_TOKEN` removed from `ntfyWakeBridge.ts`, `vite-env.d.ts`, `.env.example`, and the APK workflow. `subscribeRoom(roomId, topic)` no longer takes a token; `handleNtfyWakeWebViewMessage` passes `""`, and `GnhNtfyWakeModule.kt` already guards `if (token.isNotBlank())`, so no `Authorization` header is sent (no native change needed). Server-side grant becomes `ntfy access everyone 'gnh-*' read-only`; publishing stays on the gateway's `NTFY_PUBLISH_TOKEN`. Tests: `tests/services/poke/ntfy-wake-bridge.test.ts` (no `token` field, no `Bearer`/`tk_` in any emitted command). Full suite 768/768, `tsc --noEmit` clean, Biome clean.
+  - Rationale: Perplexity confirmed ntfy tokens are **user-scoped, not per-topic**, so per-install tokens would carry an identical `gnh-*` ACL and buy nothing; token creation is CLI-only (no HTTP API). Removing the bearer *narrows* exposure — previously an APK extractor could read the whole `gnh-*` namespace without knowing any `pokeId`; now each 80-bit `pokeId` must be known individually. ntfy exposes no topic-enumeration API, and `pokeId` travels only inside the sealed L1 payload. `pokeId` width left at 80 bits (accepted; widening would change the L1 `ph` wire format).
+  - Residual: Capability-URL model — anyone who learns a `pokeId` (including a former room member) can observe wake **timing** on that topic until room destroy rotates it. Payload is the literal `wake`, so no content or room identity leaks. Operator follow-ups (not repo code): short ntfy message-cache retention, minimal topic-name logging, and reverse-proxy limits on connections / topic creation.
 
-- [ ] `SEC-2026-032` — severity: low
+- [x] `SEC-2026-032` — resolved
   - Date found: 2026-09-24
   - Commit reviewed: ae05da2
   - Affected files: `.github/workflows/build-signed-apk.yml`
@@ -1810,12 +1814,29 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
   - Description: The release keystore is handled in a job whose token can write repository contents, and the keystore passwords are placed on the `apksigner` command line
   - Impact: A compromised step in that job can use the write token and can observe keystore passwords via process arguments while the keystore file exists
   - Recommended remediation: Split a `contents: read` build job from a `contents: write` release job; pass keystore passwords with `apksigner` `env:` or `file:`
-  - Status: open
+  - Status: resolved 2026-09-24 (both halves)
+  - Remediation: (1) Passwords now use `--ks-pass env:ANDROID_KEYSTORE_PASSWORD` / `--key-pass env:ANDROID_KEY_PASSWORD`, keeping plaintext out of the process argument vector (`/proc/<pid>/cmdline`); the variables were already scoped to that one step's `env:`, so no new exposure. (2) Split into two jobs in the same workflow file: `build` (`contents: read`) does prebuild → build → keystore decode → sign → upload artifact; `release` (`contents: write`, `needs: build`) only downloads the artifact and creates the release. The keystore and its passwords never coexist with a write-capable token.
+  - Verification: YAML parses; `grep` confirms no `pass:$` specifier remains under `.github/workflows/`; job dump confirms `build.permissions.contents=read` and `release.permissions.contents=write`; the release job references neither `steps.ver` nor `env.SIGNED_APK` (both build-job-scoped), using `needs.build.outputs.file_version` and `files: dist/*` instead.
+  - Residual: Not exercised by a real signed release run — the split is only exercised on the next `*-f-droid` tag, and a mistake would surface as a failed release job rather than a silent fallback. The signed APK now transits the Actions artifact store, readable by anyone with repo read access before the release publishes (accepted: it is a public release artifact).
+
+- [x] `SEC-2026-033` — resolved
+  - Date found: 2026-09-24
+  - Commit reviewed: ae05da2
+  - Affected files: `native-wrapper/app.json`, `native-wrapper/plugins/withGnhNtfyWake.js` (new), `native-wrapper/android-native/GnhNtfyWake/**` (new)
+  - Evidence: Discovered while remediating `SEC-2026-031`. `native-wrapper/android/app/src/main/java/im/getnowhere/app/ntfywake/` (`GnhNtfyWakeModule.kt`, `GnhNtfyWakePackage.kt`, `NtfyWakeHandler.kt`) plus `app/src/test/.../GnhNtfyWakeModuleTest.kt`, the `add(...GnhNtfyWakePackage())` line in `MainApplication.kt`, and the `okhttp-sse` gradle dependency existed **only** in the generated `android/` tree, which is gitignored (`.gitignore` `native-wrapper/android/`). `git ls-files` returned no match and `git log` no history. No config plugin or script recreated them, unlike `GnhSecurity` / `GnhBackgroundSync` / `GnhNotifications`, which keep Kotlin in `native-wrapper/android-native/` and inject via `plugins/withGnh*.js`.
+  - Description: The Android ntfy peer-wake module was unversioned build input. `build-signed-apk.yml` runs `expo prebuild --platform android --clean`, which clears and regenerates `android/`, so the module was silently absent from every CI-built APK. The JS bridge degrades quietly (`handleNtfyWakeWebViewMessage` returns `false` when `NativeModules.GnhNtfyWake` is undefined), so no build or runtime error surfaced. A local `prebuild --clean` would also have destroyed the only copy.
+  - Impact: F-Droid peer wake did not work in released APKs while docs claimed it did (unverifiable shipped behavior, and a privacy-relevant feature claim exceeding implementation); the source was one command away from unrecoverable loss.
+  - Recommended remediation: Move the Kotlin to `native-wrapper/android-native/GnhNtfyWake/` and add a config plugin that copies sources, registers the package, and adds the gradle dependency.
+  - Resolution date: 2026-09-24
+  - Fix commit: pending
+  - Verification: Sources moved to `native-wrapper/android-native/GnhNtfyWake/` (now tracked). New `plugins/withGnhNtfyWake.js` copies main + test Kotlin, injects `add(im.getnowhere.app.ntfywake.GnhNtfyWakePackage())` into `MainApplication.kt`, and adds `com.squareup.okhttp3:okhttp-sse:4.12.0`; registered in `app.json` plugins. Proved by running `npx expo prebuild --platform android --clean` (which cleared `android/`) and confirming all four `.kt` files regenerated **byte-identical** to a pre-prebuild backup (`diff -r`), the `MainApplication.kt` registration present at line 27, and the gradle dep at line 164. The other three modules' registrations and deps remain intact.
+  - Residual: Not yet validated by a full CI `assembleRelease` or an on-device F-Droid wake test. `GnhNtfyWakeModuleTest.kt` covers `NtfyWakeHandler` only (dedup/body filtering), not SSE reconnect or `EventSource` wiring.
 
 ### Verification gaps
 
 - **Default `GITHUB_TOKEN` scope** for `release-electron-sidecar.yml` build jobs is now explicit: `desktop-linux` and `desktop-windows` set `contents: read`. Only the `release` job sets `contents: write`.
-- **Committed UI bundle token.** `native-wrapper/assets/ui` is not gitignored. A search of that tree found no `ntfy` or `Bearer` string. README still warns a prior `mobile:sync-ui` may have baked `VITE_NTFY_READ_TOKEN` into a committed bundle. History was not exhaustively searched.
+- **Committed UI bundle token.** `native-wrapper/assets/ui` is not gitignored. A search of that tree found no `ntfy` or `Bearer` string. A prior `mobile:sync-ui` may have baked `VITE_NTFY_READ_TOKEN` into a committed bundle; history was not exhaustively searched. After `SEC-2026-031` the app no longer reads that variable, so any baked copy is inert once the ntfy `gnh-reader` user is deleted — deleting that user is an operator step, not repo code.
+- **Android ntfy subscriber was untracked** — filed and resolved as `SEC-2026-033` during this session. Remaining unknown: no other hand-edit to the generated `native-wrapper/android/` or `native-wrapper/ios/` trees has been audited for the same class of drift. A systematic diff of a clean `prebuild` against the working tree would confirm whether anything else is unversioned build input.
 - **`npm audit` results** for the root and nested lockfiles were not executed in this review.
 - **EAS signing credentials** live in Expo, outside this repository. `native-wrapper/eas.json` profiles were read; the stored credentials and their scopes were not.
 - **Desktop code signing** is absent from the Electron workflow. Docs describe draft GitHub releases of unsigned `.deb`, `.zip`, and `.AppImage` artifacts. That matches the workflow.
@@ -1855,6 +1876,37 @@ Checked manifests and lockfiles (root, `desktop-electron/`, `native-wrapper/`,
 - `release-electron-sidecar.yml`: `contents: read` on both desktop build jobs; linuxdeploy + plugin pinned to tagged releases and checked with `sha256sum -c`.
 - `prepare-sidecar.mjs`: Node archive verified against official `SHASUMS256.txt` before extract.
 - Tests: `desktop-electron/test/node-archive-integrity.test.mjs`.
+
+#### 2026-09-24 — remediation — Claude Opus 5 via Cursor Agent
+
+**Outcome:** SEC-2026-031 resolved
+
+- Removed `VITE_NTFY_READ_TOKEN` from the client bundle, build workflow, `.env.example`, and type declarations. `subscribeRoom` no longer accepts a token; no `Authorization` header is sent for wake SSE.
+- Wake read access moves to `ntfy access everyone 'gnh-*' read-only` (operator step). The 10-byte random `pokeId` in `gnh-<pokeId>` is the read capability; publishing stays on the gateway's `NTFY_PUBLISH_TOKEN`.
+- Perplexity consulted before implementing: ntfy tokens are user-scoped rather than per-topic (per-install tokens would share one ACL), and no topic-enumeration API exists. Removing the shared bearer narrows read scope from the whole namespace to one topic per known `pokeId`.
+- Docs updated: `README.md`, `poke-gateway/README.md`, `docs/features/peer-wake-notification.md` (privacy table + capability section), `docs/builds/expo-eas-android-build.md`, `docs/builds/expo-eas-ios-build.md`. Stale "rotate the token before cutover" TODOs replaced — rotation was never a real revocation path; `pokeId` rotation on room destroy is.
+- Tests: `tests/services/poke/ntfy-wake-bridge.test.ts`. Full suite 768/768; `tsc --noEmit` and Biome clean.
+- Operator runbook added to `poke-gateway/README.md` (§ ntfy server maintenance): `ntfy access everyone 'gnh-*' read-only`, delete the `gnh-reader` user, keep `auth-default-access: deny-all`, plus cache/log/rate-limit hardening. **Wake stays broken until step 1 runs** (SSE returns `403`).
+
+#### 2026-09-24 — remediation — Claude Opus 5 via Cursor Agent
+
+**Outcome:** SEC-2026-033 recorded and resolved
+
+Found while remediating `SEC-2026-031`: the Android ntfy wake module existed only
+in the gitignored generated `android/` tree, so `expo prebuild --clean` in CI
+dropped it from every released APK.
+
+- Kotlin moved to tracked `native-wrapper/android-native/GnhNtfyWake/` (module, package, handler, test).
+- New `plugins/withGnhNtfyWake.js` follows the `withGnhBackgroundSync.js` pattern: copy sources, register the package in `MainApplication.kt`, add the `okhttp-sse` gradle dependency. Registered in `app.json`.
+- Verified by a real `expo prebuild --platform android --clean`: all four files regenerated byte-identical to a pre-prebuild backup, registration and gradle dep present, other three modules unaffected.
+
+#### 2026-09-24 — remediation — Claude Opus 5 via Cursor Agent
+
+**Outcome:** SEC-2026-032 resolved
+
+- `build-signed-apk.yml` sign step now uses `--ks-pass env:ANDROID_KEYSTORE_PASSWORD` / `--key-pass env:ANDROID_KEY_PASSWORD` instead of `pass:$…`, keeping the plaintext out of the process argument vector.
+- Split into `build` (`contents: read`, through signing) and `release` (`contents: write`, `needs: build`) jobs in the same workflow file. Handoff reuses the existing `upload-artifact` step, now unconditional; the version crosses jobs via a job-level `outputs:` passthrough.
+- Both the password convention and the job boundary are documented in `docs/builds/expo-eas-android-build.md` so the split is not silently undone.
 
 ---
 
@@ -1936,6 +1988,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-24 | MOD-012 | ae05da2 | Claude Opus 5 (Cursor Agent) | Findings resolved | SEC-2026-031 (resolved), SEC-2026-033 (new/resolved), SEC-2026-032 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Grok 4.6 (Cursor Agent) | Finding resolved | SEC-2026-030 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-029, SEC-2026-030, SEC-2026-031, SEC-2026-032 |
 | 2026-09-24 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Finding resolved | SEC-2026-028 (resolved) |

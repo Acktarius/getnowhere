@@ -4,8 +4,6 @@ interface ImportMetaEnv {
   readonly VITE_HOLEPUNCH_WS_URL?: string;
   /** Base URL of the peer-wake poke gateway (e.g. https://poke.example.com). @see docs/features/peer-wake-notification.md */
   readonly VITE_POKE_GATEWAY_URL?: string;
-  /** Optional ntfy read token for gnh-* topics. Leave empty if topics are publicly readable. */
-  readonly VITE_NTFY_READ_TOKEN?: string;
 }
 
 interface ImportMeta {

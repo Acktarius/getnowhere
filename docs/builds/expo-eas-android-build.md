@@ -73,6 +73,25 @@ Edit Kotlin in `native-wrapper/android-native/GnhSecurity/`; Swift in
 `native-wrapper/ios-native/GnhSecurity/`. Both are injected by
 `plugins/withGnhSecurity.js`.
 
+**Never hand-edit the generated `android/` tree.** It is gitignored, and
+`expo prebuild --clean` (which CI runs on every APK build) clears it — anything
+added there is lost and silently missing from released APKs. Every native module
+keeps its Kotlin under `android-native/<Module>/` plus a config plugin that
+copies sources, registers the package in `MainApplication.kt`, and adds its
+gradle dependencies:
+
+| Module | Sources | Plugin |
+|---|---|---|
+| `GnhSecurity` | `android-native/GnhSecurity/` | `withGnhSecurity.js` |
+| `GnhBackgroundSync` | `android-native/GnhBackgroundSync/` | `withGnhBackgroundSync.js` |
+| `GnhNotifications` | `android-native/GnhNotifications/` | `withGnhNotifications.js` |
+| `GnhNtfyWake` | `android-native/GnhNtfyWake/` | `withGnhNtfyWake.js` |
+
+To verify a module survives a release build: run
+`npx expo prebuild --platform android --clean`, then confirm the `.kt` files
+reappear under `android/app/src/{main,test}/java/im/getnowhere/app/<pkg>/` and
+that `MainApplication.kt` still registers the package (`SEC-2026-033`).
+
 Keep Metro running when opening a debug build (`npx expo start --clear` in
 `native-wrapper/`). A black screen after splash with no `ReactNativeJS` logcat
 lines usually means the dev client cannot reach Metro on your LAN.
@@ -395,19 +414,31 @@ What it does:
 7. Decodes the release keystore from GitHub Secrets
    (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
    `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`).
-8. Signs the APK with `apksigner` and verifies the signature (keeps
+8. Signs the APK with `apksigner` and verifies the signature — passwords are
+   passed as `--ks-pass env:NAME` / `--key-pass env:NAME`, never `pass:$VAR`,
+   which would put the plaintext in `/proc/<pid>/cmdline` (`SEC-2026-032`). Keeps
    `GetNowHere-v{version}-b{buildVersionAndroid}-java{major}.apk` from the
    unsigned build — names come from the `version` file, not the git tag).
-9. Attaches the signed APK + `.sha256` to the GitHub Release (tag builds) or
-   uploads Actions artifact `getnowhere-signed-apk-v{version}` (manual dispatch).
+9. Uploads the signed APK + `.sha256` as Actions artifact
+   `getnowhere-signed-apk-v{version}` (always, not just manual dispatch).
+10. A **separate `release` job** downloads that artifact and attaches it to the
+    GitHub Release (tag builds only).
+
+Steps 1–9 run in the `build` job under `permissions: contents: read`; only the
+`release` job holds `contents: write`, and it never sees the keystore or its
+passwords (`SEC-2026-032`). Keep that boundary when editing the workflow: the
+signing job must not gain write scope, and the release job must not gain signing
+steps. Consequence of the split — the signed APK transits the Actions artifact
+store, so anyone with repo read access can fetch it before the release publishes.
 
 The unsigned build step is identical to local `npm run mobile:android:release`.
 Signing is injected **only** in CI from secrets; the repo never contains a
 release keystore.
 
-**TODO (production cutover):** Rotate GitHub secret `VITE_NTFY_READ_TOKEN` (and
-the ntfy `gnh-reader` token) before the first public F-Droid/store APK. Test
-builds bake that value into the WebView JS; see root `README.md`.
+The APK carries **no ntfy read credential** (`SEC-2026-031`). Wake topics rely on
+the unguessable `gnh-<pokeId>` name plus `ntfy access everyone 'gnh-*' read-only`
+on the server. Revocation is `pokeId` rotation on room destroy, not token
+rotation. See root `README.md` and `docs/features/peer-wake-notification.md`.
 
 ### F-Droid de-Google cleanup
 

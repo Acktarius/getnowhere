@@ -8,7 +8,7 @@ Phones run the Get NowHere app only. You run this on a VPS (same host as ntfy is
 Alice's phone  --POST /poke-->  poke-gateway  --if iOS token in SQLite-->  Apple APNs
                                       |
                                       +--if no row (F-Droid)-->  ntfy.getnowhere.im  (publish token)
-Bob's F-Droid phone  <--- SSE subscribe ---  ntfy  (read token in the APK)
+Bob's F-Droid phone  <--- SSE subscribe ---  ntfy  (no token; topic name is the capability)
 ```
 
 **ntfy** delivers the wake to Android. **poke-gateway** is the front door the app calls, holds the ntfy **publish** token (never in the APK), and talks to APNs for iOS.
@@ -17,7 +17,7 @@ Design: `docs/features/peer-wake-notification.md`.
 
 ## You need both
 
-1. **ntfy** Docker (already on the VPS): topics `gnh-*`, `gnh-publisher` write-only, `gnh-reader` read-only.
+1. **ntfy** Docker (already on the VPS): topics `gnh-*`, `gnh-publisher` write-only, `everyone` read-only.
 2. **This service**: `POST /poke` → APNs or ntfy POST.
 
 F-Droid wake fails if poke-gateway is missing: the app never publishes to ntfy itself.
@@ -109,13 +109,47 @@ The Vite UI calls this base URL. If unset, `sendPoke` is a no-op.
 | GitHub Actions APK | Secret `VITE_POKE_GATEWAY_URL` on the `mobile:android:release` step |
 | iOS / EAS | Bake via `npm run mobile:sync-ui` **before** `eas build` (same `VITE_*` in root `.env`) |
 
-`VITE_NTFY_READ_TOKEN` stays in the **app** build (SSE). `NTFY_PUBLISH_TOKEN`
-and `APNS_*` stay **only** in poke-gateway `.env` (VPS). Do not upload the
-AuthKey to EAS.
+The app ships **no ntfy credential**. `NTFY_PUBLISH_TOKEN` and `APNS_*` stay
+**only** in poke-gateway `.env` (VPS). Do not upload the AuthKey to EAS.
 
-**TODO (production cutover):** Rotate `VITE_NTFY_READ_TOKEN` (ntfy `gnh-reader` +
-GitHub secret + local `.env`) before public store/F-Droid. Test-phase syncs can
-leave the token in committed `native-wrapper/assets/ui` JS. See root `README.md`.
+## ntfy server maintenance (required for `SEC-2026-031`)
+
+The app no longer sends an `Authorization` header when subscribing. Until the
+server grants anonymous read on the wake namespace, **F-Droid wake stays broken**
+(SSE returns `403`). Run on the VPS:
+
+```bash
+# 1. Anonymous read on the wake namespace (replaces the gnh-reader token)
+sudo ntfy access everyone 'gnh-*' read-only
+
+# 2. Publishing stays authenticated (unchanged)
+sudo ntfy access gnh-publisher 'gnh-*' write-only
+
+# 3. Retire the old shared read user so any token baked into an older
+#    build stops working
+sudo ntfy user del gnh-reader
+
+# 4. Confirm
+sudo ntfy access
+```
+
+`server.yml` must keep `auth-default-access: deny-all` — step 1 grants read on
+`gnh-*` only, and every other topic stays denied.
+
+**Hardening that now matters more**, because the topic name is the only read
+capability:
+
+| Setting | Why |
+|---|---|
+| `cache-duration` short (e.g. `10m`) | Limits how much wake history a leaked `pokeId` replays |
+| Access/debug logs without topic names | A logged topic name is a logged capability |
+| Reverse-proxy connection + rate limits | Anonymous read allows unauthenticated SSE connections |
+| `visitor-subscription-limit`, topic-creation limits | Blunts topic squatting and connection exhaustion |
+
+Residual risk: anyone who learns a `pokeId` can observe wake **timing** on that
+topic until the room rotates it. The payload is the literal `wake`, so no content
+or room identity leaks. Revocation is `pokeId` rotation on room destroy, not
+token rotation.
 
 ## Local run (no Docker)
 

@@ -41,7 +41,7 @@ node native-wrapper/scripts/apply-expo-version.mjs
 - Expo account + EAS CLI (`npm install -g eas-cli` then `eas login`)
 - Paid Apple Developer team that owns `im.getnowhere.app`
 - App Store Connect app for that bundle ID (needed for TestFlight submit)
-- Root `.env` with `VITE_POKE_GATEWAY_URL` and `VITE_NTFY_READ_TOKEN` before UI sync
+- Root `.env` with `VITE_POKE_GATEWAY_URL` before UI sync
 - For peer wake on device: poke-gateway on the VPS with APNs AuthKey (below)
 
 ## Build profiles (`eas.json`)
@@ -69,7 +69,7 @@ The APNs AuthKey (`.p8`) is **never** sent to EAS — only poke-gateway on the V
 uses it.
 
 ```bash
-# From repo root — requires root .env (VITE_POKE_GATEWAY_URL, VITE_NTFY_READ_TOKEN)
+# From repo root — requires root .env (VITE_POKE_GATEWAY_URL)
 npm run mobile:sync-ui
 
 cd native-wrapper
@@ -132,9 +132,8 @@ Optional later:
 npx eas build --platform ios --profile production --auto-submit
 ```
 
-**TODO (production cutover):** Rotate `VITE_NTFY_READ_TOKEN` before the first
-App Store / `production` EAS build (token may already be in git history of
-`native-wrapper/assets/ui`). See root `README.md`.
+No ntfy credential is baked into the bundle (`SEC-2026-031`). iOS wakes via APNs
+through poke-gateway; the AuthKey never reaches EAS. See root `README.md`.
 
 ## Ad hoc install (no TestFlight)
 
