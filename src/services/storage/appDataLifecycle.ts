@@ -25,6 +25,8 @@ export const WALLET_TIED_KEYS = [
   "gnh.roomCatalog",
   "gnh.roomSessions",
   "gnh.revokedRooms",
+  "gnh.ownPokeHandle",
+  "gnh.notificationEvents.v1",
 ] as const;
 
 /** Adapter keys cleared only by full reset. */
@@ -97,12 +99,24 @@ function goWelcomeAndReload(): void {
 }
 
 /**
+ * Best-effort revoke of the poke-gateway wake handle so former contacts cannot
+ * keep waking this device after wallet identity is wiped. @see SEC-2026-026
+ */
+async function revokeOwnPokeHandle(): Promise<void> {
+  const { deletePokeHandle } = await import(
+    "@/services/poke/pokeGatewayClient"
+  );
+  await deletePokeHandle().catch(() => undefined);
+}
+
+/**
  * Remove wallet-tied persistence, keep app prefs, clear RAM, then reload to welcome.
  * @see docs/architecture/web-vs-wrapper.md
  */
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
   asMobileNative()?.sealWalletWrites();
+  await revokeOwnPokeHandle();
   await clearAllMobileBiometricEnrollments();
   const settings = useSettingsStore.getState();
   settings.setAppAccessBiometric(false);
@@ -123,6 +137,7 @@ export async function deleteWalletData(): Promise<void> {
 export async function resetAppData(): Promise<void> {
   await disconnect();
   asMobileNative()?.sealWalletWrites();
+  await revokeOwnPokeHandle();
   await clearAllMobileBiometricEnrollments();
   const mobile = asMobileNative();
   if (mobile) {

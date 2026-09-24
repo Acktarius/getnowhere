@@ -18,8 +18,13 @@ vi.mock("@/lib/auth/biometric-lifecycle", () => ({
   clearAllMobileBiometricEnrollments: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/services/poke/pokeGatewayClient", () => ({
+  deletePokeHandle: vi.fn(async () => undefined),
+}));
+
 import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
+import { deletePokeHandle } from "@/services/poke/pokeGatewayClient";
 import {
   APP_KEYS_INDEX_KEY,
   createMobileNativeStorageAdapter,
@@ -124,6 +129,8 @@ describe("app-data lifecycle", () => {
     useAuthStore.setState({ unlocked: true });
 
     vi.mocked(disconnect).mockClear();
+    vi.mocked(deletePokeHandle).mockClear();
+    vi.mocked(deletePokeHandle).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -156,6 +163,17 @@ describe("app-data lifecycle", () => {
     expect(useChatStore.getState().rooms).toEqual([]);
     expect(useAuthStore.getState().unlocked).toBe(false);
     expect(locationStub.hash).toBe("#/welcome");
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("deleteWalletData revokes the poke handle at the gateway before wiping keys (SEC-2026-026)", async () => {
+    await deleteWalletData();
+    expect(deletePokeHandle).toHaveBeenCalledTimes(1);
+  });
+
+  it("deleteWalletData still completes when the gateway revoke rejects", async () => {
+    vi.mocked(deletePokeHandle).mockRejectedValueOnce(new Error("offline"));
+    await expect(deleteWalletData()).resolves.toBeUndefined();
     expect(reloadSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -210,6 +228,11 @@ describe("app-data lifecycle", () => {
     expect(useWalletStore.getState().initialized).toBe(false);
     expect(locationStub.hash).toBe("#/welcome");
     expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("resetAppData revokes the poke handle at the gateway (SEC-2026-026)", async () => {
+    await resetAppData();
+    expect(deletePokeHandle).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -293,6 +316,8 @@ describe("app-data lifecycle on mobile native adapter", () => {
     });
     vi.mocked(disconnect).mockClear();
     vi.mocked(clearAllMobileBiometricEnrollments).mockClear();
+    vi.mocked(deletePokeHandle).mockClear();
+    vi.mocked(deletePokeHandle).mockResolvedValue(undefined);
   });
 
   afterEach(() => {

@@ -1433,6 +1433,17 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
   - Status: resolved
   - Verification: `consumeGlobalPokeSlot` (burst 10, refill 1/s) runs before `consumePokeSlot`. A miss returns `429` with `Retry-After: 1` and does not call ntfy, APNs, or the per-handle map. ntfy `fetch` uses `AbortSignal.timeout(5000)`. Per-handle `429` sends `Retry-After: 300`. Tests: `poke-gateway/test/rateLimit.test.ts`, `poke-gateway/test/routes.test.ts`. `X-Forwarded-For` is still not trusted; caller auth was not added (pokeHandle stays a bearer wake capability).
 
+- [ ] `SEC-2026-028` — severity: low
+  - Date found: 2026-09-23
+  - Commit reviewed: 0702861
+  - Affected files: `poke-gateway/src/db.ts`, `poke-gateway/src/routes.ts`
+  - Evidence: Discovered while remediating `SEC-2026-026` (MOD-011). `poke-gateway/src/db.ts` has no TTL, `updatedAt`-based expiry, or last-seen sweep on the `pokeHandle -> token/platform/env` mapping. `DELETE /register` (explicit client revoke) is the *only* way a row is ever removed, besides an APNs `410 Unregistered` response deleting it opportunistically.
+  - Description: A registered handle is wakeable **forever** unless the owning client successfully calls `DELETE /register`. If that call is lost (client offline during wallet-delete/app-reset, crash, network failure, or an app version predating the `SEC-2026-026` fix), the gateway row stays live with no other expiry mechanism as a backstop.
+  - Impact: A former contact who learned a now-abandoned handle can keep waking a device indefinitely when the client-side revoke did not land. Perplexity Ask (consulted during `SEC-2026-026` remediation) confirmed client-triggered explicit revoke alone is not sufficient defense-in-depth without a server-side expiry backstop.
+  - Recommended remediation: Add a `last-seen`/max-age column, refreshed on each successful `POST /register` upsert; reject or lazily delete handles past a defined max age (e.g. no re-registration for N days) when processing `/poke`. Keep the change additive — does not alter the wire schema or client contract.
+  - Status: open
+  - Verification: Not yet implemented — deferred pending a decision on gateway TTL policy (max-age window, whether to also require periodic client re-registration). Flagged for a future MOD-010 fix; no code changed in this pass.
+
 ### Review history
 
 #### 2026-09-23 — d850dbc — GPT-5.3 Codex (Cursor Agent)
@@ -1475,6 +1486,12 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Per-handle misses now send `Retry-After: 300`.
 - Documented in `docs/features/peer-wake-notification.md` and `poke-gateway/README.md`.
 - Left `X-Forwarded-For` untrusted. Caller authentication stays out of scope: the poke handle is the bearer wake capability.
+
+#### 2026-09-23 — incidental finding — GLM 5.2 (Cursor Agent)
+
+**Outcome:** SEC-2026-028 recorded (open)
+
+Discovered while remediating `SEC-2026-026` under MOD-011 (client-side poke-handle revoke on wallet delete): confirmed via direct inspection of `poke-gateway/src/db.ts` that the gateway has no TTL/expiry mechanism at all. Perplexity Ask flagged this as a residual gap even after the client-side fix (best-effort revoke can be lost). Recorded as a new open, low-severity finding for a future MOD-010 pass rather than fixed in this session — no gateway code changed.
 
 ---
 
@@ -1529,17 +1546,139 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Confirm backup and export flows are explicit and do not happen silently.
 - Confirm storage migration and error recovery do not duplicate or expose sensitive content.
 
-- [ ] Reviewed — no review recorded yet
-
-
+- [x] Reviewed — latest review: 2026-09-23 — commit: 0702861 — reviewer: GLM 5.2 (Cursor Agent)
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-026` — severity: medium
+  - Date found: 2026-09-23
+  - Commit reviewed: 0702861
+  - Affected files: `src/services/poke/pokeGatewayClient.ts`, `src/services/storage/appDataLifecycle.ts`
+  - Evidence: `pokeGatewayClient.ts` cached the user's own poke handle under `gnh.ownPokeHandle` via **direct `localStorage` access**, bypassing the `StorageAdapter` boundary declared in `StorageAdapter.ts` ("The app never touches `localStorage` directly"). `gnh.ownPokeHandle` was not listed in `WALLET_TIED_KEYS`, `APP_PREF_ADAPTER_KEYS`, `APP_PREF_LOCAL_SIDE_KEYS`, or `APP_PREF_SESSION_KEYS` in `appDataLifecycle.ts`. Neither `deleteWalletData()` nor `resetAppData()` called `deletePokeHandle()` (the gateway `DELETE /register` that revokes the handle server-side) or removed the local key.
+  - Description: The handle is a bearer wake capability — any peer who learned it can `POST { to: <handle> }` to the poke gateway to wake the device. The gateway has **no TTL/expiry at all** (confirmed in `poke-gateway/src/db.ts`); only an explicit `DELETE /register` removes a row. The iOS APNs handle is device-scoped (shared across every room's handshake), not room-scoped, so it outlives individual room destruction.
+  - Impact: After wallet deletion or full app reset, former contacts could keep waking the (now wallet-less) device indefinitely — the handle stayed registered at the gateway forever and the local cache also survived the wipe.
+  - Recommended remediation: Route `gnh.ownPokeHandle` through `getStorage()`, add it to `WALLET_TIED_KEYS`, and call `deletePokeHandle()` (gateway DELETE + local clear, best-effort) at the top of `deleteWalletData()` and `resetAppData()`.
+  - Status: resolved
+  - Verification: `getOwnPokeHandle`/`saveOwnPokeHandle`/`clearOwnPokeHandle` now go through `getStorage()`. `gnh.ownPokeHandle` added to `WALLET_TIED_KEYS`. New `revokeOwnPokeHandle()` helper calls `deletePokeHandle().catch(() => undefined)` before other key removal in both `deleteWalletData()` and `resetAppData()`. Tests: `tests/services/poke/poke-gateway-client.test.ts` (adapter routing, revoke-clears-key on success/failure/no-op), `tests/storage/app-data-lifecycle.test.ts` (revoke called on both wipe paths; wipe completes even when revoke rejects). Residual risk tracked separately as `SEC-2026-028` under MOD-010 (gateway still has no server-side TTL as defense-in-depth against a lost/offline revoke call).
+
+- [x] `SEC-2026-027` — severity: medium
+  - Date found: 2026-09-23
+  - Commit reviewed: 0702861
+  - Affected files: `src/services/notifications/notificationEventLedger.ts`, `src/services/storage/appDataLifecycle.ts`
+  - Evidence: `notificationEventLedger.ts` stored `gnh.notificationEvents.v1` as a map keyed by `eventId`, each entry carrying `contactId`/`roomId` routing metadata, with **no cleanup, expiry, retention, or GC function** — only insert. `gnh.notificationEvents.v1` was not in `WALLET_TIED_KEYS`, so `deleteWalletData()` did not clear it (only the mobile full-reset path incidentally cleared it via the adapter index).
+  - Description: The ledger grows unbounded for the lifetime of the install (storage leak + unbounded retention of who-messaged-whom metadata), and stale metadata for a deleted wallet's contacts/rooms survived wallet deletion.
+  - Impact: Unbounded local storage growth and privacy-relevant metadata retained past the point the associated wallet identity was deleted.
+  - Recommended remediation: Add a retention cap that evicts oldest entries on insert once over the cap, and add `gnh.notificationEvents.v1` to `WALLET_TIED_KEYS` so wallet deletion clears it.
+  - Status: resolved
+  - Verification: Ledger capped at 500 entries; on overflow, oldest **read** entries are evicted first (by `occurredAtMs`) — unread entries are never evicted, so the unread badge count cannot become silently wrong. `gnh.notificationEvents.v1` added to `WALLET_TIED_KEYS`. Tests: `tests/services/notification-ledger-cap.test.ts` (cap enforcement, unread-never-evicted, read-preferred eviction, mark-all-read then evict, late replay of an evicted event is a fresh insert — accepted tradeoff of bounded retention). Full suite (766 tests) and `tsc --noEmit` pass.
+
+### Verification gaps
+
+- **`revokedRoomsStore` (`gnh.revokedRooms`) is unbounded within a wallet's
+  lifetime.** This is by design (security: block re-seed from on-chain create
+  after leave/decline), and it is cleared on wallet deletion (it is in
+  `WALLET_TIED_KEYS`). No cap exists for a long-lived wallet that leaves many
+  rooms. Acceptable; recorded as a known growth characteristic.
+
+- **`AppAccessController` writes `gnh.appAccessBackgroundedAt` directly to
+  `localStorage`**, bypassing the `StorageAdapter` boundary. The value is a
+  non-secret timestamp, so the security impact is low, but it is an
+  architecture inconsistency with `StorageAdapter.ts` and the key is not in any
+  clear list (survives `resetAppData`, though harmlessly; the app reloads to
+  welcome). On mobile it lives in WebView `localStorage` (not durable, not
+  secure prefs). Low impact; recorded for consistency.
+
+- **`gnh.walletSession` (wallet password in iOS Keychain)** stores the wallet
+  encryption password on mobile so the user does not re-enter it after iOS
+  jetsam kills the WebView. This is a deliberate, documented tradeoff in
+  `docs/features/app-access-and-data-unlock.md`: gated by biometric app-access
+  unlock + `autoLockTimeoutSec`, cleared on Exit/lock/expiry via
+  `clearNativeWalletSession`, and never in `localStorage`. Verified
+  acceptable.
+
+- **Web/dev `localStorage` plaintext** for contacts, invites, room catalog,
+  revoked rooms, notification ledger, and settings is acceptable per
+  `docs/guidelines/security-postures.md` and `.cursor/rules/project-foundation.mdc`:
+  the browser + `holepunch-sidecar` path is dev/test only and does not ship.
+  Production ships Electron (`safeStorage`) and mobile (Keystore / Keychain).
+  Verified.
+
+- **Electron `safeStorage` for room sessions** (SEC-2026-017, resolved) is
+  intact: `desktop-electron/room-session-store.mjs` writes `room-sessions.bin`
+  via `safeStorage.encryptString`, with a `wallet` fallback when Linux has no
+  secret service. Browser debug still uses `localStorage` (documented dev-only).
+  `src/services/p2p/roomSessionStore.ts` strips `roomSessions` from exported
+  wallet blobs via `withoutRoomSessions`. Verified.
+
+- **Pending invite ECDH ephemerals** (SEC-2026-006, resolved) live in the
+  encrypted wallet blob under `pendingInviteEphemerals`, with one-time legacy
+  KV migration in `migrateLegacyPendingInitiatorKeys` that deletes the old
+  `gnh.pendingInitiatorKeys` key. `wipeWalletScopedLocalData` clears the legacy
+  key on identity change. Verified.
+
+- **Wallet blob envelope** (`GNHW` v1, AES-GCM, Android Keystore AES-256 with
+  `randomizedEncryptionRequired`, iOS Keychain) is documented in
+  `docs/storage/mobile-durable-storage.md`. Android Auto Backup and iOS iCloud
+  backup are excluded for the wallet file and secure prefs
+  (`native-wrapper/app.json` `allowBackup: false`;
+  `native-wrapper/ios-native/GnhSecurity/GnhWalletFile.swift` sets
+  `isExcludedFromBackup = true`). Verified.
+
+- **Wipe is logical, not forensic.** `docs/storage/mobile-durable-storage.md`
+  explicitly states delete/reset is app-level canonical-file removal, not
+  forensic erase, and does not remove OS snapshots or backups that already left
+  the device. Documented and acceptable.
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-23 — commit `0702861` — reviewer: GLM 5.2 via Cursor Agent
+
+Reviewed the local storage and persistence boundary against
+`docs/guidelines/security-postures.md` and
+`docs/guidelines/security-review-checklist.md`.
+
+Inventory of stored keys (web `localStorage` via `webStorageAdapter`; mobile
+via `MobileNativeStorageAdapter` → `gnh-secure-prefs` + app-private wallet
+file; Electron via `safeStorage` + wallet file):
+
+| Key | Substrate | Cleared by |
+|---|---|---|
+| `wallet` (logical) | mobile: encrypted file `gnh/wallet.v1.enc`; web/Electron: encrypted blob via SDK storage | `deleteWalletData` / `resetAppData` |
+| `gnh.onboarded` | adapter | `WALLET_TIED_KEYS` |
+| `gnh.contacts` | adapter | `WALLET_TIED_KEYS` |
+| `gnh.invites` | adapter | `WALLET_TIED_KEYS` |
+| `gnh.pendingInitiatorKeys` (legacy) | adapter | `WALLET_TIED_KEYS` (migration deletes after merge) |
+| `gnh.contacts.ready` | adapter | `WALLET_TIED_KEYS` |
+| `gnh.roomCatalog` | adapter | `WALLET_TIED_KEYS` |
+| `gnh.roomSessions` | Electron: `room-sessions.bin` (safeStorage); web debug: adapter; mobile: secure prefs | `WALLET_TIED_KEYS` + `clearRoomSessionStore` |
+| `gnh.revokedRooms` | adapter | `WALLET_TIED_KEYS` (unbounded within lifetime) |
+| `gnh.settings` | adapter | `APP_PREF_ADAPTER_KEYS` (full reset only) |
+| `gnh.notificationEvents.v1` | adapter | **not in any list** — see SEC-2026-027 |
+| `gnh.ownPokeHandle` | direct `localStorage` (bypasses adapter) | **not in any list** — see SEC-2026-026 |
+| `gnh.appAccessBackgroundedAt` | direct `localStorage` (bypasses adapter) | not in any list (timestamp, harmless) |
+| `gnh.walletSession` | mobile: iOS Keychain / Android Keystore | `clearNativeWalletSession` on Exit/lock/expiry |
+| `gnh-biometric-enrollment` | mobile secure prefs | `clearAllMobileBiometricEnrollments` |
+| `gnh.appAccessCredentialId` | mobile secure prefs | `clearAllMobileBiometricEnrollments` |
+| `ccx-preferred-node` | direct `localStorage` | `APP_PREF_LOCAL_SIDE_KEYS` (full reset) |
+| `ccx-sync-timing`, `ccx-disable-parallel-sync` | direct `localStorage` | `APP_PREF_LOCAL_SIDE_KEYS` (full reset) |
+| `ccx-auto-node` | direct `sessionStorage` | `APP_PREF_SESSION_KEYS` (full reset) |
+
+Confirmed findings: SEC-2026-026, SEC-2026-027.
+Verification gaps recorded above (revokedRoomsStore growth, AppAccessController
+direct localStorage, walletSession Keychain tradeoff documented, web/dev
+plaintext acceptable, Electron safeStorage intact, pending ephemerals in blob,
+wallet envelope + backup exclusion verified, logical-only wipe documented).
+
+#### 2026-09-23 — remediation — GLM 5.2 (Cursor Agent)
+
+**Outcome:** SEC-2026-026 resolved, SEC-2026-027 resolved
+
+- `pokeGatewayClient.ts`: `getOwnPokeHandle`/`saveOwnPokeHandle`/`clearOwnPokeHandle` route through `getStorage()` instead of raw `localStorage`.
+- `appDataLifecycle.ts`: added `gnh.ownPokeHandle` and `gnh.notificationEvents.v1` to `WALLET_TIED_KEYS`; new `revokeOwnPokeHandle()` helper calls `deletePokeHandle().catch(() => undefined)` at the top of both `deleteWalletData()` and `resetAppData()`.
+- `notificationEventLedger.ts`: added a 500-entry cap; `pruneToCap` evicts oldest **read** entries first on insert overflow, never evicting unread entries (preserves badge correctness).
+- Perplexity Ask validated both remediation strategies before implementation: confirmed best-effort client-side revoke on wipe is correct but flagged the gateway's total absence of a TTL as a residual gap (tracked as `SEC-2026-028` under MOD-010); confirmed a read-only eviction policy (never evict unread) avoids the badge-corruption pitfall of a naive oldest-by-timestamp cap.
+- Tests: `tests/services/poke/poke-gateway-client.test.ts` (+4), `tests/storage/app-data-lifecycle.test.ts` (+3), new `tests/services/notification-ledger-cap.test.ts` (+6). Full suite 766/766 passing; `tsc --noEmit` clean; Biome clean.
+- Docs updated: `docs/features/peer-wake-notification.md` (§7 wallet-delete revoke note), `docs/features/local-background-notifications.md` (§ Badge semantics retention cap note).
 
 ---
 
@@ -1704,6 +1843,8 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-23 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Incidental finding recorded (no code change) | SEC-2026-028 (open) |
+| 2026-09-23 | MOD-011 | 0702861 | GLM 5.2 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-026 (resolved), SEC-2026-027 (resolved) |
 | 2026-09-23 | MOD-010 | d850dbc | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-025 |
 | 2026-09-23 | MOD-009 | 3b1e5d2 | Grok 4.6 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-023, SEC-2026-024 |
 | 2026-09-23 | MOD-008 | 637c405 | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-022 |

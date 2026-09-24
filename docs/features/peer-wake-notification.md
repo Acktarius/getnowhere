@@ -296,6 +296,14 @@ same UX as today (she already sees "via chain" and the room stays in relay mode)
 expiry, or invite expiry), `ownPokeId` is cleared from `CatalogRoom`. The ntfy subscription
 for `gnh-<ownPokeId>` is cancelled. A new room generates a fresh `ownPokeId`.
 
+**Wallet delete / full reset (SEC-2026-026):** the iOS APNs `pokeHandle` cached under
+`gnh.ownPokeHandle` is device-scoped, not room-scoped — it is shared across every room's
+`chat.create`/`chat.register` handshake, so it survives individual room destruction. Any
+former contact who learned it can otherwise keep waking the device indefinitely (the gateway
+has no TTL — only an explicit `DELETE /register` removes it). `deleteWalletData()` and
+`resetAppData()` now call `deletePokeHandle()` (best-effort gateway revoke, always clears the
+local key) before wiping wallet-tied storage.
+
 ---
 
 ## 8. Abuse and rate limiting

@@ -1,8 +1,9 @@
 /**
  * Client for the peer-wake poke gateway. Registers, sends, and removes
- * opaque pokeHandles; caches own handle in localStorage.
+ * opaque pokeHandles; caches own handle via the app's StorageAdapter.
  * @see docs/features/peer-wake-notification.md
  */
+import { getStorage } from "@/services/storage/StorageAdapter";
 
 const STORAGE_KEY = "gnh.ownPokeHandle";
 
@@ -17,15 +18,15 @@ export function apnsPushEnv(): "sandbox" | "production" {
 
 /** Returns the cached own pokeHandle, or null if none registered. */
 export function getOwnPokeHandle(): string | null {
-  return localStorage.getItem(STORAGE_KEY);
+  return getStorage().getItem(STORAGE_KEY);
 }
 
 function saveOwnPokeHandle(handle: string): void {
-  localStorage.setItem(STORAGE_KEY, handle);
+  getStorage().setItem(STORAGE_KEY, handle);
 }
 
 function clearOwnPokeHandle(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  getStorage().removeItem(STORAGE_KEY);
 }
 
 /** Gateway `/register` body — `env` is required or APNs is never stored. */

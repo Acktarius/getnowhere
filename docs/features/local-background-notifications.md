@@ -93,6 +93,13 @@ Permission requests happen only from the Settings toggle gesture:
   opaque eventId with read/unread state. One increment per unique event;
   blockchain rescans/replays hit the ledger and are dropped before any native
   call.
+- **Retention cap (SEC-2026-027):** the TS ledger is capped at 500 entries.
+  When an insert would exceed the cap, the oldest **read** entries are evicted
+  first (by `occurredAtMs`); unread entries are never evicted, so the unread
+  badge count is never silently wrong. A replay of a very old, already-read,
+  evicted event is treated as a fresh entry rather than a dedup hit — an
+  accepted tradeoff of bounded local storage. Cleared entirely on wallet
+  delete / full reset (`gnh.notificationEvents.v1` is in `WALLET_TIED_KEYS`).
 - Native layers keep their own delivered-id ledger (SharedPreferences /
   UserDefaults, opaque ids only, capped at 512) so a banner is never re-posted
   even across process restarts.
