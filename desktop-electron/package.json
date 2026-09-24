@@ -22,9 +22,21 @@
     "@electron-forge/cli": "^7.6.1",
     "@electron-forge/maker-deb": "^7.11.2",
     "@electron-forge/maker-zip": "^7.11.2",
-    "electron": "^40.10.6"
+    "electron": "41.10.3"
   },
   "config": {
     "forge": "./forge.config.cjs"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.9.12",
+    "tar": "7.5.22",
+    "tmp": "0.2.7",
+    "undici": "7.29.1",
+    "fast-uri": "3.1.8",
+    "ip-address": "10.7.2",
+    "browserslist": "4.29.0",
+    "brace-expansion@1": "1.1.21",
+    "brace-expansion@2": "2.1.7",
+    "@electron/packager": "20.3.0"
   }
 }
