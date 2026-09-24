@@ -12,10 +12,14 @@ import {
   mkdirSync,
   rmSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+import {
+  assertFileMatchesSha256,
+  parseShasumsExpectedHex,
+} from "./node-archive-integrity.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = join(__dirname, "..");
@@ -84,6 +88,19 @@ async function downloadNodeArchive(url, destPath) {
   await pipeline(Readable.fromWeb(res.body), createWriteStream(destPath));
 }
 
+/** Fail closed if the archive is not listed in official Node SHASUMS256.txt. */
+async function verifyNodeArchive(destPath) {
+  const filename = basename(destPath);
+  const shasumsUrl = `https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt`;
+  log(`verify ${filename} against ${shasumsUrl}`);
+  const res = await fetch(shasumsUrl);
+  if (!res.ok) {
+    throw new Error(`SHASUMS256.txt download failed: ${res.status} ${shasumsUrl}`);
+  }
+  const expected = parseShasumsExpectedHex(await res.text(), filename);
+  await assertFileMatchesSha256(destPath, expected);
+}
+
 async function stageNodeRuntime() {
   rmSync(runtimeOut, { recursive: true, force: true });
   mkdirSync(runtimeOut, { recursive: true });
@@ -105,6 +122,7 @@ async function stageNodeRuntime() {
     const url = `https://nodejs.org/dist/v${NODE_VERSION}/${base}.tar.gz`;
     const tarPath = join(runtimeOut, `${base}.tar.gz`);
     await downloadNodeArchive(url, tarPath);
+    await verifyNodeArchive(tarPath);
     execFileSync("tar", ["-xzf", tarPath, "-C", runtimeOut], {
       stdio: "inherit",
     });
@@ -121,6 +139,7 @@ async function stageNodeRuntime() {
     const url = `https://nodejs.org/dist/v${NODE_VERSION}/${base}.zip`;
     const zipPath = join(runtimeOut, `${base}.zip`);
     await downloadNodeArchive(url, zipPath);
+    await verifyNodeArchive(zipPath);
     execFileSync("tar", ["-xf", zipPath, "-C", runtimeOut], {
       stdio: "inherit",
     });

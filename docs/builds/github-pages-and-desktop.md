@@ -73,7 +73,8 @@ loopback WebSocket; packaged builds use native IPC at runtime (`main.mjs` sets
 - Root `npm ci` + `npm run build` → `dist/`
 - Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
 - Syncs `desktop-electron` package version from repo-root `version` (`version=0.3.3` → `0.3.3`), **not** the git tag (so tags like `v0.3.3-f-droid` do not leak into filenames)
-- Linux: `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`, then AppImage via linuxdeploy
+- Linux: `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`, then AppImage via pinned linuxdeploy + SHA-256 check (not the moving `continuous` tag)
+- Bundled Node (`GNH_BUNDLE_NODE_VERSION`) is verified against official `SHASUMS256.txt` before extract (`desktop-electron/scripts/prepare-sidecar.mjs`)
 - Canonical artifact names (always `v` + `version` file):
   - `Get_NowHere-v0.3.3-x86_64.AppImage`
   - `Get_NowHere-v0.3.3-amd64.deb`

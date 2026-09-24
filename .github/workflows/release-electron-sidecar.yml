@@ -18,6 +18,8 @@ jobs:
     name: Electron + sidecar (Linux)
     if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     env:
       GNH_BUNDLE_NODE_VERSION: "24.14.1"
       # Packaged app: main.mjs spawns sidecar with GNH_BRIDGE_TRANSPORT=ipc (default).
@@ -25,6 +27,11 @@ jobs:
       GNH_HOLEPUNCH_WS_URL: ""
       # Embedded UI must not hard-code ws://; Electron injects gnhDesktop IPC at runtime.
       VITE_HOLEPUNCH_WS_URL: ""
+      # Pin linuxdeploy (not the moving `continuous` tag). Hashes from the tagged assets.
+      LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-x86_64.AppImage
+      LINUXDEPLOY_SHA256: 4648f278ab3ef31f819e67c30d50f462640e5365a77637d7e6f2ad9fd0b4522a
+      LINUXDEPLOY_PLUGIN_URL: https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
+      LINUXDEPLOY_PLUGIN_SHA256: 992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -105,13 +112,13 @@ jobs:
           cp icons/icon.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
           cp icons/icon.png "$APPDIR/getnowhere.png"
 
-          # Download linuxdeploy + AppImage output plugin into /tmp so they are
-          # never inside desktop-electron/ and never picked up by the artifact glob
+          # Download pinned linuxdeploy + plugin into /tmp so they are never
+          # inside desktop-electron/ and never picked up by the artifact glob
           mkdir -p /tmp/ld
-          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
-               -O /tmp/ld/linuxdeploy-x86_64.AppImage
-          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage" \
-               -O /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage
+          wget -q "$LINUXDEPLOY_URL" -O /tmp/ld/linuxdeploy-x86_64.AppImage
+          wget -q "$LINUXDEPLOY_PLUGIN_URL" -O /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage
+          echo "$LINUXDEPLOY_SHA256  /tmp/ld/linuxdeploy-x86_64.AppImage" | sha256sum -c -
+          echo "$LINUXDEPLOY_PLUGIN_SHA256  /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage" | sha256sum -c -
           chmod +x /tmp/ld/linuxdeploy-x86_64.AppImage /tmp/ld/linuxdeploy-plugin-appimage-x86_64.AppImage
 
           # Produce AppImage; Electron bundles its own libs so skip dep scanning
@@ -185,6 +192,8 @@ jobs:
     name: Electron + sidecar (Windows)
     if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
     runs-on: windows-latest
+    permissions:
+      contents: read
     env:
       GNH_BUNDLE_NODE_VERSION: "24.14.1"
       GNH_HOLEPUNCH_WS_URL: ""

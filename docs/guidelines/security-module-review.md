@@ -1779,7 +1779,7 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
   - Verification: `npm-audit.yml` now runs `npm ci` + `npm audit --audit-level=high` for root, `holepunch-sidecar`, `desktop-electron`, and `poke-gateway`; `continue-on-error` removed from the Biome check step; `npm test` added as a required step. `build-signed-apk.yml` now uses `npm ci --prefix holepunch-sidecar`. `native-wrapper` audit left out of the PR gate (Expo SDK generates many advisories from its own nested deps; warrants a separate triage pass).
   - Residual: No secret-scanning workflow added (CodeQL / gitleaks). `native-wrapper` lockfile not audited in CI.
 
-- [ ] `SEC-2026-030` — severity: medium
+- [x] `SEC-2026-030` — resolved
   - Date found: 2026-09-24
   - Commit reviewed: ae05da2
   - Affected files: `.github/workflows/release-electron-sidecar.yml`, `desktop-electron/scripts/prepare-sidecar.mjs`
@@ -1787,7 +1787,10 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
   - Description: Desktop release fetches and runs binaries that produce or ship inside artifacts without an integrity check
   - Impact: A replaced linuxdeploy AppImage or Node archive can alter the desktop package users install
   - Recommended remediation: Pin and checksum linuxdeploy; verify the Node tarball against `SHASUMS256.txt`; set `permissions: contents: read` on both desktop build jobs
-  - Status: open
+  - Resolution date: 2026-09-24
+  - Fix commit: pending
+  - Verification: `desktop-linux` / `desktop-windows` now set `permissions: contents: read`. AppImage step downloads linuxdeploy `1-alpha-20250213-2` and plugin `1-alpha-20250213-1`, then `sha256sum -c` against committed hashes. `prepare-sidecar.mjs` verifies the Node archive against official `SHASUMS256.txt` before extract. Tests: `desktop-electron/test/node-archive-integrity.test.mjs`.
+  - Residual: linuxdeploy does not publish a vendor checksum file; pins are hashes of the tagged GitHub assets. Node check uses `SHASUMS256.txt` from the same `nodejs.org` host (no GPG of `SHASUMS256.txt.sig`).
 
 - [ ] `SEC-2026-031` — severity: medium
   - Date found: 2026-09-24
@@ -1811,7 +1814,7 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
 
 ### Verification gaps
 
-- **Default `GITHUB_TOKEN` scope** for `release-electron-sidecar.yml` build jobs is not in the workflow file. Only the `release` job sets `contents: write`. The inherited default was not confirmed from repository settings.
+- **Default `GITHUB_TOKEN` scope** for `release-electron-sidecar.yml` build jobs is now explicit: `desktop-linux` and `desktop-windows` set `contents: read`. Only the `release` job sets `contents: write`.
 - **Committed UI bundle token.** `native-wrapper/assets/ui` is not gitignored. A search of that tree found no `ntfy` or `Bearer` string. README still warns a prior `mobile:sync-ui` may have baked `VITE_NTFY_READ_TOKEN` into a committed bundle. History was not exhaustively searched.
 - **`npm audit` results** for the root and nested lockfiles were not executed in this review.
 - **EAS signing credentials** live in Expo, outside this repository. `native-wrapper/eas.json` profiles were read; the stored credentials and their scopes were not.
@@ -1844,6 +1847,14 @@ Checked manifests and lockfiles (root, `desktop-electron/`, `native-wrapper/`,
 **Outcome:** Findings and verification gaps recorded
 
 **Findings this review:** `SEC-2026-029`, `SEC-2026-030`, `SEC-2026-031`, `SEC-2026-032`
+
+#### 2026-09-24 — remediation — Grok 4.6 via Cursor Agent
+
+**Outcome:** SEC-2026-030 resolved
+
+- `release-electron-sidecar.yml`: `contents: read` on both desktop build jobs; linuxdeploy + plugin pinned to tagged releases and checked with `sha256sum -c`.
+- `prepare-sidecar.mjs`: Node archive verified against official `SHASUMS256.txt` before extract.
+- Tests: `desktop-electron/test/node-archive-integrity.test.mjs`.
 
 ---
 
@@ -1925,6 +1936,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-24 | MOD-012 | ae05da2 | Grok 4.6 (Cursor Agent) | Finding resolved | SEC-2026-030 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-029, SEC-2026-030, SEC-2026-031, SEC-2026-032 |
 | 2026-09-24 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Finding resolved | SEC-2026-028 (resolved) |
 | 2026-09-23 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Incidental finding recorded (no code change) | SEC-2026-028 (open) |
