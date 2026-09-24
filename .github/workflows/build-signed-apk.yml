@@ -50,7 +50,7 @@ jobs:
         run: npm ci
 
       - name: Install holepunch-sidecar dependencies
-        run: npm run holepunch:install
+        run: npm ci --prefix holepunch-sidecar
 
       - name: Prebuild Android (generate android/ tree)
         working-directory: native-wrapper

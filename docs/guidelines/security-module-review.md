@@ -1762,17 +1762,88 @@ wallet envelope + backup exclusion verified, logical-only wipe documented).
 - Confirm release builds disable debug behavior and use intended signing/release configuration.
 - Confirm audits, secret scanning, linting, type checks, and tests run at appropriate gates.
 
-- [ ] Reviewed — no review recorded yet
-
-
+- [x] Reviewed — latest review: 2026-09-24 — commit: ae05da2 — reviewer: Grok 4.7 (Cursor Agent)
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-029` — resolved
+  - Date found: 2026-09-24
+  - Commit reviewed: ae05da2
+  - Affected files: `.github/workflows/npm-audit.yml`, `.github/workflows/build-signed-apk.yml`, `package.json`
+  - Evidence: `npm-audit.yml` runs `npm audit --audit-level=high` at the repo root only; `npm run check` (`biome check .`) is `continue-on-error: true`; no workflow runs `npm test` or audits `holepunch-sidecar/`, `desktop-electron/`, `native-wrapper/`, or `poke-gateway/`; the APK job installs the sidecar via `npm run holepunch:install` (`npm install`)
+  - Description: Pull-request CI does not fail on tests, lint, or nested-manifest audit findings, and the signed APK path does not require the sidecar lockfile
+  - Impact: Security regressions and dependency changes outside the root lockfile can merge or ship without a failing gate
+  - Recommended remediation: Fail CI on tests, Biome, and `npm audit` for every shipped lockfile; use `npm ci` for the sidecar in the APK workflow; add secret scanning
+  - Resolution date: 2026-09-24
+  - Fix commit: pending
+  - Verification: `npm-audit.yml` now runs `npm ci` + `npm audit --audit-level=high` for root, `holepunch-sidecar`, `desktop-electron`, and `poke-gateway`; `continue-on-error` removed from the Biome check step; `npm test` added as a required step. `build-signed-apk.yml` now uses `npm ci --prefix holepunch-sidecar`. `native-wrapper` audit left out of the PR gate (Expo SDK generates many advisories from its own nested deps; warrants a separate triage pass).
+  - Residual: No secret-scanning workflow added (CodeQL / gitleaks). `native-wrapper` lockfile not audited in CI.
+
+- [ ] `SEC-2026-030` — severity: medium
+  - Date found: 2026-09-24
+  - Commit reviewed: ae05da2
+  - Affected files: `.github/workflows/release-electron-sidecar.yml`, `desktop-electron/scripts/prepare-sidecar.mjs`
+  - Evidence: AppImage step `wget`s linuxdeploy and its plugin from the `continuous` tag and executes them with no digest; `downloadNodeArchive` fetches `nodejs.org/dist/v${NODE_VERSION}` and extracts it with no `SHASUMS256.txt` check; `desktop-linux` and `desktop-windows` set no `permissions` block
+  - Description: Desktop release fetches and runs binaries that produce or ship inside artifacts without an integrity check
+  - Impact: A replaced linuxdeploy AppImage or Node archive can alter the desktop package users install
+  - Recommended remediation: Pin and checksum linuxdeploy; verify the Node tarball against `SHASUMS256.txt`; set `permissions: contents: read` on both desktop build jobs
+  - Status: open
+
+- [ ] `SEC-2026-031` — severity: medium
+  - Date found: 2026-09-24
+  - Commit reviewed: ae05da2
+  - Affected files: `.github/workflows/build-signed-apk.yml`, `src/lib/mobile/ntfyWakeBridge.ts`, `src/vite-env.d.ts`
+  - Evidence: APK build step sets `VITE_NTFY_READ_TOKEN` from GitHub secrets; `subscribeAll` reads `import.meta.env.VITE_NTFY_READ_TOKEN` and sends it as the ntfy SSE subscribe token; README describes that token as `gnh-reader` with read-only access on `gnh-*`
+  - Description: A shared ntfy read bearer is injected as a Vite public env var and compiled into the client bundle
+  - Impact: Anyone who unpacks a release APK holds the shared read credential for `gnh-*` wake topics they can name; revoking it requires a new build for every install
+  - Recommended remediation: Do not ship one shared read bearer via `VITE_*`; use a per-install wake credential, or topics that do not depend on a secret compiled into the app
+  - Status: open
+
+- [ ] `SEC-2026-032` — severity: low
+  - Date found: 2026-09-24
+  - Commit reviewed: ae05da2
+  - Affected files: `.github/workflows/build-signed-apk.yml`
+  - Evidence: Job `permissions` is `contents: write` for checkout through signing; sign step passes `--ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD"` and `--key-pass "pass:$ANDROID_KEY_PASSWORD"`; `if: always()` deletes `keys/release-keystore.jks`
+  - Description: The release keystore is handled in a job whose token can write repository contents, and the keystore passwords are placed on the `apksigner` command line
+  - Impact: A compromised step in that job can use the write token and can observe keystore passwords via process arguments while the keystore file exists
+  - Recommended remediation: Split a `contents: read` build job from a `contents: write` release job; pass keystore passwords with `apksigner` `env:` or `file:`
+  - Status: open
+
+### Verification gaps
+
+- **Default `GITHUB_TOKEN` scope** for `release-electron-sidecar.yml` build jobs is not in the workflow file. Only the `release` job sets `contents: write`. The inherited default was not confirmed from repository settings.
+- **Committed UI bundle token.** `native-wrapper/assets/ui` is not gitignored. A search of that tree found no `ntfy` or `Bearer` string. README still warns a prior `mobile:sync-ui` may have baked `VITE_NTFY_READ_TOKEN` into a committed bundle. History was not exhaustively searched.
+- **`npm audit` results** for the root and nested lockfiles were not executed in this review.
+- **EAS signing credentials** live in Expo, outside this repository. `native-wrapper/eas.json` profiles were read; the stored credentials and their scopes were not.
+- **Desktop code signing** is absent from the Electron workflow. Docs describe draft GitHub releases of unsigned `.deb`, `.zip`, and `.AppImage` artifacts. That matches the workflow.
+- **Duplicate Vite configs.** `vite.config.js` and `vite.config.ts` both set `build.sourcemap: false`. Vite loads `vite.config.js` when both exist. They match at this commit; a later edit to only the TypeScript file would not change the build.
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-24 — commit `ae05da2` — reviewer: Grok 4.7 via Cursor Agent
+
+Reviewed the build, dependency, CI, and release boundary against
+`docs/guidelines/security-postures.md` and
+`docs/guidelines/security-review-checklist.md`.
+
+Checked manifests and lockfiles (root, `desktop-electron/`, `native-wrapper/`,
+`holepunch-sidecar/`, `poke-gateway/`), `.npmrc` (`min-release-age=7`),
+`.env.example`, `poke-gateway/.env.example`, `vite.config.ts` / `vite.config.js`,
+`biome.json`, `.actrc`, `desktop-electron/forge.config.cjs`,
+`native-wrapper/eas.json`, and workflows `npm-audit.yml`,
+`release-electron-sidecar.yml`, `build-signed-apk.yml`, `github-pages.yml`.
+
+- Separation of concerns: Pages deploys `documentation/website` only. Desktop CI clears `VITE_HOLEPUNCH_WS_URL` and `GNH_HOLEPUNCH_WS_URL`. Production `sourcemap` is false.
+- Least knowledge: `VITE_NTFY_READ_TOKEN` is a shared wake read bearer compiled into the APK (`SEC-2026-031`). `VITE_POKE_GATEWAY_URL` is a public origin. Wallet SDK tarballs (`conceal-wallet-sdk`, `conceal-lib-js`) are pinned by lockfile `integrity`.
+- Trust boundaries: GitHub Pages job is `contents: read` plus Pages deploy permissions. Electron build jobs do not declare a token scope (`SEC-2026-030`). The APK job is `contents: write` for its whole lifetime (`SEC-2026-032`).
+- Dependencies: Root CI audit does not cover nested lockfiles or tests (`SEC-2026-029`). Release fetches linuxdeploy `continuous` and Node without a digest (`SEC-2026-030`).
+- Secrets: `.env` is gitignored. Examples contain empty placeholders. The APK keystore is deleted in an `always()` step; passwords are passed on argv (`SEC-2026-032`).
+- Failure paths: Draft desktop releases use `fail_on_unmatched_files: true`. A missing keystore secret fails the APK job before signing. Biome failures do not fail CI (`SEC-2026-029`).
+- Privacy claims: README states the ntfy token is baked into the client and must be rotated before a public release. The pipeline still does that bake (`SEC-2026-031`).
+
+**Outcome:** Findings and verification gaps recorded
+
+**Findings this review:** `SEC-2026-029`, `SEC-2026-030`, `SEC-2026-031`, `SEC-2026-032`
 
 ---
 
@@ -1854,6 +1925,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-24 | MOD-012 | ae05da2 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-029, SEC-2026-030, SEC-2026-031, SEC-2026-032 |
 | 2026-09-24 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Finding resolved | SEC-2026-028 (resolved) |
 | 2026-09-23 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Incidental finding recorded (no code change) | SEC-2026-028 (open) |
 | 2026-09-23 | MOD-011 | 0702861 | GLM 5.2 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-026 (resolved), SEC-2026-027 (resolved) |
