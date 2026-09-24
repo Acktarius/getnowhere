@@ -34,6 +34,9 @@ jobs:
       - name: Install poke-gateway dependencies
         run: npm ci --prefix poke-gateway
 
+      - name: Install native-wrapper dependencies
+        run: npm ci --prefix native-wrapper
+
       - name: Audit root
         run: npm audit --audit-level=high
 
@@ -45,6 +48,9 @@ jobs:
 
       - name: Audit poke-gateway
         run: npm audit --audit-level=high --prefix poke-gateway
+
+      - name: Audit native-wrapper
+        run: npm audit --audit-level=high --prefix native-wrapper
 
       - name: Typecheck
         run: npm run types
@@ -63,3 +69,6 @@ jobs:
 
       - name: Tests (poke-gateway)
         run: npm test --prefix poke-gateway
+
+      - name: Tests (native-wrapper)
+        run: npm test --prefix native-wrapper

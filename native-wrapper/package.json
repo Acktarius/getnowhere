@@ -7,6 +7,7 @@
     "start": "node scripts/pack-bare.mjs && expo start",
     "sync-ui": "node scripts/sync-ui-dist.mjs",
     "pack-bare": "node scripts/pack-bare.mjs",
+    "test": "npm run test:bare",
     "test:bare": "node scripts/run-bare-tests.mjs",
     "generate:icons": "bash scripts/generate-brand-icons.sh && node scripts/refresh-android-launcher.mjs",
     "prepare:android-assets": "node scripts/prepare-android-assets.mjs",
