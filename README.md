@@ -39,8 +39,9 @@ Your ntfy server runs with `auth-default-access: deny-all`, one write user, and
 anonymous read on the wake namespace:
 
 ```bash
-ntfy access gnh-publisher 'gnh-*' write-only   # poke-gateway publishes
-ntfy access everyone      'gnh-*' read-only    # app subscribes, no token
+# ntfy runs in Docker on the VPS — the CLI is not on the host
+sudo docker exec ntfy ntfy access gnh-publisher 'gnh-*' write-only  # gateway publishes
+sudo docker exec ntfy ntfy access everyone      'gnh-*' read-only   # app subscribes, no token
 ```
 
 The app ships **no ntfy credential**. A wake topic is `gnh-<pokeId>`, where
