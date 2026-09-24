@@ -13,6 +13,8 @@ vi.mock("../src/db.js", () => ({
   getHandle: vi.fn(),
   createHandle: vi.fn(),
   deleteHandle: vi.fn(),
+  deleteHandleIfExpired: vi.fn(),
+  isHandleExpired: vi.fn(),
   updateHandleToken: vi.fn(),
   openDb: vi.fn(),
   closeDb: vi.fn(),
@@ -30,7 +32,11 @@ vi.mock("../src/rateLimit.js", () => ({
 }));
 
 import { sendApns } from "../src/apns.js";
-import { getHandle } from "../src/db.js";
+import {
+  deleteHandleIfExpired,
+  getHandle,
+  isHandleExpired,
+} from "../src/db.js";
 import { consumeGlobalPokeSlot, consumePokeSlot } from "../src/rateLimit.js";
 
 const VALID_TO = "abcdefghijklmn"; // 14 chars, matches HANDLE_RE
@@ -48,6 +54,7 @@ describe("/poke route", () => {
     app = buildApp();
     vi.mocked(consumeGlobalPokeSlot).mockReturnValue(true);
     vi.mocked(consumePokeSlot).mockReturnValue(true);
+    vi.mocked(isHandleExpired).mockReturnValue(false);
     // Default: no ntfy env vars
     delete process.env.NTFY_BASE_URL;
     delete process.env.NTFY_PUBLISH_TOKEN;
@@ -234,5 +241,52 @@ describe("/poke route", () => {
     });
 
     expect(res.statusCode).toBe(202);
+  });
+
+  // ── Lazy TTL expiry (SEC-2026-028) ──────────────────────────────────────────
+
+  it("returns 202 without calling APNs when the handle is expired, and lazily deletes it", async () => {
+    const staleRow = {
+      pokeHandle: VALID_TO,
+      token: "apns-tok",
+      env: "production" as const,
+      platform: "apns" as const,
+      updatedAt: 0,
+    };
+    vi.mocked(getHandle).mockReturnValue(staleRow);
+    vi.mocked(isHandleExpired).mockReturnValue(true);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/poke",
+      payload: { to: VALID_TO },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(isHandleExpired).toHaveBeenCalledWith(staleRow);
+    expect(deleteHandleIfExpired).toHaveBeenCalledWith(VALID_TO);
+    expect(sendApns).not.toHaveBeenCalled();
+  });
+
+  it("does not delete a fresh handle after a successful APNs send", async () => {
+    vi.mocked(getHandle).mockReturnValue({
+      pokeHandle: VALID_TO,
+      token: "apns-tok",
+      env: "production",
+      platform: "apns",
+      updatedAt: Date.now(),
+    });
+    vi.mocked(isHandleExpired).mockReturnValue(false);
+    vi.mocked(sendApns).mockResolvedValue({ ok: true });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/poke",
+      payload: { to: VALID_TO },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(sendApns).toHaveBeenCalledOnce();
+    expect(deleteHandleIfExpired).not.toHaveBeenCalled();
   });
 });

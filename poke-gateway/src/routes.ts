@@ -5,7 +5,9 @@ import { PushConfigError, sendApns } from "./apns.js";
 import {
   createHandle,
   deleteHandle,
+  deleteHandleIfExpired,
   getHandle,
+  isHandleExpired,
   type Platform,
   type PushEnv,
   updateHandleToken,
@@ -144,6 +146,14 @@ export function registerRoutes(app: FastifyInstance): void {
         } else {
           app.log.info({ event: "poke", result: "ntfy_noop" });
         }
+        return reply.code(202).send();
+      }
+
+      // Lazily expire dormant handles (SEC-2026-028): no re-registration within
+      // the TTL means the install is gone, so treat it as unknown and drop the row.
+      if (isHandleExpired(row)) {
+        deleteHandleIfExpired(to);
+        app.log.info({ event: "poke", result: "expired" });
         return reply.code(202).send();
       }
 

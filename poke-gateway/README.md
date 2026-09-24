@@ -48,6 +48,7 @@ Copy `.env.example` to `.env` on the **server** (never commit `.env`).
 | `APNS_KEY_ID` | iOS only | Key id for the `.p8` |
 | `APNS_KEY_PATH` | iOS only | Path **inside the container** to the `.p8` |
 | `APNS_BUNDLE_ID` | iOS only | `im.getnowhere.app` |
+| `HANDLE_TTL_DAYS` | no (default `30`) | Handles not re-registered within this many days are lazily expired on `/poke`. Active clients re-register on every app launch, so this only expires dormant installs. |
 
 ## Docker on the VPS
 
@@ -141,3 +142,9 @@ Logs are aggregates only (no handle, token, or IP).
 bucket (burst 10, refill 1/s) checked before that window. A spent bucket returns
 `429` and does not call ntfy or APNs. The ntfy publish aborts after 5 seconds.
 Client IP is not read from `X-Forwarded-For`. See `docs/features/peer-wake-notification.md`.
+
+A registered handle that has not been re-registered within `HANDLE_TTL_DAYS`
+(default 30) is treated as expired: `/poke` returns `202` without calling APNs
+and lazily deletes the row. Active clients re-register on every app launch, so
+only dormant/uninstalled clients expire. This is the server-side backstop for a
+lost client-side `DELETE /register` (see `SEC-2026-028`).

@@ -1433,16 +1433,16 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
   - Status: resolved
   - Verification: `consumeGlobalPokeSlot` (burst 10, refill 1/s) runs before `consumePokeSlot`. A miss returns `429` with `Retry-After: 1` and does not call ntfy, APNs, or the per-handle map. ntfy `fetch` uses `AbortSignal.timeout(5000)`. Per-handle `429` sends `Retry-After: 300`. Tests: `poke-gateway/test/rateLimit.test.ts`, `poke-gateway/test/routes.test.ts`. `X-Forwarded-For` is still not trusted; caller auth was not added (pokeHandle stays a bearer wake capability).
 
-- [ ] `SEC-2026-028` — severity: low
+- [x] `SEC-2026-028` — severity: low
   - Date found: 2026-09-23
   - Commit reviewed: 0702861
   - Affected files: `poke-gateway/src/db.ts`, `poke-gateway/src/routes.ts`
-  - Evidence: Discovered while remediating `SEC-2026-026` (MOD-011). `poke-gateway/src/db.ts` has no TTL, `updatedAt`-based expiry, or last-seen sweep on the `pokeHandle -> token/platform/env` mapping. `DELETE /register` (explicit client revoke) is the *only* way a row is ever removed, besides an APNs `410 Unregistered` response deleting it opportunistically.
-  - Description: A registered handle is wakeable **forever** unless the owning client successfully calls `DELETE /register`. If that call is lost (client offline during wallet-delete/app-reset, crash, network failure, or an app version predating the `SEC-2026-026` fix), the gateway row stays live with no other expiry mechanism as a backstop.
-  - Impact: A former contact who learned a now-abandoned handle can keep waking a device indefinitely when the client-side revoke did not land. Perplexity Ask (consulted during `SEC-2026-026` remediation) confirmed client-triggered explicit revoke alone is not sufficient defense-in-depth without a server-side expiry backstop.
-  - Recommended remediation: Add a `last-seen`/max-age column, refreshed on each successful `POST /register` upsert; reject or lazily delete handles past a defined max age (e.g. no re-registration for N days) when processing `/poke`. Keep the change additive — does not alter the wire schema or client contract.
-  - Status: open
-  - Verification: Not yet implemented — deferred pending a decision on gateway TTL policy (max-age window, whether to also require periodic client re-registration). Flagged for a future MOD-010 fix; no code changed in this pass.
+  - Evidence: Discovered while remediating `SEC-2026-026` (MOD-011). `poke-gateway/src/db.ts` had no TTL, `updatedAt`-based expiry, or last-seen sweep on the `pokeHandle -> token/platform/env` mapping. `DELETE /register` (explicit client revoke) was the *only* way a row was ever removed, besides an APNs `410 Unregistered` response deleting it opportunistically.
+  - Description: A registered handle was wakeable **forever** unless the owning client successfully called `DELETE /register`. If that call was lost (client offline during wallet-delete/app-reset, crash, network failure, or an app version predating the `SEC-2026-026` fix), the gateway row stayed live with no other expiry mechanism as a backstop.
+  - Impact: A former contact who learned a now-abandoned handle could keep waking a device indefinitely when the client-side revoke did not land.
+  - Recommended remediation: Add a `last-seen`/max-age check, refreshed on each successful `POST /register` upsert; lazily delete handles past a defined max age when processing `/poke`. Keep the change additive — no wire schema or client contract change.
+  - Status: resolved
+  - Verification: `HANDLE_TTL_MS` (default 30 days, overridable via `HANDLE_TTL_DAYS` env) added to `db.ts` with `isHandleExpired` and `deleteHandleIfExpired`. The lazy DELETE carries its own `updated_at < cutoff` predicate so a concurrent re-registration cannot have its refreshed row removed based on a stale read (Perplexity-flagged race). `/poke` on an expired row returns `202` without calling APNs and deletes the row. No background sweep timer (lazy expiry only — confirmed sufficient at this volume). No wire schema change. Tests: `poke-gateway/test/db.test.ts` (6 tests: TTL boundary, refresh-on-reregister, lazy delete, concurrent-refresh safety), `poke-gateway/test/routes.test.ts` (+2: expired handle returns 202 without APNs and lazily deletes; fresh handle still sends and is not deleted). Full poke-gateway suite 21/21 passing; `tsc --noEmit` and Biome clean.
 
 ### Review history
 
@@ -1492,6 +1492,17 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 **Outcome:** SEC-2026-028 recorded (open)
 
 Discovered while remediating `SEC-2026-026` under MOD-011 (client-side poke-handle revoke on wallet delete): confirmed via direct inspection of `poke-gateway/src/db.ts` that the gateway has no TTL/expiry mechanism at all. Perplexity Ask flagged this as a residual gap even after the client-side fix (best-effort revoke can be lost). Recorded as a new open, low-severity finding for a future MOD-010 pass rather than fixed in this session — no gateway code changed.
+
+#### 2026-09-24 — remediation — GLM 5.2 (Cursor Agent)
+
+**Outcome:** SEC-2026-028 resolved
+
+- Added `HANDLE_TTL_MS` (default 30 days, overridable via `HANDLE_TTL_DAYS`) plus `isHandleExpired` and `deleteHandleIfExpired` to `poke-gateway/src/db.ts`.
+- `/poke` on a DB hit now checks `isHandleExpired(row)` before calling APNs; an expired handle returns `202` without APNs and lazily deletes the row.
+- The lazy DELETE carries its own `updated_at < cutoff` predicate so a concurrent re-registration cannot have its refreshed row removed based on a stale read (race flagged by Perplexity Ask during design review).
+- No background sweep timer — lazy expiry only. No wire schema or client contract change.
+- Tests: new `poke-gateway/test/db.test.ts` (6 tests, mocked better-sqlite3 — native binding unavailable in this environment), `poke-gateway/test/routes.test.ts` (+2). Full poke-gateway suite 21/21 passing; `tsc --noEmit` and Biome clean.
+- Docs updated: `poke-gateway/.env.example`, `poke-gateway/README.md`, `docs/features/peer-wake-notification.md` §7.
 
 ---
 
@@ -1843,6 +1854,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-24 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Finding resolved | SEC-2026-028 (resolved) |
 | 2026-09-23 | MOD-010 | 0702861 | GLM 5.2 (Cursor Agent) | Incidental finding recorded (no code change) | SEC-2026-028 (open) |
 | 2026-09-23 | MOD-011 | 0702861 | GLM 5.2 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-026 (resolved), SEC-2026-027 (resolved) |
 | 2026-09-23 | MOD-010 | d850dbc | GPT-5.3 Codex (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-025 |

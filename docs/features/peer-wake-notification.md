@@ -304,6 +304,13 @@ has no TTL — only an explicit `DELETE /register` removes it). `deleteWalletDat
 `resetAppData()` now call `deletePokeHandle()` (best-effort gateway revoke, always clears the
 local key) before wiping wallet-tied storage.
 
+**Server-side expiry backstop (SEC-2026-028):** the client-side revoke above is best-effort —
+it can be lost if the device is offline mid-wipe. The gateway therefore also expires any
+handle that has not been re-registered within `HANDLE_TTL_DAYS` (default 30 days). Active
+clients re-register on every app launch, so only dormant or uninstalled installs expire.
+Expiry is lazy: `/poke` on an expired handle returns `202` without calling APNs and deletes
+the row. No background sweep timer is used.
+
 ---
 
 ## 8. Abuse and rate limiting
