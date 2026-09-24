@@ -1969,17 +1969,74 @@ dropped it from every released APK.
 - Confirm local test servers bind safely and do not expose privileged APIs.
 - Confirm negative tests cover malformed input, unauthorized peers, replay, expiry, and abuse paths.
 
-- [ ] Reviewed — no review recorded yet
+- [x] Reviewed — latest review: 2026-09-24 — commit: 3f8f1ca — reviewer: Kimi K3 (Cursor Agent)
 
 
 
 ### Findings
 
-*No findings recorded yet.*
+- [x] `SEC-2026-034` — resolved
+  - Date found: 2026-09-24
+  - Commit reviewed: 3f8f1ca
+  - Affected files: `.bolt/prompt`
+  - Evidence: `.bolt/prompt` networking section ("L1 SmartMessage derive → L2 Hyperswarm Noise → L3 ChaCha20-Poly1305 E2E (do not drop L3)")
+  - Description: Committed bolt.new developer prompt describes a crypto stack that does not match the project: it invents an "L3" layer (project rule and `docs/security/encryption.md`: there is no L3) and omits the actual L1 session-seal and L1′ relay model.
+  - Impact: Code generated from this prompt would implement a nonexistent layer and could drop the mandatory L1 session seal; tooling-seeded architectural drift in a security-critical protocol.
+  - Recommended remediation: Update or delete `.bolt/prompt` to match `.cursor/rules/project-foundation.mdc` and `docs/security/encryption.md` (L1 derive + session seal, L2 Noise, L1′ relay; no L3).
+  - Resolution date: 2026-09-24
+  - Fix commit: working tree (3f8f1ca base)
+  - Verification: `.bolt/prompt` crypto line now reads "L1 SmartMessage (Conceal blockchain — relationship + session seal) → L2 Hyperswarm Noise (DHT / holepunch — fast chat). L1′ SmartMessage (Conceal blockchain) is the message fallback when L2 is down. There is no L3."
+  - Status: resolved
+- [x] `SEC-2026-035` — resolved
+  - Date found: 2026-09-24
+  - Commit reviewed: 3f8f1ca
+  - Affected files: `vite.config.ts`, `vite.config.js`
+  - Evidence: `server.host: true` (`vite.config.ts:39`); `npm run dev` = `vite`
+  - Description: Incidental finding (file sits in MOD-012's inventory; the listener risk belongs to this module's "development scripts opening insecure local listeners"). The dev server binds all interfaces, so during `npm run dev` the UI, the `/ccx-daemon` proxy, and Vite's workspace file serving are reachable by any LAN peer. Vite's default `server.fs.deny` covers `.env`, but live credentials exist in gitignored `poke-gateway/.env` (`NTFY_PUBLISH_TOKEN`, 32 chars) and root `.env` (`VITE_NTFY_READ_TOKEN`, now inert), and 2025 Vite releases patched multiple `/@fs/` deny-bypass CVEs. No in-repo consumer needs LAN binding: desktop dev uses loopback and the mobile wrapper loads bundled assets.
+  - Impact: On a hostile LAN (coworking/conference), a developer's dev server exposes the app and daemon proxy, and — if `fs.deny` is bypassed — workspace files including live wake publish credentials.
+  - Recommended remediation: Default `server.host` to `127.0.0.1` with an explicit opt-in (e.g. `GNH_DEV_LAN=1`) for phone-on-LAN testing; document the tradeoff under `docs/`.
+  - Resolution date: 2026-09-24
+  - Fix commit: working tree (3f8f1ca base)
+  - Verification: `vite.config.ts` and `vite.config.js` `server.host` now defaults to `"127.0.0.1"`; LAN opt-in via `GNH_DEV_LAN=1` documented in `.env.example`. Root `.env` and `poke-gateway/.env` confirmed not tracked (gitignore rule `.env` at `.gitignore:23` covers both).
+  - Status: resolved
+- [x] `SEC-2026-036` — resolved
+  - Date found: 2026-09-24
+  - Commit reviewed: 3f8f1ca
+  - Affected files: `test-results/.last-run.json`
+  - Evidence: `git ls-files test-results` lists the file while `.gitignore` ignores `/test-results/`
+  - Description: A Playwright run artifact is tracked despite the ignore rule; ignore rules are ineffective for already-tracked files, so run artifacts keep being committed.
+  - Impact: Housekeeping: repo carries churn artifacts; content is benign today (`{"status":"passed"}`), but the same pattern would publish traces or screenshots if they were ever force-added.
+  - Recommended remediation: `git rm --cached test-results/.last-run.json` and let the ignore rule hold.
+  - Resolution date: 2026-09-24
+  - Fix commit: working tree (3f8f1ca base)
+  - Verification: `git rm --cached test-results/.last-run.json` executed; file removed from index, `.gitignore` rule `/test-results/` now takes effect.
+  - Status: resolved
 
 ### Review history
 
-*No reviews recorded yet.*
+#### 2026-09-24 — review — Kimi K3 (Cursor Agent)
+
+**Scope:** MOD-013 at commit `3f8f1ca` (working tree carried doc-only modifications to `README.md`, `poke-gateway/README.md`, and this ledger). Reviewed `tests/**` (154 files), `e2e/**`, `src/services/mock/**` (4), `holepunch-sidecar/test/**` (9), `desktop-electron/test/**` (10), `scripts/**` (5), `test-results/**`, `playwright.config.ts`, `vitest.config.ts`, `poke-gateway/vitest.config.ts`, `.reviews/**`, `.bolt/**`, `.cursor/**`, plus `vite.config.ts` / `vite.config.js` and `src/services/index.ts` for mock wiring and dev-listener behavior.
+
+- Secrets/fixtures: swept all in-scope files for secret-shaped assignments, long hex strings, and live endpoints. All credentials are obvious fixtures (`"ipc-token"`, `"test-token"`, 7-word `"abandon ability …"` mnemonic, `"aa".repeat(32)` keys). No production secrets, topics, real contacts, or live credentials found. The only real hostname in tests is `explorer.conceal.network`, used as a URL-format fixture and never contacted.
+- Mocks: `src/services/mock/*` are dead code — `src/services/index.ts` references them only in comments and no importer exists repo-wide, so they cannot reach production bundles. `MockChatTransport` still enforces the connected-only send gate. Vitest stubs (`react-native`, `expo-file-system`, `expo-sharing`) are aliased only in `vitest.config.ts`; production `vite.config.ts` aliases only `@` and the `crypto` shim.
+- Test-only hooks: no `__TEST__` / `NODE_ENV` branches or test globals in production `src/`; no `test.only` / `it.skip` / `describe.skip` anywhere in scope.
+- Artifacts: Playwright `trace: "on-first-retry"` writes to gitignored `test-results/`; the e2e `webServer` binds `127.0.0.1:5173` only. `test-results/.last-run.json` is tracked despite the ignore rule (`SEC-2026-036`). `.reviews/` holds one committed architecture review (paths/SHAs only, no secrets). `.cursor/` is tracked despite the `.gitignore` `.cursor/` entry — deliberate sharing of rules/commands/hooks, but the stale ignore entry silently drops new additions from `git add .` (drift note, not a finding). Cursor hooks run `node` / `forge reminder` only; no listeners, no secrets.
+- Local listeners: sidecar tests bind `127.0.0.1` / IPC paths and assert fail-closed non-loopback policy (`0.0.0.0` + empty token → non-zero exit before listen; wrong/missing token → WS close 4001). The Vite dev server uses `server.host: true` (`SEC-2026-035`).
+- Negative tests: verified genuine coverage of malformed input (`chat-relay` rejects incomplete bodies, `live-content-envelope` rejects unknown kind / non-string / oversize, `ws-message-size` close 1009, NDJSON line limits), unauthorized peers (`register-paymentid-gate`, `revoke-paymentid-gate`, `revoke-counterpart-destroy`, forged-hello and topic-isolation cases in `sidecar.test.mjs`, foreign-`webContents` denial in `desktop-info-ipc` / `sidecar-command`, DNS-rebinding rejection in `ui-navigation`), replay/rewind (`recv-counter-window`, `session-counter-no-rewind`, duplicate `replayId`), expiry (`invite-expiry-fail-closed`, `room-catalog` retirement, TTL erase suite, poke-gateway lazy handle TTL), and abuse (`swarm-ingress-limits`, `bridge-ipc-limits`, `bridge-session-rate`, poke rate limits).
+- Execution evidence: root `vitest run` 768/768 (148 files), `poke-gateway` 21/21, and `desktop-electron` 59/59 pass at this commit.
+- Privacy claims: `.bolt/prompt` misstates the crypto stack (`SEC-2026-034`).
+
+**Outcome:** Findings and verification gaps recorded
+
+**Findings this review:** `SEC-2026-034`, `SEC-2026-035`, `SEC-2026-036`
+
+**Verification gaps:**
+
+- The `holepunch-sidecar` suite (`node --test test/*.mjs`) could not be executed in this sandbox: DHT/discovery-dependent cases hang without outbound network. All nine files were reviewed statically; the suite was last recorded passing in the `SEC-2026-021` remediation (2026-09-23). Re-run on an unrestricted host to confirm.
+- e2e coverage is a single Playwright smoke spec (`e2e/import-redirect.spec.ts`); its own comment notes the full encrypted-file import path lacks a fixture. No e2e-level negative testing exists — unit/integration suites carry that weight today.
+- `tests/native-wrapper/bundled-ui-audit.test.ts` passes vacuously when `native-wrapper/assets/ui/index.html` is absent (ENOENT soft-return). The asset is tracked and present today, so the audit bites; on a tree where the sync step was skipped the test cannot fail.
+- The `expo-file-system/legacy` stub always grants SAF directory permission; the permission-denied export path is untested.
 
 ## Global review history
 
@@ -1988,6 +2045,7 @@ Append one row for every completed review. This table is an index only; the modu
 
 | Date       | Module  | Commit  | Reviewer                | Outcome                                 | Finding IDs                                            |
 | ---------- | ------- | ------- | ----------------------- | --------------------------------------- | ------------------------------------------------------ |
+| 2026-09-24 | MOD-013 | 3f8f1ca | Kimi K3 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-034 (resolved), SEC-2026-035 (resolved), SEC-2026-036 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Claude Opus 5 (Cursor Agent) | Findings resolved | SEC-2026-031 (resolved), SEC-2026-033 (new/resolved), SEC-2026-032 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Grok 4.6 (Cursor Agent) | Finding resolved | SEC-2026-030 (resolved) |
 | 2026-09-24 | MOD-012 | ae05da2 | Grok 4.7 (Cursor Agent) | Findings and verification gaps recorded | SEC-2026-029, SEC-2026-030, SEC-2026-031, SEC-2026-032 |

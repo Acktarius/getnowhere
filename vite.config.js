@@ -35,7 +35,10 @@ export default defineConfig(({ command }) => ({
     },
   },
   server: {
-    host: true,
+    // Default to loopback-only for local development. Set GNH_DEV_LAN=1 only
+    // when you need the dev server reachable on LAN (e.g. phone testing).
+    // @see docs/guidelines/security-module-review.md SEC-2026-035
+    host: process.env.GNH_DEV_LAN === "1" ? true : "127.0.0.1",
     port: 5173,
     // Browser wallets cannot call most public daemons directly (CORS). In dev,
     // same-origin proxies forward to Conceal's CORS-friendly public nodes.
