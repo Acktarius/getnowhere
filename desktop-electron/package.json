@@ -1,6 +1,6 @@
 {
   "name": "gnh-desktop-electron",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Electron shell for Get NowHere (embedded Vite UI + localhost Hyperswarm sidecar child)",
