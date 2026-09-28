@@ -19,6 +19,24 @@ export function normalizeIosFileUrl(url: string): string {
 }
 
 /**
+ * Canonical iOS UI paths from expo `bundleDirectory`.
+ * Source, allowlist prefix, and `allowingReadAccessToURL` must share one
+ * `/private/var`…`/ui` form (SEC-2026-023 — ui/ only, not whole `.app`).
+ */
+export function buildIosBundledUiPaths(bundleDir: string): {
+  indexUri: string;
+  assetPrefix: string;
+  readAccessUrl: string;
+} {
+  const base = bundleDir.endsWith("/") ? bundleDir : `${bundleDir}/`;
+  return {
+    indexUri: normalizeIosFileUrl(`${base}ui/index.html`),
+    assetPrefix: normalizeIosFileUrl(`${base}ui/`),
+    readAccessUrl: normalizeIosFileUrl(`${base}ui`),
+  };
+}
+
+/**
  * react-native-webview originWhitelist entries for the bundled UI.
  * Pass iOS `bundleDirectory + "ui/"` (with trailing slash) when available.
  */

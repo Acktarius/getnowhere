@@ -237,6 +237,7 @@ native-wrapper/
 | Forever spinner (old IPA) | Pre-shell stub; rebuild with WebView enabled |
 | Stuck on splash logo | Splash hides on iOS mount; need `mobile:sync-ui` so `assets/ui` exists (Xcode Copy GNH WebView UI phase) |
 | Blank WebView | Ran `mobile:sync-ui` with correct root `.env`? Check EAS log for “Copied WebView UI” |
+| Forever spinner + syslog `Could not create a sandbox extension` / `policyAction=Ignore` | iOS `file://` source vs `allowingReadAccessToURL` path form mismatch; both must use the same `/private/var`…`/ui` canonicalization (`buildIosBundledUiPaths`) — still `ui/`-only, not the whole `.app` |
 | Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
 | Crash: `ADDON_NOT_FOUND udx-native` | `eas-build-pre-install` must create `bare/node_modules` symlink before `pod install`; verify EAS log shows "Linking bare/node_modules" in phase 1 |
 | Crash: `EXC_BREAKPOINT` / `SIGTRAP` in `RemoteNodeSyncBridgeHolder` while backgrounded | Timeout used to `queue.sync` on the same serial queue (`__DISPATCH_WAIT_FOR_QUEUE__`). Fixed in `ios-native/GnhBackgroundSync/`; rebuild `preview-ios` |
