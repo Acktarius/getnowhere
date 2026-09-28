@@ -7,15 +7,29 @@
 export const ANDROID_UI_ASSET_PREFIX = "file:///android_asset/ui/";
 
 /**
- * Normalize iOS /var → /private/var symlink in a file:// URL.
- * WKWebView fires onShouldStartLoadWithRequest with the resolved path while
- * expo-file-system may return the /var form. Normalizing both sides allows a
- * reliable prefix comparison. @see docs/architecture/mobile-p2p-runtime.md
+ * Normalize iOS file:// forms WKWebView / expo may emit:
+ * `/var`→`/private/var`, `file://localhost/…`, percent-encoding.
+ * @see docs/architecture/mobile-p2p-runtime.md
  */
 export function normalizeIosFileUrl(url: string): string {
-  return url.startsWith("file:///var/")
-    ? `file:///private/var/${url.slice("file:///var/".length)}`
-    : url;
+  let u = url;
+  try {
+    u = decodeURIComponent(url);
+  } catch {
+    u = url;
+  }
+  const localhostPrivate = /^file:\/\/localhost\/private\/var\//i;
+  const localhostVar = /^file:\/\/localhost\/var\//i;
+  if (localhostPrivate.test(u)) {
+    return `file:///private/var/${u.replace(localhostPrivate, "")}`;
+  }
+  if (localhostVar.test(u)) {
+    return `file:///private/var/${u.replace(localhostVar, "")}`;
+  }
+  if (u.startsWith("file:///var/")) {
+    return `file:///private/var/${u.slice("file:///var/".length)}`;
+  }
+  return u;
 }
 
 /**
@@ -34,6 +48,16 @@ export function buildIosBundledUiPaths(bundleDir: string): {
     assetPrefix: normalizeIosFileUrl(`${base}ui/`),
     readAccessUrl: normalizeIosFileUrl(`${base}ui`),
   };
+}
+
+/**
+ * SEC-2026-023 fallback: packaged UI under `Something.app/ui/` only.
+ * Covers expo vs WKWebView path-string drift without opening the whole `.app`.
+ */
+export function isIosAppBundleUiFileUrl(url: string): boolean {
+  const lower = normalizeIosFileUrl(url).toLowerCase();
+  if (!lower.startsWith("file:")) return false;
+  return /\/[^/]+\.app\/ui\//.test(lower);
 }
 
 /**
@@ -60,8 +84,8 @@ export function isAllowedWebViewNavigationUrl(
   url: string,
   extraPrefixes: readonly string[] = [],
 ): boolean {
-  if (!url) return false;
-  // Normalize /var → /private/var on both sides so iOS symlink form never matters.
+  // iOS may probe with an empty URL before the real file:// navigation.
+  if (!url) return true;
   const lower = normalizeIosFileUrl(url).toLowerCase();
   if (lower === "about:blank") return true;
   if (lower.startsWith(ANDROID_UI_ASSET_PREFIX)) return true;
@@ -69,5 +93,6 @@ export function isAllowedWebViewNavigationUrl(
     if (prefix && lower.startsWith(normalizeIosFileUrl(prefix).toLowerCase()))
       return true;
   }
+  if (isIosAppBundleUiFileUrl(url)) return true;
   return false;
 }

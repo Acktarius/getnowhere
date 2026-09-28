@@ -211,10 +211,10 @@ navigation to `http(s)://`, `intent://`, or other asset paths is blocked via
 `onShouldStartLoadWithRequest` using `isAllowedWebViewNavigationUrl`. On iOS,
 `buildIosBundledUiPaths` / `normalizeIosFileUrl` canonicalize the WebView `source`,
 allowlist prefix, and `allowingReadAccessToURL` to the same `/private/var`…`/ui`
-form so WKWebView sandbox containment matches the navigation check (loading a
-`/var` index while granting `/private/var`…`/ui` fails with sandbox-extension
-errors). Read access stays scoped to `ui/` only — not the whole `.app` root
-(SEC-2026-023). The per-launch
+form (also `file://localhost/…` and percent-encoding). Navigation allowlist
+accepts expo’s prefix **or** any `*.app/ui/` file URL — still not the whole
+`.app` root (SEC-2026-023). Denied URLs log `[gnh-webview] nav denied` for
+device syslog. The per-launch
 bridge token lives in the RN host and in the injected script closure — it is **not**
 published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
 still attaches the token in postMessage payloads validated by RN), but cannot read

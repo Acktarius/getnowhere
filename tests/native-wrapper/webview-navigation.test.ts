@@ -3,6 +3,7 @@ import {
   ANDROID_UI_ASSET_PREFIX,
   getWebViewOriginWhitelist,
   isAllowedWebViewNavigationUrl,
+  isIosAppBundleUiFileUrl,
   normalizeIosFileUrl,
 } from "../../native-wrapper/src/webviewNavigation";
 
@@ -48,8 +49,17 @@ describe("isAllowedWebViewNavigationUrl", () => {
     expect(isAllowedWebViewNavigationUrl("javascript:alert(1)")).toBe(false);
   });
 
-  it("allows about:blank for WebView internals", () => {
+  it("allows about:blank and empty iOS probe URLs", () => {
     expect(isAllowedWebViewNavigationUrl("about:blank")).toBe(true);
+    expect(isAllowedWebViewNavigationUrl("")).toBe(true);
+  });
+
+  it("allows iOS App.app/ui/ URLs even when expo prefix is missing", () => {
+    expect(
+      isAllowedWebViewNavigationUrl(
+        "file://localhost/var/containers/Bundle/Application/UUID/GetNowHere.app/ui/index.html",
+      ),
+    ).toBe(true);
   });
 });
 
@@ -58,6 +68,26 @@ describe("normalizeIosFileUrl", () => {
     expect(
       normalizeIosFileUrl(
         "file:///var/containers/Bundle/Application/App.app/ui/index.html",
+      ),
+    ).toBe(
+      "file:///private/var/containers/Bundle/Application/App.app/ui/index.html",
+    );
+  });
+
+  it("rewrites file://localhost/var/ to file:///private/var/", () => {
+    expect(
+      normalizeIosFileUrl(
+        "file://localhost/var/containers/Bundle/Application/App.app/ui/index.html",
+      ),
+    ).toBe(
+      "file:///private/var/containers/Bundle/Application/App.app/ui/index.html",
+    );
+  });
+
+  it("decodes percent-encoding before rewrite", () => {
+    expect(
+      normalizeIosFileUrl(
+        "file:///var/containers/Bundle/Application/App.app/ui/index%2Ehtml",
       ),
     ).toBe(
       "file:///private/var/containers/Bundle/Application/App.app/ui/index.html",
@@ -74,6 +104,26 @@ describe("normalizeIosFileUrl", () => {
     expect(normalizeIosFileUrl("file:///android_asset/ui/index.html")).toBe(
       "file:///android_asset/ui/index.html",
     );
+  });
+});
+
+describe("isIosAppBundleUiFileUrl", () => {
+  it("allows …/App.app/ui/… and rejects sibling ui-evil / bundle root", () => {
+    expect(
+      isIosAppBundleUiFileUrl(
+        "file://localhost/private/var/containers/Bundle/Application/X/GetNowHere.app/ui/index.html",
+      ),
+    ).toBe(true);
+    expect(
+      isIosAppBundleUiFileUrl(
+        "file:///private/var/containers/Bundle/Application/X/GetNowHere.app/ui-evil/x.html",
+      ),
+    ).toBe(false);
+    expect(
+      isIosAppBundleUiFileUrl(
+        "file:///private/var/containers/Bundle/Application/X/GetNowHere.app/Info.plist",
+      ),
+    ).toBe(false);
   });
 });
 

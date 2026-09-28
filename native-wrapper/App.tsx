@@ -497,11 +497,16 @@ export default function App() {
     () => getWebViewOriginWhitelist(extraPrefixes),
     [extraPrefixes],
   );
-  // Delegate to the shared allowlist helper; normalizeIosFileUrl inside it
-  // bridges the /var → /private/var symlink so iOS and Android use the same path.
+  // Packaged ui/ only (SEC-2026-023). Deny logs show the real WKWebView URL in syslog.
   // @see docs/architecture/mobile-p2p-runtime.md
   const allowNav = useCallback(
-    (url: string) => isAllowedWebViewNavigationUrl(url, extraPrefixes),
+    (url: string) => {
+      const ok = isAllowedWebViewNavigationUrl(url, extraPrefixes);
+      if (!ok) {
+        console.warn("[gnh-webview] nav denied", url);
+      }
+      return ok;
+    },
     [extraPrefixes],
   );
 
