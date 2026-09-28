@@ -43,8 +43,9 @@ jobs:
       - name: Audit holepunch-sidecar
         run: npm audit --audit-level=high --prefix holepunch-sidecar
 
+      # Forge/packager extract-zip advisories are build-toolchain only; package.json has no runtime deps.
       - name: Audit desktop-electron
-        run: npm audit --audit-level=high --prefix desktop-electron
+        run: npm audit --omit=dev --audit-level=high --prefix desktop-electron
 
       - name: Audit poke-gateway
         run: npm audit --audit-level=high --prefix poke-gateway
