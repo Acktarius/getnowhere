@@ -13,6 +13,9 @@ See also: [`expo-eas-android-build.md`](expo-eas-android-build.md),
 `native-wrapper` only. Builds run on **EAS cloud from Linux** (no local Mac /
 Xcode required). Target is **iPhone only** (`supportsTablet: false`).
 
+Use a globally installed EAS CLI (`npm install -g eas-cli` then `eas login`).
+Invoke **`eas …`** from `native-wrapper/` — not `npx eas …`.
+
 ## Identifiers
 
 | Field | Value |
@@ -40,7 +43,7 @@ node native-wrapper/scripts/apply-expo-version.mjs
 
 - Expo account + EAS CLI (`npm install -g eas-cli` then `eas login`)
 - Paid Apple Developer team that owns `im.getnowhere.app`
-- App Store Connect app for that bundle ID (needed for TestFlight submit)
+- App Store Connect app for that bundle ID (needed for TestFlight / production submit)
 - Root `.env` with `VITE_POKE_GATEWAY_URL` before UI sync
 - For peer wake on device: poke-gateway on the VPS with APNs AuthKey (below)
 
@@ -48,36 +51,101 @@ node native-wrapper/scripts/apply-expo-version.mjs
 
 | Profile | Platform | Distribution | Use |
 |---------|----------|--------------|-----|
-| `preview` | Android | internal APK | Sideload / QA (unchanged) |
-| `preview-ios` | iOS | **store** | TestFlight from Linux |
-| `adhoc-ios` | iOS | **internal** (ad hoc) | Direct install on registered UDIDs (no TestFlight) |
-| `production` | iOS / Android | store / AAB | Later App Store / Play |
+| `adhoc-ios` | iOS | **internal** (ad hoc) | Direct install on registered UDIDs (no TestFlight) — **first gate** |
+| `preview-ios` | iOS | **store** | TestFlight from Linux — **after ad-hoc passes** |
+| `production` | iOS / Android | store / AAB | App Store — **after TestFlight passes** |
+| `preview` | Android | internal APK | Sideload / QA (unchanged; see Android doc) |
 
 `distribution` is profile-wide in EAS, so iOS TestFlight uses **`preview-ios`**
 instead of overloading Android `preview`. Direct phone install without TestFlight
 uses **`adhoc-ios`** (Apple ad hoc; device UDID must be registered first).
 
-**Cost:** EAS iOS builds are paid. One iOS profile at a time. Prefer **`adhoc-ios`
-first**; only run **`preview-ios`** after that install passes. If ad-hoc fails,
-fix and rebuild ad-hoc — do not spend a TestFlight build on the same unproven
-change.
+## Release sequence (mandatory)
 
-## Bake UI env, then cloud-build (TestFlight)
+EAS iOS builds are **paid**. One iOS profile at a time. Never skip a gate.
+
+1. **`adhoc-ios`** — register UDID → sync UI → build → install on device → verify the change.
+2. **`preview-ios`** — only after that ad-hoc install **passes** → build → `eas submit` → TestFlight → verify again.
+3. **`production`** — only after TestFlight **passes** → build → submit to App Store.
+
+If ad-hoc fails: fix and rebuild **`adhoc-ios`** only. Do not spend a TestFlight or
+production build on the same unproven change.
+
+Before every cloud build (any profile), bake the WebView UI from the repo root:
+
+```bash
+# From repo root — requires root .env (VITE_POKE_GATEWAY_URL)
+npm run mobile:sync-ui
+```
 
 Root `VITE_*` values are compiled into the WebView bundle **on your machine**.
 The APNs AuthKey (`.p8`) is **never** sent to EAS — only poke-gateway on the VPS
 uses it.
 
-```bash
-# From repo root — requires root .env (VITE_POKE_GATEWAY_URL)
-npm run mobile:sync-ui
+### 1. Ad hoc install (device gate)
 
+Register each iPhone UDID once. Safari install link from EAS works only for
+devices in that provisioning profile. Add a new phone later → register UDID →
+rebuild.
+
+```bash
+cd native-wrapper
+eas device:create
+# open the enrollment URL on the iPhone (or pass --udid)
+
+# From repo root after device is listed
+npm run mobile:sync-ui
+cd native-wrapper
+eas build --platform ios --profile adhoc-ios
+```
+
+When the build finishes, open the Expo install page / QR on the **same**
+registered iPhone → Install → if needed trust the cert under
+**Settings → General → VPN & Device Management**.
+
+Stop here until the install behaves correctly (UI loads, no forever spinner,
+change under test verified).
+
+### 2. TestFlight (`preview-ios`)
+
+Only after step 1 passes:
+
+```bash
+npm run mobile:sync-ui
 cd native-wrapper
 eas build --platform ios --profile preview-ios
 eas submit --platform ios --profile preview-ios --latest
 ```
 
-**EAS build lifecycle (iOS):**
+Verify on TestFlight before any production build.
+
+### 3. Production / App Store
+
+Only after step 2 passes:
+
+```bash
+npm run mobile:sync-ui
+cd native-wrapper
+eas build --platform ios --profile production
+eas submit --platform ios --profile production --latest
+```
+
+Optional shorthand when you intentionally want build + submit in one step
+(still only after TestFlight has passed):
+
+```bash
+eas build --platform ios --profile production --auto-submit
+```
+
+EAS will prompt for Apple credentials (signing / App Store Connect). That is
+separate from the poke-gateway `.p8`.
+
+No ntfy credential is baked into the bundle (`SEC-2026-031`). iOS wakes via APNs
+through poke-gateway; the AuthKey never reaches EAS. See root `README.md`.
+
+## EAS build lifecycle (iOS)
+
+Shared by every iOS profile above:
 
 1. `eas-build-pre-install` — syncs `expo.version` in `app.json` from repo-root
    `version` (`version=…` → CFBundleShortVersionString), then installs
@@ -123,34 +191,6 @@ must match (`internal import BackgroundTasks`). The background-sync config
 plugin must not rewrite `internal import Expo` into a plain `import Expo`.
 Do not override `applicationDidEnterBackground` on ExpoAppDelegate — schedule
 via `UIApplication.didEnterBackgroundNotification` instead.
-EAS will prompt for Apple credentials (signing / App Store Connect). That is
-separate from the poke-gateway `.p8`.
-
-Optional later:
-
-```bash
-npx eas build --platform ios --profile production --auto-submit
-```
-
-No ntfy credential is baked into the bundle (`SEC-2026-031`). iOS wakes via APNs
-through poke-gateway; the AuthKey never reaches EAS. See root `README.md`.
-
-## Ad hoc install (no TestFlight)
-
-Register each iPhone UDID once, then build `adhoc-ios`. Safari install link from EAS works only for devices in that provisioning profile. Add a new phone later → register UDID → rebuild.
-
-```bash
-cd native-wrapper
-npx eas device:create
-# open the enrollment URL on the iPhone (or pass --udid)
-
-# From repo root after device is listed
-npm run mobile:sync-ui
-cd native-wrapper
-npx eas build --platform ios --profile adhoc-ios
-```
-
-When the build finishes, open the Expo install page / QR on the **same** registered iPhone → Install → if needed trust the cert under **Settings → General → VPN & Device Management**.
 
 ## APNs AuthKey for poke-gateway (`.p8`, not `.pk8`)
 
@@ -215,7 +255,7 @@ cd /opt/poke-gateway && docker compose up -d
 ```text
 native-wrapper/
 ├─ app.json      # ios.bundleIdentifier, supportsTablet: false
-├─ eas.json      # preview-ios → store / TestFlight
+├─ eas.json      # adhoc-ios → preview-ios → production
 ├─ package.json
 ├─ assets/
 └─ src/
@@ -227,6 +267,7 @@ native-wrapper/
 - Keep profiles in `native-wrapper/eas.json`.
 - Document identifier, signing, or APNs placement changes in this file.
 - Do not put `APNS_*` or `NTFY_PUBLISH_TOKEN` in the app / EAS env.
+- Release order: **adhoc-ios → preview-ios → production**. Use `eas`, not `npx eas`.
 
 ## Troubleshooting
 
@@ -240,7 +281,7 @@ native-wrapper/
 | Forever spinner + syslog `Could not create a sandbox extension` / `policyAction=Ignore` | iOS `file://` source vs `allowingReadAccessToURL` path form mismatch; both must use the same `/private/var`…`/ui` canonicalization (`buildIosBundledUiPaths`) — still `ui/`-only, not the whole `.app` |
 | Wrong bundle / topic | App ID, `app.json`, and `APNS_BUNDLE_ID` all `im.getnowhere.app` |
 | Crash: `ADDON_NOT_FOUND udx-native` | `eas-build-pre-install` must create `bare/node_modules` symlink before `pod install`; verify EAS log shows "Linking bare/node_modules" in phase 1 |
-| Crash: `EXC_BREAKPOINT` / `SIGTRAP` in `RemoteNodeSyncBridgeHolder` while backgrounded | Timeout used to `queue.sync` on the same serial queue (`__DISPATCH_WAIT_FOR_QUEUE__`). Fixed in `ios-native/GnhBackgroundSync/`; rebuild `preview-ios` |
+| Crash: `EXC_BREAKPOINT` / `SIGTRAP` in `RemoteNodeSyncBridgeHolder` while backgrounded | Timeout used to `queue.sync` on the same serial queue (`__DISPATCH_WAIT_FOR_QUEUE__`). Fixed in `ios-native/GnhBackgroundSync/`; rebuild **adhoc-ios** first, then `preview-ios` after it passes |
 | Crash: `ReferenceError: process is not defined` (BareKit) | BareKit 0.13.x does not expose `process` as a global. `entry.mjs` must guard `process.on` with `typeof process !== 'undefined'`. |
 
 ## Policy text
@@ -249,3 +290,4 @@ native-wrapper/
 > `npm run dev`. Expo.dev / EAS is used for the mobile native wrapper, iOS
 > builds, signing, TestFlight, and App Store delivery. Desktop packaging uses
 > Electron (`desktop-electron/`). APNs AuthKeys stay on the poke-gateway host.
+> iOS release order: adhoc-ios, then preview-ios (TestFlight), then production.

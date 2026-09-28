@@ -177,9 +177,9 @@ npm run mobile:install
 npm run mobile:android          # sync dist + expo run:android (local debug APK)
 
 cd native-wrapper
-npx eas build --platform android --profile preview   # cloud APK
-npx eas build --platform ios --profile production
-npx eas submit --platform ios
+eas build --platform android --profile preview   # cloud APK
+# iOS: adhoc-ios → preview-ios (TestFlight) → production — see expo-eas-ios-build.md
+eas build --platform ios --profile adhoc-ios
 ```
 
 Cordova and Capacitor are not used. Rejected paths: `docs/architecture/mobile-p2p-runtime.md`.

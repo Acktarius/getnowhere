@@ -459,17 +459,17 @@ cd native-wrapper && ./gradlew :app:dependencies --configuration releaseRuntimeC
 From `native-wrapper/` after `eas build:configure`:
 
 ```bash
-# Internal APK (sideload)
-npx eas build --platform android --profile preview
+# Internal APK (sideload) — use global `eas` (npm install -g eas-cli), not `npx eas`
+eas build --platform android --profile preview
 
 # Play Store bundle
-npx eas build --platform android --profile production
+eas build --platform android --profile production
 ```
 
 Local EAS build (same pipeline, your machine):
 
 ```bash
-npx eas build --platform android --profile preview --local
+eas build --platform android --profile preview --local
 ```
 
 Run `npm run mobile:sync-ui` before cloud/local EAS builds so the uploaded
