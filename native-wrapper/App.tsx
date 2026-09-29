@@ -6,10 +6,12 @@
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AppStateStatus } from "react-native";
+import type { AppStateStatus, KeyboardEvent } from "react-native";
 import {
   ActivityIndicator,
   AppState,
+  Dimensions,
+  Keyboard,
   Platform,
   StyleSheet,
   View,
@@ -52,6 +54,11 @@ import {
   buildMobileBridgeInjection,
   buildPokeTokenDispatchScript,
 } from "./src/injectMobileBridge";
+import {
+  iosKeyboardInsetScript,
+  iosKeyboardOverlapPx,
+  isIosKeyboardDismissMessage,
+} from "./src/iosKeyboardInset";
 import {
   buildSaveTextFileResolveScript,
   handleSaveTextFileWebViewMessage,
@@ -324,6 +331,26 @@ export default function App() {
     void SplashScreen.hideAsync();
   }, []);
 
+  // iOS keyboard frame → WebView. Visual viewport alone left the composer short.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const push = (heightPx: number) => {
+      webViewRef.current?.injectJavaScript(iosKeyboardInsetScript(heightPx));
+    };
+    const onFrame = (e: KeyboardEvent) => {
+      push(
+        iosKeyboardOverlapPx(Dimensions.get("window").height, e.endCoordinates),
+      );
+    };
+    const subs = [
+      Keyboard.addListener("keyboardWillChangeFrame", onFrame),
+      Keyboard.addListener("keyboardDidHide", () => push(0)),
+    ];
+    return () => {
+      for (const sub of subs) sub.remove();
+    };
+  }, []);
+
   useEffect(() => {
     if (!isGnhBackgroundSyncNativeAvailable()) return;
     return registerBackgroundSyncWebViewInjector((script) => {
@@ -381,6 +408,10 @@ export default function App() {
   const onWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const raw = event.nativeEvent.data;
+      if (Platform.OS === "ios" && isIosKeyboardDismissMessage(raw)) {
+        Keyboard.dismiss();
+        return;
+      }
       if (applyWalletSessionMessage(raw)) {
         return;
       }
@@ -530,6 +561,7 @@ export default function App() {
         ref={webViewRef}
         source={{ uri: uiUri }}
         style={styles.webview}
+        hideKeyboardAccessoryView={Platform.OS === "ios"}
         originWhitelist={originWhitelist}
         allowFileAccess
         allowFileAccessFromFileURLs

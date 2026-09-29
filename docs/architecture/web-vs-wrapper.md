@@ -101,18 +101,34 @@ Desktop Electron is out of scope. On iOS/Android the Vite UI runs in a WebView
 with `interactive-widget=overlays-content`. The chat room:
 
 1. Floats the composer with `bottom` = keyboard overlap
-   (`useVisualViewportBottomInset`) and reserves that overlap in the thread’s
-   bottom padding so the latest bubble can sit above the input.
+   (`useVisualViewportBottomInset`) and reserves that overlap so the latest
+   bubble can sit above the input.
 2. Scrolls the message list to the end on focus, keyboard/frame resize, scroller
    resize, and new messages (with short deferred retries — Android keyboard
    animation settles late).
 3. Pins the shell to `visualViewport` (`top` / `height`) only when
    `offsetTop > 0` (typical iOS focus pan) so the contact header stays visible.
 
-Same code path for iOS and Android (`isMobileHost()`). Implementers:
-`src/hooks/useVisualViewportBottomInset.ts`,
+Android reserves the overlap as bottom padding on the thread.
+
+iOS differs:
+
+- The shell injects the UIKit keyboard frame (`useIosKeyboardInset`). That
+  height is the composer `bottom` unless iOS is panning (`offsetTop > 0`),
+  which still pins the shell instead of adding the height twice.
+- The thread end gap is a spacer element. WKWebView does not include
+  `padding-bottom` of a flex scroller in the scroll height, so the last bubble
+  stayed under the composer.
+- The WebView hides the form accessory bar (previous / next / done). Return
+  sends (`enterKeyHint="send"`). A tap on the thread, outside buttons, blurs
+  the field and asks the shell to dismiss the keyboard. iOS will not add a
+  second system key beside Return.
+
+Implementers: `src/hooks/useVisualViewportBottomInset.ts`,
+`src/hooks/useIosKeyboardInset.ts`, `native-wrapper/src/iosKeyboardInset.ts`,
 `src/screens/chats/ChatRoomScreen.tsx`, `.chat-room-composer--mobile` in
-`src/styles/global.css`.
+`src/styles/global.css`. `hideKeyboardAccessoryView` is set on the iOS WebView
+in `native-wrapper/App.tsx`.
 
 ## Packaged desktop (Ubuntu)
 

@@ -1605,6 +1605,10 @@ button {
   flex-shrink: 0;
   background: var(--bg);
 }
+/** iOS keyboard is up — home-indicator padding would float the field above the keys. */
+.chat-room-composer--mobile.chat-room-composer--keyboard {
+  padding-bottom: 10px;
+}
 
 /* Utilities */
 .hidden {

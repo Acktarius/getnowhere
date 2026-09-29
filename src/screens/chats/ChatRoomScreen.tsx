@@ -11,8 +11,12 @@ import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { NonSelectableText } from "@/components/NonSelectableText";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
+import {
+  dismissIosKeyboard,
+  useIosKeyboardInset,
+} from "@/hooks/useIosKeyboardInset";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
-import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { isMobileHost, isMobileIos } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   ChainSendFlyout,
   ttlUnixFromDuration,
@@ -236,9 +240,18 @@ export function ChatRoomScreen() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const composerBarRef = useRef<HTMLDivElement>(null);
   const mobileHost = isMobileHost();
+  const iosHost = isMobileIos();
   /** @see docs/architecture/web-vs-wrapper.md — chat room keyboard */
   const keyboardFrame = useVisualViewportBottomInset(mobileHost);
-  const keyboardInset = keyboardFrame.bottomInset;
+  const nativeKeyboardHeight = useIosKeyboardInset(iosHost);
+  // iOS pan (offsetTop > 0) already shrinks the shell; don't add native height too.
+  const iosPan = iosHost && keyboardFrame.offsetTop > 0;
+  const keyboardInset =
+    nativeKeyboardHeight != null && !iosPan
+      ? nativeKeyboardHeight
+      : keyboardFrame.bottomInset;
+  const iosKeyboardOpen =
+    iosHost && (keyboardInset > 0 || keyboardFrame.offsetTop > 0);
   const [composerBarHeight, setComposerBarHeight] = useState(64);
 
   function scrollThreadToEnd() {
@@ -669,7 +682,8 @@ export function ChatRoomScreen() {
   const offline = displayRoom.peerStatus === "offline";
 
   // Pin only when iOS pans the visual viewport; Android overlays keep offsetTop 0.
-  const pinToVisualViewport = mobileHost && keyboardFrame.offsetTop > 0;
+  // Native keyboard height (no pan) lifts the composer instead of pinning.
+  const pinToVisualViewport = mobileHost && iosPan;
   // When pinned to vv.height the shell already excludes the keyboard — don't
   // double-count inset in padding. Android (no pin) needs inset in padding.
   const threadBottomPad = mobileHost
@@ -780,15 +794,35 @@ export function ChatRoomScreen() {
         <ChatTopicBackdrop topicId={displayRoom.roomTopic} />
         <div
           ref={scrollerRef}
+          onClick={
+            iosHost
+              ? (e) => {
+                  const target = e.target;
+                  if (!(target instanceof Element)) return;
+                  if (
+                    target.closest(
+                      "button, a, input, textarea, select, [role='button']",
+                    )
+                  ) {
+                    return;
+                  }
+                  if (document.activeElement !== composerRef.current) return;
+                  composerRef.current?.blur();
+                  dismissIosKeyboard();
+                }
+              : undefined
+          }
           style={{
             flex: 1,
             minHeight: 0,
             minWidth: 0,
             overflowY: "auto",
             overflowX: "hidden",
-            padding: mobileHost
-              ? `16px 14px ${threadBottomPad}px`
-              : "16px 14px 8px",
+            padding: iosHost
+              ? "16px 14px 0px"
+              : mobileHost
+                ? `16px 14px ${threadBottomPad}px`
+                : "16px 14px 8px",
             display: "flex",
             flexDirection: "column",
             position: "relative",
@@ -915,12 +949,25 @@ export function ChatRoomScreen() {
               ))}
             </>
           )}
+          {iosHost ? (
+            // WKWebView omits padding-bottom from this flex scroller's scroll height.
+            <div
+              aria-hidden
+              style={{ height: threadBottomPad, flexShrink: 0 }}
+            />
+          ) : null}
         </div>
       </div>
 
       <div
         ref={composerBarRef}
-        className={mobileHost ? "chat-room-composer--mobile" : undefined}
+        className={
+          !mobileHost
+            ? undefined
+            : iosKeyboardOpen
+              ? "chat-room-composer--mobile chat-room-composer--keyboard"
+              : "chat-room-composer--mobile"
+        }
         style={{
           ...(mobileHost
             ? { bottom: keyboardInset }
@@ -966,6 +1013,7 @@ export function ChatRoomScreen() {
         >
           <textarea
             ref={composerRef}
+            enterKeyHint={iosHost ? "send" : undefined}
             value={draft}
             disabled={!composeAllowed}
             onChange={(e) => setDraft(e.target.value)}

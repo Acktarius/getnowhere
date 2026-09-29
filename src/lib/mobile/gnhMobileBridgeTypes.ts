@@ -105,3 +105,8 @@ export function isMobileHost(): boolean {
 export function isMobileAndroid(): boolean {
   return isMobileHost() && window.gnhMobile?.platform === "android";
 }
+
+/** Returns true when the hosting native shell is iOS. */
+export function isMobileIos(): boolean {
+  return isMobileHost() && window.gnhMobile?.platform === "ios";
+}
