@@ -438,7 +438,8 @@ export type WalletSecretsExport = {
 
 export type WalletBackupDownload = {
   filename: string;
-  payload: unknown;
+  /** Backup file text, written as-is. */
+  json: string;
 };
 
 export type SeedBackupService = {

@@ -77,9 +77,9 @@ export function BackupSettingsScreen() {
     setBusy(true);
     setDownloadBusy(true);
     try {
-      const { filename, payload } =
+      const { filename, json } =
         await seedBackupService.downloadWalletBackup(password);
-      const result = await downloadJson(filename, payload);
+      const result = await downloadJson(filename, json);
       setMsg(
         result === "saved"
           ? `Saved ${filename} to Files`

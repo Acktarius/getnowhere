@@ -38,7 +38,8 @@ const envelope3 = {
   nonce: "00".repeat(24),
   data: [1, 2, 3],
 };
-const saveEncryptedWalletFile = vi.fn(() => envelope3);
+const backupJson = JSON.stringify(envelope3);
+const saveEncryptedWalletFile = vi.fn(() => backupJson);
 
 vi.mock("@/services/conceal/ConcealWalletService", () => ({
   getInternalWalletState: () => getInternalWalletState(),
@@ -83,7 +84,7 @@ describe("SeedBackupAdapter", () => {
     );
     persist.mockClear();
     saveEncryptedWalletFile.mockClear();
-    saveEncryptedWalletFile.mockReturnValue(envelope3);
+    saveEncryptedWalletFile.mockReturnValue(backupJson);
   });
 
   it("revealSecrets rejects bad wallet password", async () => {
@@ -150,7 +151,7 @@ describe("SeedBackupAdapter", () => {
     );
   });
 
-  it("downloadWalletBackup persists and returns encrypted payload", async () => {
+  it("downloadWalletBackup persists and returns encrypted backup text", async () => {
     const res = await SeedBackupAdapter.downloadWalletBackup("wallet-secret");
     expect(persist).toHaveBeenCalled();
     expect(saveEncryptedWalletFile).toHaveBeenCalledWith(
@@ -158,6 +159,6 @@ describe("SeedBackupAdapter", () => {
       "wallet-secret",
     );
     expect(res.filename).toMatch(/getnowhere-wallet-.*\.json/);
-    expect(res.payload).toEqual(envelope3);
+    expect(res.json).toBe(backupJson);
   });
 });

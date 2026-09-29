@@ -51,14 +51,11 @@ export const SeedBackupAdapter: SeedBackupService = {
   async downloadWalletBackup(password: string) {
     const rt = requireOpenRuntime(password);
     await persist();
-    const payload = saveEncryptedWalletFile(
-      withoutRoomSessions(rt.raw),
-      password,
-    );
+    const json = saveEncryptedWalletFile(withoutRoomSessions(rt.raw), password);
     const stamp = new Date().toISOString().slice(0, 10);
     return {
       filename: `getnowhere-wallet-${stamp}.json`,
-      payload,
+      json,
     };
   },
 

@@ -1,4 +1,4 @@
-/** Typed app boundary for conceal-wallet-sdk 0.3.0. @see docs/features/lite-wallet.md */
+/** Typed app boundary for conceal-wallet-sdk 0.3.2. @see docs/features/lite-wallet.md */
 
 import type {
   Account,
@@ -160,9 +160,7 @@ export function openEncryptedWalletFile(
   text: string,
   password: string,
 ): OpenedWalletFile | null {
-  if (text.length > sdk.MAX_ENVELOPE_JSON_CHARS) return null;
-  const normalized = text.replace(/^\uFEFF/, "").trim();
-  const envelope = sdk.parseEncryptedWalletJson(normalized);
+  const envelope = sdk.parseEncryptedWalletJson(text);
   if (envelope === null) return null;
   return sdk.openEncryptedWallet(
     envelope as sdk.EncryptedWalletEnvelope,
@@ -170,12 +168,12 @@ export function openEncryptedWalletFile(
   );
 }
 
-/** Encrypt a plaintext wallet blob into a downloadable envelope. */
+/** Encrypt a plaintext wallet blob into backup-file text. @see conceal-wallet-sdk docs/wallet-envelope.md */
 export function saveEncryptedWalletFile(
   raw: sdk.RawWalletV1,
   password: string,
-): sdk.Envelope3 {
-  return sdk.saveEncryptedWallet(raw, password);
+): string {
+  return sdk.stringifyEncryptedWallet(sdk.saveEncryptedWallet(raw, password));
 }
 
 // ===== Daemon + sync (real chain scanning) =====

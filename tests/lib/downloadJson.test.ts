@@ -15,7 +15,7 @@ describe("downloadJson", () => {
   });
 
   it("uses anchor download on desktop", async () => {
-    const result = await downloadJson("wallet.json", { encrypted: true });
+    const result = await downloadJson("wallet.json", '{"encrypted":true}');
 
     expect(result).toBe("downloaded");
     expect(URL.createObjectURL).toHaveBeenCalledOnce();
@@ -40,7 +40,7 @@ describe("downloadJson", () => {
       },
     };
 
-    const promise = downloadJson("wallet.json", { encrypted: true });
+    const promise = downloadJson("wallet.json", '{"encrypted":true}');
     expect(saveTextFile).toHaveBeenCalledOnce();
     const call = saveTextFile.mock.calls[0]?.[0] as {
       filename: string;
@@ -48,7 +48,7 @@ describe("downloadJson", () => {
       requestId: string;
     };
     expect(call.filename).toBe("wallet.json");
-    expect(JSON.parse(call.content)).toEqual({ encrypted: true });
+    expect(call.content).toBe('{"encrypted":true}');
 
     handlers[0]?.({ requestId: call.requestId, ok: true });
     await expect(promise).resolves.toBe("saved");
@@ -74,7 +74,7 @@ describe("downloadJson", () => {
 
     vi.spyOn(crypto, "randomUUID").mockReturnValue("req-1");
 
-    await expect(downloadJson("wallet.json", {})).rejects.toThrow(
+    await expect(downloadJson("wallet.json", "{}")).rejects.toThrow(
       /Share cancelled/,
     );
   });

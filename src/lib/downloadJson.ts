@@ -1,12 +1,10 @@
 export type DownloadJsonResult = "downloaded" | "saved";
 
-/** Save JSON locally; desktop uses anchor download, mobile uses native file save. */
+/** Save JSON text verbatim; desktop uses anchor download, mobile uses native file save. */
 export async function downloadJson(
   filename: string,
-  data: unknown,
+  json: string,
 ): Promise<DownloadJsonResult> {
-  const json = JSON.stringify(data, null, 2);
-
   if (window.gnhMobile?.saveTextFile) {
     await saveViaMobileBridge(filename, json);
     return "saved";

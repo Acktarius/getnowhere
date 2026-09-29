@@ -17,7 +17,7 @@ export const MockSeedBackupAdapter: SeedBackupService = {
   async downloadWalletBackup(_password: string) {
     return {
       filename: "mock-wallet.json",
-      payload: { mock: true },
+      json: '{"mock":true}',
     };
   },
   async confirmBackup(_password: string) {
