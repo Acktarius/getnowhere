@@ -100,14 +100,13 @@ final class GnhBiometricModule {
     guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
       completion(false); return
     }
-    // Syslog: "SecSecurityClientGet new thread!" then insert -25330, then a
-    // second evaluateAccessControl. Add on this callback. @see gnh-mobile-security-bridge.md
+    // SecItemAdd must run on this callback with the same LAContext.
+    // @see native-wrapper/docs/gnh-mobile-security-bridge.md
     ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Enable biometric unlock") { ok, _ in
       guard ok else {
         DispatchQueue.main.async { completion(false) }
         return
       }
-      ctx.interactionNotAllowed = true
       let data = Data(plaintext.utf8)
       self.deleteKeychainItem(account: credentialId)
       var query = self.keychainQuery(account: credentialId)

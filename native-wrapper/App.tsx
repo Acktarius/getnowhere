@@ -394,7 +394,7 @@ export default function App() {
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
       setAppState(state);
-      if (state === "background" || state === "inactive") {
+      if (state === "background") {
         noteBackground();
         return;
       }
