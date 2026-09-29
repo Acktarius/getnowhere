@@ -1,9 +1,9 @@
 /** Injected gnhMobile security API fragment (biometric, securePrefs, lifecycle). */
-export function securityBridgeInjectionJs(): string {
+export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
   return `
   var securityHandlers = {};
   var lifecycleHandlers = [];
-  var lockGeneration = 0;
+  var lockGeneration = ${initialLockGeneration};
   var WALLET_FILE_TIMEOUT_MS = 15000;
   function nextRequestId() {
     return 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);

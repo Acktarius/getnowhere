@@ -166,17 +166,14 @@ export default function App() {
   const obscureInSwitcher =
     blurInAppSwitcher && (appState === "inactive" || appState === "background");
 
-  const injectedBeforeLoad = useMemo(
-    () =>
-      bridgeToken
-        ? buildMobileBridgeInjection(
-            bridgeToken,
-            Platform.OS === "android" ? "android" : "ios",
-            pendingWalletRestore,
-          )
-        : "",
-    [bridgeToken, pendingWalletRestore],
-  );
+  const injectedBeforeLoad = bridgeToken
+    ? buildMobileBridgeInjection(
+        bridgeToken,
+        Platform.OS === "android" ? "android" : "ios",
+        pendingWalletRestore,
+        nativeLockRef.current.generation,
+      )
+    : "";
 
   const injectLifecycle = useCallback(
     (type: string, backgroundElapsedMs?: number) => {
@@ -250,8 +247,9 @@ export default function App() {
       sessionAlive: hasWalletSession(),
     });
     setNativeAppInBackground(false);
-    // iOS icon badge is independent of Notification Center dismissals; clear
-    // when the user returns to the app. Android badges follow notifications.
+    webViewRef.current?.injectJavaScript(
+      `window.gnhMobile&&window.gnhMobile.setLockGeneration&&window.gnhMobile.setLockGeneration(${nativeLockRef.current.generation});true;`,
+    );
     if (Platform.OS === "ios") {
       void nativeClearBadge();
     }
