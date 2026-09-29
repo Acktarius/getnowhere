@@ -12,9 +12,13 @@ WebView loads bundled Vite UI; native Expo shell routes `postMessage` JSON.
   equivalent). No universal access, no iframe callers.
 - Bridge token for P2P (`gnh-bridge`) stays in injection closure — not on
   `window.gnhMobile`.
-- **Lock generation:** monotonic integer incremented on each app-access lock.
-  Native and JS include `lockGeneration` on biometric requests; stale responses
-  are discarded when `response.lockGeneration !== current`.
+- **Lock generation:** monotonic integer owned by the RN host, incremented each
+  time the app backgrounds. Native pushes it into the WebView
+  (`setLockGeneration`) on pre-load injection and on foreground. The UI only
+  echoes it on security commands and MUST NOT write its own counter there
+  (`AppAccessController` keeps a separate UI-only generation). Stale responses
+  are discarded when `response.lockGeneration !== current`. It never wraps back
+  to an old value, so a late response from a previous session cannot match.
 - **Single in-flight biometric:** native shell rejects a second prompt while one
   is active.
 - **Locked-state reject:** while app access is locked, reject `gnh-bridge`
@@ -55,6 +59,22 @@ as follows:
 
 Unlock success (`unlockAppAccess` with `{ ok: true }`) clears native locked
 state for the matching generation only.
+
+**When the gate locks and releases** (`native-wrapper/src/nativeLockGate.ts`):
+
+- Lock: immediately on AppState `background` (generation `+1`).
+- Release on `active`, without biometrics, only when the UI would not lock
+  either — no wallet file, app access not enrolled, auto-lock timeout `0`, or
+  time in background below the timeout. Otherwise it stays locked until
+  `unlockAppAccess`. Unknown elapsed time while enrolled stays locked.
+- Wallet presence (`walletFileExists`) and enrollment
+  (`gnh.appAccessCredentialId`, written/removed only by the native biometric
+  module) are read natively on launch and after each lock. Only an explicit
+  `exists: false` counts as no wallet; any read failure counts as present /
+  enrolled. @see docs/storage/mobile-durable-storage.md § Reinstall
+- The timeout comes from `gnh-wallet-session` `keep` / `setTimeout`
+  (`autoLockTimeoutSec`, default 300). Native ignores it while locked, so a
+  locked WebView cannot shorten the gate.
 
 ## Channels
 

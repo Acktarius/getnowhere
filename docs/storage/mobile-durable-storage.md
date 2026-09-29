@@ -58,6 +58,31 @@ Android Auto Backup and device transfer are disabled for the app, with
 exclude rules for `gnh/` and `gnh_secure_prefs`. iOS marks the wallet file
 excluded from iCloud backup. User **Download wallet .json** is unchanged.
 
+## Reinstall: no wallet ⇒ no biometric lock
+
+- **Android:** uninstall removes encrypted prefs and Keystore keys, and backup
+  is off, so a fresh install starts with app lock and data lock off.
+- **iOS:** Keychain items survive uninstall, but the sandboxed wallet file does
+  not. After reinstall these can come back: settings (`gnh.app:*`, including
+  both biometric toggles), `gnh.appAccessCredentialId`, data-unlock enrollment
+  and its wrapped password, and `gnh.walletSession`.
+- **Rule (both platforms):** when the wallet file is definitively absent
+  (`exists: false`, never an error or `unreadable`), resurfaced settings are
+  ignored so the user can create or import a wallet:
+  - Boot: `reconcileBiometricSettingsWithEnrollments` runs
+    `clearAllMobileBiometricEnrollments` (same cleanup as Delete wallet) and
+    turns both toggles off.
+  - Native gate: releases on foreground without biometrics.
+    @see native-wrapper/docs/gnh-mobile-security-bridge.md
+- **Not wiped:** other resurfaced `gnh.app:*` settings and `gnh.walletSession`
+  (its password has no wallet file to open). No first-launch Keychain wipe.
+- **iOS crash mid-write:** `GnhWalletFile.write` removes the canonical file
+  before moving the temp file in. A crash in that gap reads as absent. The
+  wallet is unreadable either way; only the biometric enrollment is lost.
+- **Toggle off with credential present while a wallet exists** (e.g. a failed
+  removal) is still not reconciled; the native gate can stay locked after a
+  background longer than the timeout.
+
 ## Envelope
 
 `GNHW` + version `0x01` + nonce length `12` + 12-byte nonce + AES-GCM

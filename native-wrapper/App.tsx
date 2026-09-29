@@ -39,6 +39,7 @@ import {
   securePrefsGet,
   securePrefsRemove,
   securePrefsSet,
+  walletFileExists,
 } from "./src/gnhSecurityNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
@@ -60,6 +61,12 @@ import {
   isIosKeyboardDismissMessage,
 } from "./src/iosKeyboardInset";
 import {
+  DEFAULT_AUTO_LOCK_TIMEOUT_SEC,
+  isWalletPresentFromNative,
+  normalizeAutoLockTimeoutSec,
+  shouldStayLockedOnForeground,
+} from "./src/nativeLockGate";
+import {
   buildSaveTextFileResolveScript,
   handleSaveTextFileWebViewMessage,
 } from "./src/saveTextFileFromWebView";
@@ -72,6 +79,7 @@ import {
   hydrateWalletSessionFromPersist,
   markWalletSessionBackgrounded,
   markWalletSessionForeground,
+  parseWalletSessionMessage,
   setWalletSessionPersist,
   WALLET_SESSION_PREFS_KEY,
 } from "./src/walletSessionKeepAlive";
@@ -84,8 +92,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
 const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
+const APP_ACCESS_CREDENTIAL_PREFS_KEY = "gnh.appAccessCredentialId";
 const LOCKED_SECURE_PREFS_ALLOWLIST = [
-  "gnh.appAccessCredentialId",
+  APP_ACCESS_CREDENTIAL_PREFS_KEY,
   "gnh-biometric-enrollment",
 ] as const;
 
@@ -160,6 +169,27 @@ export default function App() {
     if (generation !== nativeLockRef.current.generation) return;
     nativeLockRef.current.locked = false;
   }, []);
+  /** Native-read gate inputs; fail closed (present / enrolled) until read. */
+  const walletPresentRef = useRef(true);
+  const appAccessEnrolledRef = useRef(true);
+  const autoLockTimeoutSecRef = useRef(DEFAULT_AUTO_LOCK_TIMEOUT_SEC);
+  const refreshNativeGateInputs = useCallback(() => {
+    void walletFileExists()
+      .then((result) => {
+        walletPresentRef.current = isWalletPresentFromNative(result);
+      })
+      .catch(() => {
+        walletPresentRef.current = true;
+      });
+    void securePrefsGet(APP_ACCESS_CREDENTIAL_PREFS_KEY)
+      .then((credentialId) => {
+        appAccessEnrolledRef.current =
+          typeof credentialId === "string" && credentialId.length > 0;
+      })
+      .catch(() => {
+        appAccessEnrolledRef.current = true;
+      });
+  }, []);
 
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
   /** Native cover for OS app-switcher snapshots (critical on iOS). */
@@ -215,6 +245,7 @@ export default function App() {
 
   const noteBackground = useCallback(() => {
     lockNativeSecurityGate();
+    refreshNativeGateInputs();
     if (backgroundAtMsRef.current == null) {
       backgroundAtMsRef.current = Date.now();
     }
@@ -224,7 +255,7 @@ export default function App() {
     });
     setNativeAppInBackground(true);
     injectLifecycle("background");
-  }, [injectLifecycle, lockNativeSecurityGate]);
+  }, [injectLifecycle, lockNativeSecurityGate, refreshNativeGateInputs]);
 
   const noteForeground = useCallback(() => {
     const elapsedMs =
@@ -232,6 +263,17 @@ export default function App() {
         ? Date.now() - backgroundAtMsRef.current
         : undefined;
     backgroundAtMsRef.current = null;
+    if (
+      nativeLockRef.current.locked &&
+      !shouldStayLockedOnForeground({
+        walletPresent: walletPresentRef.current,
+        appAccessEnrolled: appAccessEnrolledRef.current,
+        autoLockTimeoutSec: autoLockTimeoutSecRef.current,
+        backgroundElapsedMs: elapsedMs,
+      })
+    ) {
+      nativeLockRef.current.locked = false;
+    }
     pendingForegroundRef.current = { backgroundElapsedMs: elapsedMs };
     if (typeof elapsedMs === "number") {
       copyWalletSessionIfValid(elapsedMs);
@@ -368,6 +410,10 @@ export default function App() {
   }, [injectPokeToken]);
 
   useEffect(() => {
+    refreshNativeGateInputs();
+  }, [refreshNativeGateInputs]);
+
+  useEffect(() => {
     setWalletSessionPersist({
       get: () => securePrefsGet(WALLET_SESSION_PREFS_KEY),
       set: async (value) => {
@@ -410,6 +456,12 @@ export default function App() {
       if (Platform.OS === "ios" && isIosKeyboardDismissMessage(raw)) {
         Keyboard.dismiss();
         return;
+      }
+      if (!nativeLockRef.current.locked) {
+        const timeoutSec = normalizeAutoLockTimeoutSec(
+          parseWalletSessionMessage(raw)?.autoLockTimeoutSec,
+        );
+        if (timeoutSec != null) autoLockTimeoutSecRef.current = timeoutSec;
       }
       if (applyWalletSessionMessage(raw)) {
         return;

@@ -1354,6 +1354,19 @@ one is ignored. Shared-mode attach logs a stale path lock that has no token lock
 - Added tests in `tests/native-wrapper/handle-security-webview.test.ts` for locked denies/allowlist, generation mismatch, unlock success callback, and stale response dropping.
 - Updated `native-wrapper/docs/gnh-mobile-security-bridge.md` with implemented native lock-gate policy.
 
+#### 2026-09-29 — regression fix — Claude Opus 5.5 (Cursor Agent)
+
+**Outcome:** SEC-2026-024 remediation kept; two usability regressions fixed
+
+- Regression 1: native gate locked on every background but only `unlockAppAccess` released it. Non-enrolled users, and enrolled users back before the timeout, stayed natively locked while the UI looked unlocked (Android file import `wallet-write-failed:locked`, export, dropped `gnh-bridge` commands).
+- Fix 1: `native-wrapper/src/nativeLockGate.ts` `shouldStayLockedOnForeground`. On `active`, native releases the gate only when the UI rule would not lock (not enrolled, timeout `0`, or elapsed < timeout). Enrollment is read natively from `gnh.appAccessCredentialId`; read failure or unknown elapsed fails closed. Timeout updates are ignored while locked.
+- Regression 2: `useMobileAppAccess` and `completeAppAccessUnlock` overwrote the native bridge `lockGeneration` with the UI counter. After a JS lock, native rejected `unlockAppAccess` and dropped every security response.
+- Fix 2: the UI no longer calls `setLockGeneration`; native is the single writer.
+- Unchanged: lock on background, generation `+1`, locked-state denies and allowlist, stale-response drop, biometric-only release of a real lock.
+- Tests: `tests/native-wrapper/native-lock-gate.test.ts`; `tests/mobile/app-access-idle-integration.test.tsx` asserts the UI never writes the bridge generation.
+- Fix 3 (reinstall): iOS Keychain keeps settings and biometric credentials across reinstall while the wallet file is gone. Rule "no wallet ⇒ no biometric lock": when native reports the wallet definitively absent, the native gate releases on foreground and boot reconcile clears all biometric enrollments (as Delete wallet does) and both toggles. `unreadable` or any read error keeps the lock. Second opinion (Perplexity) agreed, provided absence stays native-determined and fail-closed.
+- Remaining gaps (`docs/storage/mobile-durable-storage.md` § Reinstall): no first-launch Keychain wipe (`gnh.walletSession` and other settings resurface); with a wallet present, toggle-off plus a leftover app-access credential is not reconciled.
+
 ---
 
 

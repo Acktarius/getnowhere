@@ -11,6 +11,7 @@ import {
 import { signalUnlockRemoved } from "@/lib/auth/platform-unlock";
 import { clearAppAccessBiometric } from "@/lib/mobile/app-access-biometric";
 import { gnhSecurePrefsGet } from "@/lib/mobile/gnh-biometric-unlock";
+import { getInstalledWalletStorageState } from "@/services/storage/installMobileNativeStorage";
 import { useSettingsStore } from "@/state/settingsStore";
 
 const APP_ACCESS_CREDENTIAL_KEY = "gnh.appAccessCredentialId";
@@ -43,6 +44,21 @@ export async function clearAllMobileBiometricEnrollments(): Promise<void> {
  */
 export async function reconcileBiometricSettingsWithEnrollments(): Promise<void> {
   const settings = useSettingsStore.getState();
+
+  // No wallet ⇒ no biometrics (iOS Keychain outlives reinstall). Not on "unreadable".
+  if (getInstalledWalletStorageState()?.status === "absent") {
+    try {
+      await clearAllMobileBiometricEnrollments();
+    } catch {
+      /* best-effort; native gate also releases when no wallet */
+    }
+    if (settings.appAccessBiometricEnabled)
+      settings.setAppAccessBiometric(false);
+    if (settings.dataUnlockBiometricEnabled) {
+      settings.setDataUnlockBiometric(false);
+    }
+    return;
+  }
 
   if (settings.appAccessBiometricEnabled) {
     let credentialId: string | null = null;
