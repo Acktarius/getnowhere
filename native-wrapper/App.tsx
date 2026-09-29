@@ -344,6 +344,7 @@ export default function App() {
     };
     const subs = [
       Keyboard.addListener("keyboardWillChangeFrame", onFrame),
+      Keyboard.addListener("keyboardWillHide", () => push(0)),
       Keyboard.addListener("keyboardDidHide", () => push(0)),
     ];
     return () => {

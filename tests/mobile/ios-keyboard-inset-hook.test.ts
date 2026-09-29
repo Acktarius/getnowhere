@@ -13,7 +13,10 @@ describe("useIosKeyboardInset", () => {
     expect(result.current).toBeNull();
   });
 
-  it("tracks gnh-ios-keyboard and ignores a disabled host", () => {
+  it("tracks gnh-ios-keyboard while a field is focused", () => {
+    const field = document.createElement("textarea");
+    document.body.appendChild(field);
+    field.focus();
     const { result, rerender } = renderHook(
       ({ enabled }) => useIosKeyboardInset(enabled),
       { initialProps: { enabled: true } },
@@ -33,5 +36,29 @@ describe("useIosKeyboardInset", () => {
 
     rerender({ enabled: false });
     expect(result.current).toBeNull();
+    field.remove();
+  });
+
+  it("drops to 0 on dismiss and ignores a leftover show frame", () => {
+    const field = document.createElement("textarea");
+    document.body.appendChild(field);
+    field.focus();
+    const { result } = renderHook(() => useIosKeyboardInset(true));
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("gnh-ios-keyboard", { detail: 320 }),
+      );
+    });
+    expect(result.current).toBe(320);
+
+    act(() => {
+      field.blur();
+      window.dispatchEvent(new CustomEvent("gnh-ios-keyboard", { detail: 0 }));
+      window.dispatchEvent(
+        new CustomEvent("gnh-ios-keyboard", { detail: 320 }),
+      );
+    });
+    expect(result.current).toBe(0);
+    field.remove();
   });
 });

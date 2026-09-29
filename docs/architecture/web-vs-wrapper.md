@@ -119,10 +119,11 @@ iOS differs:
 - The thread end gap is a spacer element. WKWebView does not include
   `padding-bottom` of a flex scroller in the scroll height, so the last bubble
   stayed under the composer.
-- The WebView hides the form accessory bar (previous / next / done). Return
-  sends (`enterKeyHint="send"`). A tap on the thread, outside buttons, blurs
-  the field and asks the shell to dismiss the keyboard. iOS will not add a
-  second system key beside Return.
+- The WebView hides the form accessory bar (previous / next / done). The
+  keyboard key stays Return (`enterKeyHint="enter"`) and inserts a newline.
+  Send, including the long-press auto-destruct flyout, stays on the composer
+  button. A tap on the thread blurs the field, clears the keyboard inset, and
+  asks the shell to dismiss the keyboard so the composer returns to the bottom.
 
 Implementers: `src/hooks/useVisualViewportBottomInset.ts`,
 `src/hooks/useIosKeyboardInset.ts`, `native-wrapper/src/iosKeyboardInset.ts`,

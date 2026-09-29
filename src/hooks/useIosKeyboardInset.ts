@@ -2,14 +2,21 @@ import { useEffect, useState } from "react";
 
 const EVENT = "gnh-ios-keyboard";
 
-/** Ask the iOS shell to dismiss the keyboard. Blur alone is unreliable in WKWebView. */
+type IosKeyboardWindow = Window & { __gnhIosKeyboardHeight?: number };
+
+function publishIosKeyboardHeight(height: number): void {
+  const next = Math.max(0, Math.round(height));
+  (window as IosKeyboardWindow).__gnhIosKeyboardHeight = next;
+  window.dispatchEvent(new CustomEvent(EVENT, { detail: next }));
+}
+
+/** Ask the iOS shell to dismiss the keyboard and drop the composer immediately. */
 export function dismissIosKeyboard(): void {
+  publishIosKeyboardHeight(0);
   window.ReactNativeWebView?.postMessage(
     JSON.stringify({ channel: "gnh-keyboard", action: "dismiss" }),
   );
 }
-
-type IosKeyboardWindow = Window & { __gnhIosKeyboardHeight?: number };
 
 function readInjectedHeight(): number | null {
   if (typeof window === "undefined") return null;
@@ -35,7 +42,14 @@ export function useIosKeyboardInset(enabled: boolean): number | null {
     }
     const apply = (value: unknown) => {
       if (typeof value !== "number" || !Number.isFinite(value)) return;
-      setHeight(Math.max(0, value));
+      const next = Math.max(0, value);
+      // A late show-frame after blur left the composer floating. Ignore it.
+      const field = document.activeElement;
+      const typing =
+        field instanceof HTMLTextAreaElement ||
+        field instanceof HTMLInputElement;
+      if (next > 0 && !typing) return;
+      setHeight(next);
     };
     apply(readInjectedHeight());
     const onFrame = (event: Event) => {

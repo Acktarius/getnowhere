@@ -244,14 +244,20 @@ export function ChatRoomScreen() {
   /** @see docs/architecture/web-vs-wrapper.md — chat room keyboard */
   const keyboardFrame = useVisualViewportBottomInset(mobileHost);
   const nativeKeyboardHeight = useIosKeyboardInset(iosHost);
+  const [iosComposerFocused, setIosComposerFocused] = useState(false);
   // iOS pan (offsetTop > 0) already shrinks the shell; don't add native height too.
-  const iosPan = iosHost && keyboardFrame.offsetTop > 0;
+  // Unfocused: inset stays 0 so the composer returns to the bottom with the keyboard.
+  const iosPan = iosHost && iosComposerFocused && keyboardFrame.offsetTop > 0;
   const keyboardInset =
-    nativeKeyboardHeight != null && !iosPan
-      ? nativeKeyboardHeight
-      : keyboardFrame.bottomInset;
+    iosHost && !iosComposerFocused
+      ? 0
+      : nativeKeyboardHeight != null && !iosPan
+        ? nativeKeyboardHeight
+        : keyboardFrame.bottomInset;
   const iosKeyboardOpen =
-    iosHost && (keyboardInset > 0 || keyboardFrame.offsetTop > 0);
+    iosHost &&
+    iosComposerFocused &&
+    (keyboardInset > 0 || keyboardFrame.offsetTop > 0);
   const [composerBarHeight, setComposerBarHeight] = useState(64);
 
   function scrollThreadToEnd() {
@@ -1013,7 +1019,7 @@ export function ChatRoomScreen() {
         >
           <textarea
             ref={composerRef}
-            enterKeyHint={iosHost ? "send" : undefined}
+            enterKeyHint={iosHost ? "enter" : undefined}
             value={draft}
             disabled={!composeAllowed}
             onChange={(e) => setDraft(e.target.value)}
@@ -1039,6 +1045,8 @@ export function ChatRoomScreen() {
               font: "inherit",
             }}
             onKeyDown={(e) => {
+              // iOS Return stays a newline. Send (including TTL) is the button.
+              if (iosHost) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 void handleSend();
@@ -1049,10 +1057,12 @@ export function ChatRoomScreen() {
                 const active = document.activeElement;
                 if (active === composerRef.current) return;
                 if (composerBarRef.current?.contains(active)) return;
+                if (iosHost) setIosComposerFocused(false);
                 setPendingReply(null);
               }, 0);
             }}
             onFocus={() => {
+              if (iosHost) setIosComposerFocused(true);
               if (!mobileHost) return;
               scheduleScrollThreadToEnd();
             }}
