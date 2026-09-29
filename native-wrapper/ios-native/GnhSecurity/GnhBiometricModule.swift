@@ -100,22 +100,22 @@ final class GnhBiometricModule {
     guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
       completion(false); return
     }
-    // Without this context, SecItemAdd fails -25330 (authentication needed)
-    // and starts a second synchronous Face ID. @see docs in gnh-mobile-security-bridge.md
+    // Syslog: "SecSecurityClientGet new thread!" then insert -25330, then a
+    // second evaluateAccessControl. Add on this callback. @see gnh-mobile-security-bridge.md
     ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Enable biometric unlock") { ok, _ in
-      DispatchQueue.main.async {
-        guard ok else { completion(false); return }
-        let data = Data(plaintext.utf8)
-        self.deleteKeychainItem(account: credentialId)
-        var query = self.keychainQuery(account: credentialId)
-        query[kSecValueData as String] = data
-        query[kSecUseAuthenticationContext as String] = ctx
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-          NSLog("[gnh-biometric] SecItemAdd status %d", status)
-        }
-        completion(status == errSecSuccess)
+      guard ok else {
+        DispatchQueue.main.async { completion(false) }
+        return
       }
+      ctx.interactionNotAllowed = true
+      let data = Data(plaintext.utf8)
+      self.deleteKeychainItem(account: credentialId)
+      var query = self.keychainQuery(account: credentialId)
+      query[kSecValueData as String] = data
+      query[kSecUseAuthenticationContext as String] = ctx
+      let status = SecItemAdd(query as CFDictionary, nil)
+      NSLog("[gnh-biometric] SecItemAdd status %d", status)
+      DispatchQueue.main.async { completion(status == errSecSuccess) }
     }
   }
 

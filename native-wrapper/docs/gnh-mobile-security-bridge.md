@@ -82,9 +82,11 @@ Injected via `_dispatchLifecycleEvent`. No response.
 **Native-only decrypt:** Keystore/Keychain secrets never cross the bridge.
 `unlockDataUnlock` returns wallet password only after biometric success.
 
-iOS enroll shows one Face ID prompt, then writes the Keychain item with that
-same `LAContext`. A second prompt inside the first callback never returns, so
-the UI stays on Enrolling….
+iOS enroll: `SecItemAdd` runs on the `evaluatePolicy` callback, with
+`interactionNotAllowed` set and that same `LAContext`. Device log of the
+previous path: `SecSecurityClientGet new thread!`, then `insert failed`
+`-25330` (`Authentication is needed`), then a second synchronous
+`evaluateAccessControl` that is what actually inserts the item.
 
 **Errors:** `unsupported`, `cancelled`, `invalidated`, `locked`, `busy`, `failed`.
 
