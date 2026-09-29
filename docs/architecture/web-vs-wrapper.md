@@ -122,7 +122,9 @@ iOS differs:
 - The WebView hides the form accessory bar (previous / next / done). The
   keyboard key stays Return (`enterKeyHint="enter"`) and inserts a newline.
   Send, including the long-press auto-destruct flyout, stays on the composer
-  button. A tap on the thread blurs the field, clears the keyboard inset, and
+  button. Only the text inside the field is selectable; the field chrome and
+  the send button are not, so the 1.5s hold is not taken by the iOS selection
+  handles. A tap on the thread blurs the field, clears the keyboard inset, and
   asks the shell to dismiss the keyboard so the composer returns to the bottom.
 
 Implementers: `src/hooks/useVisualViewportBottomInset.ts`,

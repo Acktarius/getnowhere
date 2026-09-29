@@ -970,9 +970,13 @@ export function ChatRoomScreen() {
         className={
           !mobileHost
             ? undefined
-            : iosKeyboardOpen
-              ? "chat-room-composer--mobile chat-room-composer--keyboard"
-              : "chat-room-composer--mobile"
+            : [
+                "chat-room-composer--mobile",
+                iosHost ? "chat-room-composer--ios" : "",
+                iosKeyboardOpen ? "chat-room-composer--keyboard" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")
         }
         style={{
           ...(mobileHost

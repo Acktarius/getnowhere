@@ -1609,6 +1609,18 @@ button {
 .chat-room-composer--mobile.chat-room-composer--keyboard {
   padding-bottom: 10px;
 }
+/** iOS long-press selects the composer chrome and steals the send-button hold. */
+.chat-room-composer--ios,
+.chat-room-composer--ios * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.chat-room-composer--ios textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
 
 /* Utilities */
 .hidden {
