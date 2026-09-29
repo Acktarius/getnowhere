@@ -36,8 +36,26 @@ export function SecuritySettingsScreen() {
     if (isMobileHost()) {
       void initMobileBiometricStorage();
     }
-    void isBiometricUnlockAvailable().then(setDataUnlockAvailable);
-    void isAppAccessBiometricAvailable().then(setAppAccessAvailable);
+    let cancelled = false;
+    const refresh = () => {
+      void isBiometricUnlockAvailable().then((ok) => {
+        if (!cancelled) setDataUnlockAvailable(ok);
+      });
+      void isAppAccessBiometricAvailable().then((ok) => {
+        if (!cancelled) setAppAccessAvailable(ok);
+      });
+    };
+    refresh();
+    // Face ID backgrounds the app. A check during that prompt can report
+    // unavailable and used to stick until the process was killed.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   async function verifyWalletPassword(password: string): Promise<boolean> {
@@ -161,11 +179,8 @@ export function SecuritySettingsScreen() {
                 : "Available on mobile only."
             }
             on={appAccessAvailable ? s.appAccessBiometricEnabled : false}
-            onToggle={
-              appAccessAvailable && !appAccessBusy
-                ? (v) => void handleAppAccessToggle(v)
-                : undefined
-            }
+            disabled={!appAccessAvailable || appAccessBusy}
+            onToggle={(v) => void handleAppAccessToggle(v)}
           />
           {appAccessError && (
             <div className="field__error" style={{ padding: "0 16px 12px" }}>
@@ -181,11 +196,8 @@ export function SecuritySettingsScreen() {
                 : "Requires a mobile device with biometric hardware."
             }
             on={dataUnlockAvailable ? s.dataUnlockBiometricEnabled : false}
-            onToggle={
-              dataUnlockAvailable && !dataEnrollBusy
-                ? (v) => void handleDataUnlockToggle(v)
-                : undefined
-            }
+            disabled={!dataUnlockAvailable || dataEnrollBusy}
+            onToggle={(v) => void handleDataUnlockToggle(v)}
           />
           {dataUnlockError && !enrollOpen && (
             <div className="field__error" style={{ padding: "0 16px 12px" }}>

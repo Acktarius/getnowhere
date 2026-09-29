@@ -7,6 +7,8 @@ type Props = {
   value?: ReactNode;
   on?: boolean;
   onToggle?: (next: boolean) => void;
+  /** Keep the switch visible but not clickable (enrollment in progress). */
+  disabled?: boolean;
   trailing?: ReactNode;
   icon?: LucideIcon;
 };
@@ -21,6 +23,7 @@ export function PrivacySettingItem({
   value,
   on,
   onToggle,
+  disabled = false,
   trailing,
   icon: Icon,
 }: Props) {
@@ -46,6 +49,7 @@ export function PrivacySettingItem({
           role="switch"
           aria-checked={on}
           aria-label={title}
+          disabled={disabled}
           onClick={() => onToggle(!on)}
           className="privacy-setting-item__switch"
           data-on={on ? "true" : "false"}

@@ -1262,6 +1262,10 @@ button {
 .privacy-setting-item__switch[data-on="true"] {
   background: var(--primary);
 }
+.privacy-setting-item__switch:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .privacy-setting-item__knob {
   position: absolute;
   top: 2px;

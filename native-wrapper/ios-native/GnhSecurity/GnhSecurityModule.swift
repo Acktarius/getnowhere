@@ -106,25 +106,25 @@ class GnhSecurityModule: NSObject {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.enrollDataUnlock(walletId: walletId, password: password) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "unlockDataUnlock":
       guard let walletId = payload["walletId"] as? String, let credentialId = payload["credentialId"] as? String else {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.unlockDataUnlock(walletId: walletId, credentialId: credentialId) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "enrollAppAccess":
       guard let passcode = payload["passcode"] as? String else {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.enrollAppAccess(passcode: passcode) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "unlockAppAccess":
       biometric.unlockAppAccess { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "removeCredential":
       guard let credentialId = payload["credentialId"] as? String else {
@@ -134,6 +134,16 @@ class GnhSecurityModule: NSObject {
       resolver(jsonString(["ok": true]))
     default:
       resolver(jsonString(["error": "failed"]))
+    }
+  }
+
+  // LAContext replies off the main queue. RN must see the resolve there.
+  private func finish(_ resolver: @escaping RCTPromiseResolveBlock, _ result: [String: Any]) {
+    let payload = jsonString(result)
+    if Thread.isMainThread {
+      resolver(payload)
+    } else {
+      DispatchQueue.main.async { resolver(payload) }
     }
   }
 

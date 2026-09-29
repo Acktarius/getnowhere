@@ -82,6 +82,10 @@ Injected via `_dispatchLifecycleEvent`. No response.
 **Native-only decrypt:** Keystore/Keychain secrets never cross the bridge.
 `unlockDataUnlock` returns wallet password only after biometric success.
 
+iOS enroll shows one Face ID prompt, then writes the Keychain item with that
+same `LAContext`. A second prompt inside the first callback never returns, so
+the UI stays on Enrolling….
+
 **Errors:** `unsupported`, `cancelled`, `invalidated`, `locked`, `busy`, `failed`.
 
 ### `gnh-secure-prefs` (WebView ↔ native)
