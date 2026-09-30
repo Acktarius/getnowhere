@@ -381,6 +381,19 @@ adb install -r native-wrapper/builds/GetNowHere-v0.2.4-b1-java17-signed-test.apk
 Production / F-Droid: sign the unsigned APK with your release key via
 `apksigner` (same as conceal-wallet-cordova after `build-fdroid-reference.sh`).
 
+### Native source checks (Ubuntu)
+
+Check `native-wrapper/android-native/` and `ios-native/` without building an APK or using a Mac:
+
+```bash
+npm run mobile:check:native   # both checks below
+npm run mobile:check:kotlin   # Gradle compileDebugKotlin + Kotlin unit tests
+npm run mobile:check:swift    # swiftc -parse (syntax only)
+```
+
+- **Kotlin:** needs the generated `native-wrapper/android/` project. Run `npm --prefix native-wrapper run prebuild:android` once if it is missing. `preBuild` copies `android-native/GnhSecurity` into the app, so the check compiles the current sources against the real Android and React Native classpath. The first run needs network access.
+- **Swift:** needs `swiftc` on `PATH` (for example via swiftly). This is a syntax check only. `swiftc -typecheck` cannot work on Linux, because `Security`, `UIKit`, `LocalAuthentication`, `CryptoKit` and `React` only exist in the iOS SDK. Type errors show up first in the ad-hoc iOS build.
+
 ### F-Droid de-Google cleanup
 
 `scripts/fix-for-fdroid.py` strips `google()` Maven repos and transitive

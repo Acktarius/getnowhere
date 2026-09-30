@@ -1,23 +1,22 @@
 /**
- * P2PEncryptionService — X25519 ECDH + HKDF-SHA256 + ChaCha20-Poly1305 (RFC 8439).
- *
- * Suite CHACHA20_POLY1305_V1 uses the 96-bit-nonce IETF construction from
- * @noble/ciphers `chacha20poly1305` — NOT XChaCha20-Poly1305.
- *
- * Nonce: HKDF(nonceSeed, direction, "nonce|{counter}") → 12 bytes. Open accepts
- * only the peer send nonce in the receive window. @see docs/security/encryption.md
+ * P2PEncryptionService — X25519 ECDH + HKDF-SHA256 + IETF ChaCha20-Poly1305 (not XChaCha).
+ * Nonce = HKDF iv XOR frame counter; open accepts any authentic counter >= recvCounter.
+ * @see docs/security/encryption.md
  */
 
 import { chacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { liveFrameHeader } from "@/services/p2p/liveFrameCodec";
 import { deriveTopicRefForSuite, randomHex } from "@/services/protocol/ids";
 import type { P2PSessionConfig, TopicSuiteId } from "@/types/protocol";
 import type { P2PEncryptionService } from "@/types/services";
 
-/** Look-ahead for dropped frames. A larger gap fails closed. */
-export const RECV_NONCE_WINDOW = 64;
+const NONCE_BYTES = 12;
+const COUNTER_OFFSET = 4;
+const IV_SALT = new TextEncoder().encode("send");
+const IV_INFO = new TextEncoder().encode("iv");
 
 const privateKeys = new Map<string, Uint8Array>();
 
@@ -45,26 +44,47 @@ function encodeInfo(info: {
   );
 }
 
-function nonceEquals(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
-  return diff === 0;
-}
-
-function deriveNonce(
+/** `iv XOR (0x00000000 || counter u64 BE)`; injective in `counter`. */
+export function deriveFrameNonce(
   nonceSeed: string,
   counter: number,
-  direction: "send" | "recv",
 ): Uint8Array {
-  const material = hkdf(
+  const nonce = hkdf(
     sha256,
     hexToBytes(nonceSeed),
-    new TextEncoder().encode(direction),
-    new TextEncoder().encode(`nonce|${counter}`),
-    12,
+    IV_SALT,
+    IV_INFO,
+    NONCE_BYTES,
   );
-  return material;
+  const counterBytes = new Uint8Array(NONCE_BYTES - COUNTER_OFFSET);
+  new DataView(counterBytes.buffer).setBigUint64(0, BigInt(counter), false);
+  for (let i = 0; i < counterBytes.length; i++) {
+    nonce[COUNTER_OFFSET + i] ^= counterBytes[i];
+  }
+  return nonce;
+}
+
+function frameAad(aad: Uint8Array | undefined, counter: number): Uint8Array {
+  const base = aad ?? new Uint8Array(0);
+  const header = liveFrameHeader(counter);
+  const out = new Uint8Array(base.length + header.length);
+  out.set(base, 0);
+  out.set(header, base.length);
+  return out;
+}
+
+function isSealableCounter(counter: number): boolean {
+  return (
+    Number.isSafeInteger(counter) &&
+    counter >= 0 &&
+    counter < Number.MAX_SAFE_INTEGER
+  );
+}
+
+function isOpenableCounter(counter: number, recvCounter: number): boolean {
+  return (
+    Number.isSafeInteger(counter) && counter >= 0 && counter >= recvCounter
+  );
 }
 
 export function wipePrivateKey(ref: string): void {
@@ -181,37 +201,35 @@ export const P2PEncryptionAdapter: P2PEncryptionService = {
   async seal({ session, plaintext, aad }) {
     const key = privateKeys.get(session.sendKeyRef);
     if (!key) throw new Error("Missing send key.");
-    const nonce = deriveNonce(session.nonceSeed, session.sendCounter, "send");
-    const aead = chacha20poly1305(key, nonce, aad);
+    const counter = session.sendCounter;
+    if (!isSealableCounter(counter)) {
+      throw new Error("Send counter exhausted or invalid.");
+    }
+    const nonce = deriveFrameNonce(session.nonceSeed, counter);
+    const aead = chacha20poly1305(key, nonce, frameAad(aad, counter));
     const ciphertext = aead.encrypt(plaintext);
     return {
       ciphertext,
-      nonce,
-      session: { ...session, sendCounter: session.sendCounter + 1 },
+      counter,
+      session: { ...session, sendCounter: counter + 1 },
     };
   },
 
-  async open({ session, ciphertext, nonce, aad }) {
+  async open({ session, counter, ciphertext, aad }) {
     const key = privateKeys.get(session.recvKeyRef);
-    if (!key || nonce.length !== 12) return null;
-    const start = session.recvCounter;
-    if (!Number.isSafeInteger(start) || start < 0) return null;
-    for (let counter = start; counter < start + RECV_NONCE_WINDOW; counter++) {
-      // Peer sealed with salt "send". Decrypt only after that nonce matches.
-      const expected = deriveNonce(session.nonceSeed, counter, "send");
-      if (!nonceEquals(expected, nonce)) continue;
-      try {
-        const aead = chacha20poly1305(key, expected, aad);
-        const plaintext = aead.decrypt(ciphertext);
-        return {
-          plaintext,
-          session: { ...session, recvCounter: counter + 1 },
-        };
-      } catch {
-        return null;
-      }
+    if (!key || !isOpenableCounter(counter, session.recvCounter)) return null;
+    // Peer sealed under its "send" nonce; rebuild it from the wire counter.
+    const nonce = deriveFrameNonce(session.nonceSeed, counter);
+    try {
+      const aead = chacha20poly1305(key, nonce, frameAad(aad, counter));
+      const plaintext = aead.decrypt(ciphertext);
+      return {
+        plaintext,
+        session: { ...session, recvCounter: counter + 1 },
+      };
+    } catch {
+      return null;
     }
-    return null;
   },
 };
 

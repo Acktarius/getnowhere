@@ -67,8 +67,8 @@ describe("v2 live chat AEAD", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recv,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildChatAad(roomId, recv),
     });
     expect(opened).not.toBeNull();
@@ -85,8 +85,8 @@ describe("v2 live chat AEAD", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recv,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildProofAad(roomId, recv),
     });
     expect(opened).toBeNull();

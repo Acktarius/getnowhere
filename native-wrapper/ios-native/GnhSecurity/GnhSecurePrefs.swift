@@ -45,26 +45,35 @@ final class GnhSecurePrefs {
     return (nil, "unavailable")
   }
 
-  func set(key: String, value: String) {
-    remove(key: key)
+  /** Update in place, add when absent. Returns true only when the Keychain stored the value. */
+  @discardableResult
+  func set(key: String, value: String) -> Bool {
     let data = Data(value.utf8)
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: key,
+    ]
+    let update: [String: Any] = [
       kSecValueData as String: data,
       kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
     ]
-    SecItemAdd(query as CFDictionary, nil)
+    let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+    if status != errSecItemNotFound { return status == errSecSuccess }
+    let add = query.merging(update) { _, new in new }
+    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
   }
 
-  func remove(key: String) {
+  /** Returns true when the item is gone (already absent counts as success). */
+  @discardableResult
+  func remove(key: String) -> Bool {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: key,
     ]
-    SecItemDelete(query as CFDictionary)
+    let status = SecItemDelete(query as CFDictionary)
+    return status == errSecSuccess || status == errSecItemNotFound
   }
 
   /**

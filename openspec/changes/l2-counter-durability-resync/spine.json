@@ -1,0 +1,24 @@
+{
+  "change": "l2-counter-durability-resync",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "l2-live-frame-crypto: explicit-counter frame, injective nonce, accept counter >= recvCounter, sequential per-room receive, no wrap",
+      "library": "src/services/p2p/liveFrameCodec.ts, src/services/p2p/P2PEncryptionAdapter.ts",
+      "runtimeOwner": "HolepunchChatTransport writeProofFrame / writeLiveFrame (sendContent, attemptConnect proof, resendRecentLiveSends) and handleIncomingFrame (sidecar frame event)",
+      "writes": "sealed frames via backend().sendFrame; recvCounter/sendCounter via updateRoomSessionCounters; inbound ChatMessage rows via notify",
+      "reads": "roomSessionStore counters and keys; inbound bridge frame payloads",
+      "uiConsumer": "ChatRoomScreen transcript on the receiving device",
+      "evidence": "tests/p2p/live-frame-codec.test.ts, tests/p2p/live-frame-counter.test.ts, tests/p2p/live-receive-serialized.test.ts, tests/p2p/l2-gap-resync-loop.test.ts (e2e.json)"
+    },
+    {
+      "capability": "l2-live-frame-crypto: counters durable before send / before handling; fail closed on write error (mobile secure prefs)",
+      "library": "src/services/p2p/roomSessionStore.ts (persistHost), src/services/storage/adapters/mobileNativeStorageAdapter.ts (flushPrefs, lastPrefFlushError)",
+      "runtimeOwner": "updateRoomSessionCounters called by HolepunchChatTransport writeProofFrame / writeLiveFrame / handleIncomingFrame",
+      "writes": "gnh.roomSessions secure-prefs entry on mobile",
+      "reads": "loadRoomSession on relaunch (restores counters before any seal)",
+      "uiConsumer": "N/A",
+      "evidence": "tests/p2p/room-session-durable-mobile.test.ts, tests/p2p/counter-persist-failure.test.ts (e2e.json)"
+    }
+  ]
+}

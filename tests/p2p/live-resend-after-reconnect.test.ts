@@ -39,7 +39,14 @@ import {
   __setHolepunchSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
-import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
+import {
+  decodeLiveFrame,
+  encodeLiveFrame,
+} from "@/services/p2p/liveFrameCodec";
+import {
+  deriveFrameNonce,
+  P2PEncryptionAdapter,
+} from "@/services/p2p/P2PEncryptionAdapter";
 import { removeCatalogRoom } from "@/services/p2p/roomCatalogStore";
 import { loadRoomSession } from "@/services/p2p/roomSessionStore";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
@@ -86,11 +93,8 @@ async function buildContract(roomId: string, inviteId: string) {
 
 type OpenedFrame = { envelope: ChatContentEnvelopeV1; nonce: number[] };
 
-function toWire(sealed: { nonce: Uint8Array; ciphertext: Uint8Array }): string {
-  const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-  wire.set(sealed.nonce, 0);
-  wire.set(sealed.ciphertext, sealed.nonce.length);
-  return btoa(String.fromCharCode(...wire));
+function toWire(sealed: { counter: number; ciphertext: Uint8Array }): string {
+  return encodeLiveFrame(sealed.counter, sealed.ciphertext);
 }
 
 /**
@@ -120,9 +124,8 @@ function createPeer(local: P2PSessionConfig) {
   };
 
   async function open(payload: string): Promise<OpenedFrame | null> {
-    const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
-    const nonce = raw.slice(0, 12);
-    const ciphertext = raw.slice(12);
+    const frame = decodeLiveFrame(payload);
+    if (!frame) return null;
     const recv = { ...peerSend, recvCounter: 0 };
     for (const aad of [
       buildChatAad(local.roomId, recv),
@@ -130,14 +133,15 @@ function createPeer(local: P2PSessionConfig) {
     ]) {
       const opened = await P2PEncryptionAdapter.open({
         session: recv,
-        ciphertext,
-        nonce,
+        counter: frame.counter,
+        ciphertext: frame.ciphertext,
         aad,
       });
       if (opened) {
         const envelope = JSON.parse(
           new TextDecoder().decode(opened.plaintext),
         ) as ChatContentEnvelopeV1;
+        const nonce = deriveFrameNonce(recv.nonceSeed, frame.counter);
         return { envelope, nonce: Array.from(nonce) };
       }
     }

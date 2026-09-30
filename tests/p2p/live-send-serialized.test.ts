@@ -33,7 +33,14 @@ import {
   __setHolepunchSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
-import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
+import {
+  decodeLiveFrame,
+  encodeLiveFrame,
+} from "@/services/p2p/liveFrameCodec";
+import {
+  deriveFrameNonce,
+  P2PEncryptionAdapter,
+} from "@/services/p2p/P2PEncryptionAdapter";
 import { loadRoomSession } from "@/services/p2p/roomSessionStore";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
 
@@ -130,7 +137,7 @@ function createRecordingBackend(): {
 async function sealPeerFrame(
   local: P2PSessionConfig,
   kind: "proof" | "text" = "proof",
-): Promise<{ payload: string; nonceLength: number }> {
+): Promise<{ payload: string }> {
   const peer: P2PSessionConfig = {
     ...local,
     sendKeyRef: local.recvKeyRef,
@@ -153,17 +160,17 @@ async function sealPeerFrame(
         ? buildProofAad(local.roomId, peer)
         : buildChatAad(local.roomId, peer),
   });
-  const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-  wire.set(sealed.nonce, 0);
-  wire.set(sealed.ciphertext, sealed.nonce.length);
-  return {
-    payload: btoa(String.fromCharCode(...wire)),
-    nonceLength: sealed.nonce.length,
-  };
+  return { payload: encodeLiveFrame(sealed.counter, sealed.ciphertext) };
 }
 
-function decodeWire(payload: string): Uint8Array {
-  return Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+function wireCounter(payload: string): number | undefined {
+  return decodeLiveFrame(payload)?.counter;
+}
+
+function wireNonce(nonceSeed: string, payload: string): number[] {
+  const counter = wireCounter(payload);
+  if (counter === undefined) throw new Error("not a live frame");
+  return Array.from(deriveFrameNonce(nonceSeed, counter));
 }
 
 function textEnvelope(text: string): ChatContentEnvelopeV1 {
@@ -207,12 +214,6 @@ describe("live sends are serialized per room", () => {
     expect(room.lifecycleStatus).toBe("connected");
     const initialCounter = loadRoomSession(room.id)?.sendCounter;
     expect(initialCounter).toBeTypeOf("number");
-    const probe = await P2PEncryptionAdapter.seal({
-      session,
-      plaintext: new Uint8Array(1),
-      aad: new Uint8Array(0),
-    });
-    const nonceLength = probe.nonce.length;
 
     const first = HolepunchChatTransport.sendContent!(
       room.id,
@@ -225,8 +226,10 @@ describe("live sends are serialized per room", () => {
     await Promise.all([first, second]);
 
     expect(recording.payloads).toHaveLength(2);
+    const [counterA, counterB] = recording.payloads.map(wireCounter);
+    expect(counterA).not.toBe(counterB);
     const [nonceA, nonceB] = recording.payloads.map((p) =>
-      Array.from(decodeWire(p).subarray(0, nonceLength)),
+      wireNonce(session.nonceSeed, p),
     );
     expect(nonceA).not.toEqual(nonceB);
     expect(loadRoomSession(room.id)?.sendCounter).toBe(
@@ -288,8 +291,10 @@ describe("live sends are serialized per room", () => {
       expect(recording.payloads).toHaveLength(2);
     });
 
+    const [counterA, counterB] = recording.payloads.map(wireCounter);
+    expect(counterA).not.toBe(counterB);
     const [nonceA, nonceB] = recording.payloads.map((p) =>
-      Array.from(decodeWire(p).subarray(0, peerRequest.nonceLength)),
+      wireNonce(session.nonceSeed, p),
     );
     expect(nonceA).not.toEqual(nonceB);
     await vi.waitFor(() => {
@@ -324,20 +329,17 @@ describe("live sends are serialized per room", () => {
     await HolepunchChatTransport.sendContent!(room.id, textEnvelope("after"));
 
     expect(recording.payloads).toHaveLength(2);
-    const expectedNonces = await Promise.all(
+    const expectedCounters = await Promise.all(
       recording.payloads.map(async (_, i) => {
-        const { nonce } = await P2PEncryptionAdapter.seal({
+        const { counter } = await P2PEncryptionAdapter.seal({
           session: { ...session, sendCounter: (initialSend as number) + i },
           plaintext: new Uint8Array(1),
           aad: new Uint8Array(0),
         });
-        return Array.from(nonce);
+        return counter;
       }),
     );
-    const sentNonces = recording.payloads.map((p) =>
-      Array.from(decodeWire(p).subarray(0, peerText.nonceLength)),
-    );
-    expect(sentNonces).toEqual(expectedNonces);
+    expect(recording.payloads.map(wireCounter)).toEqual(expectedCounters);
     expect(loadRoomSession(room.id)?.sendCounter).toBe(
       (initialSend as number) + recording.payloads.length,
     );

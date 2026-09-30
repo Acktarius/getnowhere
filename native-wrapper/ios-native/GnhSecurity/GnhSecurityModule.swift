@@ -27,12 +27,18 @@ class GnhSecurityModule: NSObject {
   }
 
   @objc func securePrefsSet(_ key: String, value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    prefs.set(key: key, value: value)
+    guard prefs.set(key: key, value: value) else {
+      rejecter("ERR_PREFS_WRITE", "secure prefs write failed", nil)
+      return
+    }
     resolver(true)
   }
 
   @objc func securePrefsRemove(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    prefs.remove(key: key)
+    guard prefs.remove(key: key) else {
+      rejecter("ERR_PREFS_WRITE", "secure prefs write failed", nil)
+      return
+    }
     resolver(true)
   }
 

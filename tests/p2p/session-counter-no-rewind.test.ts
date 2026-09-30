@@ -14,7 +14,11 @@ import {
   createAutoPeerSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
-import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
+import { decodeLiveFrame } from "@/services/p2p/liveFrameCodec";
+import {
+  deriveFrameNonce,
+  P2PEncryptionAdapter,
+} from "@/services/p2p/P2PEncryptionAdapter";
 import { loadRoomSession } from "@/services/p2p/roomSessionStore";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
 import { setActiveStorageAdapter } from "@/services/storage/StorageAdapter";
@@ -26,9 +30,14 @@ import type {
 const memory = new Map<string, string>();
 const roomId = "room-nonce-013";
 
-function nonceHex(payloadB64: string): string {
-  const raw = Uint8Array.from(atob(payloadB64), (c) => c.charCodeAt(0));
-  return [...raw.slice(0, 12)]
+function frameCounter(payloadB64: string): number | undefined {
+  return decodeLiveFrame(payloadB64)?.counter;
+}
+
+function nonceHex(nonceSeed: string, payloadB64: string): string {
+  const counter = frameCounter(payloadB64);
+  if (counter === undefined) throw new Error("not a live frame");
+  return [...deriveFrameNonce(nonceSeed, counter)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -132,7 +141,10 @@ describe("session counters do not rewind after a failed proof", () => {
     await HolepunchChatTransport.connect(second);
 
     expect(frames).toHaveLength(2);
-    expect(nonceHex(frames[0])).not.toBe(nonceHex(frames[1]));
+    expect(frameCounter(frames[0])).not.toBe(frameCounter(frames[1]));
+    expect(nonceHex(second.nonceSeed, frames[0])).not.toBe(
+      nonceHex(second.nonceSeed, frames[1]),
+    );
     expect(loadRoomSession(roomId)?.sendCounter).toBe(2);
   });
 });

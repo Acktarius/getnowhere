@@ -8,10 +8,15 @@
 
 import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
+import type { MobileNativeStorageAdapter } from "@/services/storage/adapters/mobileNativeStorageAdapter";
+import { getInstalledMobileStorageAdapter } from "@/services/storage/installMobileNativeStorage";
 import { getStorage } from "@/services/storage/StorageAdapter";
 import type { HolepunchBootstrapContract } from "@/types/protocol";
 
 const KEY = "gnh.roomSessions";
+
+/** Max wait for the mobile secure-prefs flush (assumed, not measured); timeout = failed write. */
+export const ROOM_SESSION_FLUSH_TIMEOUT_MS = 5_000;
 
 export type PersistedRoomSession = {
   roomId: string;
@@ -143,6 +148,28 @@ async function persistHost(
     return;
   }
   writeStorage(all);
+  // No await before the flush: lastPrefFlushError is adapter-global, so the sentinel must queue right behind this write.
+  const mobile = getInstalledMobileStorageAdapter();
+  if (mobile) await flushMobilePrefs(mobile);
+}
+
+async function flushMobilePrefs(
+  adapter: MobileNativeStorageAdapter,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("Session store write timed out.")),
+      ROOM_SESSION_FLUSH_TIMEOUT_MS,
+    );
+  });
+  try {
+    await Promise.race([adapter.flushPrefs(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+  const failed = adapter.lastPrefFlushError();
+  if (failed) throw failed;
 }
 
 async function persistWallet(

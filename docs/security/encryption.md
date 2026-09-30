@@ -329,11 +329,16 @@ broken by nonce reuse under the same key.
 ### Strategy: `counter_from_seed`
 
 - `nonceSeed`: 8 random bytes (64-bit hex) from the handshake. Slim create packs that width (`p2pchatprotocol.md` §4, `capabilities-and-derivation.md`). HKDF stretches it to the 12-byte nonce. Uniqueness is the per-direction counter under the session key, not the seed width.
+- Per session: `iv = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"), info=UTF8("iv"), L=12)`.
 - Per seal under the **send** key:
-  - `nonce_12 = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"|"recv"), info=UTF8("nonce|" + counter), L=12)`
+  - `nonce_12 = iv XOR (0x00000000 || counter as u64 big-endian)`. Two counters under one key never share a nonce.
   - persist and increment `sendCounter` **after** successful seal preparation, and **before** the frame is sent
+- The sender refuses to seal once `sendCounter >= Number.MAX_SAFE_INTEGER`. The counter never wraps; the send fails.
 - The session row (keys and counters) is written before the first proof seal. A later handoff resumes that row instead of deriving again. `connect` never installs a lower counter.
-- On open, derive that same nonce with salt `send` (the peer's seal direction) for each counter in `[recvCounter, recvCounter + 64)`. Accept the frame only when the 12-byte wire nonce matches one of them and the AEAD tag checks. Set `recvCounter` to the matched counter + 1. A replay, a counter below `recvCounter`, a wire nonce that matches none of those counters, or a gap of 64 or more fails closed and leaves `recvCounter` unchanged.
+- The frame carries the counter in clear: `0x02 || counter (u64 BE) || ciphertext+tag`. The nonce is not on the wire. Wrong version byte or fewer than 25 bytes drops the frame. The older `nonce || ciphertext` layout is rejected (hard cut; both devices run the same build). Byte layout: `p2pchatprotocol.md` §8 (L2 live frame layout).
+- On open, derive the nonce from the frame counter. Accept only when the counter is a safe integer, `counter >= recvCounter`, and the AEAD tag checks. Then set `recvCounter` to counter + 1. There is no upper bound on the forward gap, so a receiver that missed frames resyncs on the next authentic one.
+- A counter below `recvCounter` (replay or stale reordered frame), an unsafe integer, or a tag failure drops the frame and leaves `recvCounter` unchanged.
+- Inbound frames for a room are handled one at a time against the current session. Each counter update is committed before the next frame is opened.
 - Directions never share a key, so Alice’s send counter space is independent of Bob’s.
 - After reconnect or app restart: restore `sendCounter` / `recvCounter` before any seal.
 - Do not generate nonces in UI code.
@@ -348,6 +353,9 @@ When sealing Holepunch content frames, prefer AAD covering at least:
 - protocol / content schema version
 - roomId / sessionId
 - message kind (`text` | `reaction` | `edit` | `delete`)
+
+The 9-byte live frame header (`0x02 || counter`) is appended to the proof or chat
+AAD for both seal and open, so a tampered counter fails the tag.
 
 AAD must match on decrypt or open fails closed.
 
@@ -394,6 +402,26 @@ Rules:
   wallet blob as `roomSessions` and is stripped from `downloadWalletBackup`.
   Mobile keeps the native secure-prefs adapter.
   @see `docs/architecture/electron-desktop.md`
+- **Counter durability.** The advanced `sendCounter` is durably stored before
+  the frame is handed to the bridge. The advanced `recvCounter` is durably
+  stored before the envelope is handled. Electron `os` mode writes the file
+  synchronously before the IPC reply. Wallet mode awaits the wallet persist.
+  Mobile awaits the secure-prefs flush for a bounded time and fails if the
+  write failed (a timeout counts as a failed write). The native secure-prefs
+  write reports success only once stored: Android `commit()` (not `apply()`),
+  iOS Keychain status checked; a failure rejects the bridge call. Browser
+  `localStorage` is dev-only.
+- A failed durable counter write fails closed: the send rejects and no frame is
+  sent; an inbound envelope is dropped.
+- **Rollback coverage.** Android sets `allowBackup=false` with extraction rules
+  (`native-wrapper/plugins/withGnhSecurity.js`). Wallet backups strip
+  `roomSessions` (`withoutRoomSessions`). The Electron store stays on the
+  machine. A restore cannot bring back an older counter for a live key.
+- **Known trade-offs.** A frame reordered across two swarm connections is
+  dropped (each Hyperswarm connection is ordered). A crash between the
+  receive-counter write and handling loses that envelope; resend after
+  reconnect plus `messageId` dedupe (`p2pchatprotocol.md` §14) recovers the
+  usual case.
 - Never log raw session keys, ephemeral privates, or plaintext chat.
 - Tombstone flows must wipe session secrets per `p2pchatprotocol.md`.
   Local invite records store `roomId`, `inviteId`, and `replayId` in the clear.

@@ -33,6 +33,10 @@ import {
   __setHolepunchSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
+import {
+  decodeLiveFrame,
+  encodeLiveFrame,
+} from "@/services/p2p/liveFrameCodec";
 import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
 
@@ -96,17 +100,16 @@ function createPeer(local: P2PSessionConfig) {
   const state = { dropping: false };
 
   async function open(payload: string): Promise<ChatContentEnvelopeV1 | null> {
-    const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
-    const nonce = raw.slice(0, 12);
-    const ciphertext = raw.slice(12);
+    const frame = decodeLiveFrame(payload);
+    if (!frame) return null;
     for (const aad of [
       buildProofAad(local.roomId, peerSession),
       buildChatAad(local.roomId, peerSession),
     ]) {
       const opened = await P2PEncryptionAdapter.open({
         session: peerSession,
-        ciphertext,
-        nonce,
+        counter: frame.counter,
+        ciphertext: frame.ciphertext,
         aad,
       });
       if (opened) {
@@ -135,10 +138,7 @@ function createPeer(local: P2PSessionConfig) {
       aad: buildProofAad(local.roomId, peerSession),
     });
     peerSession = { ...peerSession, sendCounter: sealed.session.sendCounter };
-    const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-    wire.set(sealed.nonce, 0);
-    wire.set(sealed.ciphertext, sealed.nonce.length);
-    const payload = btoa(String.fromCharCode(...wire));
+    const payload = encodeLiveFrame(sealed.counter, sealed.ciphertext);
     for (const h of frameHandlers)
       h({ topicRef: joinedTopic, roomId, payload });
   }

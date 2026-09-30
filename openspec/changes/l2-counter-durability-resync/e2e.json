@@ -1,0 +1,24 @@
+{
+  "change": "l2-counter-durability-resync",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "gap-resync loop: frame 100 counters ahead reaches the peer transcript",
+      "cmd": "npx vitest run tests/p2p/l2-gap-resync-loop.test.ts --reporter=verbose",
+      "expect": "lands in the receiver transcript after a 100-frame gap",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "duplicate frame on two connections is accepted once",
+      "cmd": "npx vitest run tests/p2p/live-receive-serialized.test.ts --reporter=verbose",
+      "expect": "duplicate frame is accepted once",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "failed secure-prefs counter write blocks the frame",
+      "cmd": "npx vitest run tests/p2p/counter-persist-failure.test.ts --reporter=verbose",
+      "expect": "never calls sendFrame when the counter write fails",
+      "timeoutMs": 120000
+    }
+  ]
+}

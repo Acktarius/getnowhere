@@ -10,6 +10,7 @@ import {
   __setHolepunchSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
+import { encodeLiveFrame } from "@/services/p2p/liveFrameCodec";
 import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
 import { buildProofAad } from "@/services/protocol/proofAad";
@@ -143,10 +144,7 @@ async function sealPeerProof(local: P2PSessionConfig): Promise<string> {
     plaintext: new TextEncoder().encode(JSON.stringify(envelope)),
     aad: buildProofAad(local.roomId, peer),
   });
-  const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-  wire.set(sealed.nonce, 0);
-  wire.set(sealed.ciphertext, sealed.nonce.length);
-  return btoa(String.fromCharCode(...wire));
+  return encodeLiveFrame(sealed.counter, sealed.ciphertext);
 }
 
 describe("post-connect proof on peer return", () => {

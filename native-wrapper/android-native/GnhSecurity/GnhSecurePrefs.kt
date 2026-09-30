@@ -16,13 +16,11 @@ class GnhSecurePrefs(context: Context) {
 
     fun get(key: String): String? = prefs.getString(key, null)
 
-    fun set(key: String, value: String) {
-        prefs.edit().putString(key, value).apply()
-    }
+    /** Synchronous write; true only once the value is on disk. */
+    fun set(key: String, value: String): Boolean = prefs.edit().putString(key, value).commit()
 
-    fun remove(key: String) {
-        prefs.edit().remove(key).apply()
-    }
+    /** Synchronous removal; true only once the change is on disk. */
+    fun remove(key: String): Boolean = prefs.edit().remove(key).commit()
 
     companion object {
         private const val PREFS_NAME = "gnh_secure_prefs"

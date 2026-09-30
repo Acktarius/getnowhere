@@ -289,14 +289,43 @@ Rules (enforced in `P2PEncryptionService`):
 
 - Nonce length: **12 bytes (96 bits)**.
 - Per direction, use a distinct key (send vs recv) so nonce spaces never share.
+- Per session: `iv = HKDF-SHA256(ikm=nonceSeed, salt="send", info="iv", L=12)`.
 - For each seal under `sendKey`:
-  - `nonce = HKDF-SHA256(nonceSeed, salt=direction, info="nonce|{counter}", 12)`
+  - `nonce = iv XOR (0x00000000 || counter as u64 big-endian)`
   - then increment persisted `sendCounter` (never rewind after reconnect).
-- Open uses `recvKey` and accepts the wire nonce only when it equals the peer's send nonce for a counter in `[recvCounter, recvCounter + 64)`. `recvCounter` becomes that counter + 1 only after the tag checks. A replay or a larger gap fails closed.
+- Two counters under one key never share a nonce. The receiver derives the same nonce from the frame counter.
+- The sender refuses to seal once `sendCounter >= Number.MAX_SAFE_INTEGER`. The counter never wraps.
 - Counters persist with the session; app restart must restore counters before seal.
 - UI and transport must not invent nonces.
 
-See also `docs/security/encryption.md` § Nonce rules / Key schedule.
+### L2 live frame layout
+
+Every live frame (proof, proof-ack, chat content):
+
+```text
+payload = base64(0x02 || counter || ciphertext+tag)
+```
+
+| Field | Bytes | Value |
+|---|---|---|
+| version | 1 | `0x02` |
+| counter | 8 | sender `sendCounter`, u64 big-endian |
+| ciphertext+tag | ≥ 16 | ChaCha20-Poly1305 output |
+
+- The nonce is not on the wire.
+- A frame whose first byte is not `0x02`, or shorter than 25 bytes (1 + 8 + 16), is dropped.
+- Hard cut: the older `nonce(12) || ciphertext` layout is rejected. Both devices must run the same build.
+- Existing sessions keep their keys, counters and `nonceSeed` across the upgrade, so no re-invite is needed and a room stuck on the old 64-window resyncs on the first new frame. Desktop and mobile builds must ship together.
+- AAD: the 9-byte header (`0x02 || counter`) is appended to the proof or chat AAD for seal and open.
+
+Receive rule (`recvKey`):
+
+- Accept iff the counter is a safe integer (≤ 2^53−1), `counter >= recvCounter`, and the tag verifies. Then `recvCounter = counter + 1`.
+- No upper bound on the forward gap. Only the authenticated peer can produce a valid frame; a cap would recreate the stuck-window failure.
+- A lower counter (replay or stale reordered frame), an unsafe integer, or a tag failure drops the frame and leaves `recvCounter` unchanged.
+- Inbound frames for a room are handled one at a time, opened against the current session. The counter update is committed before the next frame is opened.
+
+See also `docs/security/encryption.md` § Nonce rules / Key schedule / Local storage rules.
 
 ---
 

@@ -4,7 +4,10 @@ import {
   holepunchBackoffMs,
   isRetryableConnectFailure,
 } from "../../src/services/p2p/holepunchPolicy";
-import { P2PEncryptionAdapter } from "../../src/services/p2p/P2PEncryptionAdapter";
+import {
+  deriveFrameNonce,
+  P2PEncryptionAdapter,
+} from "../../src/services/p2p/P2PEncryptionAdapter";
 import {
   assertCanSendLive,
   assertCanSendMessages,
@@ -205,9 +208,12 @@ describe("nonce uniqueness under ChaCha20-Poly1305", () => {
       plaintext: new TextEncoder().encode("two"),
     });
 
-    expect(s1.nonce.length).toBe(12);
-    expect(s2.nonce.length).toBe(12);
-    expect([...s1.nonce].join(",")).not.toBe([...s2.nonce].join(","));
+    const n1 = deriveFrameNonce(session.nonceSeed, s1.counter);
+    const n2 = deriveFrameNonce(session.nonceSeed, s2.counter);
+    expect(s2.counter).toBe(s1.counter + 1);
+    expect(n1.length).toBe(12);
+    expect(n2.length).toBe(12);
+    expect([...n1].join(",")).not.toBe([...n2].join(","));
     expect(s2.session.sendCounter).toBe(s1.session.sendCounter + 1);
   });
 });

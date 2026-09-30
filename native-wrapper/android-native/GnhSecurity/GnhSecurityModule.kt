@@ -44,7 +44,10 @@ class GnhSecurityModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun securePrefsSet(key: String, value: String, promise: Promise) {
         try {
-            securePrefs.set(key, value)
+            if (!securePrefs.set(key, value)) {
+                promise.reject("ERR_PREFS_WRITE", "secure prefs write failed")
+                return
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR", e.message)
@@ -54,7 +57,10 @@ class GnhSecurityModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun securePrefsRemove(key: String, promise: Promise) {
         try {
-            securePrefs.remove(key)
+            if (!securePrefs.remove(key)) {
+                promise.reject("ERR_PREFS_WRITE", "secure prefs write failed")
+                return
+            }
             promise.resolve(true)
         } catch (e: Exception) {
             promise.reject("ERR", e.message)

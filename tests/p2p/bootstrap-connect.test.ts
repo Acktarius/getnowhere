@@ -240,8 +240,8 @@ describe("session bootstrap + holepunch connect", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recvSession,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: new TextEncoder().encode(`v1|room|${recvSession.sessionId}`),
     });
     expect(sendSession.sessionId).toBe(recvSession.sessionId);

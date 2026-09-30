@@ -412,14 +412,15 @@ export type P2PEncryptionService = {
     aad?: Uint8Array;
   }): Promise<{
     ciphertext: Uint8Array;
-    nonce: Uint8Array;
+    /** Send counter used for this frame (pre-increment). */
+    counter: number;
     session: P2PSessionConfig;
   }>;
 
   open(input: {
     session: P2PSessionConfig;
+    counter: number;
     ciphertext: Uint8Array;
-    nonce: Uint8Array;
     aad?: Uint8Array;
   }): Promise<{ plaintext: Uint8Array; session: P2PSessionConfig } | null>;
 };

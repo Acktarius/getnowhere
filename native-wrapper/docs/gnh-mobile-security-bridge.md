@@ -121,6 +121,10 @@ previous path: `SecSecurityClientGet new thread!`, then `insert failed`
 Values are JSON strings. Used for enrollment envelopes and app passcode hash —
 not WebView `localStorage` on device.
 
+`set` / `remove` reply `{ ok: true }` only once the value is stored (Android
+`commit()`, iOS Keychain status); otherwise `{ error: "failed" }`. Room-session
+counters rely on this (`docs/security/encryption.md`, Local storage rules).
+
 ### `gnh-wallet-file` (WebView ↔ native)
 
 | `action` | Payload | Response |
