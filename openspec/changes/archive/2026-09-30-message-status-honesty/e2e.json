@@ -1,0 +1,24 @@
+{
+  "change": "message-status-honesty",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "resend-loop: lost live frame is replayed after reconnect and opens on the peer",
+      "cmd": "npx vitest run tests/p2p/live-resend-loop.test.ts --reporter=verbose",
+      "expect": "replayed frame opens with the peer key to the original text",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "receiver ignores the repeated message id",
+      "cmd": "npx vitest run tests/p2p/live-resend-after-reconnect.test.ts -t \"repeated message id\" --reporter=verbose",
+      "expect": "repeated message id",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "sender bubble shows one check for sent",
+      "cmd": "npx vitest run tests/components/MessageBubble.status.test.tsx --reporter=verbose",
+      "expect": "single check for sent",
+      "timeoutMs": 120000
+    }
+  ]
+}

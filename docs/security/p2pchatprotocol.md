@@ -556,6 +556,12 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
   string ids ≤128, `sentAt` a date, `text` ≤8000 (`proof` text ≤128),
   `replyPreview` ≤100, `reaction` ≤16. Edit and delete apply only to a row
   with the same direction. An inbound id does not replace a stored row.
+- After an L2 reconnect with a successful post-connect proof, the sender SHALL
+  re-seal and resend its most recent live envelopes (best effort, no ACK; fresh
+  counters; at most 3 per room, first sent within the last 5 min, oldest first).
+  Receivers MUST treat `messageId` as idempotent and drop a live envelope
+  whose id they already hold as an inbound row. A replayed edit or delete is
+  not a row; it re-applies to its target idempotently.
 
 ---
 

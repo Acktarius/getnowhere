@@ -1,7 +1,7 @@
 import {
   AlertCircle,
   Check,
-  CheckCheck,
+  Clock,
   Copy,
   Hourglass,
   Pencil,
@@ -303,9 +303,16 @@ export function MessageBubble({
             {out && message.status === "queued" && (
               <span style={{ fontSize: 10, opacity: 0.7 }}>queued</span>
             )}
-            {out && message.status === "delivered" && <CheckCheck size={11} />}
-            {out && message.status === "sending" && <Check size={11} />}
-            {out && message.status === "failed" && <AlertCircle size={11} />}
+            {out && message.status === "sending" && (
+              <Clock size={11} aria-label="Sending" />
+            )}
+            {out &&
+              (message.status === "sent" || message.status === "delivered") && (
+                <Check size={11} aria-label="Sent" />
+              )}
+            {out && message.status === "failed" && (
+              <AlertCircle size={11} aria-label="Failed" />
+            )}
           </div>
         </div>
 

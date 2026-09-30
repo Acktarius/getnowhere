@@ -170,7 +170,7 @@ describe("session bootstrap + holepunch connect", () => {
       .mockResolvedValue({ txHash: "relay-tx-c" });
     const relayMsg = await HolepunchChatTransport.sendMessage("room-c", "hi");
     expect(relayMsg.channel).toBe("relay");
-    expect(relayMsg.status).toBe("delivered");
+    expect(relayMsg.status).toBe("sent");
     expect(relaySpy).toHaveBeenCalledWith(
       expect.objectContaining({ contactId: "c1" }),
     );

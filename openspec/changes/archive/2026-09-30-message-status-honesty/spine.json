@@ -1,0 +1,24 @@
+{
+  "change": "message-status-honesty",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "chat-message-delivery: outbound status never claims delivery; bubble shows at most one check",
+      "library": "src/types/models.ts (ChatMessage.status), src/components/MessageBubble.tsx",
+      "runtimeOwner": "HolepunchChatTransport.sendContent / sendRelayText / mergeL1RelayTranscripts; chatStore.editMessage / deleteMessage",
+      "writes": "ChatMessage.status = sent on outbound rows (transport notify → chatStore.messagesByRoom, live transcript flush)",
+      "reads": "N/A",
+      "uiConsumer": "ChatRoomScreen → MessageBubble status icon",
+      "evidence": "tests/p2p/outbound-status-sent.test.ts, tests/components/MessageBubble.status.test.tsx"
+    },
+    {
+      "capability": "chat-message-delivery: serialized live send, replay after reconnect, receiver id idempotency",
+      "library": "src/services/p2p/HolepunchChatTransport.ts (sealAndSendLiveFrame, rememberLiveSend, resendRecentLiveSends)",
+      "runtimeOwner": "attemptConnect after post-connect proof success (reconnect path via maybeMarkConnected / auto-retry); handleIncomingFrame on the receiver",
+      "writes": "sealed live frames via backend().sendFrame; session send counters via updateRoomSessionCounters",
+      "reads": "in-memory recent live sends per room; roomSessionStore counters",
+      "uiConsumer": "receiver ChatRoomScreen transcript (recovered bubble)",
+      "evidence": "tests/p2p/live-send-serialized.test.ts, tests/p2p/live-resend-after-reconnect.test.ts, tests/p2p/live-resend-loop.test.ts (e2e.json)"
+    }
+  ]
+}

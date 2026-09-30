@@ -34,6 +34,15 @@ row at the same expiry (do not keep it for the 24h mempool lifetime).
 - Tap send = Conceal TTL 0 (mined, paid, durable). Long-press flyout: **60 min**
   (top), **6 min** (middle). Flyout only on chain fallback, not live.
 
+## Message status
+
+- Outbound: `queued` (waiting for L2 up to the hold window), `sending` (L1′
+  broadcast pending), `sent` (transport accepted: L2 frame written to the
+  bridge, or L1′ broadcast accepted), `failed`.
+- `delivered` is inbound-only until a peer ACK exists.
+- Bubble shows at most one check: queued label, clock for sending, single check
+  for `sent` (and legacy outbound `delivered`), alert for failed.
+
 ## Inbound refresh
 
 - Open room: **fast** L1′ mempool rescan (~2.5s) only while Holepunch is down

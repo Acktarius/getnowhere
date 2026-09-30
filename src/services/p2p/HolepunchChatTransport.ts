@@ -136,6 +136,8 @@ let lastSidecarDetail: string | undefined;
 
 /** Per-room single-flight guard: concurrent connect/restore share one attempt. */
 const inFlightConnects = new Map<string, Promise<ChatRoom>>();
+/** Per-room tail of the live-send chain (never rejects). */
+const liveSendChains = new Map<string, Promise<void>>();
 /** Earliest time an *automatic* retry (poll-driven restore) may start a new attempt. */
 const nextAutoRetryAt = new Map<string, number>();
 /** Last live (L2) send/receive. */
@@ -304,10 +306,23 @@ function sleep(ms: number): Promise<void> {
  * Seal and send a proof envelope; AEAD open on the remote proves L1 keys.
  * "proof" opens the handshake; "proof-ack" answers a peer's request.
  */
-async function sendProofFrame(
+function sendProofFrame(
   state: RoomState,
   kind: "proof" | "proof-ack" = "proof",
 ): Promise<void> {
+  return runSerializedSend(state.room.id, () => writeProofFrame(state, kind));
+}
+
+/** A send queued before leave / revoke / prune must not seal or write. */
+function assertRoomStillLive(state: RoomState): void {
+  if (rooms.get(state.room.id) !== state) throw new Error("Room left.");
+}
+
+async function writeProofFrame(
+  state: RoomState,
+  kind: "proof" | "proof-ack",
+): Promise<void> {
+  assertRoomStillLive(state);
   if (!state.session || !state.topicRef) {
     throw new Error("sendProofFrame: missing session or topicRef");
   }
@@ -326,17 +341,172 @@ async function sendProofFrame(
     plaintext,
     aad,
   });
-  state.session = sealed.session;
+  const merged = mergeSessionCounters(state, sealed.session, "sendCounter");
+  if (!merged) throw new Error("Session changed.");
   await updateRoomSessionCounters(state.room.id, {
-    sendCounter: sealed.session.sendCounter,
-    recvCounter: sealed.session.recvCounter,
+    sendCounter: merged.sendCounter,
+    recvCounter: merged.recvCounter,
   });
   const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
   wire.set(sealed.nonce, 0);
   wire.set(sealed.ciphertext, sealed.nonce.length);
   const payload = btoa(String.fromCharCode(...wire));
+  assertRoomStillLive(state);
   backend().sendFrame(state.topicRef, state.room.id, payload);
-  rooms.set(state.room.id, state);
+}
+
+/**
+ * Raise one counter on the current session after an await; null (no write) if
+ * the session was replaced meanwhile. Other fields are never rolled back.
+ */
+function mergeSessionCounters(
+  state: RoomState,
+  updated: P2PSessionConfig,
+  field: "sendCounter" | "recvCounter",
+): P2PSessionConfig | null {
+  const current = state.session;
+  if (!current || current.sessionId !== updated.sessionId) return null;
+  const merged = {
+    ...current,
+    [field]: Math.max(current[field], updated[field]),
+  };
+  state.session = merged;
+  return merged;
+}
+
+/**
+ * Run one seal-and-write after the room's previous one settles, so two frames
+ * never share a send counter (nonce). @see docs/security/p2pchatprotocol.md
+ */
+function runSerializedSend(
+  roomId: string,
+  send: () => Promise<void>,
+): Promise<void> {
+  const previous = liveSendChains.get(roomId) ?? Promise.resolve();
+  const run = previous.then(send);
+  liveSendChains.set(
+    roomId,
+    run.catch(() => undefined),
+  );
+  return run;
+}
+
+/** Replay list size per room. @see docs/security/p2pchatprotocol.md §14 */
+export const RECENT_LIVE_SEND_LIMIT = 3;
+/** Replay window, measured from an envelope's first send. */
+export const RECENT_LIVE_SEND_WINDOW_MS = 5 * 60_000;
+/** Pause between replayed frames. */
+export const LIVE_RESEND_GAP_MS = 300;
+
+type RecentLiveSend = { envelope: ChatContentEnvelopeV1; sentAtMs: number };
+
+/** Live envelopes that reached the bridge, replayed after a proven reconnect. */
+const recentLiveSends = new Map<string, RecentLiveSend[]>();
+/** Rooms with a replay batch in progress. */
+const resendingRooms = new Set<string>();
+
+/** Drop the room's replay list and pending live-send state (leave / revoke / prune). */
+function forgetLiveSends(roomId: string): void {
+  recentLiveSends.delete(roomId);
+  resendingRooms.delete(roomId);
+  liveSendChains.delete(roomId);
+}
+
+/** Wipe every room's replay list; called on wallet lock. */
+export function clearRecentLiveSends(): void {
+  recentLiveSends.clear();
+}
+
+function freshLiveSends(roomId: string, nowMs: number): RecentLiveSend[] {
+  const kept = (recentLiveSends.get(roomId) ?? []).filter(
+    (e) => nowMs - e.sentAtMs <= RECENT_LIVE_SEND_WINDOW_MS,
+  );
+  recentLiveSends.set(roomId, kept);
+  return kept;
+}
+
+function rememberLiveSend(
+  roomId: string,
+  envelope: ChatContentEnvelopeV1,
+): void {
+  const nowMs = Date.now();
+  const list = freshLiveSends(roomId, nowMs);
+  const previous = list.find(
+    (e) => e.envelope.messageId === envelope.messageId,
+  );
+  const next = list.filter((e) => e !== previous);
+  next.push({ envelope, sentAtMs: previous?.sentAtMs ?? nowMs });
+  recentLiveSends.set(roomId, next.slice(-RECENT_LIVE_SEND_LIMIT));
+}
+
+/**
+ * Re-seal recent live envelopes oldest first after the reconnect proof. No local
+ * notify or status change. @see docs/security/p2pchatprotocol.md §14
+ */
+async function resendRecentLiveSends(roomId: string): Promise<void> {
+  if (resendingRooms.has(roomId)) return;
+  resendingRooms.add(roomId);
+  try {
+    const entries = freshLiveSends(roomId, Date.now());
+    for (const [i, entry] of entries.entries()) {
+      if (i > 0) await sleep(LIVE_RESEND_GAP_MS);
+      const state = rooms.get(roomId);
+      if (state?.room.lifecycleStatus !== "connected") return;
+      if (!recentLiveSends.get(roomId)?.includes(entry)) continue;
+      await sealAndSendLiveFrame(state, entry.envelope);
+    }
+  } finally {
+    resendingRooms.delete(roomId);
+  }
+}
+
+/** Seal, persist the send counter, and write one live content frame (serialized per room). */
+function sealAndSendLiveFrame(
+  state: RoomState,
+  envelope: ChatContentEnvelopeV1,
+): Promise<void> {
+  return runSerializedSend(state.room.id, () =>
+    writeLiveFrame(state, envelope),
+  );
+}
+
+async function writeLiveFrame(
+  state: RoomState,
+  envelope: ChatContentEnvelopeV1,
+): Promise<void> {
+  const roomId = state.room.id;
+  assertRoomStillLive(state);
+  if (!state.session) throw new Error("Missing session.");
+  const topicRef = state.contract?.transport.topicRef ?? state.topicRef;
+  if (!topicRef) throw new Error("Missing topic.");
+
+  const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
+  const aad = buildChatAad(roomId, state.session);
+  const sealed = await P2PEncryptionAdapter.seal({
+    session: state.session,
+    plaintext,
+    aad,
+  });
+  const merged = mergeSessionCounters(state, sealed.session, "sendCounter");
+  if (!merged) throw new Error("Session changed.");
+  await updateRoomSessionCounters(roomId, {
+    sendCounter: merged.sendCounter,
+    recvCounter: merged.recvCounter,
+  });
+
+  const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
+  wire.set(sealed.nonce, 0);
+  wire.set(sealed.ciphertext, sealed.nonce.length);
+  const payload = btoa(String.fromCharCode(...wire));
+  assertRoomStillLive(state);
+
+  try {
+    backend().sendFrame(topicRef, roomId, payload);
+  } catch (e) {
+    throw new Error(
+      e instanceof Error ? e.message : "Holepunch sidecar offline",
+    );
+  }
 }
 
 /**
@@ -519,6 +689,7 @@ export async function restoreRoomSession(
     void removeRoomSession(roomId);
     removeCatalogRoom(roomId);
     rooms.delete(roomId);
+    forgetLiveSends(roomId);
     return null;
   }
   const saved = loadRoomSession(roomId);
@@ -636,10 +807,11 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         }
         return;
       }
-      state.session = opened.session;
+      const merged = mergeSessionCounters(state, opened.session, "recvCounter");
+      if (!merged) return;
       await updateRoomSessionCounters(roomId, {
-        sendCounter: opened.session.sendCounter,
-        recvCounter: opened.session.recvCounter,
+        sendCounter: merged.sendCounter,
+        recvCounter: merged.recvCounter,
       });
       const text = new TextDecoder().decode(opened.plaintext);
       let envelope: ChatContentEnvelopeV1 | null = null;
@@ -669,6 +841,16 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         if (isRequest && !resolver) {
           void sendProofFrame(state, "proof-ack").catch(() => {});
         }
+        return;
+      }
+
+      const incomingId = envelope.messageId;
+      if (
+        (messagesByRoom.get(roomId) ?? []).some(
+          (m) => m.id === incomingId && m.direction === "in",
+        )
+      ) {
+        touchLastLiveAt(roomId);
         return;
       }
 
@@ -813,6 +995,7 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       nextAutoRetryAt.delete(state.room.id);
       persistLiveSession(state);
       emitRoom(state.room);
+      void resendRecentLiveSends(state.room.id).catch(() => undefined);
       return state.room;
     }
     await sleep(50);
@@ -846,6 +1029,7 @@ function ensureRoom(contactId: string, bootstrap?: RoomBootstrap): RoomState {
   if (isRoomRevoked(id)) {
     // Leave forever: wipe any in-memory residue — never return / re-upsert.
     rooms.delete(id);
+    forgetLiveSends(id);
     messagesByRoom.delete(id);
     subscribers.delete(id);
     transcriptSubscribers.delete(id);
@@ -1030,7 +1214,7 @@ async function sendRelayText(
       },
       ttlUnixSeconds,
     });
-    const msg: ChatMessage = { ...pending, status: "delivered" };
+    const msg: ChatMessage = { ...pending, status: "sent" };
     notify(roomId, msg);
     state.room = { ...state.room, lastMessageAt: msg.createdAt };
     rooms.set(roomId, state);
@@ -1169,6 +1353,7 @@ export const HolepunchChatTransport: ChatTransport = {
     }
 
     if (!state) {
+      forgetLiveSends(roomId);
       const topicRef = persisted?.contract.transport.topicRef;
       if (topicRef) {
         try {
@@ -1210,6 +1395,7 @@ export const HolepunchChatTransport: ChatTransport = {
     }
     // leaveRoom = leave forever (product rule). Temporary offline never calls this.
     rooms.delete(roomId);
+    forgetLiveSends(roomId);
     messagesByRoom.delete(roomId);
     subscribers.delete(roomId);
     transcriptSubscribers.delete(roomId);
@@ -1334,36 +1520,8 @@ export const HolepunchChatTransport: ChatTransport = {
     const state = rooms.get(roomId);
     if (!state) throw new Error("Room not found.");
     assertCanSendLive(state.room.lifecycleStatus);
-    if (!state.session) throw new Error("Missing session.");
-
-    const plaintext = new TextEncoder().encode(JSON.stringify(envelope));
-    const aad = buildChatAad(roomId, state.session);
-    const sealed = await P2PEncryptionAdapter.seal({
-      session: state.session,
-      plaintext,
-      aad,
-    });
-    state.session = sealed.session;
-    await updateRoomSessionCounters(roomId, {
-      sendCounter: sealed.session.sendCounter,
-      recvCounter: sealed.session.recvCounter,
-    });
-
-    const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-    wire.set(sealed.nonce, 0);
-    wire.set(sealed.ciphertext, sealed.nonce.length);
-    const payload = btoa(String.fromCharCode(...wire));
-
-    const topicRef = state.contract?.transport.topicRef ?? state.topicRef;
-    if (topicRef) {
-      try {
-        backend().sendFrame(topicRef, roomId, payload);
-      } catch (e) {
-        throw new Error(
-          e instanceof Error ? e.message : "Holepunch sidecar offline",
-        );
-      }
-    }
+    await sealAndSendLiveFrame(state, envelope);
+    rememberLiveSend(roomId, envelope);
 
     const outKind = envelope.kind as import("@/types/models").ChatMessageKind;
     const msg: ChatMessage = {
@@ -1372,7 +1530,7 @@ export const HolepunchChatTransport: ChatTransport = {
       direction: "out",
       text: outKind === "delete" ? "" : (envelope.text ?? ""),
       createdAt: envelope.sentAt,
-      status: "delivered",
+      status: "sent",
       channel: "live",
       clientId: envelope.clientId,
       kind: outKind,
@@ -1410,6 +1568,7 @@ export const HolepunchChatTransport: ChatTransport = {
     if (isRoomRevoked(roomId)) {
       removeCatalogRoom(roomId);
       rooms.delete(roomId);
+      forgetLiveSends(roomId);
       return null;
     }
     const live = rooms.get(roomId)?.room;
@@ -1447,6 +1606,7 @@ export const HolepunchChatTransport: ChatTransport = {
       if (isRoomRevoked(entry.id)) {
         removeCatalogRoom(entry.id);
         rooms.delete(entry.id);
+        forgetLiveSends(entry.id);
         catalogIds.delete(entry.id);
         continue;
       }
@@ -1467,6 +1627,7 @@ export const HolepunchChatTransport: ChatTransport = {
     for (const id of [...rooms.keys()]) {
       if (!catalogIds.has(id)) {
         rooms.delete(id);
+        forgetLiveSends(id);
         messagesByRoom.delete(id);
       }
     }
@@ -1655,7 +1816,7 @@ function mergeL1RelayTranscripts(raw: RawWalletV1): void {
         direction,
         text,
         createdAt: new Date(sentAt * 1000).toISOString(),
-        status: "delivered",
+        status: direction === "out" ? "sent" : "delivered",
         channel: "relay",
         kind: "text",
         ...(typeof record.ttlExpiresAt === "number" && record.ttlExpiresAt > 0
@@ -1760,6 +1921,9 @@ export function __resetHolepunchTransport(): void {
   topicRooms.clear();
   contractsByRoom.clear();
   inFlightConnects.clear();
+  liveSendChains.clear();
+  recentLiveSends.clear();
+  resendingRooms.clear();
   nextAutoRetryAt.clear();
   lastLiveAtMsByRoom.clear();
   l2BlipStartedAtByRoom.clear();

@@ -164,7 +164,7 @@ export const MockChatTransport: ChatTransport = {
     room.lastMessageAt = msg.createdAt;
     subscribers.get(roomId)?.forEach((h) => h(msg));
     await sleep(300);
-    msg.status = "delivered";
+    msg.status = "sent";
     // Mock peer reply.
     if (Math.random() > 0.35) {
       await sleep(700 + Math.random() * 900);

@@ -126,7 +126,11 @@ export type ChatMessage = {
   direction: "out" | "in";
   text: string;
   createdAt: string;
-  status: "queued" | "sending" | "delivered" | "failed";
+  /**
+   * Outbound: queued → sending → sent | failed. `delivered` is inbound-only until a peer ACK.
+   * @see docs/features/chat-relay.md
+   */
+  status: "queued" | "sending" | "sent" | "delivered" | "failed";
   /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
   channel?: MessageChannel;
   /** Mempool TTL unix seconds when this L1′ row is not mined. */

@@ -7,6 +7,7 @@ import {
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
 import { wipeWalletScopedLocalData } from "@/services/contacts/contactsPersistence";
+import { clearRecentLiveSends } from "@/services/p2p/HolepunchChatTransport";
 import {
   hydrateRoomSessions,
   lockRoomSessionMemory,
@@ -194,6 +195,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   async lock() {
     await walletService.lockWallet();
     lockRoomSessionMemory();
+    clearRecentLiveSends();
     set({ locked: true });
     void import("@/lib/mobile/walletSessionBridge").then((m) => {
       m.clearNativeWalletSession();
