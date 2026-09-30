@@ -21,4 +21,4 @@
 ## 4. Validation
 
 - [x] 4.1 Run `npm run lint`, `npm run format:fix`, `npm run check`, `npm run types`, `npm test`; verify all pass with no unrelated diffs
-- [ ] 4.2 Two-device manual check with a release APK (`npm run mobile:android:release:test`, then `adb install -r`) and desktop-electron: chat both ways; force-stop the Android app right after sending, reopen, chat continues both ways; a room stuck with `crypto_mismatch` before the update connects after both devices update
+- [x] 4.2 Two-device manual check with a release APK (`npm run mobile:android:release:test`, then `adb install -r`) and desktop-electron: chat both ways; force-stop the Android app right after sending, reopen, chat continues both ways; a room stuck with `crypto_mismatch` before the update connects after both devices update
