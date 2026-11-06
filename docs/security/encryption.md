@@ -228,8 +228,21 @@ After transport peer presence (`peers.count >= 1`), the connecting side sends a
 sealed `kind: "proof"` frame (`text: proof:v1:<sessionId>`). A peer that is not
 itself mid-handshake answers with `proof-ack:v1:<sessionId>` (acks never re-ack,
 so no ping-pong). AEAD open success on either proof or ack proves L1 session
-keys. Outcomes: AEAD failure → `crypto_mismatch` (session row kept, counters do not rewind);
-no reply within the window → `timeout` (retryable). A later handoff resumes the saved
+keys. Outcomes (session row kept either way, counters do not rewind):
+
+- Valid proof or ack within the window → `connected`, even if bad frames arrived first.
+- Window ends after at least one in-window frame (counter ≥ `recvCounter`) failed
+  AEAD open → `crypto_mismatch`. The verdict waits for the window so one injected
+  or garbled frame cannot fail a proof the real peer answers.
+- Window ends with no usable frame → `timeout` (retryable). Malformed frames
+  (bad base64, length, or version byte) and stale frames (counter < `recvCounter`)
+  are dropped and never count as AEAD failures.
+- Our own proof fails to seal, persist, or reach the bridge (app access lock,
+  session store, sidecar) → `unreachable` (retryable). This is a local failure, not a key verdict.
+
+Self-heal: a peer frame that opens while the room is `connect_failed` with
+`crypto_mismatch` proves the keys match, so the error is relabelled `timeout` and
+polling resumes. Retry still requires a full proof. A later handoff resumes the saved
 session instead of deriving again. Topic + Noise alone is not trust.
 
 Peer count never sets `connected`. A return from `connecting` starts a new proof

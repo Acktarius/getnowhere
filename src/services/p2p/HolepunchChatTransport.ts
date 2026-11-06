@@ -33,6 +33,7 @@ import {
 } from "@/services/p2p/holepunchPolicy";
 import { parseLiveContentEnvelope } from "@/services/p2p/liveContentEnvelope";
 import {
+  type DecodedLiveFrame,
   decodeLiveFrame,
   encodeLiveFrame,
 } from "@/services/p2p/liveFrameCodec";
@@ -88,6 +89,7 @@ import type { ChatMessage, ChatRoom } from "@/types/models";
 import type {
   ChatContentEnvelopeV1,
   ChatRelayPayload,
+  ConnectFailureCode,
   HolepunchBootstrapContract,
   P2PSessionConfig,
 } from "@/types/protocol";
@@ -237,6 +239,8 @@ export function __setHolepunchProofTimeoutMs(ms: number | null): void {
 const pendingProofRooms = new Set<string>();
 /** Resolve callbacks for awaited proof frames. */
 const proofResolvers = new Map<string, (ok: boolean) => void>();
+/** Rooms where an in-window frame failed AEAD during the current proof wait. */
+const proofSawUnauthentic = new Set<string>();
 /** Attempt generation. An early proof counts only for the generation that received it. */
 const proofAttemptGen = new Map<string, number>();
 /** Proof opened before `waitForProof` registered, keyed by attempt generation. */
@@ -529,16 +533,18 @@ async function writeLiveFrame(
 
 /**
  * Send our proof; wait up to PROOF_TIMEOUT_MS for the peer's proof or ack.
- * timeout = peer silent (retryable); mismatch = AEAD failure (rekey needed).
+ * unreachable = local send failed; mismatch = only unauthentic frames seen.
+ * @see docs/security/encryption.md
  */
 async function waitForProof(
   state: RoomState,
-): Promise<"ok" | "timeout" | "mismatch"> {
+): Promise<"ok" | "timeout" | "mismatch" | "unreachable"> {
   pendingProofRooms.add(state.room.id);
+  proofSawUnauthentic.delete(state.room.id);
   try {
     await sendProofFrame(state, "proof");
   } catch {
-    return "mismatch";
+    return "unreachable";
   }
   const attemptGen = proofAttemptGen.get(state.room.id) ?? 0;
   if (proofArrivedEarly.get(state.room.id) === attemptGen) {
@@ -553,7 +559,9 @@ async function waitForProof(
     sleep(proofTimeoutMs).then(() => TIMED_OUT),
   ]);
   proofResolvers.delete(state.room.id);
-  if (result === TIMED_OUT) return "timeout";
+  if (result === TIMED_OUT) {
+    return proofSawUnauthentic.has(state.room.id) ? "mismatch" : "timeout";
+  }
   return result === true ? "ok" : "mismatch";
 }
 
@@ -787,14 +795,12 @@ function maybeMarkPeerLost(topicRef: string): void {
   }
 }
 
-/** Decode and open a live frame under each accepted AAD; null if malformed or unauthentic. */
+/** Open a decoded live frame under each accepted AAD; null if unauthentic. */
 async function openIncomingFrame(
   state: RoomState,
   session: P2PSessionConfig,
-  payloadB64: string,
+  frame: DecodedLiveFrame,
 ): Promise<Awaited<ReturnType<typeof P2PEncryptionAdapter.open>>> {
-  const frame = decodeLiveFrame(payloadB64);
-  if (!frame) return null;
   for (const aad of incomingFrameAadCandidates(
     state.room.id,
     session,
@@ -811,6 +817,20 @@ async function openIncomingFrame(
   return null;
 }
 
+/** An openable peer frame proves the keys match: make a `crypto_mismatch` room retryable again. */
+function clearStaleCryptoMismatch(state: RoomState): void {
+  if (
+    state.room.lifecycleStatus !== "connect_failed" ||
+    state.room.lastConnectError !== "crypto_mismatch"
+  ) {
+    return;
+  }
+  state.room = { ...state.room, lastConnectError: "timeout" };
+  rooms.set(state.room.id, state);
+  patchCatalogRoom(state.room.id, { lastConnectError: "timeout" });
+  emitRoom(state.room);
+}
+
 function handleIncomingFrame(roomId: string, payloadB64: string): void {
   if (!rooms.get(roomId)?.session) return;
   const attemptGen = proofAttemptGen.get(roomId) ?? 0;
@@ -819,15 +839,11 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
     const session = state?.session;
     if (!state || !session) return;
     try {
-      const opened = await openIncomingFrame(state, session, payloadB64);
+      const frame = decodeLiveFrame(payloadB64);
+      if (!frame || frame.counter < session.recvCounter) return;
+      const opened = await openIncomingFrame(state, session, frame);
       if (!opened) {
-        if (pendingProofRooms.has(roomId)) {
-          const resolver = proofResolvers.get(roomId);
-          if (resolver) {
-            proofResolvers.delete(roomId);
-            resolver(false);
-          }
-        }
+        if (pendingProofRooms.has(roomId)) proofSawUnauthentic.add(roomId);
         return;
       }
       const merged = mergeSessionCounters(state, opened.session, "recvCounter");
@@ -836,6 +852,7 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         sendCounter: merged.sendCounter,
         recvCounter: merged.recvCounter,
       });
+      clearStaleCryptoMismatch(state);
       const text = new TextDecoder().decode(opened.plaintext);
       let envelope: ChatContentEnvelopeV1 | null = null;
       try {
@@ -978,12 +995,14 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
         ? ("ok" as const)
         : await waitForProof(state);
       pendingProofRooms.delete(state.room.id);
+      proofSawUnauthentic.delete(state.room.id);
       proofArrivedEarly.delete(state.room.id);
 
       if (proofResult !== "ok") {
         if (state.room.lifecycleStatus !== "connecting") return state.room;
         // Keep the session row either way so a retry cannot re-seal nonce 0.
-        const code = proofResult === "timeout" ? "timeout" : "crypto_mismatch";
+        const code: ConnectFailureCode =
+          proofResult === "mismatch" ? "crypto_mismatch" : proofResult;
         state.room = {
           ...state.room,
           lifecycleStatus: "connect_failed",
@@ -1402,6 +1421,7 @@ export const HolepunchChatTransport: ChatTransport = {
       proofResolver(false);
     }
     pendingProofRooms.delete(roomId);
+    proofSawUnauthentic.delete(roomId);
     proofArrivedEarly.delete(roomId);
     proofAttemptGen.delete(roomId);
 
@@ -1953,6 +1973,7 @@ export function __resetHolepunchTransport(): void {
   l2BlipStartedAtByRoom.clear();
   proofResolvers.clear();
   pendingProofRooms.clear();
+  proofSawUnauthentic.clear();
   proofArrivedEarly.clear();
   proofAttemptGen.clear();
   __setHolepunchSidecarBackend(null);

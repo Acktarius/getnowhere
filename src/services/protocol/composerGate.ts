@@ -36,7 +36,7 @@ const CONNECT_ERROR_HINT: Record<ConnectFailureCode, string> = {
   timeout:
     "No peer on topic within timeout (DHT slow, wrong topic, or isolated swarms not meeting).",
   unreachable:
-    "Holepunch bridge offline or unauthorized (shared Alice/Bob token mismatch?).",
+    "Holepunch bridge offline, app locked, or local session store unavailable.",
   crypto_mismatch:
     "Peer reached topic but L1 proof failed (session keys do not match — resend invite).",
   aborted: "Connect aborted.",

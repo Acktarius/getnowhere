@@ -511,6 +511,10 @@ Policy (see `src/services/p2p/holepunchPolicy.ts`):
 - Exponential backoff with jitter: 1s, 2s, 4s… **cap 60s**
 - Retry until `roomTtl` or user cancel; surface `connectAttempts`
 - Retryable: `timeout`, `unreachable`, `unknown`; not retryable: `crypto_mismatch` without rekey
+- `crypto_mismatch` only when the proof window ends with an in-window AEAD failure and
+  no valid proof/ack. A local proof send/persist failure is `unreachable`; stale or
+  malformed frames are dropped. A later openable peer frame relabels a
+  `crypto_mismatch` room to `timeout` — see `docs/security/encryption.md` (Post-connect verification)
 
 `connect_failed` enables **relay** send (grey bubbles), not live. Live resumes
 only when connect reaches `connected`. `pending` never enables send.

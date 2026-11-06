@@ -417,8 +417,8 @@ export function ChatRoomScreen() {
   // Reconnect when accepted/pending but never called connect() (attempts === 0).
   useEffect(() => {
     if (!room) return;
-    // crypto_mismatch is not auto-retryable — session keys diverged; user must
-    // resend/accept.  Stop polling immediately to prevent the connected↔mismatch loop.
+    // crypto_mismatch is not auto-retryable: stop polling. A later openable peer
+    // frame relabels it timeout, which re-runs this effect.
     if (
       room.lifecycleStatus === "connect_failed" &&
       !isRetryableConnectFailure(
@@ -468,7 +468,13 @@ export function ChatRoomScreen() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [room?.lifecycleStatus, room?.connectAttempts, roomId, openRoom]);
+  }, [
+    room?.lifecycleStatus,
+    room?.connectAttempts,
+    room?.lastConnectError,
+    roomId,
+    openRoom,
+  ]);
 
   // Peer/lifecycle safety net; fast L1′ mempool rescan only while Holepunch is down.
   // When connected, wallet live sync already polls relays — avoid double mempool WASM.
