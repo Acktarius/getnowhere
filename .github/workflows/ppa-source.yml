@@ -1,9 +1,6 @@
 name: PPA source packages
 
 on:
-  push:
-    branches: [development]
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       debian_revision:
