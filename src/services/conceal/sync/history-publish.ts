@@ -88,3 +88,15 @@ const throttledPublish = makeLeadingTrailingThrottle(publishNow, THROTTLE_MS);
 export function notifyHistoryPossiblyChanged(rt: SdkRuntime): void {
   throttledPublish(rt);
 }
+
+/** Flip the wallet label to synced once this pass's cursor has reached the tip. */
+export function notifySyncReachedTip(): void {
+  void import("@/state/walletStore").then(({ useWalletStore }) => {
+    if (useWalletStore.getState().syncStatus !== "syncing") return;
+    useWalletStore.setState({
+      syncStatus: "synced",
+      syncProgress: 1,
+      lastSyncedAt: new Date().toISOString(),
+    });
+  });
+}

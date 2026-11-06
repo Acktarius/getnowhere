@@ -82,6 +82,7 @@ import { syncProfileFromReadSpeed } from "@/lib/sync-speed";
 import { clampCreationHeight } from "@/lib/wallet/creation-height";
 import {
   notifyHistoryPossiblyChanged,
+  notifySyncReachedTip,
   prepareRawForHistoryPublish,
   shouldPublishHistory,
 } from "@/services/conceal/sync/history-publish";
@@ -697,8 +698,19 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
   const poolReceived = new Map<string, SdkMessageRecord>(
     readReceivedRecords(rt.raw).map((record) => [record.id, record] as const),
   );
+  const POOL_FETCH_MS = 8_000;
+  let poolTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const poolTxs = await rt.daemon.getTransactionsPool();
+    const poolTxs = await Promise.race([
+      rt.daemon.getTransactionsPool(),
+      new Promise<never>((_, reject) => {
+        poolTimer = setTimeout(
+          () => reject(new Error("mempool timeout")),
+          POOL_FETCH_MS,
+        );
+      }),
+    ]);
+    if (poolTimer !== undefined) clearTimeout(poolTimer);
     if (rt.account) {
       const poolScan = scanPoolForInbound(
         poolTxs,
@@ -716,6 +728,7 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
       poolFetchOk = true;
     }
   } catch (error) {
+    if (poolTimer !== undefined) clearTimeout(poolTimer);
     if (!poolScanWarned.has(rt)) {
       poolScanWarned.add(rt);
       console.warn(
@@ -1128,6 +1141,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
       };
       rt.state = state;
     }
+    // Label flips at the snapshot tip; persist and mempool must not hold "syncing".
+    if (scanned >= height) notifySyncReachedTip();
     // Flush relay records into rt.raw before publishing so publishNow sees them mid-sync.
     rt.raw = prepareRawForHistoryPublish(
       rt.raw,

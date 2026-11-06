@@ -40,6 +40,7 @@ vi.mock("@/services/conceal/sync/runtime", () => ({
   persistRuntime: async () => undefined,
   pollMempoolRuntime: async () => false,
   syncRuntime: async () => 0,
+  isSyncInProgress: () => false,
 }));
 
 const ALICE = {

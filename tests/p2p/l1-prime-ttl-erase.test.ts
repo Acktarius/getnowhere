@@ -51,6 +51,7 @@ vi.mock("@/services/conceal/sync/runtime", () => ({
   persistRuntime: (...args: unknown[]) => persistRuntime(...args),
   pollMempoolRuntime: async () => false,
   syncRuntime: async () => 0,
+  isSyncInProgress: () => false,
 }));
 
 import * as holepunch from "@/services/p2p/HolepunchChatTransport";

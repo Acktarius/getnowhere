@@ -11,6 +11,7 @@ import {
   readSentRecords,
 } from "@/services/conceal/sync/messages-store";
 import {
+  isSyncInProgress,
   pollMempoolRuntime,
   requireRuntime,
   syncRuntime,
@@ -408,12 +409,15 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       // Mempool first — do not wait on tip catch-up for 0-conf creates.
       await pollMempoolRuntime(rt);
       // Short tip sync so a create that already mined still appears.
-      await Promise.race([
-        syncRuntime(rt),
-        new Promise<void>((resolve) => {
-          setTimeout(resolve, 8_000);
-        }),
-      ]);
+      // Skip when a scan is already running — syncRuntime would arm pendingSync.
+      if (!isSyncInProgress()) {
+        await Promise.race([
+          syncRuntime(rt),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 8_000);
+          }),
+        ]);
+      }
       const received = readReceivedRecords(rt.raw);
       const out: SmartMessageInvite[] = [];
       for (const record of received) {
@@ -470,7 +474,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         register: import("@/types/protocol").ChatRegisterPayload;
@@ -602,7 +606,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         revoke: import("@/types/protocol").ChatRevokePayload;
@@ -651,7 +655,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         relay: ChatRelayPayload;
