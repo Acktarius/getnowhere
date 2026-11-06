@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -119,6 +119,68 @@ describe("ppa source packages", () => {
     );
     expect(names).toContain("getnowhere-1.2.3/payload/getnowhere");
     expect(names).not.toContain("debian/");
+    expect(
+      existsSync(
+        path.join(
+          dir,
+          "work",
+          "jammy",
+          "getnowhere-1.2.3",
+          "debian",
+          "source",
+          "include-binaries",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("lists the desktop icon so dpkg-source accepts it", () => {
+    const dir = tempDir();
+    const payload = path.join(dir, "payload");
+    const output = path.join(dir, "out");
+    const icon = path.join(dir, "icon.png");
+    writePayload(payload);
+    writeFileSync(icon, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    execFileSync(
+      "bash",
+      [
+        buildScript,
+        "--payload",
+        payload,
+        "--version",
+        "1.2.3",
+        "--icon",
+        icon,
+        output,
+      ],
+      {
+        env: {
+          ...process.env,
+          PPA_SERIES: "jammy",
+          PPA_DEBIAN_REVISION: "1",
+          PPA_UPLOAD_SUFFIX: "1",
+          PPA_COMMIT_SHORT: "abc1234",
+          SOURCE_DATE_EPOCH: "1700000000",
+          PPA_PREPARE_ONLY: "1",
+          PPA_WORK_DIR: path.join(dir, "work"),
+        },
+      },
+    );
+
+    const debian = path.join(
+      dir,
+      "work",
+      "jammy",
+      "getnowhere-1.2.3",
+      "debian",
+    );
+    expect(
+      readFileSync(path.join(debian, "source", "include-binaries"), "utf8"),
+    ).toBe("debian/getnowhere.png\n");
+    expect(readFileSync(path.join(debian, "getnowhere.png"))).toEqual(
+      readFileSync(icon),
+    );
   });
 
   it("signs a downloaded source package and does not upload on a dry run", () => {
