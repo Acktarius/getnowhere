@@ -4,12 +4,9 @@ The desktop app built for Linux is also published through a Launchpad PPA.
 `PPA source packages` (`.github/workflows/ppa-source.yml`) packages the same
 Electron tree as the Linux desktop job, then writes an unsigned Debian source
 package for Ubuntu 22.04 (`jammy`), 24.04 (`noble`), and 26.04 (`resolute`).
-A push to `development` builds the source package as workflow artifacts. On a `v*` tag it also attaches those files to the GitHub release.
+A push to `development`, a manual run, or a `v*` tag stores `ppa-source-jammy`, `ppa-source-noble`, and `ppa-source-resolute` as workflow artifacts. Those files are not added to a GitHub release.
 
-`scripts/ppa/publish-latest.sh` downloads that release, puts the maintainer
-from `.env` into the changelog, signs the source, and runs `dput`. Launchpad
-builds the `.deb`. The Forge `.deb` already attached to the release is not the
-upload.
+`scripts/ppa/publish-latest.sh` uses `gh` to download the artifacts from the latest successful run, or from `--run <run-id>`. It puts the maintainer from `.env` into the changelog, signs the source locally, and runs `dput`. Launchpad builds the `.deb`.
 
 Version form is `<upstream>-<revision>~<series><upload>`, for example
 `0.5.1-1~jammy1`. Launchpad rejects a repeated version. Set
@@ -28,7 +25,6 @@ Put these in the repository `.env` file (gitignored).
 | `PPA_DEBFULLNAME` | `<name>` |
 | `PPA_DEBEMAIL` | `<email>` |
 | `PPA_GPG_KEY_ID` | OpenPGP key id registered on the Launchpad account |
-| `GITHUB_TOKEN` | optional, for a private release |
 | `PPA_UPLOAD_SUFFIX` | optional |
 
 The signing key stays in the local keyring.
@@ -37,9 +33,8 @@ The signing key stays in the local keyring.
 
 ```bash
 bash scripts/ppa/publish-latest.sh --dry-run
+bash scripts/ppa/publish-latest.sh --dry-run --run <run-id>
 bash scripts/ppa/publish-latest.sh
 ```
 
-`--dry-run` only downloads the unsigned source files into `dist/ppa/incoming`.
-The upload needs `curl`, `python3`, `dpkg-dev`, `dput`, and a local `gpg` that
-can sign with `PPA_GPG_KEY_ID`.
+`--dry-run` uses `gh` to download the unsigned source files into `dist/ppa/incoming` and stops before signing. The upload also needs `python3`, `dpkg-dev`, `dput`, and a local `gpg` that can sign with `PPA_GPG_KEY_ID`. `gh` must already be logged in.

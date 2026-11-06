@@ -281,6 +281,14 @@ describe("ppa source packages", () => {
     expect(workflow).toContain("branches: [development]");
     expect(workflow).toContain("jammy, noble, resolute");
     expect(workflow).toContain("build-source.sh");
+    const publish = readFileSync(
+      path.join(root, "scripts/ppa/publish-latest.sh"),
+      "utf8",
+    );
+    expect(publish).toContain("gh run download");
+    expect(publish).not.toContain("releases/latest");
+    expect(publish).not.toContain("gh release");
+    expect(workflow).not.toContain("gh release");
     expect(workflow).toContain("actions/download-artifact@v7");
     expect(workflow).not.toContain("actions/download-artifact@v6");
     expect(workflow).toContain("GetNowHere-linux-x64");

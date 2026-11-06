@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Download the unsigned PPA source package from the latest GitHub release,
-# sign it for the local Launchpad account, and dput it.
+# Download unsigned PPA source artifacts from a workflow run,
+# sign them for the local Launchpad account, and dput them.
 # @see docs/builds/ppa-source.md
 set -euo pipefail
 
@@ -11,11 +11,12 @@ die() {
 
 usage() {
   cat <<'EOF'
-usage: publish-latest.sh [--dry-run] [--from DIR] [--series jammy,noble,resolute]
+usage: publish-latest.sh [--dry-run] [--run RUN_ID] [--from DIR] [--series jammy,noble,resolute]
 
-Downloads *.dsc and the matching tarballs from the latest GitHub release,
-rewrites the maintainer from .env, signs the source, and runs dput.
---from DIR uses an already downloaded source directory instead of GitHub.
+Downloads the ppa-source-* artifacts from a successful PPA source packages run.
+The default run is the latest success. --run selects one run.
+--from DIR uses an already downloaded source directory.
+The script then rewrites the maintainer from .env, signs the source, and runs dput.
 EOF
 }
 
@@ -26,9 +27,15 @@ load_ppa_env "$root/.env"
 
 dry_run=0
 from_dir=""
+run_id=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
+    --run)
+      [[ $# -ge 2 ]] || die "--run needs a workflow run id"
+      run_id=$2
+      shift 2
+      ;;
     --from)
       [[ $# -ge 2 ]] || die "--from needs a path"
       from_dir=$2
@@ -80,6 +87,33 @@ series_of() {
   esac
 }
 
+artifact_series() {
+  case "$1" in
+    22 | 22.04 | jammy) printf '%s\n' jammy ;;
+    24 | 24.04 | noble) printf '%s\n' noble ;;
+    26 | 26.04 | resolute) printf '%s\n' resolute ;;
+    *) return 1 ;;
+  esac
+}
+
+copy_source_files() {
+  local dir=$1
+  local file base
+  if [[ -f "$dir/SHA256SUMS" ]]; then
+    (cd "$dir" && sha256sum -c SHA256SUMS) || die "source checksum mismatch"
+  fi
+  shopt -s nullglob
+  for file in "$dir"/*.dsc "$dir"/*.orig.tar.* "$dir"/*.debian.tar.* "$dir"/*_source.changes "$dir"/*_source.buildinfo; do
+    base=$(basename "$file")
+    if [[ -f "$incoming/$base" ]]; then
+      cmp -s "$file" "$incoming/$base" || die "source files from different artifacts disagree"
+      continue
+    fi
+    cp "$file" "$incoming/$base"
+  done
+  shopt -u nullglob
+}
+
 incoming=${PPA_DIST_DIR:-$root/dist/ppa}/incoming
 out=${PPA_DIST_DIR:-$root/dist/ppa}
 rm -rf "$out"
@@ -89,62 +123,36 @@ if [[ -n "$from_dir" ]]; then
   from_dir=$(cd "$from_dir" && pwd)
   cp -a "$from_dir"/. "$incoming/"
 else
+  [[ -z "$run_id" || "$run_id" =~ ^[0-9]+$ ]] || die "--run must be a numeric workflow run id"
   [[ -n "${PPA_GITHUB_REPO:-}" ]] || die "set PPA_GITHUB_REPO in .env (<owner>/<name>)"
   [[ "$PPA_GITHUB_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "PPA_GITHUB_REPO must look like <owner>/<name>"
-  command -v curl >/dev/null || die "curl is not installed"
+  declare -A seen_series=()
+  wanted_series=()
+  for raw in "${series_allow[@]}"; do
+    [[ -n "$raw" ]] || continue
+    name=$(artifact_series "$raw") || die "unknown Ubuntu series"
+    [[ -n "${seen_series[$name]:-}" ]] && continue
+    seen_series[$name]=1
+    wanted_series+=("$name")
+  done
+  [[ ${#wanted_series[@]} -gt 0 ]] || die "PPA_SERIES is empty"
+  command -v gh >/dev/null 2>&1 || die "install the gh CLI and log in before downloading workflow artifacts"
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
-  hdr=(-H "Accept: application/vnd.github+json" -H "User-Agent: ppa-source")
-  token=${GITHUB_TOKEN:-${GH_TOKEN:-}}
-  if [[ -n "$token" ]]; then
-    [[ "$token" != *[[:space:]]* ]] || die "GITHUB_TOKEN is invalid"
-    hdr+=(-H "Authorization: Bearer ${token}")
+  if [[ -z "$run_id" ]]; then
+    run_id=$(gh run list --repo "$PPA_GITHUB_REPO" --workflow ppa-source.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId') \
+      || die "workflow run request failed"
   fi
-  curl -fsSL "${hdr[@]}" -o "$tmp/release.json" \
-    "https://api.github.com/repos/${PPA_GITHUB_REPO}/releases/latest" \
-    || die "GitHub release request failed"
-  python3 - "$tmp/release.json" "$tmp/assets.tsv" "${token:+token}" <<'PY'
-import json
-import re
-import sys
-from pathlib import Path
-
-release = json.loads(Path(sys.argv[1]).read_text())
-use_api = len(sys.argv) > 3 and sys.argv[3] == "token"
-wanted = re.compile(
-    r"(?:\.dsc|_source\.changes|_source\.buildinfo|\.orig\.tar\.[A-Za-z0-9]+|\.debian\.tar\.[A-Za-z0-9]+|SHA256SUMS)$"
-)
-lines = []
-for asset in release.get("assets") or []:
-    name = asset.get("name") or ""
-    if "/" in name or not wanted.search(name):
-        continue
-    url = asset.get("url") if use_api else asset.get("browser_download_url")
-    if not name or not isinstance(url, str) or not url.startswith("https://"):
-        continue
-    lines.append(f"{name}\t{url}")
-if not any(line.split("\t", 1)[0].endswith(".dsc") for line in lines):
-    raise SystemExit("latest release has no PPA source package")
-Path(sys.argv[2]).write_text("\n".join(lines) + "\n")
-PY
-  while IFS=$'\t' read -r name url; do
-    [[ -n "$name" ]] || continue
-    [[ "$name" =~ ^[A-Za-z0-9._+~-]+$ ]] || die "release asset name is not usable"
-    [[ "$url" == https://* ]] || die "source download failed"
-    if [[ -n "$token" ]]; then
-      curl -fsSL -H "Accept: application/octet-stream" -H "Authorization: Bearer ${token}" \
-        -o "$incoming/$name" "$url" || die "source download failed"
-    else
-      curl -fsSL -o "$incoming/$name" "$url" || die "source download failed"
-    fi
-  done < "$tmp/assets.tsv"
+  [[ "$run_id" =~ ^[0-9]+$ ]] || die "no successful PPA source workflow run"
+  for name in "${wanted_series[@]}"; do
+    gh run download "$run_id" --repo "$PPA_GITHUB_REPO" --name "ppa-source-$name" --dir "$tmp/$name" \
+      || die "workflow artifact download failed"
+    copy_source_files "$tmp/$name"
+  done
 fi
 
-if [[ -f "$incoming/SHA256SUMS" ]]; then
-  (cd "$incoming" && sha256sum -c SHA256SUMS) || die "source checksum mismatch"
-fi
 mapfile -t dsc_files < <(find "$incoming" -maxdepth 1 -name '*.dsc' | sort)
-[[ ${#dsc_files[@]} -gt 0 ]] || die "latest release has no PPA source package"
+[[ ${#dsc_files[@]} -gt 0 ]] || die "workflow artifacts have no PPA source package"
 
 if [[ "$dry_run" -eq 1 ]]; then
   printf 'dry-run: %s source description(s) in %s\n' "${#dsc_files[@]}" "$incoming"
@@ -152,7 +160,7 @@ if [[ "$dry_run" -eq 1 ]]; then
 fi
 
 mapfile -t changes_files < <(find "$incoming" -maxdepth 1 -name '*_source.changes' | sort)
-[[ ${#changes_files[@]} -gt 0 ]] || die "latest release has no source changes file"
+[[ ${#changes_files[@]} -gt 0 ]] || die "workflow artifacts have no source changes file"
 changelog_date=$(date -R)
 
 for changes_file in "${changes_files[@]}"; do
