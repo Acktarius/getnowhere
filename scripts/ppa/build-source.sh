@@ -206,6 +206,7 @@ binary = [
 icon = os.environ.get("ICON_PATH", "")
 if icon:
     shutil.copyfile(icon, debian / "getnowhere.png")
+    (debian / "source" / "include-binaries").write_text("debian/getnowhere.png\n")
 rules = """#!/usr/bin/make -f
 %:
 \tdh $@
