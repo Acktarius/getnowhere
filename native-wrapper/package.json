@@ -50,7 +50,9 @@
       ".": "~55.0.29",
       "js-yaml": "4.3.2",
       "zod": "4.6.6",
-      "minimatch": "11.0.1",
+      "@expo/fingerprint": {
+        "minimatch": "11.0.1"
+      },
       "node-forge": "1.4.3"
     },
     "react-native": {
