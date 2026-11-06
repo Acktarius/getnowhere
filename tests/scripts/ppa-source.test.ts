@@ -281,6 +281,8 @@ describe("ppa source packages", () => {
     expect(workflow).toContain("branches: [development]");
     expect(workflow).toContain("jammy, noble, resolute");
     expect(workflow).toContain("build-source.sh");
+    expect(workflow).toContain("actions/download-artifact@v7");
+    expect(workflow).not.toContain("actions/download-artifact@v6");
     expect(workflow).toContain("GetNowHere-linux-x64");
     expect(workflow).not.toContain("CMakeLists");
     const files = [
