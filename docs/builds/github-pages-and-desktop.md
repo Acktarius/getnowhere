@@ -11,6 +11,7 @@
 Pages          documentation/website build → out/ → GitHub Pages (public docs)
 Desktop Linux  npm run build → dist/ staged into package
                  Electron Forge zip/deb (Linux) + zip (Windows)
+                 Arch makepkg of that linux-x64 tree → .pkg.tar.zst
                  ├─ Electron shell
                  ├─ embedded UI (resources/ui ← Vite dist/)
                  ├─ bundled Node (resources/runtime/node)
@@ -65,24 +66,28 @@ The CI build sets `basePath` / `assetPrefix` to `/getnowhere`.
 
 Triggers: `v*` tags, or manual `workflow_dispatch`. Independent of the Pages workflow.
 
-Parallel jobs on `ubuntu-24.04` (Linux) and `windows-latest` (Windows). Job env
-clears `GNH_HOLEPUNCH_WS_URL` and `VITE_HOLEPUNCH_WS_URL` so CI never forces
+Parallel jobs on `ubuntu-24.04` (Linux) and `windows-latest` (Windows). Those
+jobs clear `GNH_HOLEPUNCH_WS_URL` and `VITE_HOLEPUNCH_WS_URL` so CI never forces
 loopback WebSocket; packaged builds use native IPC at runtime (`main.mjs` sets
-`GNH_BRIDGE_TRANSPORT=ipc` when spawning the sidecar).
+`GNH_BRIDGE_TRANSPORT=ipc` when spawning the sidecar). The Arch job waits for
+the Linux zip, then runs `makepkg` inside a pinned `archlinux/archlinux:base-devel`
+container.
 
 - Root `npm ci` + `npm run build` → `dist/`
 - Stages `dist/` → `resources/ui`, sidecar + official Node via `desktop-electron/scripts/prepare-sidecar.mjs`
 - Syncs `desktop-electron` package version from repo-root `version` (`version=0.3.3` → `0.3.3`), **not** the git tag (so tags like `v0.3.3-f-droid` do not leak into filenames)
 - Linux: `electron-forge make` → `.zip` + `.deb` under `desktop-electron/out/make`, then AppImage via pinned linuxdeploy + SHA-256 check (not the moving `continuous` tag)
+- Arch / Omarchy: `desktop-electron/packaging/arch/PKGBUILD` packs that same linux-x64 zip (checked against the Linux job `SHA256SUMS.txt`) into `Get_NowHere-vX.Y.Z-x86_64.pkg.tar.zst`. The prebuilt Electron tree is copied to `/opt/getnowhere` and is not stripped ([Electron package guidelines](https://wiki.archlinux.org/title/Electron_package_guidelines)). `makepkg` runs as an unprivileged user. `namcap` must report no `E:` lines. A follow-up job in pinned `archlinux/archlinux:base` runs `pacman -U`, checks `ldd` for missing libraries, then removes the package. Both images use the 2026-10-29 digests from conceal-core, then `pacman -Syu`.
 - Bundled Node (`GNH_BUNDLE_NODE_VERSION`) is verified against official `SHASUMS256.txt` before extract (`desktop-electron/scripts/prepare-sidecar.mjs`)
 - Canonical artifact names (always `v` + `version` file):
   - `Get_NowHere-v0.3.3-x86_64.AppImage`
   - `Get_NowHere-v0.3.3-amd64.deb`
   - `Get_NowHere-v0.3.3-linux-x64.zip`
+  - `Get_NowHere-v0.3.3-x86_64.pkg.tar.zst`
   - `Get_NowHere-v0.3.3-win32-x64.zip`
 - Windows: `electron-forge make --platform=win32` → `.zip` under `desktop-electron/out/make/zip/win32/x64`
-- Uploads CI artifacts as `getnowhere-linux-desktop-vX.Y.Z` and `getnowhere-windows-desktop-vX.Y.Z`
-- On `v*` tags a **draft** GitHub Release titled **Get NowHere vX.Y.Z** (title/version from `version` file) bundles Linux + Windows assets and combined checksums
+- Uploads CI artifacts as `getnowhere-linux-desktop-vX.Y.Z`, `getnowhere-arch-desktop-vX.Y.Z`, and `getnowhere-windows-desktop-vX.Y.Z`
+- On `v*` tags a **draft** GitHub Release titled **Get NowHere vX.Y.Z** (title/version from `version` file) bundles Linux, Arch, and Windows assets and combined checksums
 - Manual dispatch without a tag still builds and uploads artifacts from the `version` file; it does not create a release
 
 Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override with `GNH_UI_URL` if needed.
@@ -91,10 +96,22 @@ Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override w
 
 ### Linux
 
-1. Download the `.deb` or `.zip` from the draft release / Actions artifact.
+1. Download the `.deb`, `.AppImage`, or `.zip` from the draft release / Actions artifact.
 2. Install or extract and run `getnowhere`.
 3. App starts Electron, spawns sidecar on a per-launch IPC socket/pipe, loads
    embedded UI, and talks to that private bridge (not `ws://127.0.0.1:7901`).
+
+### Arch Linux and Omarchy
+
+1. Download `Get_NowHere-vX.Y.Z-x86_64.pkg.tar.zst` and `SHA256SUMS.txt`.
+2. Check the file with `sha256sum -c SHA256SUMS.txt`.
+3. Install with `sudo pacman -U ./Get_NowHere-vX.Y.Z-x86_64.pkg.tar.zst`.
+4. Run `getnowhere`. Removing the package (`sudo pacman -R getnowhere`) leaves
+   `~/.config/getnowhere` in place.
+
+The package name inside pacman is `getnowhere`. It depends on the libraries
+Electron links (GTK 3, NSS, Mesa, ALSA, and the smaller X/AT-SPI packages listed
+in the PKGBUILD).
 
 ### Windows
 

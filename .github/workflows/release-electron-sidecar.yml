@@ -1,8 +1,9 @@
 name: Release Electron + sidecar
 
-# Electron Forge Linux + Windows packages (Electron + bundled sidecar + embedded Vite UI).
+# Electron Forge Linux + Windows packages, plus an Arch .pkg.tar.zst of the linux-x64 tree.
 # Packaged desktop uses native IPC (Unix socket / named pipe) for the UI↔sidecar bridge —
 # not loopback WebSocket. @see docs/architecture/local-bridge-transport.md
+# Arch recipe: desktop-electron/packaging/arch/PKGBUILD. @see docs/builds/github-pages-and-desktop.md
 
 on:
   push:
@@ -274,10 +275,183 @@ jobs:
           path: output/
           retention-days: 14
 
+  desktop-arch:
+    name: Electron + sidecar (Arch)
+    needs: desktop-linux
+    if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    # base-devel digest from 2026-10-29 (conceal-core pin). pacman -Syu before use.
+    # Container default shell is sh. @see docs/builds/github-pages-and-desktop.md
+    container:
+      image: archlinux/archlinux:base-devel@sha256:a3c048d95acbbf5acc15a9e9a727d3cae2ba2ac69aa8b24d8ccd4f60b3102f28
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Provision build environment
+        run: pacman -Syu --noconfirm --needed git namcap
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve version and verify Linux zip
+        id: ver
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: ${VERSION:-<empty>}"; exit 1; }
+          FILE_VERSION="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "file_version=${FILE_VERSION}" >> "$GITHUB_OUTPUT"
+          linux_dir=/tmp/linux-desktop
+          mkdir -p "$linux_dir"
+          echo "linux_dir=${linux_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Download Linux desktop artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: getnowhere-linux-desktop-${{ steps.ver.outputs.file_version }}
+          path: ${{ steps.ver.outputs.linux_dir }}
+
+      - name: Prepare PKGBUILD
+        id: prep
+        run: |
+          set -euo pipefail
+          linux_dir="${{ steps.ver.outputs.linux_dir }}"
+          (
+            cd "$linux_dir"
+            sha256sum -c SHA256SUMS.txt
+          )
+          zip="$linux_dir/Get_NowHere-${{ steps.ver.outputs.file_version }}-linux-x64.zip"
+          [[ -f "$zip" ]] || { echo "missing $zip"; ls -la "$linux_dir"; exit 1; }
+          bsdtar -tf "$zip" | grep -q 'GetNowHere-linux-x64/getnowhere' || {
+            echo "zip is missing GetNowHere-linux-x64/getnowhere"
+            bsdtar -tf "$zip" | head -40
+            exit 1
+          }
+
+          useradd -m builder
+          work=/home/builder/pkg
+          mkdir -p "$work"
+          cp desktop-electron/packaging/arch/PKGBUILD "$work/"
+          cp desktop-electron/packaging/arch/getnowhere.desktop "$work/"
+          cp desktop-electron/icons/icon.png "$work/getnowhere.png"
+          cp "$zip" "$work/"
+
+          zip_sum=$(sha256sum "$work/Get_NowHere-${{ steps.ver.outputs.file_version }}-linux-x64.zip" | awk '{print $1}')
+          desk_sum=$(sha256sum "$work/getnowhere.desktop" | awk '{print $1}')
+          icon_sum=$(sha256sum "$work/getnowhere.png" | awk '{print $1}')
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" \
+            -e "s/ZIP_SHA256/${zip_sum}/" \
+            -e "s/DESKTOP_SHA256/${desk_sum}/" \
+            -e "s/ICON_SHA256/${icon_sum}/" \
+            "$work/PKGBUILD"
+          grep -q 'ZIP_SHA256\|DESKTOP_SHA256\|ICON_SHA256' "$work/PKGBUILD" && {
+            echo "PKGBUILD still has checksum placeholders"
+            exit 1
+          }
+          bash -n "$work/PKGBUILD"
+          chown -R builder: "$work"
+          echo "work=${work}" >> "$GITHUB_OUTPUT"
+
+      - name: Build package as unprivileged user
+        run: su builder -c "cd '${{ steps.prep.outputs.work }}' && makepkg --noconfirm --log"
+
+      - name: Check package
+        working-directory: ${{ steps.prep.outputs.work }}
+        env:
+          FILE_VERSION: ${{ steps.ver.outputs.file_version }}
+        run: |
+          set -euo pipefail
+          mapfile -t pkgs < <(ls -1 getnowhere-*.pkg.tar.zst)
+          if ((${#pkgs[@]} != 1)); then
+            echo "ERROR: expected one package, found ${#pkgs[@]}"
+            ls -la
+            exit 1
+          fi
+          pkg=${pkgs[0]}
+          namcap PKGBUILD "$pkg" | tee namcap.out
+          ! grep -q ' E: ' namcap.out || { echo "namcap reported errors"; exit 1; }
+          pacman -Qip "$pkg"
+          files=$(pacman -Qlp "$pkg")
+          echo "$files"
+          bsdtar -tvf "$pkg" opt/getnowhere/getnowhere | grep -q '^-rwx' || {
+            echo "opt/getnowhere/getnowhere missing or not executable"
+            exit 1
+          }
+          bsdtar -tvf "$pkg" usr/bin/getnowhere | grep -q '^lrwx' || {
+            echo "usr/bin/getnowhere symlink missing"
+            exit 1
+          }
+          grep -q '/usr/share/applications/getnowhere.desktop$' <<< "$files"
+          canonical="Get_NowHere-${FILE_VERSION}-x86_64.pkg.tar.zst"
+          [[ "$pkg" == "$canonical" ]] || mv -v "$pkg" "$canonical"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          sha256sum "$canonical" > SHA256SUMS.txt
+          cp "$canonical" SHA256SUMS.txt "$GITHUB_WORKSPACE/dist/"
+          ls -la "$GITHUB_WORKSPACE/dist"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: getnowhere-arch-desktop-${{ steps.ver.outputs.file_version }}
+          path: dist/
+          retention-days: 14
+
+  desktop-arch-test:
+    name: Install Arch package
+    needs: desktop-arch
+    if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # base, not base-devel: a fat image would hide missing runtime depends.
+    # Digest pulled 2026-10-29 (same pin as conceal-core).
+    container:
+      image: archlinux/archlinux:base@sha256:e4954feb61c332472f9cbf0e797a23be64434cf71db429349976192b4de782fc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Update base image
+        run: pacman -Syu --noconfirm
+
+      - name: Download Arch package
+        uses: actions/download-artifact@v7
+        with:
+          pattern: getnowhere-arch-desktop-*
+          merge-multiple: true
+          path: dist
+
+      - name: Install, check libraries, remove
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c SHA256SUMS.txt
+          pkg=$(ls Get_NowHere-*.pkg.tar.zst)
+          pacman -U --noconfirm "$pkg"
+          test -x /usr/bin/getnowhere
+          test -f /usr/share/applications/getnowhere.desktop
+          test -f /usr/share/icons/hicolor/256x256/apps/getnowhere.png
+          ldd /opt/getnowhere/getnowhere > ldd.out
+          cat ldd.out
+          if grep -q 'not found' ldd.out; then
+            echo "missing shared libraries"
+            exit 1
+          fi
+          pacman -R --noconfirm getnowhere
+          test ! -e /usr/bin/getnowhere
+          test ! -d /opt/getnowhere
+
   release:
     name: Draft GitHub Release
     if: startsWith(github.ref, 'refs/tags/v') && !endsWith(github.ref_name, '-f-droid')
-    needs: [desktop-linux, desktop-windows]
+    needs: [desktop-linux, desktop-windows, desktop-arch-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -296,7 +470,7 @@ jobs:
           echo "file_version=v${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: getnowhere-*-desktop-*
           merge-multiple: true
@@ -307,14 +481,14 @@ jobs:
         run: |
           cd release-assets
           rm -f SHA256SUMS.txt
-          sha256sum *.deb *.zip *.AppImage > SHA256SUMS.txt
+          sha256sum *.deb *.zip *.AppImage *.pkg.tar.zst > SHA256SUMS.txt
           ls -la
           echo "hash_block<<EOF" >> "$GITHUB_OUTPUT"
           cat SHA256SUMS.txt >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Draft GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           name: Get NowHere ${{ steps.ver.outputs.file_version }}
@@ -322,12 +496,14 @@ jobs:
             release-assets/*.deb
             release-assets/*.AppImage
             release-assets/*.zip
+            release-assets/*.pkg.tar.zst
             release-assets/SHA256SUMS.txt
           fail_on_unmatched_files: true
           body: |
             **Get NowHere — desktop (Electron + sidecar, native IPC bridge)**
 
             - **Linux:** `.AppImage` (Debian/Ubuntu + Arch), `.deb` + `.zip`
+            - **Arch / Omarchy:** `.pkg.tar.zst` (`sudo pacman -U`)
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
             - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
             - **Artifact version:** from repo `version` file (`${{ steps.ver.outputs.file_version }}`), not the git tag name
