@@ -111,8 +111,9 @@ Packaged UI path: `process.resourcesPath/ui/index.html` (`loadFile`). Override w
 
 The package name inside pacman is `getnowhere`. It is `BSD-3-Clause` (repo
 `LICENCE` installed under `/usr/share/licenses/getnowhere/`). It depends on the
-libraries Electron links (GTK 3, NSS, Mesa, ALSA, and the smaller X/AT-SPI
-packages listed in the PKGBUILD).
+libraries Electron and the sidecar link (GTK 3, NSS, Mesa, ALSA, glib2,
+dbus, expat, systemd-libs, gcc runtimes, and the smaller X/AT-SPI packages
+listed in the PKGBUILD).
 
 ### Windows
 

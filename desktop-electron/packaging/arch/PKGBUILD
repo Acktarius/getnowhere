@@ -12,14 +12,21 @@ license=('BSD-3-Clause')
 depends=(
   alsa-lib
   at-spi2-core
+  dbus
+  expat
+  glib2
+  glibc
   gtk3
   hicolor-icon-theme
   libdrm
+  libgcc
   libnotify
+  libstdc++
   libxcb
   libxcrypt-compat
   mesa
   nss
+  systemd-libs
   xdg-utils
 )
 options=('!strip' '!debug' '!lto')

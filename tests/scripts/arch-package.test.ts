@@ -38,11 +38,18 @@ describe("Arch package recipe", () => {
     for (const dep of [
       "alsa-lib",
       "at-spi2-core",
+      "dbus",
+      "expat",
+      "glib2",
+      "glibc",
       "gtk3",
+      "libgcc",
       "libnotify",
+      "libstdc++",
       "libxcrypt-compat",
       "mesa",
       "nss",
+      "systemd-libs",
       "xdg-utils",
     ]) {
       expect(pkgbuild).toContain(dep);
