@@ -64,7 +64,7 @@ describe("release workflow Arch job", () => {
     expect(workflow).toContain("makepkg --nodeps --noconfirm --log");
     expect(workflow).toContain('cp LICENCE "$work/LICENSE"');
     expect(workflow).toContain("LICENSE_SHA256");
-    expect(workflow).toContain("namcap PKGBUILD");
+    expect(workflow).toContain("namcap --exclude elffiles PKGBUILD");
     expect(workflow).toContain("namcap reported errors:");
     expect(workflow).toContain("/usr/share/licenses/getnowhere/LICENSE");
     expect(workflow).toContain("pacman -U --noconfirm");

@@ -378,7 +378,8 @@ jobs:
             exit 1
           fi
           pkg=${pkgs[0]}
-          namcap PKGBUILD "$pkg" | tee namcap.out
+          # elffiles: namcap does not treat /opt/$pkgname as valid; Arch guidelines allow it for Electron.
+          namcap --exclude elffiles PKGBUILD "$pkg" | tee namcap.out
           if grep -q ' E: ' namcap.out; then
             echo "namcap reported errors:"
             grep ' E: ' namcap.out || true
