@@ -73,10 +73,17 @@ jobs:
         working-directory: desktop-electron
         run: npm run package
 
+      - name: Archive desktop tree preserving permissions
+        run: |
+          set -euo pipefail
+          test -x desktop-electron/out/GetNowHere-linux-x64/getnowhere
+          # Artifact ZIP transfers reset file modes; tar preserves modes and symlinks.
+          tar -C desktop-electron/out/GetNowHere-linux-x64 -czf getnowhere-linux-payload.tar.gz .
+
       - uses: actions/upload-artifact@v6
         with:
           name: getnowhere-linux-payload
-          path: desktop-electron/out/GetNowHere-linux-x64/
+          path: getnowhere-linux-payload.tar.gz
           if-no-files-found: error
 
   source:
@@ -92,11 +99,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Download desktop tree
+      - name: Download desktop archive
         uses: actions/download-artifact@v7
         with:
           name: getnowhere-linux-payload
-          path: payload
+          path: payload-artifact
+
+      - name: Extract desktop tree preserving permissions
+        run: |
+          set -euo pipefail
+          mkdir -p payload
+          tar --extract --gzip --same-permissions --no-same-owner \
+            --file payload-artifact/getnowhere-linux-payload.tar.gz \
+            --directory payload
+          test -x payload/getnowhere
 
       - name: Install source packaging tools
         run: |
