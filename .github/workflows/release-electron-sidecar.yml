@@ -359,7 +359,8 @@ jobs:
           echo "work=${work}" >> "$GITHUB_OUTPUT"
 
       - name: Build package as unprivileged user
-        run: su builder -c "cd '${{ steps.prep.outputs.work }}' && makepkg --noconfirm --log"
+        # --nodeps: depends= are runtime-only; packaging is a prebuilt zip. Install job verifies via pacman -U.
+        run: su builder -c "cd '${{ steps.prep.outputs.work }}' && makepkg --nodeps --noconfirm --log"
 
       - name: Check package
         working-directory: ${{ steps.prep.outputs.work }}

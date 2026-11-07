@@ -56,7 +56,7 @@ describe("release workflow Arch job", () => {
     expect(workflow).toContain(archImage);
     expect(workflow).toContain("desktop-arch-test:");
     expect(workflow).toContain(archBaseImage);
-    expect(workflow).toContain("makepkg --noconfirm --log");
+    expect(workflow).toContain("makepkg --nodeps --noconfirm --log");
     expect(workflow).toContain("namcap PKGBUILD");
     expect(workflow).toContain("pacman -U --noconfirm");
     expect(workflow).toContain(
