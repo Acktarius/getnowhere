@@ -53,6 +53,9 @@
       "@expo/fingerprint": {
         "minimatch": "11.0.1"
       },
+      "glob": {
+        "minimatch": "3.1.5"
+      },
       "node-forge": "1.4.3"
     },
     "react-native": {
