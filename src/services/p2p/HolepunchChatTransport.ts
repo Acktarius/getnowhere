@@ -227,6 +227,11 @@ function runConnectSingleFlight(
   return attempt;
 }
 
+/** True while `connect` / `attemptConnect` for this room has not settled. */
+export function isRoomConnectInFlight(roomId: string): boolean {
+  return inFlightConnects.has(roomId);
+}
+
 /** Post-connect L1 proof before `connected`. @see docs/security/encryption.md */
 const PROOF_TIMEOUT_MS = 5_000;
 let proofTimeoutMs = PROOF_TIMEOUT_MS;
@@ -792,6 +797,11 @@ function maybeMarkPeerLost(topicRef: string): void {
     };
     rooms.set(roomId, state);
     emitRoom(state.room);
+    // A drop to zero peers does not come back by itself after a background
+    // suspend. Re-join now; single-flight ignores a later peer-count kick.
+    if (state.session && !inFlightConnects.has(roomId)) {
+      void runConnectSingleFlight(roomId, () => attemptConnect(state));
+    }
   }
 }
 

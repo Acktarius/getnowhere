@@ -79,8 +79,12 @@ function createControllablePeerBackend(): {
     },
     async join(topicRef, roomId) {
       joined.set(topicRef, roomId);
-      peerCounts.set(topicRef, 1);
-      emitPeers(topicRef);
+      // First join stands in for the initial peer. A later re-join must not
+      // invent a peer the test has already dropped to 0.
+      if (!peerCounts.has(topicRef)) {
+        peerCounts.set(topicRef, 1);
+        emitPeers(topicRef);
+      }
     },
     async leave(topicRef) {
       joined.delete(topicRef);
@@ -176,6 +180,9 @@ describe("L2 reconnect grace", () => {
   });
 
   it("still prefers L2 when peer returns after a multi-second blip", async () => {
+    // Peer loss starts a connect attempt. It must still be waiting when the
+    // peer returns, so this blip cannot use the file's 500ms connect timeout.
+    __setHolepunchConnectTimeoutMs(8_000);
     const relaySpy = vi
       .spyOn(ConcealSmartMessageAdapter, "sendChatRelay")
       .mockResolvedValue(undefined as never);
@@ -198,7 +205,7 @@ describe("L2 reconnect grace", () => {
     expect(msg.channel).toBe("live");
     expect(relaySpy).not.toHaveBeenCalled();
     relaySpy.mockRestore();
-  });
+  }, 10_000);
 
   it("falls back to L1′ only after the L2 hold, and not before", async () => {
     __setL2SendHoldMs(80);
@@ -209,8 +216,10 @@ describe("L2 reconnect grace", () => {
     const { backend, setPeerCount } = createControllablePeerBackend();
     __setHolepunchSidecarBackend(backend);
     const { contract } = await buildContract("room-hold", "inv-hold");
-    await HolepunchChatTransport.connect(contract);
+    const connected = await HolepunchChatTransport.connect(contract);
+    expect(connected.lifecycleStatus).toBe("connected");
     await HolepunchChatTransport.sendMessage("room-hold", "hello live");
+    expect(relaySpy).not.toHaveBeenCalled();
 
     setPeerCount(contract.transport.topicRef, 0);
     const msg = await HolepunchChatTransport.sendMessage(

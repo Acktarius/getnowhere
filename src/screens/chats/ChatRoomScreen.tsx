@@ -27,6 +27,7 @@ import {
   getLastSidecarDetail,
   getMessagesForRoom,
   getTopicRefForRoom,
+  restoreRoomSession,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
   getSidecarBridgeDiagnostic,
@@ -444,7 +445,17 @@ export function ChatRoomScreen() {
         if (cancelled) return;
         if (latest?.lifecycleStatus === "connected") return;
 
-        // 2) Alice: apply on-chain register if initiator key still present.
+        // Saved session rejoins the swarm. The register scan is only the
+        // first handshake, after the initiator key has been discarded.
+        const restored = await restoreRoomSession(roomId);
+        if (restored) {
+          useChatStore.setState((s) => ({
+            rooms: [...s.rooms.filter((r) => r.id !== roomId), restored],
+          }));
+          return;
+        }
+        if (cancelled) return;
+
         const probe = await probeInitiatorHandoff(roomId);
         if (cancelled) return;
         setHandoffHint(probe.detail);

@@ -26,6 +26,7 @@ import {
 } from "@/services/contacts/contactsPersistence";
 import {
   contractFromSavedSession,
+  isRoomConnectInFlight,
   persistSessionBeforeSeal,
   storePartnerPokeHandle,
 } from "@/services/p2p/HolepunchChatTransport";
@@ -1573,12 +1574,14 @@ export async function completeResponderReconnect(
   await hydrateRoomSessions();
   await restorePendingInitiatorKeys();
   const live = await chatTransport.getRoom(roomId);
+  if (live?.lifecycleStatus === "connected") return true;
+  // `connecting` with no in-flight connect is the background blip: the label
+  // changed and nobody called join. A saved session must resume.
   if (
-    live &&
-    (live.lifecycleStatus === "connecting" ||
-      live.lifecycleStatus === "connected")
+    live?.lifecycleStatus === "connecting" &&
+    (isRoomConnectInFlight(roomId) || !resumeSavedContract(roomId))
   ) {
-    return live.lifecycleStatus === "connected";
+    return false;
   }
   const resumed = resumeSavedContract(roomId);
   if (resumed) {

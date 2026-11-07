@@ -192,7 +192,9 @@ function createPeer(local: P2PSessionConfig) {
     async ensureConnected() {},
     async join(topicRef) {
       joinedTopic = topicRef;
-      peerCounts.set(topicRef, 1);
+      // First join stands in for the initial peer. A re-join after a drop
+      // stays at 0 until setPeerCount raises it.
+      if (!peerCounts.has(topicRef)) peerCounts.set(topicRef, 1);
     },
     async leave(topicRef) {
       peerCounts.set(topicRef, 0);
