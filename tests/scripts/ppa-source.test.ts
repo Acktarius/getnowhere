@@ -278,7 +278,8 @@ describe("ppa source packages", () => {
       path.join(root, ".github/workflows/ppa-source.yml"),
       "utf8",
     );
-    expect(workflow).toContain("branches: [development]");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).not.toContain("branches: [development]");
     expect(workflow).toContain("jammy, noble, resolute");
     expect(workflow).toContain("build-source.sh");
     const publish = readFileSync(

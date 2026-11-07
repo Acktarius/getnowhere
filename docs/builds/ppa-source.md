@@ -4,7 +4,7 @@ The desktop app built for Linux is also published through a Launchpad PPA.
 `PPA source packages` (`.github/workflows/ppa-source.yml`) packages the same
 Electron tree as the Linux desktop job, then writes an unsigned Debian source
 package for Ubuntu 22.04 (`jammy`), 24.04 (`noble`), and 26.04 (`resolute`).
-A push to `development`, a manual run, or a `v*` tag stores `ppa-source-jammy`, `ppa-source-noble`, and `ppa-source-resolute` as workflow artifacts. Those files are not added to a GitHub release.
+A manual `workflow_dispatch` run stores `ppa-source-jammy`, `ppa-source-noble`, and `ppa-source-resolute` as workflow artifacts. Those files are not added to a GitHub release.
 
 `scripts/ppa/publish-latest.sh` uses `gh` to download the artifacts from the latest successful run, or from `--run <run-id>`. It puts the maintainer from `.env` into the changelog, signs the source locally, and runs `dput`. Launchpad builds the `.deb`.
 
