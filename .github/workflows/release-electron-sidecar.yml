@@ -339,18 +339,21 @@ jobs:
           cp desktop-electron/packaging/arch/PKGBUILD "$work/"
           cp desktop-electron/packaging/arch/getnowhere.desktop "$work/"
           cp desktop-electron/icons/icon.png "$work/getnowhere.png"
+          cp LICENCE "$work/LICENSE"
           cp "$zip" "$work/"
 
           zip_sum=$(sha256sum "$work/Get_NowHere-${{ steps.ver.outputs.file_version }}-linux-x64.zip" | awk '{print $1}')
           desk_sum=$(sha256sum "$work/getnowhere.desktop" | awk '{print $1}')
           icon_sum=$(sha256sum "$work/getnowhere.png" | awk '{print $1}')
+          license_sum=$(sha256sum "$work/LICENSE" | awk '{print $1}')
           sed -i \
             -e "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" \
             -e "s/ZIP_SHA256/${zip_sum}/" \
             -e "s/DESKTOP_SHA256/${desk_sum}/" \
             -e "s/ICON_SHA256/${icon_sum}/" \
+            -e "s/LICENSE_SHA256/${license_sum}/" \
             "$work/PKGBUILD"
-          grep -q 'ZIP_SHA256\|DESKTOP_SHA256\|ICON_SHA256' "$work/PKGBUILD" && {
+          grep -q 'ZIP_SHA256\|DESKTOP_SHA256\|ICON_SHA256\|LICENSE_SHA256' "$work/PKGBUILD" && {
             echo "PKGBUILD still has checksum placeholders"
             exit 1
           }
@@ -376,7 +379,11 @@ jobs:
           fi
           pkg=${pkgs[0]}
           namcap PKGBUILD "$pkg" | tee namcap.out
-          ! grep -q ' E: ' namcap.out || { echo "namcap reported errors"; exit 1; }
+          if grep -q ' E: ' namcap.out; then
+            echo "namcap reported errors:"
+            grep ' E: ' namcap.out || true
+            exit 1
+          fi
           pacman -Qip "$pkg"
           files=$(pacman -Qlp "$pkg")
           echo "$files"
@@ -389,6 +396,7 @@ jobs:
             exit 1
           }
           grep -q '/usr/share/applications/getnowhere.desktop$' <<< "$files"
+          grep -q '/usr/share/licenses/getnowhere/LICENSE$' <<< "$files"
           canonical="Get_NowHere-${FILE_VERSION}-x86_64.pkg.tar.zst"
           [[ "$pkg" == "$canonical" ]] || mv -v "$pkg" "$canonical"
           mkdir -p "$GITHUB_WORKSPACE/dist"

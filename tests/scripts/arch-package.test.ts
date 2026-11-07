@@ -25,10 +25,15 @@ const archBaseImage =
 describe("Arch package recipe", () => {
   it("installs the prebuilt Electron tree under /opt and does not strip it", () => {
     expect(pkgbuild).toContain("pkgname=getnowhere");
+    expect(pkgbuild).toContain("license=('BSD-3-Clause')");
+    expect(pkgbuild).not.toContain("license=('unknown')");
     expect(pkgbuild).toContain("options=('!strip' '!debug' '!lto')");
     expect(pkgbuild).toContain('install -dm755 "$pkgdir/opt/getnowhere"');
     expect(pkgbuild).toContain(
       'ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"',
+    );
+    expect(pkgbuild).toContain(
+      'install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"',
     );
     for (const dep of [
       "alsa-lib",
@@ -57,7 +62,11 @@ describe("release workflow Arch job", () => {
     expect(workflow).toContain("desktop-arch-test:");
     expect(workflow).toContain(archBaseImage);
     expect(workflow).toContain("makepkg --nodeps --noconfirm --log");
+    expect(workflow).toContain('cp LICENCE "$work/LICENSE"');
+    expect(workflow).toContain("LICENSE_SHA256");
     expect(workflow).toContain("namcap PKGBUILD");
+    expect(workflow).toContain("namcap reported errors:");
+    expect(workflow).toContain("/usr/share/licenses/getnowhere/LICENSE");
     expect(workflow).toContain("pacman -U --noconfirm");
     expect(workflow).toContain(
       "needs: [desktop-linux, desktop-windows, desktop-arch-test]",

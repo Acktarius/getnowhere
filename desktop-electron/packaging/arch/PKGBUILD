@@ -8,8 +8,7 @@ pkgrel=1
 pkgdesc='Get NowHere desktop shell (Electron + local Hyperswarm sidecar)'
 arch=('x86_64')
 url='https://github.com/acktarius/getnowhere'
-# The repo does not declare an SPDX license; do not guess one here.
-license=('unknown')
+license=('BSD-3-Clause')
 depends=(
   alsa-lib
   at-spi2-core
@@ -28,8 +27,9 @@ source=(
   "Get_NowHere-v${pkgver}-linux-x64.zip"
   getnowhere.desktop
   getnowhere.png
+  LICENSE
 )
-sha256sums=('ZIP_SHA256' 'DESKTOP_SHA256' 'ICON_SHA256')
+sha256sums=('ZIP_SHA256' 'DESKTOP_SHA256' 'ICON_SHA256' 'LICENSE_SHA256')
 
 package() {
   local app=GetNowHere-linux-x64
@@ -44,4 +44,5 @@ package() {
   ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"
   install -Dm644 getnowhere.desktop "$pkgdir/usr/share/applications/getnowhere.desktop"
   install -Dm644 getnowhere.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
