@@ -34,12 +34,25 @@ row at the same expiry (do not keep it for the 24h mempool lifetime).
 - Tap send = Conceal TTL 0 (mined, paid, durable). Long-press flyout: **60 min**
   (top), **6 min** (middle). Flyout only on chain fallback, not live.
 
+## Message status
+
+- Outbound: `queued` (waiting for L2 up to the hold window), `sending` (L1′
+  broadcast pending), `sent` (transport accepted: L2 frame written to the
+  bridge, or L1′ broadcast accepted), `failed`.
+- `delivered` is inbound-only until a peer ACK exists.
+- Bubble shows at most one check: queued label, clock for sending, single check
+  for `sent` (and legacy outbound `delivered`), alert for failed.
+
 ## Inbound refresh
 
-- Open room always rescans L1 relays ~every 2.5s (Holepunch can fail mid-chat; L3 stays live).
+- Open room: **fast** L1′ mempool rescan (~2.5s) only while Holepunch is down
+  (`accepted` / `connecting` / `connect_failed`) so chain fallback stays fresh.
+- When L2 is **`connected`** (or still `pending`): slow `openRoom` safety net
+  (~15s), **no** room-level mempool scan — global wallet poll already refreshes
+  relays (Holepunch can fail mid-chat; reconnect + wallet poll cover L1′).
 - Also rescans on enter and when lifecycle becomes relay-eligible.
 - Global wallet poll calls `refreshRelays` while the wallet is unlocked — foreground
-  uses 2.5s / 20s cadence; **background** (hidden tab/window) uses 30s until Exit.
+  uses 2.5s / 5s cadence; **background** (hidden tab/window) uses 30s until Exit.
 
 ## Relay notification pins
 
@@ -58,7 +71,7 @@ Invite/register pins unchanged. L2 live messages are not badged.
 
 ## Limits
 
-- Text only; no `,` `{` `}` in body (smart-message delimiters).
+- Text only; **L1′ only**: strip `{` `}`; `,` → `;` on wire (restored on receive). Live L2 unchanged.
 - Fit `MAX_MESSAGE_BODY_BYTES` (~200 chars).
 - Reaction / edit / delete stay live-only.
 - Dedupe by `roomId + sentAt + text`.

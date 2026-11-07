@@ -9,7 +9,6 @@ import { PeerStatusIndicator } from "./StatusBadges";
 type Props = {
   contact: Contact;
   peerStatus: "offline" | "connecting" | "online";
-  roomId: string;
   roomTopic?: RoomTopicId;
   onShowDiagnostics?: () => void;
   /** Opens leave confirmation — L1 revoke + destroy room. */
@@ -20,7 +19,6 @@ type Props = {
 export function ChatRoomHeader({
   contact,
   peerStatus,
-  roomId,
   roomTopic,
   onShowDiagnostics,
   onLeaveRoom,
@@ -72,7 +70,6 @@ export function ChatRoomHeader({
           <MoreHorizontal size={18} />
         </button>
       )}
-      <span className="sr-only">Room {roomId}</span>
     </header>
   );
 }

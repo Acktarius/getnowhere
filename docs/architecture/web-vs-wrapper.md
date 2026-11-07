@@ -47,7 +47,9 @@ child. See `docs/architecture/electron-desktop.md`.
 
 Settings exposes two wipe actions, both implemented in
 `src/services/storage/appDataLifecycle.ts` via `StorageAdapter` key-list
-`removeItem` (not a full storage clear). After keys are removed, wipe clears
+`removeItem` (not a full storage clear). On mobile that adapter is native
+durable storage; wipe is logical delete only.
+@see `docs/storage/mobile-durable-storage.md`. After keys are removed, wipe clears
 in-memory wallet/contacts/chat session state, sets `location.hash` to
 `#/welcome`, then reloads so a delayed/blocked WebView reload cannot leave
 `RequireWallet` serving tabs. Confirms use shared `ConfirmModal`
@@ -58,11 +60,16 @@ in-memory wallet/contacts/chat session state, sets `location.hash` to
 | **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |
 | **Reset app data** | Wallet-tied keys **plus** prefs and side channels (`ccx-*`) | Nothing local for this identity |
 
-**Nav Exit** (bottom bar) is **not** a wipe: it saves the wallet blob (and live
-chat text when **P2P message retention** is on), soft-leaves Holepunch, locks
-keys out of memory, and returns to welcome/open. Hide / process death use the
-same L2 persist when that setting is on. L1′ sent copies always stay in the
-wallet while the room is available. Use `leaveRoom` for leave-forever.
+**Nav Exit** (bottom bar) is **not** a wipe: it does **one** encrypted wallet
+flush (contacts + live chat text when **P2P message retention** is on), soft-leaves
+Holepunch, locks keys out of memory, and returns to welcome/open. Flush and
+soft-leave are budget-capped so a hung mobile `walletFile.write` cannot leave
+**Disconnecting…** stuck for tens of seconds. A hung/failed native write can
+still leave the on-disk blob lagging that Exit — see
+`docs/storage/mobile-durable-storage.md` § Nav Exit and hung writes. Hide /
+process death use the same L2 persist when that setting is on. L1′ sent copies
+always stay in the wallet while the room is available. Use `leaveRoom` for
+leave-forever.
 
 All hosts use the same UI path. Electron isolation is partition-scoped
 `localStorage` (Alice/Bob / packaged `persist:gnh`) — this change does not add
@@ -87,6 +94,44 @@ Rules:
   convenience wrappers)
 - Treat wrapper changes as release-engineering unless they change runtime
   behavior documented elsewhere
+
+### Chat room keyboard (mobile WebView only)
+
+Desktop Electron is out of scope. On iOS/Android the Vite UI runs in a WebView
+with `interactive-widget=overlays-content`. The chat room:
+
+1. Floats the composer with `bottom` = keyboard overlap
+   (`useVisualViewportBottomInset`) and reserves that overlap so the latest
+   bubble can sit above the input.
+2. Scrolls the message list to the end on focus, keyboard/frame resize, scroller
+   resize, and new messages (with short deferred retries — Android keyboard
+   animation settles late).
+3. Pins the shell to `visualViewport` (`top` / `height`) only when
+   `offsetTop > 0` (typical iOS focus pan) so the contact header stays visible.
+
+Android reserves the overlap as bottom padding on the thread.
+
+iOS differs:
+
+- The shell injects the UIKit keyboard frame (`useIosKeyboardInset`). That
+  height is the composer `bottom` unless iOS is panning (`offsetTop > 0`),
+  which still pins the shell instead of adding the height twice.
+- The thread end gap is a spacer element. WKWebView does not include
+  `padding-bottom` of a flex scroller in the scroll height, so the last bubble
+  stayed under the composer.
+- The WebView hides the form accessory bar (previous / next / done). The
+  keyboard key stays Return (`enterKeyHint="enter"`) and inserts a newline.
+  Send, including the long-press auto-destruct flyout, stays on the composer
+  button. Only the text inside the field is selectable; the field chrome and
+  the send button are not, so the 1.5s hold is not taken by the iOS selection
+  handles. A tap on the thread blurs the field, clears the keyboard inset, and
+  asks the shell to dismiss the keyboard so the composer returns to the bottom.
+
+Implementers: `src/hooks/useVisualViewportBottomInset.ts`,
+`src/hooks/useIosKeyboardInset.ts`, `native-wrapper/src/iosKeyboardInset.ts`,
+`src/screens/chats/ChatRoomScreen.tsx`, `.chat-room-composer--mobile` in
+`src/styles/global.css`. `hideKeyboardAccessoryView` is set on the iOS WebView
+in `native-wrapper/App.tsx`.
 
 ## Packaged desktop (Ubuntu)
 
@@ -151,9 +196,9 @@ npm run mobile:install
 npm run mobile:android          # sync dist + expo run:android (local debug APK)
 
 cd native-wrapper
-npx eas build --platform android --profile preview   # cloud APK
-npx eas build --platform ios --profile production
-npx eas submit --platform ios
+eas build --platform android --profile preview   # cloud APK
+# iOS: adhoc-ios → preview-ios (TestFlight) → production — see expo-eas-ios-build.md
+eas build --platform ios --profile adhoc-ios
 ```
 
 Cordova and Capacitor are not used. Rejected paths: `docs/architecture/mobile-p2p-runtime.md`.

@@ -75,9 +75,7 @@ function primaryMixPercent(rule: string): number {
 }
 
 describe("surface tokens", () => {
-  const spec = readRepo(
-    "openspec/changes/appearance-contrast-and-accents/specs/app-appearance/spec.md",
-  );
+  const spec = readRepo("openspec/specs/app-appearance/spec.md");
   const css = readRepo("src/styles/global.css");
   const expected = expectedFromSpec(spec);
 

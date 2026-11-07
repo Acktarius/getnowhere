@@ -36,13 +36,13 @@ describe("runBackgroundRemoteSync", () => {
     window.ReactNativeWebView = { postMessage: vi.fn() };
   });
 
-  it("skips when sync already in progress but still scans notifications", async () => {
+  it("skips when sync already in progress without scanning notifications", async () => {
     isUnlocked.mockReturnValue(true);
     isSyncInProgress.mockReturnValue(true);
     const outcome = await runBackgroundRemoteSync("req-1");
     expect(outcome).toBe("skipped_in_progress");
     expect(sync).not.toHaveBeenCalled();
-    expect(scanAndPublishSyncNotifications).toHaveBeenCalledOnce();
+    expect(scanAndPublishSyncNotifications).not.toHaveBeenCalled();
   });
 
   it("calls sync when unlocked and idle", async () => {

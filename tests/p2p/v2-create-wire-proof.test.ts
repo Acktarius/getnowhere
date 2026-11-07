@@ -124,8 +124,8 @@ describe("v2 create wire + proof", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: aliceSession,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildProofAad(roomId, aliceSession),
     });
     expect(opened).not.toBeNull();
@@ -145,8 +145,8 @@ describe("v2 create wire + proof", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: bobSession,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildProofAad(roomId, bobSession),
     });
     expect(opened).not.toBeNull();

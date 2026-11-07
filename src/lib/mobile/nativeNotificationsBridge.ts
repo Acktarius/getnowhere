@@ -1,5 +1,6 @@
 /** WebView → RN bridge for GnhNotifications (mobile shell). */
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { localNotificationId } from "@/services/notifications/localNotificationId";
 import type {
   NativeNotificationInput,
   NotificationPrivacySettings,
@@ -62,7 +63,7 @@ export function bridgePublishNotificationEvent(
 ): void {
   postNotificationsCommand({
     action: "publishEvent",
-    eventId: event.eventId,
+    eventId: localNotificationId(event.eventId),
     title: nativeNotificationTitle(event),
     body: nativeNotificationBody(event),
     settings,

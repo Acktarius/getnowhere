@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Get NowHere
+Comment=Desktop shell with a local Hyperswarm sidecar
+Exec=getnowhere %U
+Icon=getnowhere
+Terminal=false
+Type=Application
+Categories=Network;
+StartupWMClass=getnowhere

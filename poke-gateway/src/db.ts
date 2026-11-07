@@ -95,6 +95,32 @@ export function deleteHandle(pokeHandle: string): void {
   db.prepare("DELETE FROM handles WHERE poke_handle = ?").run(pokeHandle);
 }
 
+const DEFAULT_TTL_DAYS = 30;
+const ttlDaysEnv = Number(process.env.HANDLE_TTL_DAYS ?? DEFAULT_TTL_DAYS);
+/** Handles not re-registered within this window are treated as gone. */
+export const HANDLE_TTL_MS =
+  Number.isFinite(ttlDaysEnv) && ttlDaysEnv > 0
+    ? ttlDaysEnv * 24 * 60 * 60 * 1000
+    : DEFAULT_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/** True when the row has not been re-registered within the TTL window. */
+export function isHandleExpired(row: HandleRow, now = Date.now()): boolean {
+  return now - row.updatedAt >= HANDLE_TTL_MS;
+}
+
+/**
+ * Lazily delete an expired row. The expiry predicate is in the DELETE itself
+ * so a concurrent re-registration cannot have its refreshed row removed.
+ */
+export function deleteHandleIfExpired(
+  pokeHandle: string,
+  now = Date.now(),
+): void {
+  db.prepare(
+    "DELETE FROM handles WHERE poke_handle = ? AND updated_at < ?",
+  ).run(pokeHandle, now - HANDLE_TTL_MS);
+}
+
 function isPrimaryKeyConflict(err: unknown): boolean {
   return (
     typeof err === "object" &&

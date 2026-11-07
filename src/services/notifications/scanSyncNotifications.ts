@@ -33,8 +33,11 @@ function publishReceivedInvites(invites: SmartMessageInvite[]): void {
 
 async function publishAcceptedInvites(): Promise<void> {
   const registers = await smartMessageService.fetchIncomingRegisters();
-  for (const { register } of registers) {
-    const pending = findPendingInitiatorForNotification(register.inviteId);
+  for (const { register, contactId } of registers) {
+    const pending = findPendingInitiatorForNotification(
+      register.inviteId,
+      contactId,
+    );
     if (!pending?.contactId) continue;
     publishDomainNotificationEvent({
       kind: "l1_invitation_accepted",

@@ -32,10 +32,6 @@ export type CreateWalletResult = {
   seedRef: string;
 };
 
-export type RestoreWalletInput = {
-  seedPhrase: string;
-};
-
 export type ImportWalletInput =
   | {
       method: "mnemonic";
@@ -61,7 +57,10 @@ export type ImportWalletInput =
       method: "file";
       /** Wallet envelope JSON (text read from a .json backup file). */
       file: string;
+      /** Password that decrypts the selected backup file. */
       password: string;
+      /** New compliant password used for local Envelope 3 storage. */
+      newPassword: string;
       label?: string;
     }
   | {
@@ -80,8 +79,7 @@ export type SendTransactionInput = {
 };
 
 export type WalletService = {
-  createWallet(): Promise<CreateWalletResult>;
-  restoreWallet(input: RestoreWalletInput): Promise<CreateWalletResult>;
+  createWallet(password: string): Promise<CreateWalletResult>;
   /** Import a wallet from a mnemonic, spend/view keys, or encrypted backup file. */
   importWallet(input: ImportWalletInput): Promise<CreateWalletResult>;
   /** True when an encrypted wallet blob exists on this device (no decrypt). */
@@ -162,14 +160,12 @@ export type ComposedInvite = {
   senderAlias: string;
   capabilities: string[];
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
-  bootstrapEncrypted: string;
   handshake: ChatInviteHandshake;
   smartBody: string;
 };
 
 export type SmartMessageService = {
   composeInviteMessage(input: ComposeInviteInput): Promise<ComposedInvite>;
-  encryptInvitePayload(payload: ComposedInvite): Promise<string>;
   sendInviteMessage(
     contactId: string,
     payload: string,
@@ -188,6 +184,10 @@ export type SmartMessageService = {
     Array<{
       register: import("@/types/protocol").ChatRegisterPayload;
       txHash: string;
+      /** Contact whose paymentIdFrom matches the sender. */
+      contactId: string;
+      /** Register tx time (block, or first-seen for mempool), unix seconds. */
+      sentAtUnix?: number;
     }>
   >;
   parseRelationshipMessages(): Promise<SmartMessageInvite[]>;
@@ -216,6 +216,8 @@ export type SmartMessageService = {
     Array<{
       revoke: import("@/types/protocol").ChatRevokePayload;
       txHash: string;
+      /** Contact whose paymentIdFrom matches the sender. */
+      contactId: string;
     }>
   >;
   /** Broadcast L1 chat.relay (SMS-class fallback; Conceal MESSAGE encrypts). */
@@ -270,6 +272,7 @@ export type ChatTransport = {
     roomId: string,
     text: string,
     ttlUnixSeconds?: number,
+    reply?: { replyToMessageId: string; replyPreview: string },
   ): Promise<ChatMessage>;
   sendContent?(
     roomId: string,
@@ -409,14 +412,15 @@ export type P2PEncryptionService = {
     aad?: Uint8Array;
   }): Promise<{
     ciphertext: Uint8Array;
-    nonce: Uint8Array;
+    /** Send counter used for this frame (pre-increment). */
+    counter: number;
     session: P2PSessionConfig;
   }>;
 
   open(input: {
     session: P2PSessionConfig;
+    counter: number;
     ciphertext: Uint8Array;
-    nonce: Uint8Array;
     aad?: Uint8Array;
   }): Promise<{ plaintext: Uint8Array; session: P2PSessionConfig } | null>;
 };
@@ -435,7 +439,8 @@ export type WalletSecretsExport = {
 
 export type WalletBackupDownload = {
   filename: string;
-  payload: unknown;
+  /** Backup file text, written as-is. */
+  json: string;
 };
 
 export type SeedBackupService = {

@@ -21,8 +21,14 @@ import {
   persistContacts,
   persistInvites,
   removePendingInitiatorKey,
+  removePendingInitiatorKeysForRoom,
   upsertPendingInitiatorKey,
 } from "@/services/contacts/contactsPersistence";
+import {
+  contractFromSavedSession,
+  persistSessionBeforeSeal,
+  storePartnerPokeHandle,
+} from "@/services/p2p/HolepunchChatTransport";
 import { exportKeyHex } from "@/services/p2p/P2PEncryptionAdapter";
 import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
@@ -42,6 +48,10 @@ import {
   pruneRoomsForMissingContacts,
 } from "@/services/p2p/roomChainRestore";
 import {
+  hydrateRoomSessions,
+  loadRoomSession,
+} from "@/services/p2p/roomSessionStore";
+import {
   applyRelationshipTopicEpoch,
   syncAndMirrorRelationshipTopicEpoch,
 } from "@/services/p2p/topicEpochContactSync";
@@ -55,7 +65,10 @@ import {
   shouldAwaitChainSyncForInvite,
 } from "@/services/protocol/roomLifecycle";
 import type { Contact, SmartMessageInvite } from "@/types/models";
-import type { ChatInviteHandshake } from "@/types/protocol";
+import type {
+  ChatInviteHandshake,
+  HolepunchBootstrapContract,
+} from "@/types/protocol";
 import { resolveTopicSuite } from "@/types/protocol";
 import { generatePaymentId, uid } from "@/utils/format";
 
@@ -291,8 +304,9 @@ async function applyRoomDestroyLocally(
   );
   for (const id of ids) {
     pendingPrivateKeys.delete(id);
-    removePendingInitiatorKey(id);
+    await removePendingInitiatorKey(id);
   }
+  await removePendingInitiatorKeysForRoom(roomId);
 
   set((s) => {
     // Drop the invite entirely — tombstone alone still let loadRooms re-seed
@@ -388,16 +402,50 @@ function findPendingInitiator(inviteId: string): PendingKey | undefined {
   return undefined;
 }
 
-/** Initiator lookup for notification scan — inviteId + contactId only. */
+function resumeSavedContract(
+  roomId: string,
+): HolepunchBootstrapContract | null {
+  const saved = loadRoomSession(roomId);
+  if (!saved) return null;
+  return contractFromSavedSession(saved);
+}
+
+async function discardHandoffStash(...inviteIds: string[]): Promise<void> {
+  for (const id of inviteIds) {
+    if (!id) continue;
+    pendingPrivateKeys.delete(id);
+    await removePendingInitiatorKey(id);
+  }
+}
+
+function registerSenderOwnsInvite(
+  pending: PendingKey,
+  senderContactId: string | undefined,
+): boolean {
+  return Boolean(senderContactId) && pending.contactId === senderContactId;
+}
+
+/** Initiator lookup for notification scan — sender must own the invite. */
 export function findPendingInitiatorForNotification(
   registerInviteId: string,
-): { inviteId: string; contactId?: string } | undefined {
+  senderContactId: string,
+): { inviteId: string; contactId: string } | undefined {
   const pending = findPendingInitiator(registerInviteId);
-  if (!pending) return undefined;
+  if (!pending || !registerSenderOwnsInvite(pending, senderContactId)) {
+    return undefined;
+  }
   return {
     inviteId: pending.handshake.inviteId,
     contactId: pending.contactId,
   };
+}
+
+function noteRegisterPokeHandle(
+  pending: PendingKey,
+  register: import("@/types/protocol").ChatRegisterPayload,
+): void {
+  if (!register.pokeHandle) return;
+  storePartnerPokeHandle(pending.handshake.roomId, register.pokeHandle);
 }
 
 /** True when Alice still holds initiator material for this room. */
@@ -487,6 +535,7 @@ export async function probeInitiatorHandoff(
     const attempts: Array<{
       pending: PendingKey;
       register: import("@/types/protocol").ChatRegisterPayload;
+      sentAtUnix?: number;
     }> = [];
 
     for (const pending of pendingForRoom) {
@@ -495,11 +544,18 @@ export async function probeInitiatorHandoff(
           normalizeInviteId(r.register.inviteId) ===
           normalizeInviteId(pending.handshake.inviteId),
       );
-      if (hit) attempts.push({ pending, register: hit.register });
+      if (hit && registerSenderOwnsInvite(pending, hit.contactId)) {
+        attempts.push({
+          pending,
+          register: hit.register,
+          sentAtUnix: hit.sentAtUnix,
+        });
+      }
     }
-    for (const { register } of registers) {
+    for (const { register, sentAtUnix, contactId } of registers) {
       const pending = findPendingInitiator(register.inviteId);
       if (!pending || pending.handshake.roomId !== roomId) continue;
+      if (!registerSenderOwnsInvite(pending, contactId)) continue;
       if (
         attempts.some(
           (a) => a.pending.handshake.inviteId === pending.handshake.inviteId,
@@ -507,7 +563,7 @@ export async function probeInitiatorHandoff(
       ) {
         continue;
       }
-      attempts.push({ pending, register });
+      attempts.push({ pending, register, sentAtUnix });
     }
 
     // Register exists for this room's invite even without a local key.
@@ -515,20 +571,23 @@ export async function probeInitiatorHandoff(
       localInvite &&
       registers.some(
         (r) =>
+          r.contactId === localInvite.contactId &&
           normalizeInviteId(r.register.inviteId) ===
-          normalizeInviteId(localInvite.inviteId),
+            normalizeInviteId(localInvite.inviteId),
       )
     ) {
       matchingRegister = true;
     }
     if (attempts.length > 0) matchingRegister = true;
 
-    for (const { pending, register } of attempts) {
+    for (const { pending, register, sentAtUnix } of attempts) {
       try {
+        noteRegisterPokeHandle(pending, register);
         await completeInitiatorHandoff(
           pending.handshake.inviteId,
           { ...register, inviteId: pending.handshake.inviteId },
           pending.handshake,
+          sentAtUnix,
         );
         handoffCompleted = true;
         detail = "Register applied — connecting.";
@@ -755,27 +814,38 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     // Peer leave-forever revokes — never recreate a room we are about to destroy.
     const revokes = await smartMessageService.fetchIncomingRevokes();
-    for (const { revoke } of revokes) {
+    for (const { revoke, contactId } of revokes) {
+      if (!contactId) continue;
+      // Counterpart must own the roomId. @see docs/security/p2pchatprotocol.md §10
       const inv = get().invites.find(
         (i) =>
+          i.contactId === contactId &&
           normalizeInviteId(i.inviteId) === normalizeInviteId(revoke.inviteId),
       );
       const catalogHit = (await import("@/services/p2p/roomCatalogStore"))
         .listCatalogRooms()
         .find(
           (r) =>
-            (revoke.roomId && r.id === revoke.roomId) ||
-            (r.inviteId &&
-              normalizeInviteId(r.inviteId) ===
-                normalizeInviteId(revoke.inviteId)),
+            r.contactId === contactId &&
+            ((revoke.roomId && r.id === revoke.roomId) ||
+              (r.inviteId &&
+                normalizeInviteId(r.inviteId) ===
+                  normalizeInviteId(revoke.inviteId))),
         );
+      const ownedRoomId = revoke.roomId
+        ? (inv?.roomId === revoke.roomId ? inv.roomId : undefined) ||
+          (catalogHit?.id === revoke.roomId ? catalogHit.id : undefined)
+        : inv?.roomId || catalogHit?.id;
+      if (!ownedRoomId) continue;
       let syncedEpochFromPeer = false;
       if (
         revoke.topicEpoch !== undefined &&
         revoke.reasonCode === "room_revoked"
       ) {
-        const handshake = getHandshakeForInvite(revoke.inviteId);
-        const contactId = inv?.contactId || catalogHit?.contactId;
+        const handshake =
+          inv?.contactId === contactId
+            ? getHandshakeForInvite(revoke.inviteId)
+            : undefined;
         let relationshipId = handshake?.relationshipId;
         if (!relationshipId && contactId) {
           const contact = get().contacts.find((c) => c.id === contactId);
@@ -795,8 +865,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           syncedEpochFromPeer = true;
         }
       }
-      const roomId = revoke.roomId || inv?.roomId || catalogHit?.id;
-      if (!roomId) continue;
+      const roomId = ownedRoomId;
       const destroyOpts = syncedEpochFromPeer
         ? { skipEpochBump: true as const }
         : undefined;
@@ -998,10 +1067,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 
     // Alice: scan Bob's on-chain register and finish Holepunch handoff.
     const registers = await smartMessageService.fetchIncomingRegisters();
-    for (const { register } of registers) {
+    for (const { register, sentAtUnix, contactId } of registers) {
       const pending = findPendingInitiator(register.inviteId);
-      if (!pending) continue;
+      if (!pending || !registerSenderOwnsInvite(pending, contactId)) continue;
       if (isRoomRevoked(pending.handshake.roomId)) continue;
+      noteRegisterPokeHandle(pending, register);
       if (pending.contactId) {
         const { useNotificationStore } = await import(
           "@/state/notificationStore"
@@ -1016,6 +1086,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
             inviteId: pending.handshake.inviteId,
           },
           pending.handshake,
+          sentAtUnix,
         );
       } catch {
         // Keep trying on next refresh (sync / key restore may still settle).
@@ -1068,7 +1139,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       handshake: composed.handshake,
       contactId,
     });
-    upsertPendingInitiatorKey({
+    await upsertPendingInitiatorKey({
       inviteId: composed.inviteId,
       contactId,
       roomId: composed.roomId,
@@ -1083,8 +1154,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       getRelationshipTopicEpoch(relationshipId);
     await applyRelationshipTopicEpoch(relationshipId, inviteEpoch, contactId);
 
-    // Local envelope for the adapter (tx encryption is on-chain). Pass smartBody
-    // directly so unicode aliases cannot break btoa.
+    // Conceal MESSAGE encrypts this body on send. @see docs/security/encryption.md
     const sent = await smartMessageService.sendInviteMessage(
       contactId,
       composed.smartBody,
@@ -1134,7 +1204,6 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           senderAlias: composed.senderAlias,
           capabilities: composed.capabilities,
           roomTopic: composed.roomTopic ?? roomTopic,
-          bootstrapEncrypted: composed.bootstrapEncrypted,
           status: "sent" as const,
           createdAt: new Date().toISOString(),
           txHash: sent.txHash,
@@ -1191,6 +1260,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         "Missing create handshake for invite. Wait for wallet sync, then Accept again — or ask them to resend.",
       );
     }
+    if (handshake.inviteExpiry && isInviteExpired(handshake.inviteExpiry)) {
+      throw new Error("Invite expired — ask them to send a new one.");
+    }
 
     const localEpochBefore =
       handshake.relationshipId &&
@@ -1216,7 +1288,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
       contactId: inv.contactId,
       register,
     });
-    upsertPendingInitiatorKey({
+    await upsertPendingInitiatorKey({
       inviteId: register.inviteId,
       contactId: inv.contactId,
       roomId: inv.roomId,
@@ -1307,6 +1379,9 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     // Holepunch connect can take seconds — do not block redirect. Chat room
     // screen already reconnects if peers are not live yet.
     const roomId = inv.roomId;
+    if (await persistSessionBeforeSeal(inv.contactId, contract)) {
+      await discardHandoffStash(register.inviteId);
+    }
     void (async () => {
       try {
         const connected = await chatTransport.connect(contract);
@@ -1327,13 +1402,6 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
           ),
         }));
         schedulePersistContacts(get);
-        const saved = (
-          await import("@/services/p2p/roomSessionStore")
-        ).loadRoomSession(roomId);
-        if (saved) {
-          pendingPrivateKeys.delete(register.inviteId);
-          removePendingInitiatorKey(register.inviteId);
-        }
       } catch {
         // ChatRoomScreen retry / refreshInvites will continue connect.
       }
@@ -1346,6 +1414,8 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     await smartMessageService.declineInvite(inviteId);
     const inv = get().invites.find((i) => i.id === inviteId);
     if (inv) {
+      pendingPrivateKeys.delete(inv.inviteId);
+      await removePendingInitiatorKey(inv.inviteId);
       const { invite: wiped } = tombstoneInvite(inv, "rejected");
       set((s) => ({
         invites: s.invites.map((i) => (i.id === inviteId ? wiped : i)),
@@ -1447,7 +1517,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     });
     for (const inv of doomed) {
       pendingPrivateKeys.delete(inv.inviteId);
-      removePendingInitiatorKey(inv.inviteId);
+      await removePendingInitiatorKey(inv.inviteId);
       try {
         await chatTransport.leaveRoom(inv.roomId);
       } catch {
@@ -1496,12 +1566,11 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
   },
 }));
 
-/**
- * Bob: after refresh, re-derive + connect from stashed responder key + register.
- */
+/** Bob: resume a saved session, or derive once from the stashed responder key. */
 export async function completeResponderReconnect(
   roomId: string,
 ): Promise<boolean> {
+  await hydrateRoomSessions();
   await restorePendingInitiatorKeys();
   const live = await chatTransport.getRoom(roomId);
   if (
@@ -1510,6 +1579,30 @@ export async function completeResponderReconnect(
       live.lifecycleStatus === "connected")
   ) {
     return live.lifecycleStatus === "connected";
+  }
+  const resumed = resumeSavedContract(roomId);
+  if (resumed) {
+    const pending = [...pendingPrivateKeys.values()].find(
+      (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
+    );
+    if (pending) await discardHandoffStash(pending.handshake.inviteId);
+    await chatTransport.createRoom({
+      contactId: pending?.contactId || loadRoomSession(roomId)?.contactId || "",
+      bootstrap: {
+        roomId,
+        roomKeyRef: resumed.sessionId,
+        bootstrapSource: "conceal-smart-message",
+        lifecycleStatus: "accepted",
+        inviteId: resumed.inviteId,
+        roomTtl: resumed.roomTtl,
+      },
+    });
+    const connected = await chatTransport.connect(resumed);
+    const { useChatStore } = await import("@/state/chatStore");
+    useChatStore.setState((s) => ({
+      rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+    }));
+    return connected.lifecycleStatus === "connected";
   }
   let pending = [...pendingPrivateKeys.values()].find(
     (p) => p.peerRole === "responder" && p.handshake.roomId === roomId,
@@ -1566,6 +1659,8 @@ export async function completeResponderReconnect(
     invite: pending.handshake,
     peerRole: "responder",
   });
+  await persistSessionBeforeSeal(pending.contactId, contract);
+  await discardHandoffStash(pending.handshake.inviteId);
   await chatTransport.createRoom({
     contactId: pending.contactId,
     bootstrap: {
@@ -1591,24 +1686,28 @@ export async function completeResponderReconnect(
       roomId,
     });
   }
-  const saved = (
-    await import("@/services/p2p/roomSessionStore")
-  ).loadRoomSession(roomId);
-  if (saved) {
-    pendingPrivateKeys.delete(pending.handshake.inviteId);
-    removePendingInitiatorKey(pending.handshake.inviteId);
-  }
   return connected.lifecycleStatus === "connected";
 }
 
-/** Completes Alice's Holepunch handoff after Bob's register. */
+/**
+ * Completes Alice's Holepunch handoff after Bob's register.
+ * @param registerSentAtUnix register tx time; defaults to now (fail closed).
+ */
 export async function completeInitiatorHandoff(
   inviteId: string,
   register: import("@/types/protocol").ChatRegisterPayload,
   handshake: ChatInviteHandshake,
+  registerSentAtUnix: number = nowUnix(),
 ): Promise<void> {
+  await hydrateRoomSessions();
   const pending = findPendingInitiator(inviteId);
   if (!pending) return;
+  if (
+    handshake.inviteExpiry &&
+    isInviteExpired(handshake.inviteExpiry, registerSentAtUnix)
+  ) {
+    throw new Error("Register arrived after invite expiry.");
+  }
 
   // Room already live (or mid-connect) — do not re-derive and churn the proof.
   const existingRoom = await chatTransport.getRoom(handshake.roomId);
@@ -1620,28 +1719,6 @@ export async function completeInitiatorHandoff(
     return;
   }
 
-  const session = await sessionBootstrap.deriveSession({
-    invite: handshake,
-    acceptance: {
-      ...register,
-      inviteId: handshake.inviteId,
-      replayId:
-        register.replayId.toLowerCase() === handshake.replayId.toLowerCase()
-          ? handshake.replayId
-          : register.replayId,
-    },
-    peerRole: "initiator",
-    localPrivateKeyRef: pending.privateKeyRef,
-  });
-  const contract = await sessionBootstrap.buildHolepunchContract({
-    session,
-    invite: {
-      ...handshake,
-      receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
-    },
-    peerRole: "initiator",
-  });
-
   const contactId =
     pending.contactId ||
     useContactsStore
@@ -1649,11 +1726,44 @@ export async function completeInitiatorHandoff(
       .invites.find((i) => i.inviteId === handshake.inviteId)?.contactId ||
     "";
   const roomId = handshake.roomId;
+  const resumed = resumeSavedContract(roomId);
+  let contract: HolepunchBootstrapContract;
+  if (resumed) {
+    contract = resumed;
+  } else {
+    const replayId =
+      register.replayId.toLowerCase() === handshake.replayId.toLowerCase()
+        ? handshake.replayId
+        : register.replayId;
+    const session = await sessionBootstrap.deriveSession({
+      invite: handshake,
+      acceptance: {
+        ...register,
+        inviteId: handshake.inviteId,
+        replayId,
+      },
+      peerRole: "initiator",
+      localPrivateKeyRef: pending.privateKeyRef,
+    });
+    contract = await sessionBootstrap.buildHolepunchContract({
+      session,
+      invite: {
+        ...handshake,
+        receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
+      },
+      peerRole: "initiator",
+    });
+    await persistSessionBeforeSeal(contactId, contract);
+  }
+  if (loadRoomSession(roomId)) {
+    await discardHandoffStash(pending.handshake.inviteId, inviteId);
+  }
+
   await chatTransport.createRoom({
     contactId,
     bootstrap: {
       roomId,
-      roomKeyRef: session.sessionId,
+      roomKeyRef: contract.sessionId,
       bootstrapSource: "conceal-smart-message",
       lifecycleStatus: "accepted",
       inviteId: handshake.inviteId,
@@ -1687,18 +1797,6 @@ export async function completeInitiatorHandoff(
     ),
   }));
   persistInvites(useContactsStore.getState().invites);
-  // Keep initiator stash until room session is persisted (reload reconnect).
-  // Keys are wiped from the live map by deriveSessionConfig; disk stash stays
-  // only as a last-resort re-handoff if session save failed.
-  const saved = (
-    await import("@/services/p2p/roomSessionStore")
-  ).loadRoomSession(roomId);
-  if (saved) {
-    pendingPrivateKeys.delete(pending.handshake.inviteId);
-    pendingPrivateKeys.delete(inviteId);
-    removePendingInitiatorKey(pending.handshake.inviteId);
-    removePendingInitiatorKey(inviteId);
-  }
 }
 
 bindSmartMessageContacts({

@@ -79,8 +79,10 @@ import { readAutoNode, readPreferredNode } from "@/lib/network/node-preference";
 import { probeNodes, rankNodes } from "@/lib/network/node-probe";
 import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
 import { syncProfileFromReadSpeed } from "@/lib/sync-speed";
+import { clampCreationHeight } from "@/lib/wallet/creation-height";
 import {
   notifyHistoryPossiblyChanged,
+  notifySyncReachedTip,
   prepareRawForHistoryPublish,
   shouldPublishHistory,
 } from "@/services/conceal/sync/history-publish";
@@ -361,6 +363,17 @@ export function _setRuntimeForTest(next: SdkRuntime | null): void {
 /** Whether ANY stored wallet exists on this device (does not decrypt them). */
 export async function hasStoredWallet(): Promise<boolean> {
   if (typeof window === "undefined") return false;
+  const { isMobileHost } = await import("@/lib/mobile/gnhMobileBridgeTypes");
+  if (isMobileHost()) {
+    const { assertMobileNativeStorageReady, getInstalledMobileStorageAdapter } =
+      await import("@/services/storage/installMobileNativeStorage");
+    const { isWalletPresent } = await import(
+      "@/services/storage/adapters/mobileNativeStorageAdapter"
+    );
+    assertMobileNativeStorageReady();
+    const adapter = getInstalledMobileStorageAdapter();
+    if (adapter) return isWalletPresent(adapter.getWalletStorageState());
+  }
   return (await readWalletsIndex()).wallets.length > 0;
 }
 
@@ -630,6 +643,22 @@ export async function resetAndRescanFromCreationHeight(
   return syncRuntime(rt);
 }
 
+/**
+ * Persist a new wallet creation height for later Resync / Delete and rescan.
+ * Does not rewind scan cursor or wipe history — those buttons stay unchanged.
+ * @see clampCreationHeight — `[0, tip)` (SDK has no height sanitizer)
+ */
+export async function setWalletCreationHeight(
+  height: number,
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const tip = await rt.daemon.getHeight();
+  const clamped = clampCreationHeight(height, tip);
+  rt.raw = { ...rt.raw, creationHeight: clamped };
+  await persistRuntime(rt);
+  return clamped;
+}
+
 /** Warn once per runtime when mempool RPC is unavailable (#109). */
 const poolScanWarned = new WeakSet<SdkRuntime>();
 
@@ -653,7 +682,7 @@ export function syncRuntime(rt: SdkRuntime): Promise<number> {
 
 /**
  * Mempool-only pass (0-conf inbound messages + pending amounts).
- * Fast path for L1 invites — does not wait on tip catch-up.
+ * Fast path for L1 invites — does not wait on tip catch-up or wallet persist.
  * @see conceal-next-wallet #109 + docs/features/lite-wallet.md
  */
 export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
@@ -669,8 +698,19 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
   const poolReceived = new Map<string, SdkMessageRecord>(
     readReceivedRecords(rt.raw).map((record) => [record.id, record] as const),
   );
+  const POOL_FETCH_MS = 8_000;
+  let poolTimer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const poolTxs = await rt.daemon.getTransactionsPool();
+    const poolTxs = await Promise.race([
+      rt.daemon.getTransactionsPool(),
+      new Promise<never>((_, reject) => {
+        poolTimer = setTimeout(
+          () => reject(new Error("mempool timeout")),
+          POOL_FETCH_MS,
+        );
+      }),
+    ]);
+    if (poolTimer !== undefined) clearTimeout(poolTimer);
     if (rt.account) {
       const poolScan = scanPoolForInbound(
         poolTxs,
@@ -688,6 +728,7 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
       poolFetchOk = true;
     }
   } catch (error) {
+    if (poolTimer !== undefined) clearTimeout(poolTimer);
     if (!poolScanWarned.has(rt)) {
       poolScanWarned.add(rt);
       console.warn(
@@ -741,7 +782,10 @@ export async function pollMempoolRuntime(rt: SdkRuntime): Promise<boolean> {
     notifyHistoryPossiblyChanged(rt);
   }
   if (incomingChanged || receivedListChanged || ttlDrop.changed) {
-    await persistRuntime(rt);
+    // Invite scan must not wait on native wallet persist (no bridge timeout).
+    void persistRuntime(rt).catch(() => {
+      /* next poll retries */
+    });
   }
   return poolFetchOk;
 }
@@ -1097,6 +1141,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
       };
       rt.state = state;
     }
+    // Label flips at the snapshot tip; persist and mempool must not hold "syncing".
+    if (scanned >= height) notifySyncReachedTip();
     // Flush relay records into rt.raw before publishing so publishNow sees them mid-sync.
     rt.raw = prepareRawForHistoryPublish(
       rt.raw,
@@ -1570,16 +1616,6 @@ export async function changeRuntimePassword(
   }
   if (currentPassword !== rt.password) {
     throw new Error("Current wallet password is incorrect.");
-  }
-  rt.password = nextPassword;
-  await persistRuntime(rt);
-}
-
-/** Set wallet password while runtime is already unlocked (e.g. onboarding create). */
-export async function setRuntimePassword(nextPassword: string): Promise<void> {
-  const rt = requireRuntime();
-  if (!nextPassword) {
-    throw new Error("A wallet password is required.");
   }
   rt.password = nextPassword;
   await persistRuntime(rt);

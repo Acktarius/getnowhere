@@ -1,6 +1,6 @@
 # Peer-wake notification (fast L2 meet-up)
 
-**Status:** Current design. Phase 1 (UX) complete. Phase 2 (poke gateway + APNs) shipped. Phase 3 (ntfy F-Droid wake) — current.
+**Status:** Current. One generic peer-wake (`POST /poke { to }` only — no gateway `kind`). Fires on invite accepted and on L1′ after L2 drop. Invite received is local-only after wallet sync. No L1′ preview banners. iOS foreground badge clear does not wipe Notification Center. Deployed poke-gateway is unchanged.
 
 **Problem:** When Alice sends an L1′ relay message, Bob's mobile app is likely suspended.
 On **iOS**, `BGAppRefreshTask` fires at best every ~15 minutes (OS-scheduled, app cannot shorten
@@ -48,11 +48,12 @@ F-Droid: ownPokeId generated locally (no gateway registration needed);
           subscribes to https://ntfy.getnowhere.im/gnh-<ownPokeId>/json via SSE (OkHttp)
 ```
 
-Gateway routing on `POST /poke { to: pokeId }`:
+Gateway routing on `POST /poke { to }` (no extra fields — deployed schema rejects them):
 
 ```
 DB lookup pokeId
   ├── APNs token found → POST https://api.push.apple.com/3/device/{token}
+  │                        title Get NowHere; body New message
   └── DB miss          → POST https://ntfy.getnowhere.im/gnh-<pokeId>
                               { title: "Get NowHere", message: "wake" }
 ```
@@ -121,25 +122,19 @@ Alice taps Send (L1′, relay channel)
   2. broadcast to daemon → txHash returned         ← tx is in our remote node's mempool
   3. poke decision (see § Poke trigger rule below)
   4. if poke fires: POST /gateway/poke { to: Bob's pokeHandle }
-          │
-          ├── DB lookup: APNs token found
-          │     → POST https://api.push.apple.com/3/device/{token}
-          │          apns-push-type: alert, apns-priority: 10
-          │          { aps: { alert: { title: "Get NowHere", body: "New message" },
-          │                    sound: "default" } }
-          │
-          └── DB miss (F-Droid peer — no registered token)
-                → POST https://ntfy.getnowhere.im/gnh-<pokeHandle>
-                       { title: "Get NowHere", message: "wake" }
                   ntfy SSE (OkHttp) delivers to GnhNtfyWakeModule on Bob's device
                   → RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync
 
 Bob's device wakes → app opens (foreground or via banner)
   5. sync() runs — L1′ tx found in mempool, decrypted
-  6. existing local banner fires (§ blockchain sync caveat below)
+  6. no local L1′ content banner (in-app unread MAY update)
   7. room lifecycle: accepted → connecting → Bob joins Hyperswarm topic
   8. L2 peer connect while Alice is still mounted in the room
 ```
+
+Accept (`chat.register`) uses the same `{ to }` poke when wake is on and the
+initiator handle is known. Invite received is **not** a poke — it is a local
+generic banner after the recipient's wallet ingests `chat.create`.
 
 ### Poke trigger rule — first poke, then re-poke after 5 minutes
 
@@ -165,6 +160,9 @@ Implementation: each room tracks `lastPokedAt` (timestamp, persisted). A poke fi
 
 Once L2 is re-established (`channel === "live"`), `lastPokedAt` is cleared so the next relay
 transition triggers a fresh poke without waiting for the cooldown.
+
+iOS foreground return zeros the icon badge only. It does not wipe Notification Center
+(remote wakes already delivered stay). See `docs/features/local-background-notifications.md`.
 
 The gateway applies its own backstop rate limit (1 poke per 5 min per handle) — the same window
 as the app-side re-poke cooldown.
@@ -224,7 +222,7 @@ it in the L1 `ph` field exactly like iOS — no gateway registration needed. The
 subscribes to:
 
 ```
-https://ntfy.getnowhere.im/gnh-<ownPokeId>/json   (OkHttp SSE, persistent)
+https://ntfy.getnowhere.im/gnh-<ownPokeId>/json   (OkHttp SSE, persistent, no Authorization header)
 ```
 
 When Alice pokes Bob's gateway handle and no APNs token is found (DB miss), the gateway
@@ -247,6 +245,7 @@ revoke, `roomTtl` expiry, or invite expiry. A new room with the same partner gen
 |---|---|
 | **Apple (APNs)** | our bundle ID, device token, push timestamp — not room, not sender, not message content |
 | **ntfy server** | topic `gnh-<pokeHandle>` (opaque), push timestamp — not room, not sender, not message content |
+| **Anyone who learns a `pokeHandle`** | wake timing on that one topic (`gnh-*` is anonymous read-only) — not room, not sender, not message content |
 | **Our gateway** | `pokeHandle → token` (iOS only), Alice's IP on poke request, poke timestamp and frequency — not room, not sender, not message |
 | **Alice (sender)** | Bob's opaque `pokeHandle` only — not his OS, not his platform, not his token |
 | **Chain observers** | same as today — L1′ body encrypted by Conceal MESSAGE (ChaCha + DH) |
@@ -256,6 +255,15 @@ If a passive observer can watch both the public blockchain mempool and the gatew
 could correlate a chain transaction timestamp with a poke timestamp and associate an IP with the
 transaction. This is a real, acknowledged metadata risk. It is the same trade-off that Session
 and SimpleX have accepted at the notification-server level.
+
+**Wake-topic read capability:** `gnh-*` is anonymous read-only on the ntfy server,
+so the 10-byte random `pokeHandle` in the topic name *is* the read capability
+(`SEC-2026-031`). There is no enumeration API, and a `pokeHandle` travels only
+inside the encrypted L1 payload. Anyone who does learn one — including a former
+room member — can observe wake *timing* on that topic until the room rotates it
+(see § Forget-on-destroy). The payload is the literal `wake`, so no content or
+room identity leaks. Operators should keep the ntfy message cache short and avoid
+logging topic names.
 
 Mitigations:
 - The gateway must keep minimal logs (no poke→room linkage, short retention)
@@ -298,6 +306,21 @@ same UX as today (she already sees "via chain" and the room stays in relay mode)
 expiry, or invite expiry), `ownPokeId` is cleared from `CatalogRoom`. The ntfy subscription
 for `gnh-<ownPokeId>` is cancelled. A new room generates a fresh `ownPokeId`.
 
+**Wallet delete / full reset (SEC-2026-026):** the iOS APNs `pokeHandle` cached under
+`gnh.ownPokeHandle` is device-scoped, not room-scoped — it is shared across every room's
+`chat.create`/`chat.register` handshake, so it survives individual room destruction. Any
+former contact who learned it can otherwise keep waking the device indefinitely (the gateway
+has no TTL — only an explicit `DELETE /register` removes it). `deleteWalletData()` and
+`resetAppData()` now call `deletePokeHandle()` (best-effort gateway revoke, always clears the
+local key) before wiping wallet-tied storage.
+
+**Server-side expiry backstop (SEC-2026-028):** the client-side revoke above is best-effort —
+it can be lost if the device is offline mid-wipe. The gateway therefore also expires any
+handle that has not been re-registered within `HANDLE_TTL_DAYS` (default 30 days). Active
+clients re-register on every app launch, so only dormant or uninstalled installs expire.
+Expiry is lazy: `/poke` on an expired handle returns `202` without calling APNs and deletes
+the row. No background sweep timer is used.
+
 ---
 
 ## 8. Abuse and rate limiting
@@ -308,8 +331,12 @@ spams Alice with chain messages pays real fees. Poke-spamming is therefore not f
 **App-side rule eliminates most abuse:** at most one poke per 5 minutes per room while on
 relay (plus an immediate poke when first dropping from L2 after `lastPokedAt` was cleared).
 
-**Gateway rate limit:** 1 poke per 5 minutes per pokeHandle. This backstop covers edge cases
-where the app-side rule does not apply (e.g. unusual reconnect patterns, bugs).
+**Gateway rate limit:** 1 poke per 5 minutes per pokeHandle, plus a process-wide cap
+(burst 10, then 1 per second). The wide cap is checked first and returns `429`
+with `Retry-After: 1` before ntfy or APNs. It stops a caller from rotating fresh
+handles to publish once per id. The gateway does not trust `X-Forwarded-For`;
+client IP limiting belongs at the reverse proxy. The ntfy publish aborts after
+5 seconds.
 
 **Bearer capability:** a pokeHandle is a bearer token. Any party who holds it can poke that
 device. Alice holds Bob's handle by design (she accepted his invite). She cannot share it
@@ -349,13 +376,14 @@ Minimal HTTP service (single Node process or serverless):
 | Endpoint | Input | Output | Notes |
 |---|---|---|---|
 | `POST /register` | `{ token, platform, env }` | `{ pokeHandle }` | iOS only; upsert on token change |
-| `POST /poke` | `{ to: pokeHandle }` | `204` or error | rate-limited; APNs if found, else ntfy POST |
+| `POST /poke` | `{ to }` | `202` or error | rate-limited; APNs if found, else ntfy POST `wake`. No `kind` field. |
 | `DELETE /register` | `{ pokeHandle }` | `204` | called when push wake disabled on iOS |
 
 - APNs adapter: `.p8` key + ES256 JWT (1-hour cache), `apns-topic = im.getnowhere.app`
 - ntfy fallback: `POST https://ntfy.getnowhere.im/gnh-<pokeHandle>` on DB miss
 - Token store: `pokeHandle TEXT PK, token TEXT, platform TEXT, env TEXT, updatedAt INT`
-- Rate limit: 1 poke per 5 min per `pokeHandle`
+- Rate limit: 1 poke per 5 min per `pokeHandle`, and a process-wide burst of 10
+  refilling at 1/s (`429` + `Retry-After` before ntfy or APNs)
 - On APNs `410`: delete mapping (future pokes fall through to ntfy)
 - Logs: poke count and error rates only — no handle, no IP, no timestamp in persistent logs
 
@@ -372,17 +400,19 @@ Minimal HTTP service (single Node process or serverless):
 - Add optional `ph` field (10 bytes, base64url, 14 chars) to `chat.create` and `chat.register`
   slim-pack bodies
 - Parse `ph` on receive; store as `room.partnerPokeHandle` in room/contact store
-- On L1′ send: apply poke trigger rule; if poke fires → `POST /gateway/poke`
+- On L1′ send: apply poke trigger rule (300s re-poke unchanged); if poke fires → `POST /gateway/poke { to }`
+- On successful `chat.register`: same `{ to }` poke when wake is on and the initiator handle is known
 - No poke if `pushWakeEnabled === false`, no `pokeHandle` for the room, or F-Droid build flag
 
 ### Settings → Privacy
 
-New toggle adjacent to existing notification switches:
+Toggles adjacent to the Notifications master switch (`SettingsScreen.tsx`):
 
-- **Push wake** (`privacy.pushWakeEnabled`) — wired in Settings → Privacy (`SettingsScreen.tsx`)
-  - Default: **off** at first launch
-  - On enable: requests OS notification permission + refreshes push token for gateway registration
-  - Off → `deletePokeHandle()` at gateway, no poke calls (enforced in `settingsStore` + transport)
+- **Wake contact** (`privacy.pushWakeEnabled`) — generic APNs/ntfy ping on
+  invite accepted and new message. No names or preview. Default **off**.
+  Enable requests OS permission + token refresh. Off → `deletePokeHandle()`, no pokes.
+- **Notification banner** — local lock-screen alert only for
+  “You received a room invite.” not L1′ previews.
 
 ### Build matrix
 
@@ -410,9 +440,11 @@ New toggle adjacent to existing notification switches:
 
 ## 12. Open questions / future
 
-- **TODO (production cutover):** Rotate ntfy `gnh-reader` / `VITE_NTFY_READ_TOKEN`
-  (local `.env`, GitHub secret, then rebuild) before public store or F-Droid.
-  Pre-production `assets/ui` JS may already contain the test token. See root `README.md`.
+- **Wake-topic read model (resolved, `SEC-2026-031`):** the app ships no ntfy
+  credential. Server-side grant is `ntfy access everyone 'gnh-*' read-only`;
+  publishing stays on the gateway's `NTFY_PUBLISH_TOKEN`. Any shared read bearer
+  compiled into a build is public by definition, and ntfy tokens are user-scoped
+  (not per-topic), so per-install tokens would carry the same ACL.
 - **Multi-device:** current design is one pokeHandle per room per peer. If a user has multiple
   devices, only the device used to accept the invite gets poked. Acceptable for v1.
 - **Protocol version bump:** adding `ph` to the slim-pack body is a minor protocol extension.
@@ -516,7 +548,7 @@ Also verify `buildPokeTokenDispatchScript` output calls `_dispatchPokeToken` whe
 ## Related docs
 
 - `docs/features/chat-relay.md` — L1′ channel and grey bubbles
-- `docs/features/local-background-notifications.md` — local banner system this feature wakes into
+- `docs/features/local-background-notifications.md` — invite-received local banner only; iOS badge-clear vs Notification Center
 - `docs/background-remote-sync.md` — BGAppRefresh / WorkManager cadence
 - `docs/security/p2pchatprotocol.md` §16 — L1′ wire format and relay rules
 - `docs/security/encryption.md` — L1 / L1′ / L2 layering

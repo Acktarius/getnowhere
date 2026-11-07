@@ -24,9 +24,34 @@ describe("sensitive identifier copy call sites", () => {
     expect(src).not.toMatch(/useCopy/);
   });
 
-  it("ChatRoomScreen room and topic ids use NonSelectableText and CopyButton", () => {
+  it("ChatRoomScreen copies truncated room id; raw id and topic are not copyable", () => {
     const src = readSrc("src/screens/chats/ChatRoomScreen.tsx");
+    // shortRoomId must be imported and used
+    expect(src).toMatch(/import[^;]*shortRoomId[^;]*from "@\/utils\/format"/);
     expect(src).toMatch(/NonSelectableText/);
-    expect(src).toMatch(/CopyButton/);
+    // CopyButton must be bound to the shortRoomId helper, not the raw id
+    expect(src).toMatch(/CopyButton value=\{shortRoomId\(displayRoom\.id\)\}/);
+    expect(src).toMatch(/CopyButton value=\{shortRoomId\(roomId\)\}/);
+    // Raw capability values must not be passed to CopyButton
+    expect(src).not.toMatch(/CopyButton value=\{displayRoom\.id\}/);
+    expect(src).not.toMatch(/CopyButton value=\{roomId\}/);
+    // Topic must never be copyable
+    expect(src).not.toMatch(/CopyButton value=\{discoveryTopicRef\}/);
+    expect(src).not.toMatch(/copySensitive\(discoveryTopicRef\)/);
+  });
+
+  it("ChatRoomHeader does not mount raw roomId in the DOM", () => {
+    const src = readSrc("src/components/ChatRoomHeader.tsx");
+    expect(src).not.toMatch(/sr-only/);
+    expect(src).not.toMatch(/Room \{roomId\}/);
+    expect(src).not.toMatch(/roomId:/);
+  });
+
+  it("walletStore.clearSeed also wipes ConcealWalletService mnemonic memory", () => {
+    const src = readSrc("src/state/walletStore.ts");
+    expect(src).toMatch(/clearSeedPhraseMemory/);
+    expect(src).toMatch(
+      /clearSeed\(\)\s*\{[\s\S]*clearSeedPhraseMemory\(\);[\s\S]*set\(\{\s*seedPhrase:\s*null\s*\}\)/,
+    );
   });
 });

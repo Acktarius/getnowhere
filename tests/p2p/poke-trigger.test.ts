@@ -9,6 +9,9 @@ import {
   clearPokeIds,
   loadCatalogRoom,
   patchCatalogRoom,
+  peekCatalogRoom,
+  removeCatalogRoom,
+  upsertCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import { setActiveStorageAdapter } from "@/services/storage/StorageAdapter";
 
@@ -117,6 +120,7 @@ describe("maybeSendPoke — cooldown re-poke rule", () => {
 
     expect(sendPokeSpy).toHaveBeenCalledOnce();
     expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 
   it("does NOT call sendPoke again on second relay within 300s", async () => {
@@ -163,6 +167,8 @@ describe("maybeSendPoke — cooldown re-poke rule", () => {
     await HolepunchChatTransport.sendMessage(ROOM_ID, "after cooldown");
     await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
+    expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 
   it("persists lastPokedAt to catalog after first poke", async () => {
@@ -223,6 +229,8 @@ describe("maybeSendPoke — reset on connected", () => {
     await HolepunchChatTransport.sendMessage(ROOM_ID, "after connect");
     await flushAsync();
     expect(sendPokeSpy).toHaveBeenCalledOnce();
+    expect(sendPokeSpy).toHaveBeenCalledWith(PARTNER_HANDLE);
+    expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
   });
 });
 
@@ -240,5 +248,39 @@ describe("clearPokeIds", () => {
 
     expect(loadCatalogRoom(ROOM_ID)?.ownPokeId).toBeUndefined();
     expect(loadCatalogRoom(ROOM_ID)?.partnerPokeHandle).toBeUndefined();
+  });
+});
+
+describe("storePartnerPokeHandle — no catalog row", () => {
+  const roomId = "poke-before-row";
+  const handle = "StoreBefore_01";
+
+  it("persists the handle when no in-memory room and no catalog row exist", () => {
+    expect(peekCatalogRoom(roomId)).toBeUndefined();
+    storePartnerPokeHandle(roomId, handle);
+    expect(peekCatalogRoom(roomId)?.partnerPokeHandle).toBe(handle);
+  });
+
+  it("keeps the stored handle after a later full-room upsert that omits it", () => {
+    storePartnerPokeHandle(roomId, handle);
+    upsertCatalogRoom({
+      id: roomId,
+      contactId: "c-after-store",
+      bootstrapSource: "conceal-smart-message",
+      roomKeyRef: `key:${roomId}`,
+      lifecycleStatus: "pending",
+      createdAt: new Date().toISOString(),
+    });
+    expect(peekCatalogRoom(roomId)?.partnerPokeHandle).toBe(handle);
+    expect(peekCatalogRoom(roomId)?.contactId).toBe("c-after-store");
+  });
+
+  it("rewrites the catalog when memory already has the handle but the row is gone", async () => {
+    await setupRelayRoom();
+    storePartnerPokeHandle(ROOM_ID, handle);
+    removeCatalogRoom(ROOM_ID);
+    expect(peekCatalogRoom(ROOM_ID)).toBeUndefined();
+    storePartnerPokeHandle(ROOM_ID, handle);
+    expect(peekCatalogRoom(ROOM_ID)?.partnerPokeHandle).toBe(handle);
   });
 });

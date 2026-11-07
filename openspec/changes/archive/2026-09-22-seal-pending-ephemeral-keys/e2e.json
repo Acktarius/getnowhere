@@ -1,0 +1,24 @@
+{
+  "change": "seal-pending-ephemeral-keys",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "Pending invite ephemeral blob helpers",
+      "cmd": "npx vitest run tests/contacts/pending-invite-ephemerals.test.ts",
+      "expect": "passed",
+      "timeoutMs": 120000
+    },
+    {
+      "name": "No plaintext pending-key writer",
+      "cmd": "rg -n \"gnh\\.pendingInitiatorKeys\" src/ --glob '!**/appDataLifecycle.ts' && ! rg -n \"setItem\\([^)]*PENDING_INITIATOR|setItem\\([^)]*pendingInitiatorKeys\" src/services/contacts/ && echo grep-clean",
+      "expect": "grep-clean",
+      "timeoutMs": 30000
+    },
+    {
+      "name": "Typecheck",
+      "cmd": "npm run types && echo types-passed",
+      "expect": "types-passed",
+      "timeoutMs": 120000
+    }
+  ]
+}

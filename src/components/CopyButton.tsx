@@ -3,7 +3,13 @@ import { useEffect, useState } from "react";
 import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
 
 /** Explicit Copy of a raw value via copySensitive. */
-export function CopyButton({ value }: { value: string }) {
+export function CopyButton({
+  value,
+  label = "Copy",
+}: {
+  value: string;
+  label?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -24,7 +30,7 @@ export function CopyButton({ value }: { value: string }) {
       }}
     >
       {copied ? <Check size={13} /> : <Copy size={13} />}{" "}
-      {copied ? "Copied" : "Copy"}
+      {copied ? "Copied" : label}
     </button>
   );
 }

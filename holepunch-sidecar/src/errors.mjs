@@ -1,6 +1,6 @@
 /**
  * Stable WS bridge error codes + default messages.
- * @see openspec/changes/ws-message-size-limit/design.md
+ * @see openspec/changes/archive/2026-08-02-ws-message-size-limit/design.md
  */
 
 /** @typedef {{ code: string, message: string }} BridgeError */
@@ -42,6 +42,14 @@ export const BRIDGE_ERRORS = Object.freeze({
   sidecar_error: {
     code: "sidecar_error",
     message: "sidecar error",
+  },
+  rate_limited: {
+    code: "rate_limited",
+    message: "rate limited",
+  },
+  remote_rate_limited: {
+    code: "remote_rate_limited",
+    message: "remote peer rate limited",
   },
 });
 

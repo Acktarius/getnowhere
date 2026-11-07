@@ -1,0 +1,81 @@
+<!-- forge-brief-specs-hash:5deda1aa1d95bf48 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brief — L2 counter durability and resync</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #1a1a1a; background: #fff; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+  code { background: #f2f2f2; padding: 0 .25rem; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</head>
+<body>
+<h1>Live chat: counters that never repeat and never get stuck</h1>
+
+<h2>TL;DR</h2>
+<p>Live (peer-to-peer) chat can break permanently in two ways today. A phone killed at the wrong moment can forget how many messages it encrypted and reuse an encryption nonce. A device that missed more than 64 of its contact's frames can never read another one until the chat is re-invited. This change puts the message counter on the wire so a receiver always catches up, and makes the phone save its counters before anything leaves the device.</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>A chat that is stuck in "crypto mismatch" today reconnects on its own once both devices run the new build. No re-invite needed.</li>
+  <li>Missing any number of frames (flaky network, contact offline, many retries) no longer breaks the chat.</li>
+  <li>Killing the Android or iOS app mid-chat can no longer cause an encryption nonce to repeat or old frames to be accepted again.</li>
+  <li>If the phone cannot save its counter, the message is not sent and you see a send error, instead of silently sending an unsafe frame.</li>
+  <li>The same frame arriving twice (two network paths) is accepted only once.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>Each encrypted frame now starts with a version byte and the sender's message counter. The receiver rebuilds the nonce from that counter, and accepts the frame if the counter is not older than what it has already seen and the encryption tag checks. The nonce is built the way TLS 1.3 builds it (a fixed per-session value mixed with the counter), so two counters can never share a nonce. The counter is also covered by the tag, so changing it breaks the frame.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant A as Sender
+  participant S as Secure storage
+  participant B as Receiver
+  A->>A: encrypt with counter N
+  A->>S: save counter N+1 and wait
+  S-->>A: saved (or error: stop, no send)
+  A->>B: frame = version, N, ciphertext
+  B->>B: N below what I have seen? drop
+  B->>B: rebuild nonce from N, check tag
+  B->>S: save receive counter N+1 and wait
+  B->>B: show message
+</pre>
+<p>This design was checked by an external review (Perplexity, acting as a cryptography reviewer). Four of its points were adopted: the TLS-style nonce, the counter in the authenticated data, one-at-a-time receive per chat, and a hard stop before the counter could ever overflow.</p>
+
+<h2>What changes for you</h2>
+<ul>
+  <li><strong>Both devices must be updated together.</strong> An old build cannot read frames from the new build, and the reverse is also true. Ship desktop and mobile at the same time.</li>
+  <li>Existing chats keep working after the update. Keys and history are unchanged.</li>
+  <li>On mobile, every live frame now waits for one secure-storage write, which adds a few milliseconds.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<table>
+  <tr><th>Risk</th><th>Handling</th></tr>
+  <tr><td>A device on the old build cannot chat with one on the new build</td><td>Accepted. Release both together.</td></tr>
+  <tr><td>A frame that arrives out of order over a second network path is dropped</td><td>Same as today. Each connection keeps order.</td></tr>
+  <tr><td>A crash between saving the receive counter and showing the message loses that message</td><td>The existing resend-after-reconnect usually brings it back. Documented.</td></tr>
+  <tr><td>The phone's secure storage never answers a counter write</td><td>The wait is capped (5 s) and counts as a failed write: the message is not sent, instead of the chat freezing.</td></tr>
+  <tr><td>A contact deliberately sending a huge counter</td><td>Only your authenticated contact can do this, and they could simply stop answering anyway. No cap, because a cap would bring back the stuck state.</td></tr>
+</table>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Automatic new keys (rekeying) or a resync handshake.</li>
+  <li>Clearer connection-status labels ("waiting for contact", "online"). That is a separate change right after this one.</li>
+  <li>Delivery receipts, and chain-relay (L1′) behaviour.</li>
+</ul>
+
+<h2>Work overview</h2>
+<ol>
+  <li>Update the protocol and encryption docs first (1 task).</li>
+  <li>New frame format, counter-based nonce, one-at-a-time receive, update existing tests (4 tasks).</li>
+  <li>Durable counters on mobile, fail closed, end-to-end resync test (3 tasks).</li>
+  <li>Full checks and a two-device test with a release APK and desktop (2 tasks).</li>
+</ol>
+</body>
+</html>

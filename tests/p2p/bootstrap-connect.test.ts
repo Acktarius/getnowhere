@@ -170,7 +170,7 @@ describe("session bootstrap + holepunch connect", () => {
       .mockResolvedValue({ txHash: "relay-tx-c" });
     const relayMsg = await HolepunchChatTransport.sendMessage("room-c", "hi");
     expect(relayMsg.channel).toBe("relay");
-    expect(relayMsg.status).toBe("delivered");
+    expect(relayMsg.status).toBe("sent");
     expect(relaySpy).toHaveBeenCalledWith(
       expect.objectContaining({ contactId: "c1" }),
     );
@@ -240,8 +240,8 @@ describe("session bootstrap + holepunch connect", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recvSession,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: new TextEncoder().encode(`v1|room|${recvSession.sessionId}`),
     });
     expect(sendSession.sessionId).toBe(recvSession.sessionId);

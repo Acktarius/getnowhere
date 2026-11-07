@@ -61,11 +61,7 @@ export async function runBackgroundRemoteSync(
     return "no_op";
   }
   if (isSyncInProgress()) {
-    try {
-      await scanAndPublishSyncNotifications();
-    } catch {
-      /* already-ingested events only; do not fail the skip */
-    }
+    // Notification fetches call syncRuntime and would re-arm pendingSync.
     postOutcome(requestId, "skipped_in_progress");
     return "skipped_in_progress";
   }

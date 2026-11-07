@@ -12,14 +12,26 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, Menu, session } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, safeStorage, session } from "electron";
 import { resolveDesktopIdentity } from "./desktop-identity.mjs";
 import {
+  ensureSidecarIpcRuntimeDir,
   generateSidecarIpcPath,
+  resolveSharedBridgeToken,
   sharedIpcLockBasename,
 } from "./desktop-ipc-path.mjs";
 import { getUfwAdvisory } from "./firewall-status.mjs";
+import { createRoomSessionHost } from "./room-session-store.mjs";
+import {
+  authorizeSidecarCommandSender,
+  sanitizeSidecarCommand,
+} from "./sidecar-command.mjs";
 import { connectSidecarIpc } from "./sidecar-ipc-client.mjs";
+import {
+  installUiNavigationGuards,
+  isAllowedUiUrl,
+  uiPolicyFromTarget,
+} from "./ui-navigation.mjs";
 
 const require = createRequire(import.meta.url);
 const { resolveDesktopInfoReply } = require("./desktop-info-ipc.cjs");
@@ -61,12 +73,16 @@ const SIDECAR_EVENT_CHANNEL = "gnh:sidecar-event";
 
 /**
  * Renderer pulls its bridge config over this synchronous channel instead of
- * `additionalArguments` / `executeJavaScript`, so the auth token never sits
- * in this process's command line (readable via /proc/<pid>/cmdline or `ps`
- * by any co-resident process) or in the page's main-world scope.
+ * `executeJavaScript`, so it never lands in the page's main-world scope.
+ * The default IPC transport sends no token to the renderer at all. The
+ * `GNH_HOLEPUNCH_WS_URL` debug override still passes `--gnh-ws-token` in
+ * renderer argv (readable via /proc/<pid>/cmdline) — dev-only, not a ship path.
  * @see docs/architecture/electron-desktop.md
  */
 const DESKTOP_INFO_CHANNEL = "gnh:get-desktop-info";
+const ROOM_SESSIONS_LOAD = "gnh:room-sessions-load";
+const ROOM_SESSIONS_SAVE = "gnh:room-sessions-save";
+const ROOM_SESSIONS_CLEAR = "gnh:room-sessions-clear";
 
 function bridgeWsBase() {
   return BASE_WS_URL_OVERRIDE ?? `ws://${SWARM_HOST}:${swarmPort}`;
@@ -210,6 +226,8 @@ let ufwAdvisory = { state: "unknown", reason: "not-checked" };
 let desktopInfo = null;
 /** @type {number | null} */
 let allowedWebContentsId = null;
+/** @type {import("./ui-navigation.mjs").UiNavPolicy | null} */
+let allowedUi = null;
 let sidecarIpcPath = "";
 /** @type {import("./sidecar-ipc-client.mjs").SidecarIpcConnection | null} */
 let sidecarIpcConn = null;
@@ -238,25 +256,76 @@ function installSidecarBridgeHandlers() {
   ipcMain.removeHandler(SIDECAR_COMMAND_CHANNEL);
   ipcMain.handle(SIDECAR_COMMAND_CHANNEL, (event, cmd) => {
     if (
-      allowedWebContentsId != null &&
-      event.sender.id !== allowedWebContentsId
+      !authorizeSidecarCommandSender({
+        allowedWebContentsId,
+        senderId: event.sender.id,
+        senderFrame: event.senderFrame,
+        mainFrame: event.sender.mainFrame,
+      })
     ) {
+      throw new Error("unauthorized sidecar command");
+    }
+    if (!isAllowedUiUrl(event.senderFrame?.url, allowedUi)) {
       throw new Error("unauthorized sidecar command");
     }
     if (!sidecarIpcConn) {
       throw new Error("sidecar IPC not connected");
     }
-    if (!cmd || typeof cmd !== "object" || typeof cmd.type !== "string") {
+    const safe = sanitizeSidecarCommand(cmd);
+    if (!safe) {
       throw new Error("invalid sidecar command");
     }
-    sidecarIpcConn.send(cmd);
+    sidecarIpcConn.send(safe);
+  });
+}
+
+/** @type {ReturnType<typeof createRoomSessionHost> | null} */
+let roomSessionHost = null;
+
+function getRoomSessionHost() {
+  if (!roomSessionHost) {
+    roomSessionHost = createRoomSessionHost({
+      userData: app.getPath("userData"),
+      safeStorage,
+    });
+  }
+  return roomSessionHost;
+}
+
+function assertRoomSessionSender(event) {
+  if (
+    allowedWebContentsId == null ||
+    event.sender.id !== allowedWebContentsId
+  ) {
+    throw new Error("unauthorized room session request");
+  }
+  if (!isAllowedUiUrl(event.senderFrame?.url, allowedUi)) {
+    throw new Error("unauthorized room session request");
+  }
+}
+
+function installRoomSessionHandlers() {
+  ipcMain.removeHandler(ROOM_SESSIONS_LOAD);
+  ipcMain.removeHandler(ROOM_SESSIONS_SAVE);
+  ipcMain.removeHandler(ROOM_SESSIONS_CLEAR);
+  ipcMain.handle(ROOM_SESSIONS_LOAD, (event) => {
+    assertRoomSessionSender(event);
+    return getRoomSessionHost().load();
+  });
+  ipcMain.handle(ROOM_SESSIONS_SAVE, (event, json) => {
+    assertRoomSessionSender(event);
+    return getRoomSessionHost().save(json);
+  });
+  ipcMain.handle(ROOM_SESSIONS_CLEAR, (event) => {
+    assertRoomSessionSender(event);
+    getRoomSessionHost().clear();
   });
 }
 
 /** @param {string} path */
 async function attachSidecarIpc(path) {
   sidecarIpcPath = path;
-  sidecarIpcConn = await connectSidecarIpc(path);
+  sidecarIpcConn = await connectSidecarIpc(path, { token: authToken });
   sidecarIpcEventOff = sidecarIpcConn.onEvent(forwardSidecarEvent);
 }
 
@@ -318,14 +387,21 @@ function windowTitle(tag) {
 }
 
 /** Attacher: reuse owner's token from lockfile (or shared default / env). */
-function adoptSharedToken() {
-  const fromLock = readTokenLock();
-  const fromEnv = process.env.GNH_SIDECAR_TOKEN?.trim() || null;
-  authToken = fromLock ?? fromEnv ?? "gnh-desktop-shared";
-  if (fromLock) {
+function adoptSharedToken({ hasIpcLock = false } = {}) {
+  const resolved = resolveSharedBridgeToken({
+    fromLock: readTokenLock(),
+    fromEnv: process.env.GNH_SIDECAR_TOKEN?.trim() || null,
+    hasIpcLock,
+  });
+  authToken = resolved.token;
+  if (resolved.source === "lock") {
     log(`shared token from lockfile ${tokenLockPath()}`);
-  } else if (fromEnv) {
+  } else if (resolved.source === "env") {
     log("shared token from GNH_SIDECAR_TOKEN env");
+  } else if (resolved.stale) {
+    log(
+      `stale IPC lock ${ipcLockPath()} without ${tokenLockPath()} — attach auth will fail`,
+    );
   } else {
     log("shared token default gnh-desktop-shared");
   }
@@ -405,7 +481,10 @@ async function spawnSidecar() {
   const requestedPort = USES_EPHEMERAL_PORT ? 0 : swarmPort;
   const spawnIpc = USE_SIDECAR_IPC || USES_EPHEMERAL_PORT;
   if (USE_SIDECAR_IPC) {
-    sidecarIpcPath = generateSidecarIpcPath();
+    const runtimeDir = ensureSidecarIpcRuntimeDir();
+    sidecarIpcPath = generateSidecarIpcPath(
+      runtimeDir ? { dir: runtimeDir } : {},
+    );
   }
 
   log(
@@ -452,8 +531,21 @@ async function spawnSidecar() {
     void disconnectSidecarIpc();
   });
 
-  if (spawnIpc) {
-    const listening = await waitForSidecarListening(swarmChild);
+  const listeningPromise = spawnIpc
+    ? waitForSidecarListening(swarmChild)
+    : null;
+  if (USE_SIDECAR_IPC) {
+    const sent = swarmChild.send({
+      type: "ipc-auth-token",
+      token: authToken,
+    });
+    if (!sent) {
+      throw new Error("failed to send sidecar IPC auth token");
+    }
+  }
+
+  if (listeningPromise) {
+    const listening = await listeningPromise;
     if (listening.transport === "ipc") {
       sidecarIpcPath = listening.path;
       await attachSidecarIpc(listening.path);
@@ -499,9 +591,9 @@ async function ensureLocalSwarm() {
     const fromLock = readIpcLock();
     if (fromLock) {
       try {
+        adoptSharedToken({ hasIpcLock: true });
         await attachSidecarIpc(fromLock);
         ownsSwarm = false;
-        adoptSharedToken();
         log(`attaching to existing Hyperswarm IPC at ${fromLock}`);
         return;
       } catch {
@@ -522,9 +614,9 @@ async function ensureLocalSwarm() {
       const fromLock = readIpcLock();
       if (fromLock) {
         try {
+          adoptSharedToken({ hasIpcLock: true });
           await attachSidecarIpc(fromLock);
           ownsSwarm = false;
-          adoptSharedToken();
           log(`attached to peer-owned Hyperswarm IPC at ${fromLock}`);
           return;
         } catch {
@@ -582,6 +674,11 @@ async function shutdown(reason) {
   log(`shutdown (${reason})${ownsSwarm || swarmChild ? " + swarm" : ""}`);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.removeAllListeners("close");
+    // Clear persist: partition history on exit. @see docs/guidelines/security-module-review.md SEC-2026-003
+    await session
+      .fromPartition(PARTITION)
+      .clearData({ dataTypes: ["browsing_history"] })
+      .catch(() => {});
     try {
       mainWindow.destroy();
     } catch {
@@ -632,6 +729,9 @@ function createWindow() {
       ];
   if (ROLE) argvBridge.push(`--gnh-role=${ROLE}`);
 
+  const ui = resolveUiTarget();
+  allowedUi = uiPolicyFromTarget(ui);
+
   mainWindow = new BrowserWindow({
     width: 600,
     height: 800,
@@ -655,6 +755,7 @@ function createWindow() {
   mainWindow.once("closed", () => {
     desktopInfo = null;
     allowedWebContentsId = null;
+    allowedUi = null;
     ipcMain.removeAllListeners(DESKTOP_INFO_CHANNEL);
   });
 
@@ -664,7 +765,7 @@ function createWindow() {
     void shutdown("window-close");
   });
 
-  const ui = resolveUiTarget();
+  installUiNavigationGuards(mainWindow.webContents, allowedUi);
   const uiLabel =
     ui.kind === "file" ? pathToFileURL(ui.value).href : ui.value;
   log(
@@ -686,6 +787,7 @@ if (isPrimaryInstance) {
         reason: "check-failed",
       }));
       log(`UFW advisory: ${ufwAdvisory.state} (${ufwAdvisory.reason})`);
+      installRoomSessionHandlers();
       await ensureLocalSwarm();
       createWindow();
     } catch (e) {

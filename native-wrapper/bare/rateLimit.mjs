@@ -35,6 +35,23 @@ export const BRIDGE_RATE_LIMITS = Object.freeze({
   ping: { capacity: 10, refillPerMs: 10 / 1000 },
 });
 
+const MiB = 1024 * 1024;
+
+/**
+ * Unauthenticated Hyperswarm ingress (sidecar parity).
+ * @see docs/architecture/mobile-p2p-runtime.md
+ */
+export const SWARM_INGRESS_LIMITS = Object.freeze({
+  frame: { capacity: 20, refillPerMs: 10 / 1000 },
+  bytes: { capacity: 8 * MiB, refillPerMs: (4 * MiB) / 1000 },
+});
+
+/** Live inbound remote streams (not rooms). Outbound still accepted at cap. */
+export const DEFAULT_MAX_REMOTE_CONNECTIONS = 8;
+
+/** Consecutive frame-limit drops before the peer stream is destroyed. */
+export const DEFAULT_MAX_INGRESS_VIOLATIONS = 8;
+
 /** @param {typeof BRIDGE_RATE_LIMITS} [limits] */
 export function createBridgeRateLimiters(limits = BRIDGE_RATE_LIMITS) {
   /** @type {Record<string, ReturnType<typeof createTokenBucket>>} */

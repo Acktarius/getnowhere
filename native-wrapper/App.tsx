@@ -6,10 +6,12 @@
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AppStateStatus } from "react-native";
+import type { AppStateStatus, KeyboardEvent } from "react-native";
 import {
   ActivityIndicator,
   AppState,
+  Dimensions,
+  Keyboard,
   Platform,
   StyleSheet,
   View,
@@ -37,6 +39,7 @@ import {
   securePrefsGet,
   securePrefsRemove,
   securePrefsSet,
+  walletFileExists,
 } from "./src/gnhSecurityNative";
 import { handleNotificationsWebViewMessage } from "./src/handleNotificationsWebViewMessage";
 import { handleNtfyWakeWebViewMessage } from "./src/handleNtfyWakeWebViewMessage";
@@ -45,12 +48,24 @@ import { handlePrivacyWebViewMessage } from "./src/handlePrivacyWebViewMessage";
 import {
   buildSecurityResolveScript,
   handleSecurityWebViewMessage,
+  shouldInjectSecurityResponse,
 } from "./src/handleSecurityWebViewMessage";
 import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
   buildPokeTokenDispatchScript,
 } from "./src/injectMobileBridge";
+import {
+  iosKeyboardInsetScript,
+  iosKeyboardOverlapPx,
+  isIosKeyboardDismissMessage,
+} from "./src/iosKeyboardInset";
+import {
+  DEFAULT_AUTO_LOCK_TIMEOUT_SEC,
+  isWalletPresentFromNative,
+  normalizeAutoLockTimeoutSec,
+  shouldStayLockedOnForeground,
+} from "./src/nativeLockGate";
 import {
   buildSaveTextFileResolveScript,
   handleSaveTextFileWebViewMessage,
@@ -64,6 +79,7 @@ import {
   hydrateWalletSessionFromPersist,
   markWalletSessionBackgrounded,
   markWalletSessionForeground,
+  parseWalletSessionMessage,
   setWalletSessionPersist,
   WALLET_SESSION_PREFS_KEY,
 } from "./src/walletSessionKeepAlive";
@@ -76,6 +92,11 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Retry delays after resume — WebView sandbox may still be frozen on first inject. */
 const FOREGROUND_INJECT_RETRY_MS = [0, 300, 900] as const;
+const APP_ACCESS_CREDENTIAL_PREFS_KEY = "gnh.appAccessCredentialId";
+const LOCKED_SECURE_PREFS_ALLOWLIST = [
+  APP_ACCESS_CREDENTIAL_PREFS_KEY,
+  "gnh-biometric-enrollment",
+] as const;
 
 type PendingForeground = {
   backgroundElapsedMs?: number;
@@ -137,22 +158,52 @@ export default function App() {
   const backgroundAtMsRef = useRef<number | null>(null);
   const pendingForegroundRef = useRef<PendingForeground | null>(null);
   const flushTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const nativeLockRef = useRef({ locked: false, generation: 0 });
+  const lockNativeSecurityGate = useCallback(() => {
+    if (nativeLockRef.current.locked) return;
+    nativeLockRef.current.locked = true;
+    nativeLockRef.current.generation += 1;
+  }, []);
+
+  const unlockNativeSecurityGate = useCallback((generation: number) => {
+    if (generation !== nativeLockRef.current.generation) return;
+    nativeLockRef.current.locked = false;
+  }, []);
+  /** Native-read gate inputs; fail closed (present / enrolled) until read. */
+  const walletPresentRef = useRef(true);
+  const appAccessEnrolledRef = useRef(true);
+  const autoLockTimeoutSecRef = useRef(DEFAULT_AUTO_LOCK_TIMEOUT_SEC);
+  const refreshNativeGateInputs = useCallback(() => {
+    void walletFileExists()
+      .then((result) => {
+        walletPresentRef.current = isWalletPresentFromNative(result);
+      })
+      .catch(() => {
+        walletPresentRef.current = true;
+      });
+    void securePrefsGet(APP_ACCESS_CREDENTIAL_PREFS_KEY)
+      .then((credentialId) => {
+        appAccessEnrolledRef.current =
+          typeof credentialId === "string" && credentialId.length > 0;
+      })
+      .catch(() => {
+        appAccessEnrolledRef.current = true;
+      });
+  }, []);
+
   const bridgeToken = useMemo(() => resolveBridgeToken(), []);
   /** Native cover for OS app-switcher snapshots (critical on iOS). */
   const obscureInSwitcher =
     blurInAppSwitcher && (appState === "inactive" || appState === "background");
 
-  const injectedBeforeLoad = useMemo(
-    () =>
-      bridgeToken
-        ? buildMobileBridgeInjection(
-            bridgeToken,
-            Platform.OS === "android" ? "android" : "ios",
-            pendingWalletRestore,
-          )
-        : "",
-    [bridgeToken, pendingWalletRestore],
-  );
+  const injectedBeforeLoad = bridgeToken
+    ? buildMobileBridgeInjection(
+        bridgeToken,
+        Platform.OS === "android" ? "android" : "ios",
+        pendingWalletRestore,
+        nativeLockRef.current.generation,
+      )
+    : "";
 
   const injectLifecycle = useCallback(
     (type: string, backgroundElapsedMs?: number) => {
@@ -193,6 +244,8 @@ export default function App() {
   }, [clearForegroundFlushTimeouts, flushPendingForeground]);
 
   const noteBackground = useCallback(() => {
+    lockNativeSecurityGate();
+    refreshNativeGateInputs();
     if (backgroundAtMsRef.current == null) {
       backgroundAtMsRef.current = Date.now();
     }
@@ -202,7 +255,7 @@ export default function App() {
     });
     setNativeAppInBackground(true);
     injectLifecycle("background");
-  }, [injectLifecycle]);
+  }, [injectLifecycle, lockNativeSecurityGate, refreshNativeGateInputs]);
 
   const noteForeground = useCallback(() => {
     const elapsedMs =
@@ -210,6 +263,17 @@ export default function App() {
         ? Date.now() - backgroundAtMsRef.current
         : undefined;
     backgroundAtMsRef.current = null;
+    if (
+      nativeLockRef.current.locked &&
+      !shouldStayLockedOnForeground({
+        walletPresent: walletPresentRef.current,
+        appAccessEnrolled: appAccessEnrolledRef.current,
+        autoLockTimeoutSec: autoLockTimeoutSecRef.current,
+        backgroundElapsedMs: elapsedMs,
+      })
+    ) {
+      nativeLockRef.current.locked = false;
+    }
     pendingForegroundRef.current = { backgroundElapsedMs: elapsedMs };
     if (typeof elapsedMs === "number") {
       copyWalletSessionIfValid(elapsedMs);
@@ -225,8 +289,9 @@ export default function App() {
       sessionAlive: hasWalletSession(),
     });
     setNativeAppInBackground(false);
-    // iOS icon badge is independent of Notification Center dismissals; clear
-    // when the user returns to the app. Android badges follow notifications.
+    webViewRef.current?.injectJavaScript(
+      `window.gnhMobile&&window.gnhMobile.setLockGeneration&&window.gnhMobile.setLockGeneration(${nativeLockRef.current.generation});true;`,
+    );
     if (Platform.OS === "ios") {
       void nativeClearBadge();
     }
@@ -306,6 +371,27 @@ export default function App() {
     void SplashScreen.hideAsync();
   }, []);
 
+  // iOS keyboard frame → WebView. Visual viewport alone left the composer short.
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const push = (heightPx: number) => {
+      webViewRef.current?.injectJavaScript(iosKeyboardInsetScript(heightPx));
+    };
+    const onFrame = (e: KeyboardEvent) => {
+      push(
+        iosKeyboardOverlapPx(Dimensions.get("window").height, e.endCoordinates),
+      );
+    };
+    const subs = [
+      Keyboard.addListener("keyboardWillChangeFrame", onFrame),
+      Keyboard.addListener("keyboardWillHide", () => push(0)),
+      Keyboard.addListener("keyboardDidHide", () => push(0)),
+    ];
+    return () => {
+      for (const sub of subs) sub.remove();
+    };
+  }, []);
+
   useEffect(() => {
     if (!isGnhBackgroundSyncNativeAvailable()) return;
     return registerBackgroundSyncWebViewInjector((script) => {
@@ -322,6 +408,10 @@ export default function App() {
     });
     return () => cleanup?.();
   }, [injectPokeToken]);
+
+  useEffect(() => {
+    refreshNativeGateInputs();
+  }, [refreshNativeGateInputs]);
 
   useEffect(() => {
     setWalletSessionPersist({
@@ -348,7 +438,7 @@ export default function App() {
     const dispatch = (state: AppStateStatus) => {
       console.warn("[gnh-lifecycle] AppState change", state);
       setAppState(state);
-      if (state === "background" || state === "inactive") {
+      if (state === "background") {
         noteBackground();
         return;
       }
@@ -363,6 +453,16 @@ export default function App() {
   const onWebViewMessage = useCallback(
     (event: WebViewMessageEvent) => {
       const raw = event.nativeEvent.data;
+      if (Platform.OS === "ios" && isIosKeyboardDismissMessage(raw)) {
+        Keyboard.dismiss();
+        return;
+      }
+      if (!nativeLockRef.current.locked) {
+        const timeoutSec = normalizeAutoLockTimeoutSec(
+          parseWalletSessionMessage(raw)?.autoLockTimeoutSec,
+        );
+        if (timeoutSec != null) autoLockTimeoutSecRef.current = timeoutSec;
+      }
       if (applyWalletSessionMessage(raw)) {
         return;
       }
@@ -421,17 +521,51 @@ export default function App() {
         return;
       }
       if (
-        handleSecurityWebViewMessage(raw, (response) => {
-          webViewRef.current?.injectJavaScript(
-            buildSecurityResolveScript(response),
-          );
-        })
+        handleSecurityWebViewMessage(
+          raw,
+          (response) => {
+            const currentGeneration = nativeLockRef.current.generation;
+            if (!shouldInjectSecurityResponse(response, currentGeneration)) {
+              return;
+            }
+            webViewRef.current?.injectJavaScript(
+              buildSecurityResolveScript(response),
+            );
+          },
+          {
+            isLocked: () => nativeLockRef.current.locked,
+            getGeneration: () => nativeLockRef.current.generation,
+            allowedSecurePrefsGetKeys: LOCKED_SECURE_PREFS_ALLOWLIST,
+            onAppAccessUnlockSuccess: unlockNativeSecurityGate,
+          },
+        )
       ) {
         return;
       }
+      if (nativeLockRef.current.locked) {
+        try {
+          const parsed = JSON.parse(raw) as {
+            channel?: string;
+            direction?: string;
+          };
+          if (
+            parsed.channel === "gnh-bridge" &&
+            parsed.direction === "command"
+          ) {
+            return;
+          }
+        } catch {
+          /* ignore parse failures for non-JSON messages */
+        }
+      }
       bridgeRef.current?.handleWebViewMessage(raw);
     },
-    [clearForegroundFlushTimeouts, flushPendingForeground, injectPokeToken],
+    [
+      clearForegroundFlushTimeouts,
+      flushPendingForeground,
+      injectPokeToken,
+      unlockNativeSecurityGate,
+    ],
   );
 
   const uiUri = useMemo(() => getBundledUiIndexUri(), []);
@@ -445,17 +579,15 @@ export default function App() {
     () => getWebViewOriginWhitelist(extraPrefixes),
     [extraPrefixes],
   );
-  // iOS WKWebView resolves /var → /private/var symlink, so the URL fired in
-  // onShouldStartLoadWithRequest won't match a prefix built from bundleDirectory.
-  // Allow all file:// on iOS; external URLs are already blocked by originWhitelist.
-  // Android keeps strict path-based filtering unchanged. @see docs/builds/expo-eas-ios-build.md
+  // Packaged ui/ only (SEC-2026-023). Deny logs show the real WKWebView URL in syslog.
+  // @see docs/architecture/mobile-p2p-runtime.md
   const allowNav = useCallback(
     (url: string) => {
-      if (Platform.OS === "ios") {
-        const lower = url.toLowerCase();
-        return lower === "about:blank" || lower.startsWith("file://");
+      const ok = isAllowedWebViewNavigationUrl(url, extraPrefixes);
+      if (!ok) {
+        console.warn("[gnh-webview] nav denied", url);
       }
-      return isAllowedWebViewNavigationUrl(url, extraPrefixes);
+      return ok;
     },
     [extraPrefixes],
   );
@@ -480,6 +612,7 @@ export default function App() {
         ref={webViewRef}
         source={{ uri: uiUri }}
         style={styles.webview}
+        hideKeyboardAccessoryView={Platform.OS === "ios"}
         originWhitelist={originWhitelist}
         allowFileAccess
         allowFileAccessFromFileURLs

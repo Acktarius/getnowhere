@@ -5,6 +5,7 @@
 
 import { config } from "./config.mjs";
 import { BRIDGE_ERRORS, bridgeError } from "./errors.mjs";
+import { consumeRateLimit, createBridgeRateLimiters } from "./rateLimit.mjs";
 
 /**
  * @typedef {{
@@ -29,6 +30,8 @@ export function createBridgeSession(mesh, transport) {
   const client = { send: transport.send };
   /** @type {Set<string>} */
   const joined = new Set();
+  const rateBuckets = createBridgeRateLimiters();
+  const rateLimitedTypes = new Set(["join", "leave", "frame", "ping"]);
 
   /**
    * @param {unknown} raw
@@ -64,6 +67,15 @@ export function createBridgeSession(mesh, transport) {
    */
   async function handleParsedMessage(msg) {
     try {
+      if (
+        typeof msg.type === "string" &&
+        rateLimitedTypes.has(msg.type) &&
+        !consumeRateLimit(rateBuckets, msg.type)
+      ) {
+        transport.sendError(BRIDGE_ERRORS.rate_limited.code);
+        return true;
+      }
+
       if (msg.type === "ping") {
         transport.send({ type: "pong" });
         return true;

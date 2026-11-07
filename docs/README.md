@@ -29,6 +29,7 @@ No L3. UI never joins Hyperswarm.
 10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)
 10b. `builds/expo-eas-ios-build.md`
 10c. `builds/github-pages-and-desktop.md` — public Fumadocs Pages + Linux Electron with embedded UI
+10d. `builds/ppa-source.md` — Ubuntu 22.04/24.04/26.04 PPA source upload
 11. `features/lite-wallet.md`
 12. `features/invitations.md`
 13. `features/chat-relay.md` — L1′ fallback when L2 is down (grey bubbles)
@@ -65,4 +66,5 @@ No L3. UI never joins Hyperswarm.
 - `decisions/` — accepted ADRs (spend policy, etc.)
 - `features/` — product behavior and user-facing flows
 - `security/` — encryption, key handling, and protocol details
+- `storage/` — mobile durable persistence (`mobile-durable-storage.md`)
 - `prompts/` — durable coding constraints for AI / codegen tools

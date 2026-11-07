@@ -55,12 +55,15 @@ export function buildFromMnemonic(
     phrase,
     language as sdk.SeedLanguage | undefined,
   );
-  const keys = walletKeysToUserKeys(account.keys);
+  // One-shot phrase for UI reveal; drop it from the SDK Account before we keep keys.
+  const mnemonic = account.mnemonic ?? phrase.trim();
+  const safe = sdk.omitMnemonic(account);
+  const keys = walletKeysToUserKeys(safe.keys);
   return {
     keys,
     raw: freshRawWallet(keys, creationHeight),
-    mnemonic: account.mnemonic ?? phrase.trim(),
-    address: account.address,
+    mnemonic,
+    address: safe.address,
   };
 }
 

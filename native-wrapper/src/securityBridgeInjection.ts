@@ -1,19 +1,38 @@
 /** Injected gnhMobile security API fragment (biometric, securePrefs, lifecycle). */
-export function securityBridgeInjectionJs(): string {
+export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
   return `
   var securityHandlers = {};
   var lifecycleHandlers = [];
-  var lockGeneration = 0;
+  var lockGeneration = ${initialLockGeneration};
+  var WALLET_FILE_TIMEOUT_MS = 15000;
   function nextRequestId() {
     return 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
   }
-  function postSecurity(channel, body) {
+  function postSecurity(channel, body, timeoutMs) {
     if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) {
       return Promise.reject(new Error('unsupported'));
     }
     var requestId = nextRequestId();
     return new Promise(function(resolve, reject) {
-      securityHandlers[requestId] = { resolve: resolve, reject: reject };
+      var settled = false;
+      var timer = 0;
+      function settle(ok, value) {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        delete securityHandlers[requestId];
+        if (ok) resolve(value);
+        else reject(value);
+      }
+      securityHandlers[requestId] = {
+        resolve: function(result) { settle(true, result); },
+        reject: function(err) { settle(false, err); }
+      };
+      if (timeoutMs) {
+        timer = setTimeout(function() {
+          settle(false, new Error('wallet-file-timeout'));
+        }, timeoutMs);
+      }
       var msg = Object.assign({ channel: channel, direction: 'command', requestId: requestId, lockGeneration: lockGeneration }, body);
       window.ReactNativeWebView.postMessage(JSON.stringify(msg));
     });
@@ -52,6 +71,12 @@ export function securityBridgeInjectionJs(): string {
     get: function(key) { return postSecurity('gnh-secure-prefs', { action: 'get', key: key }); },
     set: function(key, value) { return postSecurity('gnh-secure-prefs', { action: 'set', key: key, value: value }); },
     remove: function(key) { return postSecurity('gnh-secure-prefs', { action: 'remove', key: key }); }
+  };
+  window.gnhMobile.walletFile = {
+    exists: function() { return postSecurity('gnh-wallet-file', { action: 'exists' }, WALLET_FILE_TIMEOUT_MS); },
+    read: function() { return postSecurity('gnh-wallet-file', { action: 'read' }, WALLET_FILE_TIMEOUT_MS); },
+    write: function(value) { return postSecurity('gnh-wallet-file', { action: 'write', value: value }, WALLET_FILE_TIMEOUT_MS); },
+    remove: function() { return postSecurity('gnh-wallet-file', { action: 'remove' }, WALLET_FILE_TIMEOUT_MS); }
   };
   window.gnhMobile.copySensitive = function(value) {
     return postSecurity('gnh-privacy', { action: 'copySensitive', value: value });

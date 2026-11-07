@@ -66,6 +66,20 @@ describe("getInviteQueue", () => {
     const q = getInviteQueue("c1", [invite({ contactId: "c2", roomId: "r2" })]);
     expect(q.count).toBe(0);
   });
+
+  it("excludes invites past inviteExpiry (no Accept target)", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const q = getInviteQueue(
+      "c1",
+      [
+        invite({ contactId: "c1", roomId: "r_old", inviteExpiry: now - 3600 }),
+        invite({ contactId: "c1", roomId: "r_ok", inviteExpiry: now + 3600 }),
+      ],
+      now,
+    );
+    expect(q.count).toBe(1);
+    expect(q.newest?.roomId).toBe("r_ok");
+  });
 });
 
 describe("hasPendingRoomInvite", () => {

@@ -11,6 +11,7 @@ import {
   readSentRecords,
 } from "@/services/conceal/sync/messages-store";
 import {
+  isSyncInProgress,
   pollMempoolRuntime,
   requireRuntime,
   syncRuntime,
@@ -23,14 +24,14 @@ import {
   peekCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
 import { syncAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
-import { getOwnPokeHandle } from "@/services/poke/pokeGatewayClient";
+import { getOwnPokeHandle, sendPoke } from "@/services/poke/pokeGatewayClient";
 import {
   deriveInviteSalt,
   deriveRelationshipId,
   randomHex,
 } from "@/services/protocol/ids";
 import { tombstoneInvite } from "@/services/protocol/inviteTombstone";
-import { nowUnix } from "@/services/protocol/roomLifecycle";
+import { isInviteExpired, nowUnix } from "@/services/protocol/roomLifecycle";
 import {
   encodeCreateSmartBody,
   encodeRegisterSmartBody,
@@ -41,6 +42,7 @@ import {
   rememberReplayId,
   SmartMessageProtocolAdapter,
 } from "@/services/protocol/SmartMessageProtocolAdapter";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { SmartMessageInvite } from "@/types/models";
 import type { ChatInviteHandshake, ChatRelayPayload } from "@/types/protocol";
 import { CHAT_PROTOCOL_VERSION, resolveTopicSuite } from "@/types/protocol";
@@ -136,7 +138,6 @@ function toInviteFromCreate(
     roomTtl: composed.roomTtl,
     senderAlias: composed.senderAlias,
     capabilities: composed.capabilities,
-    bootstrapEncrypted: composed.bootstrapEncrypted,
     status,
     createdAt: new Date().toISOString(),
     ...(txHash ? { txHash } : {}),
@@ -217,10 +218,12 @@ async function inviteFromCreateBody(
     senderAlias: meta.senderAlias ?? parsed.payload.senderAlias,
     capabilities: parsed.payload.capabilities,
     roomTopic: hs.roomTopic,
-    bootstrapEncrypted: btoa(`${hs.roomId}:${hs.replayId}:${meta.contactId}`),
     status: meta.status,
     createdAt: meta.createdAt,
     txHash: meta.txHash,
+    ...(meta.status === "received" && parsed.payload.senderPokeHandle
+      ? { initiatorPokeHandle: parsed.payload.senderPokeHandle }
+      : {}),
   };
   invitesById.set(invite.id, invite);
   if (meta.status === "received" && parsed.payload.senderPokeHandle) {
@@ -248,7 +251,7 @@ async function broadcastSmartBody(input: {
   });
 }
 
-/** Decode local envelope (btoa JSON) or accept a raw smart-message body. */
+/** Raw smart-message body, or a legacy base64 JSON envelope. Conceal MESSAGE encrypts on send. @see docs/security/encryption.md */
 function decodeOutboundPayload(payload: string): {
   smartBody: string;
   composed?: ComposedInvite;
@@ -326,8 +329,6 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       relationshipEligible: true,
     });
 
-    const bootstrapEncrypted = btoa(`${roomId}:${replayId}:${input.contactId}`);
-
     return {
       roomId,
       inviteId,
@@ -339,21 +340,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       senderAlias: input.senderAlias,
       capabilities,
       roomTopic: handshake.roomTopic,
-      bootstrapEncrypted,
       handshake,
       smartBody: envelope.smartBody,
     };
-  },
-
-  async encryptInvitePayload(payload: ComposedInvite): Promise<string> {
-    const smartBody =
-      payload.smartBody ||
-      encodeCreateSmartBody(
-        payload.handshake,
-        payload.senderAlias,
-        payload.capabilities,
-      );
-    return btoa(JSON.stringify({ smartBody, payload }));
   },
 
   async sendInviteMessage(contactId, payload, delivery) {
@@ -404,7 +393,6 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       roomTtl: parsed.payload.handshake.roomTtl,
       senderAlias: parsed.payload.senderAlias,
       capabilities: parsed.payload.capabilities,
-      bootstrapEncrypted: "",
       handshake: parsed.payload.handshake,
       smartBody,
     };
@@ -421,12 +409,15 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       // Mempool first — do not wait on tip catch-up for 0-conf creates.
       await pollMempoolRuntime(rt);
       // Short tip sync so a create that already mined still appears.
-      await Promise.race([
-        syncRuntime(rt),
-        new Promise<void>((resolve) => {
-          setTimeout(resolve, 8_000);
-        }),
-      ]);
+      // Skip when a scan is already running — syncRuntime would arm pendingSync.
+      if (!isSyncInProgress()) {
+        await Promise.race([
+          syncRuntime(rt),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 8_000);
+          }),
+        ]);
+      }
       const received = readReceivedRecords(rt.raw);
       const out: SmartMessageInvite[] = [];
       for (const record of received) {
@@ -483,24 +474,32 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         register: import("@/types/protocol").ChatRegisterPayload;
         txHash: string;
+        contactId: string;
+        sentAtUnix?: number;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
+        // Counterpart only. @see docs/security/p2pchatprotocol.md §6
+        const contact = matchContactByPaymentId(record.paymentIdFrom);
+        if (!contact) continue;
         const parsed = parseChatSmartBody(record.body, {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "register") continue;
-        if (parsed.payload.pokeHandle) {
-          const hs = handshakesByInviteId.get(parsed.payload.inviteId);
-          if (hs?.roomId)
-            storePartnerPokeHandle(hs.roomId, parsed.payload.pokeHandle);
-        }
-        out.push({ register: parsed.payload, txHash: record.id });
+        const sentMs = Date.parse(record.timestamp);
+        out.push({
+          register: parsed.payload,
+          txHash: record.id,
+          contactId: contact.contactId,
+          ...(Number.isFinite(sentMs)
+            ? { sentAtUnix: Math.floor(sentMs / 1000) }
+            : {}),
+        });
       }
       return out;
     } catch {
@@ -530,6 +529,9 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     if (inv.status !== "received" && inv.status !== "sent") {
       throw new Error("Invite cannot be accepted in current state.");
     }
+    if (inv.inviteExpiry && isInviteExpired(inv.inviteExpiry)) {
+      throw new Error("Invite expired — ask them to send a new one.");
+    }
     // iOS: use gateway-minted handle; F-Droid: generate per-room pokeId
     let ownPokeHandle = getOwnPokeHandle() ?? undefined;
     if (!ownPokeHandle) {
@@ -554,6 +556,14 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       smartBody: encodeRegisterSmartBody(payload),
     });
     inv.status = "accepted";
+    const initiatorHandle =
+      inv.initiatorPokeHandle ?? peekCatalogRoom(inv.roomId)?.partnerPokeHandle;
+    if (
+      useSettingsStore.getState().privacy.pushWakeEnabled &&
+      initiatorHandle
+    ) {
+      sendPoke(initiatorHandle).catch(() => undefined);
+    }
     return { roomId: inv.roomId };
   },
 
@@ -596,19 +606,27 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         revoke: import("@/types/protocol").ChatRevokePayload;
         txHash: string;
+        contactId: string;
       }> = [];
       for (const record of received) {
         if (!messages.isSmartMessage(record.body)) continue;
+        // Counterpart only. @see docs/security/p2pchatprotocol.md §10
+        const contact = matchContactByPaymentId(record.paymentIdFrom);
+        if (!contact) continue;
         const parsed = parseChatSmartBody(record.body, {
           allowSeenReplay: true,
         });
         if (parsed?.action !== "revoke") continue;
-        out.push({ revoke: parsed.payload, txHash: record.id });
+        out.push({
+          revoke: parsed.payload,
+          txHash: record.id,
+          contactId: contact.contactId,
+        });
       }
       return out;
     } catch {
@@ -637,7 +655,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     try {
       const rt = requireRuntime();
       await pollMempoolRuntime(rt);
-      void syncRuntime(rt).catch(() => {});
+      if (!isSyncInProgress()) void syncRuntime(rt).catch(() => {});
       const received = readReceivedRecords(rt.raw);
       const out: Array<{
         relay: ChatRelayPayload;

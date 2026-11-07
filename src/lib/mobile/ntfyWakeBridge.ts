@@ -14,13 +14,13 @@ function sendNtfyCommand(cmd: Record<string, string | undefined>): void {
   );
 }
 
-/** Subscribe a single room topic. topic = full ntfy URL e.g. https://ntfy.getnowhere.im/gnh-<pokeId> */
-export function subscribeRoom(
-  roomId: string,
-  topic: string,
-  token?: string,
-): void {
-  sendNtfyCommand({ action: "subscribe", roomId, topic, token });
+/**
+ * Subscribe a single room topic. topic = full ntfy URL e.g. https://ntfy.getnowhere.im/gnh-<pokeId>
+ * No bearer token: the 80-bit `pokeId` in the topic name is the read capability.
+ * @see docs/features/peer-wake-notification.md
+ */
+export function subscribeRoom(roomId: string, topic: string): void {
+  sendNtfyCommand({ action: "subscribe", roomId, topic });
 }
 
 export function unsubscribeRoom(roomId: string): void {
@@ -32,16 +32,11 @@ export function unsubscribeAll(): void {
 }
 
 /** Subscribe all active rooms that have an ownPokeId. */
-export function subscribeAll(token?: string): void {
-  const readToken = token ?? import.meta.env?.VITE_NTFY_READ_TOKEN ?? "";
+export function subscribeAll(): void {
   const rooms = listCatalogRooms();
   for (const room of rooms) {
     if (room.ownPokeId) {
-      subscribeRoom(
-        room.id,
-        `${NTFY_BASE_URL}/gnh-${room.ownPokeId}`,
-        readToken || undefined,
-      );
+      subscribeRoom(room.id, `${NTFY_BASE_URL}/gnh-${room.ownPokeId}`);
     }
   }
 }

@@ -20,7 +20,7 @@ if (!existsSync(bareModules)) {
 }
 
 execSync(
-  "node --test test/swarm-security.test.mjs test/bridge-auth.test.mjs test/worklet-env.test.mjs",
+  "node --test test/swarm-security.test.mjs test/swarm-ingress-limits.test.mjs test/bridge-auth.test.mjs test/worklet-env.test.mjs",
   {
   cwd: bareDir,
   stdio: "inherit",

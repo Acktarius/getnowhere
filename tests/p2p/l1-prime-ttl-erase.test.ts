@@ -1,6 +1,6 @@
 /**
  * L1′ TTL erase (RED). Room memory, no chatRooms persist, hydrate skip.
- * @see openspec/changes/l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
+ * @see openspec/changes/archive/2026-09-03-l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
  */
 import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -51,6 +51,7 @@ vi.mock("@/services/conceal/sync/runtime", () => ({
   persistRuntime: (...args: unknown[]) => persistRuntime(...args),
   pollMempoolRuntime: async () => false,
   syncRuntime: async () => 0,
+  isSyncInProgress: () => false,
 }));
 
 import * as holepunch from "@/services/p2p/HolepunchChatTransport";

@@ -43,6 +43,15 @@ Pre-release note: renaming `userData` / partition orphans older
 After a hard kill, a stale Chromium `SingletonLock` under `~/.config/getnowhere`
 can block relaunch until removed.
 
+## Room session keys
+
+Live send/recv keys are not part of the wallet export. Electron main encrypts
+them with `safeStorage` into `room-sessions.bin` in `userData` (Alice and Bob
+already have separate directories). If the Linux backend is `basic_text`,
+there is no OS secret service, so the renderer stores the row on the open
+wallet instead and the backup download omits it. The browser debug build
+still uses `localStorage`.
+
 ## Dev: two instances on one PC (Alice / Bob)
 
 Goal: two Electron windows, two Conceal wallets, Hyperswarm via sidecar child(ren).
@@ -64,11 +73,44 @@ windows always match. Owner also writes `$TMPDIR/gnh-sidecar-<host>-<port>.token
 
 **Isolated mode:** each role gets a random UUID token for its own sidecar.
 
+**IPC (default desktop transport):** Electron main sends that same token to the
+sidecar with `{ type: "ipc-auth-token", token }` on the Node parent channel,
+then the IPC client’s first line is `{ type: "auth", token }`. The token is
+not placed in the sidecar environment or argv, and the renderer never receives
+it. An empty token exits the sidecar; a second one is ignored. Shared-mode
+attach reads the existing `0600` token lockfile before that auth line — a path
+lock with no token lock is logged as stale, since the default would fail auth.
+The socket lives in a `0700` directory and is bound under a `0177` umask, then
+`chmod` `0600`. Peer-credential checks (`SO_PEERCRED`, `getpeereid`,
+named-pipe ACL) are not used.
+
+The `GNH_HOLEPUNCH_WS_URL` debug override still passes `--gnh-ws-token` in
+renderer argv, so that token is readable from `/proc/<pid>/cmdline` by a
+same-user process. That override is dev-only and is not a ship path.
+
 Main hands `{ role?, bridgeTransport, … }` to preload via
 `additionalArguments` (primary — same path as v0.1.6) and sync IPC
 `gnh:get-desktop-info` (secondary). Default desktop transport is **native IPC**
 (`bridgeTransport: "ipc"`, `sendCommand` / `onBridgeEvent` on `window.gnhDesktop`).
 Set `GNH_HOLEPUNCH_WS_URL` to force loopback WebSocket (debug override).
+
+`gnh:sidecar-command` is fail-closed: only the bound `BrowserWindow` may invoke
+it, and only after `sanitizeSidecarCommand` copies `ping` / `join` / `leave` /
+`frame` (64-hex `topicRef`, payload ≤ 262144 bytes). `{ type: "auth" }` never
+crosses this proxy. If the NDJSON socket closes after auth, main emits
+`{ type: "error", code: "sidecar_error" }` so the UI goes offline (no automatic
+reconnect). `gnh:get-desktop-info` stays fail-open while the window id is
+unbound (about:blank preload race). Privileged IPC also requires
+`event.senderFrame.url` to match the resolved UI origin (packaged `file:` UI
+directory, or loopback `http(s)` such as Vite `127.0.0.1:5173`). `will-navigate`
+cancels any other document navigation; `setWindowOpenHandler` denies new
+windows. Hash-router changes stay in-page and are not blocked. `GNH_UI_URL`
+must be a local file or loopback URL — a remote override is refused before
+the window is created. The sidecar IPC path itself requires
+first-line auth within 5s, at most 8 concurrent Unix-socket clients, and
+Bare-parity command rate limits (`rate_limited` is not treated as offline).
+Remote swarm ingress is capped in the sidecar (`remote_rate_limited`; also not
+offline).
 
 Legacy WS fields when `bridgeTransport === "ws"`: `holepunchWsUrl`, `wsToken`.
 Preload prefers argv when present. Do **not** use `executeJavaScript` into the
@@ -209,6 +251,8 @@ Same live schema as web-dev (`HolepunchSidecarClient.ts`):
 desktop-electron/
   package.json
   desktop-identity.mjs  # packaged vs Alice/Bob decision table
+  sidecar-command.mjs   # renderer command allowlist for gnh:sidecar-command
+  ui-navigation.mjs     # UI origin allowlist + will-navigate / window-open deny
   main.mjs              # window + sidecar child lifecycle; owns gnh:get-desktop-info IPC
   preload-bridge.cjs    # pure normalize/resolve helpers for node:test (mirror of preload.cjs)
   preload.cjs           # self-contained sandboxed preload → exposeInMainWorld("gnhDesktop", ...)

@@ -45,6 +45,7 @@ const mesh = createSwarmMesh({
 let wss = null;
 /** @type {ReturnType<typeof createIpcBridgeServer> | null} */
 let ipcServer = null;
+let ipcArmed = false;
 
 function announceWsListening(boundHost, boundPort) {
   console.log(`[holepunch-sidecar] listening ws://${boundHost}:${boundPort}`);
@@ -195,9 +196,10 @@ function startWebSocketServer() {
   });
 }
 
-async function startIpcServer() {
+async function startIpcServer(token) {
   ipcServer = createIpcBridgeServer(mesh, {
     path: ipcPath,
+    token,
     onListening: (path) => {
       announceIpcListening(path);
     },
@@ -208,8 +210,37 @@ async function startIpcServer() {
   await ipcServer.listen();
 }
 
+/**
+ * IPC mode listens only after the parent sends `{ type: "ipc-auth-token" }`.
+ * The token is not taken from the environment or argv.
+ * @see docs/architecture/electron-desktop.md
+ */
+function armIpcAuthToken() {
+  if (typeof process.send !== "function") {
+    console.error(
+      "[holepunch-sidecar] ipc transport requires a parent IPC channel",
+    );
+    process.exit(1);
+  }
+  process.on("message", (msg) => {
+    if (!msg || typeof msg !== "object") return;
+    if (/** @type {{ type?: string }} */ (msg).type !== "ipc-auth-token") return;
+    const token = /** @type {{ token?: unknown }} */ (msg).token;
+    if (typeof token !== "string" || token.length === 0) {
+      console.error("[holepunch-sidecar] ipc-auth-token missing or empty");
+      process.exit(1);
+    }
+    if (ipcArmed) {
+      console.warn("[holepunch-sidecar] ipc-auth-token ignored: already armed");
+      return;
+    }
+    ipcArmed = true;
+    void startIpcServer(token);
+  });
+}
+
 if (bridgeTransport === "ipc") {
-  void startIpcServer();
+  armIpcAuthToken();
 } else {
   startWebSocketServer();
 }

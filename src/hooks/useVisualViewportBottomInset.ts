@@ -1,39 +1,73 @@
 import { useEffect, useState } from "react";
 
-/** Overlap between layout viewport and visual viewport (on-screen keyboard). */
-function readVisualViewportBottomInset(): number {
+/** Visible frame + keyboard overlap from `window.visualViewport`. */
+export type VisualViewportKeyboardFrame = {
+  /** Overlap under the visual viewport (on-screen keyboard), in px. */
+  bottomInset: number;
+  /** `visualViewport.offsetTop` — iOS often pans this when focusing inputs. */
+  offsetTop: number;
+  /** `visualViewport.height` — visible band above the keyboard. */
+  height: number;
+};
+
+function readVisualViewportKeyboardFrame(): VisualViewportKeyboardFrame {
   const vv = window.visualViewport;
-  if (!vv) return 0;
-  return Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+  if (!vv) {
+    return {
+      bottomInset: 0,
+      offsetTop: 0,
+      height: window.innerHeight,
+    };
+  }
+  return {
+    bottomInset: Math.max(0, window.innerHeight - vv.height - vv.offsetTop),
+    offsetTop: Math.max(0, vv.offsetTop),
+    height: Math.max(0, vv.height),
+  };
 }
 
+const DISABLED_FRAME: VisualViewportKeyboardFrame = {
+  bottomInset: 0,
+  offsetTop: 0,
+  height: 0,
+};
+
 /**
- * Tracks bottom inset when the on-screen keyboard shrinks the visual viewport.
- * Used to float fixed composers above the keyboard on mobile WebView.
+ * Tracks the visual viewport while the on-screen keyboard is up.
+ * Mobile chat rooms float the composer and stick the thread to the bottom.
+ * @see docs/architecture/web-vs-wrapper.md
  */
-export function useVisualViewportBottomInset(enabled: boolean): number {
-  const [inset, setInset] = useState(0);
+export function useVisualViewportBottomInset(
+  enabled: boolean,
+): VisualViewportKeyboardFrame {
+  const [frame, setFrame] = useState<VisualViewportKeyboardFrame>(() =>
+    enabled && typeof window !== "undefined"
+      ? readVisualViewportKeyboardFrame()
+      : DISABLED_FRAME,
+  );
 
   useEffect(() => {
     if (!enabled) {
-      setInset(0);
+      setFrame(DISABLED_FRAME);
       return;
     }
-    const vv = window.visualViewport;
-    if (!vv) return;
 
     const update = () => {
-      setInset(readVisualViewportBottomInset());
+      setFrame(readVisualViewportKeyboardFrame());
     };
 
     update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    // Android WebView often resizes the layout viewport without vv events.
+    window.addEventListener("resize", update);
     return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
     };
   }, [enabled]);
 
-  return inset;
+  return frame;
 }

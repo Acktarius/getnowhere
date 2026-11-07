@@ -243,28 +243,6 @@ export function WalletScreen() {
             </button>
           </div>
 
-          <div className="card card--flush fade-in-up">
-            <div className="row" style={{ paddingBottom: 8 }}>
-              <div className="row__main">
-                <div className="card__title" style={{ margin: 0 }}>
-                  Your address
-                </div>
-              </div>
-              <CopyButton value={address} />
-            </div>
-            <div
-              className="mono"
-              style={{
-                fontSize: 12,
-                padding: "0 16px 16px",
-                wordBreak: "break-all",
-                color: "var(--text-muted)",
-              }}
-            >
-              <NonSelectableText>{address}</NonSelectableText>
-            </div>
-          </div>
-
           <div className="section" style={{ padding: 0 }}>
             <div className="section__head" style={{ padding: 0 }}>
               <span className="section__title">History</span>

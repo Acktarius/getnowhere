@@ -45,6 +45,10 @@ export const BRIDGE_ERRORS = Object.freeze({
     code: "rate_limited",
     message: "rate limited",
   },
+  remote_rate_limited: {
+    code: "remote_rate_limited",
+    message: "remote peer rate limited",
+  },
 });
 
 /**

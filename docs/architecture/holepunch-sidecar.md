@@ -117,6 +117,7 @@ holepunch-sidecar/
                         # maxFramePayloadBytes / reserved maxFileBytes
   src/config.mjs        # load limits with defaults
   src/errors.mjs        # BRIDGE_ERRORS map + bridgeError()
+  src/rateLimit.mjs     # Bare-parity bridge buckets + swarm ingress limits
   src/swarm.mjs         # one Hyperswarm; multi-topic join + local/remote fan-out
   src/server.mjs        # WebSocket bridge (default ws://127.0.0.1:7901)
   src/parent-death.mjs  # exit when Electron parent dies
@@ -140,6 +141,27 @@ lines are capped by `maxNdjsonLineBytes` (default **262144**, from
 connection handler logs the peer and calls `conn.destroy()`. Other connections
 and the sidecar process stay up. `maxFileBytes` is reserved for a future media
 path and is not applied to chat NDJSON frames.
+
+### Swarm ingress abuse limits
+
+Remote Hyperswarm streams are unauthenticated (topic membership only). After
+the Noise stream is already up — this is **not** the DHT holepunch wait —
+each connection has:
+
+- **Frame bucket:** burst 20, refill 10/s. Excess frames are dropped (not
+  forwarded, so the UI does not decrypt). The stream stays up until **8**
+  consecutive drops, then `conn.destroy()`.
+- **Byte bucket:** burst **8 MiB**, refill **4 MiB/s**. Sized so a photo or
+  chunked file at the 256 KiB line cap is not the limiter (10 max-size
+  frames/s ≈ 2.5 MiB/s). A byte-budget miss destroys that peer immediately
+  (parsing further would desync NDJSON).
+- **Inbound cap:** 8 live remote streams. A 9th **inbound** is destroyed;
+  **outbound** (we dialed) is still accepted so a sybil pile-on cannot block
+  our own connect. This is not `Hyperswarm({ maxPeers: 8 })`.
+
+Tripped limits emit `{ type: "error", code: "remote_rate_limited" }` to local
+clients. The UI must not treat that as sidecar offline (same as
+`rate_limited`). Mobile Bare uses the same numbers.
 
 ## Packaged desktop bridge (ephemeral port)
 
@@ -170,11 +192,29 @@ When `GNH_BRIDGE_TRANSPORT=ipc` and `GNH_IPC_PATH` is set (Electron main
 generates the path):
 
 1. The sidecar listens on a Unix domain socket (Linux/macOS) or named pipe
-   (Windows) — no loopback TCP bridge.
-2. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
-3. One NDJSON line per message; same `SidecarCommand` / `SidecarEvent` schema.
-4. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
-5. Stale Unix socket files are unlinked before bind when safe.
+   (Windows) — no loopback TCP bridge. Electron places the socket in a `0700`
+   directory (`$XDG_RUNTIME_DIR/gnh-sidecar` or a private directory under the
+   user temp dir). After bind the sidecar sets the socket mode to `0600`.
+2. The sidecar does not listen until the parent sends
+   `{ type: "ipc-auth-token", token }` on the Node IPC channel. The token is
+   not read from the environment or argv.
+3. The first NDJSON line on each connection must be `{ type: "auth", token }`.
+   A match replies `{ type: "auth-ok" }` and later lines use the
+   `SidecarCommand` / `SidecarEvent` schema. Any other first line, a wrong
+   token, or a second `auth` closes the socket. Comparison is timing-safe.
+4. On listen, `process.send({ type: "listening", transport: "ipc", path })`.
+5. Size limits match WebSocket (`maxWsMessageBytes`, join-gated frames).
+6. Stale Unix socket files are unlinked before bind when safe.
+7. First-line `{ type: "auth" }` must complete within **5 seconds** (local
+   socket only — not DHT/holepunch). Concurrent IPC clients are capped at **8**
+   (one connection per Electron process, not per room).
+8. After auth, `join` / `leave` / `frame` / `ping` use the same token buckets
+   as Bare (`rate_limited`, session stays up).
+
+Electron main (`gnh:sidecar-command`) allowlists `ping` / `join` / `leave` /
+`frame` and does not forward `{ type: "auth" }`. A dead NDJSON socket after
+auth is a hard fail (`sidecar_error` to the renderer), not a silent drop.
+@see `docs/architecture/electron-desktop.md`
 
 Web-dev keeps default `GNH_BRIDGE_TRANSPORT=ws` (unset).
 
@@ -401,10 +441,12 @@ pinning, then IPC/Unix socket — ranked options and hardening checklist in
 process exits before listen if missing. Loopback without a token remains the
 explicit web-dev exception (`npm run holepunch`).
 
-When a token is set, clients must connect with `?token=<value>` or the upgrade
-is closed (`4001`). Comparison is timing-safe (`crypto.timingSafeEqual` on
-equal-length buffers). Electron main always sets a per-launch token
-(packaged builds use a fresh UUID) — `docs/architecture/electron-desktop.md`.
+When a token is set, WebSocket clients must connect with `?token=<value>` or
+the upgrade is closed (`4001`). Comparison is timing-safe
+(`crypto.timingSafeEqual` on equal-length buffers). IPC uses the same compare
+on the first NDJSON `auth` line. Electron main keeps a per-launch token
+(packaged builds use a fresh UUID) and delivers it to the sidecar over Node
+IPC — `docs/architecture/electron-desktop.md`.
 
 ## Env
 
@@ -415,7 +457,7 @@ equal-length buffers). Electron main always sets a per-launch token
 | `HOLEPUNCH_PORT` | `7901` (`0` = ephemeral) | sidecar (WS mode) |
 | `GNH_BRIDGE_TRANSPORT` | `ws` | `ws` \| `ipc` — desktop uses `ipc` |
 | `GNH_IPC_PATH` | (unset) | sidecar — required when transport is `ipc` |
-| `GNH_SIDECAR_TOKEN` | (unset) | sidecar WS auth — not used in `ipc` mode |
+| `GNH_SIDECAR_TOKEN` | (unset) | sidecar WS auth. IPC auth uses the parent `ipc-auth-token` message |
 | `GNH_PARENT_POLL_MS` | `1000` | sidecar parent-death poll |
 | `GNH_DISABLE_DISCOVERY` | unset | test-only: skip Hyperswarm DHT |
 

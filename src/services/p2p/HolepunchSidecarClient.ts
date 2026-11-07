@@ -15,7 +15,9 @@ export type SidecarBridgeErrorCode =
   | "frame_requires_fields"
   | "frame_requires_join"
   | "unknown_type"
-  | "sidecar_error";
+  | "sidecar_error"
+  | "rate_limited"
+  | "remote_rate_limited";
 
 export type SidecarServerMessage =
   | { type: "ready"; topicRef: string }
@@ -75,6 +77,11 @@ export function getUfwAdvisoryState(): "active" | "inactive" | "unknown" {
     /* non-dom */
   }
   return "unknown";
+}
+
+/** Local/remote rate limits keep the session up (Bare + sidecar token-bucket). */
+export function sidecarErrorMarksOffline(code?: string): boolean {
+  return code !== "rate_limited" && code !== "remote_rate_limited";
 }
 
 export function getHolepunchWsUrl(): string {
@@ -205,7 +212,9 @@ function createPostMessageStyleSidecarBackend(bridge: {
       const detail = msg.code
         ? `${msg.code}: ${msg.message || "sidecar error"}`
         : msg.message || "sidecar error";
-      emitStatus("offline", detail);
+      if (sidecarErrorMarksOffline(msg.code)) {
+        emitStatus("offline", detail);
+      }
     }
   }
 
@@ -342,7 +351,9 @@ export function createWebSocketSidecarBackend(
       const detail = msg.code
         ? `${msg.code}: ${msg.message || "sidecar error"}`
         : msg.message || "sidecar error";
-      emitStatus("offline", detail);
+      if (sidecarErrorMarksOffline(msg.code)) {
+        emitStatus("offline", detail);
+      }
     }
   }
 

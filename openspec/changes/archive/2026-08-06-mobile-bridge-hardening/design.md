@@ -7,7 +7,7 @@ commands to `GnhMobileBridge`, which forwards NDJSON over BareKit IPC to a
 Hyperswarm worklet (`bare/bridge.mjs` + `bare/swarm.mjs`). Bridge token is
 transport ACL only — L1 session proof remains in the UI.
 
-Sidecar already caps Hyperswarm NDJSON (`openspec/changes/unbounded-ndjson-buffer`)
+Sidecar already caps Hyperswarm NDJSON (`openspec/changes/archive/2026-09-22-unbounded-ndjson-buffer`)
 and enforces WS bridge auth (`openspec/changes/archive/2026-08-02-bridge-auth`).
 Mobile gaps are RN-side IPC parsing, WebView trust boundary, and fail-open empty
 token on the worklet.

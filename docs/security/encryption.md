@@ -228,9 +228,28 @@ After transport peer presence (`peers.count >= 1`), the connecting side sends a
 sealed `kind: "proof"` frame (`text: proof:v1:<sessionId>`). A peer that is not
 itself mid-handshake answers with `proof-ack:v1:<sessionId>` (acks never re-ack,
 so no ping-pong). AEAD open success on either proof or ack proves L1 session
-keys. Outcomes: AEAD failure → `crypto_mismatch` (session wiped, rekey);
-no reply within the window → `timeout` (retryable, session kept). Topic + Noise
-alone is not trust.
+keys. Outcomes (session row kept either way, counters do not rewind):
+
+- Valid proof or ack within the window → `connected`, even if bad frames arrived first.
+- Window ends after at least one in-window frame (counter ≥ `recvCounter`) failed
+  AEAD open → `crypto_mismatch`. The verdict waits for the window so one injected
+  or garbled frame cannot fail a proof the real peer answers.
+- Window ends with no usable frame → `timeout` (retryable). Malformed frames
+  (bad base64, length, or version byte) and stale frames (counter < `recvCounter`)
+  are dropped and never count as AEAD failures.
+- Our own proof fails to seal, persist, or reach the bridge (app access lock,
+  session store, sidecar) → `unreachable` (retryable). This is a local failure, not a key verdict.
+
+Self-heal: a peer frame that opens while the room is `connect_failed` with
+`crypto_mismatch` proves the keys match, so the error is relabelled `timeout` and
+polling resumes. Retry still requires a full proof. A later handoff resumes the saved
+session instead of deriving again. Topic + Noise alone is not trust.
+
+Peer count never sets `connected`. A return from `connecting` starts a new proof
+attempt when a peer is present and no attempt is in flight. Only that attempt's
+proof or proof-ack sets `connected`. An opened chat frame does not. The early-proof
+flag belongs to the attempt that received the frame; an open still in flight from
+an earlier attempt cannot satisfy the next wait.
 
 ## Default primitive (L1 session seal)
 
@@ -322,10 +341,17 @@ broken by nonce reuse under the same key.
 
 ### Strategy: `counter_from_seed`
 
-- `nonceSeed`: 256-bit random from handshake (hex).
+- `nonceSeed`: 8 random bytes (64-bit hex) from the handshake. Slim create packs that width (`p2pchatprotocol.md` §4, `capabilities-and-derivation.md`). HKDF stretches it to the 12-byte nonce. Uniqueness is the per-direction counter under the session key, not the seed width.
+- Per session: `iv = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"), info=UTF8("iv"), L=12)`.
 - Per seal under the **send** key:
-  - `nonce_12 = HKDF-SHA256(ikm=nonceSeed, salt=UTF8("send"|"recv"), info=UTF8("nonce|" + counter), L=12)`
-  - persist and increment `sendCounter` **after** successful seal preparation
+  - `nonce_12 = iv XOR (0x00000000 || counter as u64 big-endian)`. Two counters under one key never share a nonce.
+  - persist and increment `sendCounter` **after** successful seal preparation, and **before** the frame is sent
+- The sender refuses to seal once `sendCounter >= Number.MAX_SAFE_INTEGER`. The counter never wraps; the send fails.
+- The session row (keys and counters) is written before the first proof seal. A later handoff resumes that row instead of deriving again. `connect` never installs a lower counter.
+- The frame carries the counter in clear: `0x02 || counter (u64 BE) || ciphertext+tag`. The nonce is not on the wire. Wrong version byte or fewer than 25 bytes drops the frame. The older `nonce || ciphertext` layout is rejected (hard cut; both devices run the same build). Byte layout: `p2pchatprotocol.md` §8 (L2 live frame layout).
+- On open, derive the nonce from the frame counter. Accept only when the counter is a safe integer, `counter >= recvCounter`, and the AEAD tag checks. Then set `recvCounter` to counter + 1. There is no upper bound on the forward gap, so a receiver that missed frames resyncs on the next authentic one.
+- A counter below `recvCounter` (replay or stale reordered frame), an unsafe integer, or a tag failure drops the frame and leaves `recvCounter` unchanged.
+- Inbound frames for a room are handled one at a time against the current session. Each counter update is committed before the next frame is opened.
 - Directions never share a key, so Alice’s send counter space is independent of Bob’s.
 - After reconnect or app restart: restore `sendCounter` / `recvCounter` before any seal.
 - Do not generate nonces in UI code.
@@ -340,6 +366,9 @@ When sealing Holepunch content frames, prefer AAD covering at least:
 - protocol / content schema version
 - roomId / sessionId
 - message kind (`text` | `reaction` | `edit` | `delete`)
+
+The 9-byte live frame header (`0x02 || counter`) is appended to the proof or chat
+AAD for both seal and open, so a tampered counter fails the tag.
 
 AAD must match on decrypt or open fails closed.
 
@@ -379,13 +408,47 @@ Rules:
 
 ## Local storage rules
 
-- Persist session counters and key **refs** (or sealed key material) so reconnect
-  can restore seal/open without rewinding nonces.
+- Persist session counters and key material so reconnect can restore seal/open
+  without rewinding nonces. Browser debug may use `localStorage`. Electron
+  writes `safeStorage` ciphertext to `room-sessions.bin` under `userData`.
+  When Linux has no secret service (`basic_text`), the row lives on the
+  wallet blob as `roomSessions` and is stripped from `downloadWalletBackup`.
+  Mobile keeps the native secure-prefs adapter.
+  @see `docs/architecture/electron-desktop.md`
+- **Counter durability.** The advanced `sendCounter` is durably stored before
+  the frame is handed to the bridge. The advanced `recvCounter` is durably
+  stored before the envelope is handled. Electron `os` mode writes the file
+  synchronously before the IPC reply. Wallet mode awaits the wallet persist.
+  Mobile awaits the secure-prefs flush for a bounded time and fails if the
+  write failed (a timeout counts as a failed write). The native secure-prefs
+  write reports success only once stored: Android `commit()` (not `apply()`),
+  iOS Keychain status checked; a failure rejects the bridge call. Browser
+  `localStorage` is dev-only.
+- A failed durable counter write fails closed: the send rejects and no frame is
+  sent; an inbound envelope is dropped.
+- **Rollback coverage.** Android sets `allowBackup=false` with extraction rules
+  (`native-wrapper/plugins/withGnhSecurity.js`). Wallet backups strip
+  `roomSessions` (`withoutRoomSessions`). The Electron store stays on the
+  machine. A restore cannot bring back an older counter for a live key.
+- **Known trade-offs.** A frame reordered across two swarm connections is
+  dropped (each Hyperswarm connection is ordered). A crash between the
+  receive-counter write and handling loses that envelope; resend after
+  reconnect plus `messageId` dedupe (`p2pchatprotocol.md` §14) recovers the
+  usual case.
 - Never log raw session keys, ephemeral privates, or plaintext chat.
-- Tombstone flows must wipe bootstrap ciphertext and session secrets per
-  `p2pchatprotocol.md`.
+- Tombstone flows must wipe session secrets per `p2pchatprotocol.md`.
+  Local invite records store `roomId`, `inviteId`, and `replayId` in the clear.
+  L1 confidentiality is Conceal MESSAGE on the chain, not a local field.
 - Prefer the active `StorageAdapter`; do not scatter secrets into ad hoc
-  `localStorage` calls.
+  `localStorage` calls. On mobile the adapter is native (encrypted wallet
+  file + secure prefs). Do not log the wallet blob or Keystore material.
+  @see `docs/storage/mobile-durable-storage.md`
+- **Pending invite ECDH ephemerals** (create/register handoff): persist only as
+  `pendingInviteEphemerals` inside the **encrypted wallet blob**. Do not write
+  plaintext `privateKeyHex` to `gnh.pendingInitiatorKeys` (legacy KV is
+  migrated once then deleted). Wipe on successful handoff, decline/abandon,
+  invite-expiry retirement, leave room / L1 revoke / local destroy, and wallet
+  wipe. In-memory map may hold refs while unlocked.
 - **Room transcripts:** L2 is sealed frames, not a shared Hypercore log. Persist
   what this device already saw in the encrypted wallet blob (`chatRooms`) when
   Settings **P2P message retention** is on: background write ~1s after live
@@ -397,7 +460,7 @@ Rules:
   hydrate, re-creating in-memory room shells (`listRooms` / `ensureRoom`) MUST
   NOT clear an existing transcript bag — required after iOS WKWebView process
   death. No peer catch-up in this model — a later change if we add a request
-  protocol or a log. @see `openspec/changes/p2p-message-retention/design.md`
+  protocol or a log. @see `openspec/changes/archive/2026-09-22-p2p-message-retention/design.md`
 
 ## Implementation boundaries
 

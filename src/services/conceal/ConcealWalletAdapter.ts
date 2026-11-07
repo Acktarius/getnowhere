@@ -1,22 +1,4 @@
-// ConcealWalletAdapter — wraps the real conceal-wallet-sdk (v0.2.10).
-//
-// CONFIRMED SDK surface (verified against dist/index.d.ts + README):
-//   - createAccount / restoreFromMnemonic / restoreFromSpendKey   (WASM)
-//   - generateMnemonic / isValidMnemonic / mnemonicToSeed          (WASM)
-//   - isValidAddress / decodeAddress / encodeAddress               (pure JS)
-//   - makeIntegratedAddress / encodeIntegratedAddress              (pure JS)
-//   - buildPaymentUri / parsePaymentUri                            (pure JS)
-//   - init (WASM bootstrap — await once before any crypto use)
-//   - messages.{encodeSmartMessage,parseSmartMessage,...}          (pure JS)
-//
-// ASSUMED / NOT YET VERIFIED in this environment (kept behind mock
-// fallbacks with TODO markers):
-//   - createDaemonClient + createWalletSync for live balance/sync.
-//     The daemon proxy URL and sync lifecycle are not exercised here.
-//   - buildTransaction for broadcast-ready spends (needs daemon +
-//     random outs + serialization path verified end-to-end).
-//   - encryptMessage/decryptMessage need an ECDH key derived from a
-//     real transaction secret, which requires the broadcast path.
+/** Typed app boundary for conceal-wallet-sdk 0.3.2. @see docs/features/lite-wallet.md */
 
 import type {
   Account,
@@ -170,25 +152,28 @@ export async function previewKeysFromSpend(
 export type OpenedWalletFile = {
   raw: sdk.RawWalletV1;
   keys: UserKeys;
+  envelope: 1 | 2 | 3;
 };
 
-/** Decrypt an encrypted wallet envelope (from a .json backup file). */
+/** Size-gate, parse, and decrypt wallet backup text. */
 export function openEncryptedWalletFile(
-  envelope: unknown,
+  text: string,
   password: string,
 ): OpenedWalletFile | null {
+  const envelope = sdk.parseEncryptedWalletJson(text);
+  if (envelope === null) return null;
   return sdk.openEncryptedWallet(
     envelope as sdk.EncryptedWalletEnvelope,
     password,
   );
 }
 
-/** Encrypt a plaintext wallet blob into a downloadable envelope. */
+/** Encrypt a plaintext wallet blob into backup-file text. @see conceal-wallet-sdk docs/wallet-envelope.md */
 export function saveEncryptedWalletFile(
   raw: sdk.RawWalletV1,
   password: string,
-): sdk.RawFullyEncryptedWallet {
-  return sdk.saveEncryptedWallet(raw, password);
+): string {
+  return sdk.stringifyEncryptedWallet(sdk.saveEncryptedWallet(raw, password));
 }
 
 // ===== Daemon + sync (real chain scanning) =====

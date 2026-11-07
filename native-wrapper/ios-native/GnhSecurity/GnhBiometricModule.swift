@@ -100,14 +100,21 @@ final class GnhBiometricModule {
     guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
       completion(false); return
     }
+    // SecItemAdd must run on this callback with the same LAContext.
+    // @see native-wrapper/docs/gnh-mobile-security-bridge.md
     ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Enable biometric unlock") { ok, _ in
-      guard ok else { completion(false); return }
+      guard ok else {
+        DispatchQueue.main.async { completion(false) }
+        return
+      }
       let data = Data(plaintext.utf8)
       self.deleteKeychainItem(account: credentialId)
       var query = self.keychainQuery(account: credentialId)
       query[kSecValueData as String] = data
+      query[kSecUseAuthenticationContext as String] = ctx
       let status = SecItemAdd(query as CFDictionary, nil)
-      completion(status == errSecSuccess)
+      NSLog("[gnh-biometric] SecItemAdd status %d", status)
+      DispatchQueue.main.async { completion(status == errSecSuccess) }
     }
   }
 

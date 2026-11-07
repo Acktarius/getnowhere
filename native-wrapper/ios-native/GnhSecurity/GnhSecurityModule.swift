@@ -6,6 +6,7 @@ import UIKit
 class GnhSecurityModule: NSObject {
   private let prefs = GnhSecurePrefs()
   private let biometric = GnhBiometricModule()
+  private let walletFile = GnhWalletFile()
 
   @objc static func requiresMainQueueSetup() -> Bool { true }
 
@@ -26,12 +27,18 @@ class GnhSecurityModule: NSObject {
   }
 
   @objc func securePrefsSet(_ key: String, value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    prefs.set(key: key, value: value)
+    guard prefs.set(key: key, value: value) else {
+      rejecter("ERR_PREFS_WRITE", "secure prefs write failed", nil)
+      return
+    }
     resolver(true)
   }
 
   @objc func securePrefsRemove(_ key: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
-    prefs.remove(key: key)
+    guard prefs.remove(key: key) else {
+      rejecter("ERR_PREFS_WRITE", "secure prefs write failed", nil)
+      return
+    }
     resolver(true)
   }
 
@@ -51,6 +58,44 @@ class GnhSecurityModule: NSObject {
     resolver(true)
   }
 
+  @objc func walletFileExists(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    switch walletFile.exists() {
+    case .ok(let exists):
+      resolver(["exists": exists])
+    case .err(let reason):
+      resolver(["reason": reason])
+    }
+  }
+
+  @objc func walletFileRead(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    switch walletFile.read() {
+    case .ok(let value):
+      resolver(["value": value])
+    case .missing:
+      resolver(["reason": "io-error"])
+    case .err(let reason):
+      resolver(["reason": reason])
+    }
+  }
+
+  @objc func walletFileWrite(_ value: String, resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    do {
+      try walletFile.write(value)
+      resolver(["ok": true])
+    } catch {
+      resolver(["reason": "io-error"])
+    }
+  }
+
+  @objc func walletFileRemove(_ resolver: RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
+    do {
+      try walletFile.remove()
+      resolver(["ok": true])
+    } catch {
+      resolver(["reason": "io-error"])
+    }
+  }
+
   @objc func handleBiometricCommand(_ payloadJson: String, resolver: @escaping RCTPromiseResolveBlock, rejecter: RCTPromiseRejectBlock) {
     guard let data = payloadJson.data(using: .utf8),
           let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -67,25 +112,25 @@ class GnhSecurityModule: NSObject {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.enrollDataUnlock(walletId: walletId, password: password) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "unlockDataUnlock":
       guard let walletId = payload["walletId"] as? String, let credentialId = payload["credentialId"] as? String else {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.unlockDataUnlock(walletId: walletId, credentialId: credentialId) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "enrollAppAccess":
       guard let passcode = payload["passcode"] as? String else {
         resolver(jsonString(["error": "failed"])); return
       }
       biometric.enrollAppAccess(passcode: passcode) { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "unlockAppAccess":
       biometric.unlockAppAccess { result in
-        resolver(self.jsonString(result))
+        self.finish(resolver, result)
       }
     case "removeCredential":
       guard let credentialId = payload["credentialId"] as? String else {
@@ -95,6 +140,16 @@ class GnhSecurityModule: NSObject {
       resolver(jsonString(["ok": true]))
     default:
       resolver(jsonString(["error": "failed"]))
+    }
+  }
+
+  // LAContext replies off the main queue. RN must see the resolve there.
+  private func finish(_ resolver: @escaping RCTPromiseResolveBlock, _ result: [String: Any]) {
+    let payload = jsonString(result)
+    if Thread.isMainThread {
+      resolver(payload)
+    } else {
+      DispatchQueue.main.async { resolver(payload) }
     }
   }
 

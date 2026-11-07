@@ -6,7 +6,6 @@ import { useEffect, useRef } from "react";
 import type { AppAccessLockReason } from "@/lib/mobile/AppAccessController";
 import {
   checkIdleDeadlineIfDue,
-  getAppAccessLockGeneration,
   handleLifecycleEvent,
   isAppAccessLocked,
   noteUserActivity,
@@ -39,8 +38,6 @@ export function useMobileAppAccess(): void {
   const onLockRef = useRef<(reason: AppAccessLockReason) => void>(() => {});
   onLockRef.current = (_reason) => {
     lockAuth();
-    const gen = getAppAccessLockGeneration();
-    window.gnhMobile?.setLockGeneration?.(gen);
   };
 
   useEffect(() => {

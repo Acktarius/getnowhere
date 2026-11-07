@@ -8,6 +8,10 @@ import {
   __setHolepunchSidecarBackend,
   type HolepunchSidecarBackend,
 } from "@/services/p2p/HolepunchSidecarClient";
+import {
+  decodeLiveFrame,
+  encodeLiveFrame,
+} from "@/services/p2p/liveFrameCodec";
 import { P2PEncryptionAdapter } from "@/services/p2p/P2PEncryptionAdapter";
 import { __clearRelationshipTopicEpochsForTests } from "@/services/p2p/relationshipTopicEpochStore";
 import { SessionBootstrapAdapter } from "@/services/p2p/sessionBootstrap";
@@ -38,10 +42,7 @@ async function sealProofWire(
     plaintext: new TextEncoder().encode(JSON.stringify(envelope)),
     aad: buildProofAad(roomId, session),
   });
-  const wire = new Uint8Array(sealed.nonce.length + sealed.ciphertext.length);
-  wire.set(sealed.nonce, 0);
-  wire.set(sealed.ciphertext, sealed.nonce.length);
-  return btoa(String.fromCharCode(...wire));
+  return encodeLiveFrame(sealed.counter, sealed.ciphertext);
 }
 
 async function buildResponderV2Connect() {
@@ -141,11 +142,12 @@ function createEarlyInitiatorProofBackend(
     },
     sendFrame(_topicRef, _roomId, payload) {
       void (async () => {
-        const raw = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+        const frame = decodeLiveFrame(payload);
+        if (!frame) return;
         const opened = await P2PEncryptionAdapter.open({
           session: initiator,
-          ciphertext: raw.slice(12),
-          nonce: raw.slice(0, 12),
+          counter: frame.counter,
+          ciphertext: frame.ciphertext,
           aad: buildProofAad(roomId, initiator),
         });
         if (!opened) return;

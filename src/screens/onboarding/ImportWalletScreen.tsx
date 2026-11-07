@@ -32,6 +32,7 @@ type Method = "qr" | "mnemonic" | "keys" | "file";
 export function ImportWalletScreen() {
   const navigate = useNavigate();
   const importWallet = useWalletStore((s) => s.importWallet);
+  const clearSeed = useWalletStore((s) => s.clearSeed);
   const initializing = useWalletStore((s) => s.initializing);
 
   const [method, setMethod] = useState<Method>("qr");
@@ -40,11 +41,9 @@ export function ImportWalletScreen() {
   // shared
   const [walletPassword, setWalletPassword] = useState("");
   const [walletPasswordConfirm, setWalletPasswordConfirm] = useState("");
+  const [backupPassword, setBackupPassword] = useState("");
 
   const passwordStrength = walletPasswordStrength(walletPassword);
-  const needsBackupPassword = method === "file";
-  const needsNewWalletPassword =
-    method === "qr" || method === "mnemonic" || method === "keys";
 
   // qr
   const [qrText, setQrText] = useState("");
@@ -225,6 +224,7 @@ export function ImportWalletScreen() {
     }
     setWalletPassword("");
     setWalletPasswordConfirm("");
+    setBackupPassword("");
   }
 
   async function handlePreviewKeys() {
@@ -328,22 +328,22 @@ export function ImportWalletScreen() {
     return {
       method: "file",
       file: fileText,
-      password: walletPassword,
+      password: backupPassword,
+      newPassword: walletPassword,
     };
   }
 
   async function handleImport() {
     setError(null);
-    if (needsBackupPassword) {
-      if (!walletPassword) {
+    if (method === "file") {
+      if (!backupPassword) {
         return setError("Enter the password used to encrypt this backup.");
       }
-    } else if (needsNewWalletPassword) {
-      const pwError = describePasswordFailure(walletPassword);
-      if (pwError) return setError(pwError);
-      if (walletPassword !== walletPasswordConfirm) {
-        return setError("Passwords do not match.");
-      }
+    }
+    const pwError = describePasswordFailure(walletPassword);
+    if (pwError) return setError(pwError);
+    if (walletPassword !== walletPasswordConfirm) {
+      return setError("Passwords do not match.");
     }
     const input = buildInput();
     if (!input) return;
@@ -352,6 +352,7 @@ export function ImportWalletScreen() {
       // Match next-wallet: land on the wallet page after import — never block on
       // an app-passcode / password-change step (passcode can be set later in Settings).
       markOnboarded();
+      clearSeed();
       navigate("/wallet");
     } catch (e) {
       setError((e as Error).message);
@@ -581,13 +582,22 @@ export function ImportWalletScreen() {
               )}
 
               {method === "file" && (
-                <SecureInput
-                  label="Backup password"
-                  value={walletPassword}
-                  onChange={setWalletPassword}
-                  placeholder="Password used to encrypt this file"
-                  revealable
-                />
+                <>
+                  <SecureInput
+                    label="Backup password"
+                    value={backupPassword}
+                    onChange={setBackupPassword}
+                    placeholder="Password used to encrypt this file"
+                    revealable
+                  />
+                  <PasswordSection
+                    password={walletPassword}
+                    setPassword={setWalletPassword}
+                    confirmPassword={walletPasswordConfirm}
+                    setConfirmPassword={setWalletPasswordConfirm}
+                    strength={passwordStrength}
+                  />
+                </>
               )}
 
               {(method === "mnemonic" || method === "keys") && (

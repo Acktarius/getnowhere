@@ -30,14 +30,22 @@ describe("useVisualViewportBottomInset", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns zero when disabled", () => {
+  it("returns a disabled frame when disabled", () => {
     const { result } = renderHook(() => useVisualViewportBottomInset(false));
-    expect(result.current).toBe(0);
+    expect(result.current).toEqual({
+      bottomInset: 0,
+      offsetTop: 0,
+      height: 0,
+    });
   });
 
-  it("tracks keyboard overlap from visual viewport", () => {
+  it("tracks keyboard overlap and visible frame from visual viewport", () => {
     const { result } = renderHook(() => useVisualViewportBottomInset(true));
-    expect(result.current).toBe(0);
+    expect(result.current).toEqual({
+      bottomInset: 0,
+      offsetTop: 0,
+      height: 800,
+    });
 
     act(() => {
       Object.defineProperty(window.visualViewport, "height", { value: 500 });
@@ -45,6 +53,26 @@ describe("useVisualViewportBottomInset", () => {
       for (const fn of listeners.resize) fn();
     });
 
-    expect(result.current).toBe(300);
+    expect(result.current).toEqual({
+      bottomInset: 300,
+      offsetTop: 0,
+      height: 500,
+    });
+  });
+
+  it("accounts for iOS visualViewport offsetTop pan", () => {
+    const { result } = renderHook(() => useVisualViewportBottomInset(true));
+
+    act(() => {
+      Object.defineProperty(window.visualViewport, "height", { value: 500 });
+      Object.defineProperty(window.visualViewport, "offsetTop", { value: 120 });
+      for (const fn of listeners.scroll) fn();
+    });
+
+    expect(result.current).toEqual({
+      bottomInset: 180,
+      offsetTop: 120,
+      height: 500,
+    });
   });
 });

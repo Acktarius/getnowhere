@@ -1,12 +1,13 @@
 {
   "name": "gnh-native-wrapper",
-  "version": "0.4.11",
+  "version": "0.5.2",
   "private": true,
   "main": "index.ts",
   "scripts": {
     "start": "node scripts/pack-bare.mjs && expo start",
     "sync-ui": "node scripts/sync-ui-dist.mjs",
     "pack-bare": "node scripts/pack-bare.mjs",
+    "test": "npm run test:bare",
     "test:bare": "node scripts/run-bare-tests.mjs",
     "generate:icons": "bash scripts/generate-brand-icons.sh && node scripts/refresh-android-launcher.mjs",
     "prepare:android-assets": "node scripts/prepare-android-assets.mjs",
@@ -47,7 +48,15 @@
   "overrides": {
     "expo": {
       ".": "~55.0.29",
-      "js-yaml": "4.3.2"
+      "js-yaml": "4.3.2",
+      "zod": "4.6.6",
+      "@expo/fingerprint": {
+        "minimatch": "11.0.1"
+      },
+      "glob": {
+        "minimatch": "3.1.5"
+      },
+      "node-forge": "1.4.3"
     },
     "react-native": {
       ".": "0.83.10",

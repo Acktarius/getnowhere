@@ -98,8 +98,9 @@ npm run mobile:install
 npm run mobile:android
 ```
 
-On-device P2P is the Bare worklet, not the WebView. Prefer scenarios 1–4
-unless you are working on the wrapper.
+On-device P2P is the Bare worklet, not the WebView. The wallet file is
+native (`android-native/GnhSecurity/`); Gradle copies it on every
+`preBuild`. Prefer scenarios 1–4 unless you are working on the wrapper.
 
 ## This documentation site
 

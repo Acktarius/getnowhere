@@ -296,7 +296,6 @@ describe("room file-import restore", () => {
           roomTtl: hs.roomTtl,
           senderAlias: "alice",
           capabilities: [],
-          bootstrapEncrypted: "",
           status: "accepted",
           createdAt: new Date().toISOString(),
         },

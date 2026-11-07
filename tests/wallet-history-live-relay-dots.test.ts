@@ -1,6 +1,6 @@
 /**
  * Groups 1–4: relay hints, navigate resolver, pagination, mid-sync publish throttle.
- * @see openspec/changes/wallet-history-live-relay-dots/tasks.md
+ * @see openspec/changes/archive/2026-09-22-wallet-history-live-relay-dots/tasks.md
  */
 
 import { messages } from "conceal-wallet-sdk";

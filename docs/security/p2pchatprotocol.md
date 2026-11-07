@@ -200,7 +200,9 @@ Alice                                         Bob
 
 **Accept is not the end of the chat lifecycle.** Steps 6–9 are mandatory.
 Alice must observe Bob’s on-chain `register` on her wallet (not only Bob’s
-Accept UI). Initiator ephemeral keys are stashed locally until that handoff.
+Accept UI). The sender’s `paymentIdFrom` must be the contact that invite was
+created for. A register from anyone else is ignored, including its wake handle.
+Initiator ephemeral keys are stashed locally until that handoff.
 
 ---
 
@@ -221,6 +223,8 @@ Conceal `tx_extra` TTL (`0x05`). Create / register / revoke always use
 | `roomTtl` | Chat-instance auto-destruct — room ends whether pending, connecting, or connected. |
 
 Clock skew allowance: ±120 seconds, then fail closed.
+Enforced at Accept (UI queue + `acceptInvite`) against local time, and at the
+initiator handoff against the register tx time (block, or first-seen mempool).
 
 ---
 
@@ -259,7 +263,8 @@ only**. Switching to XChaCha requires a new suite id, doc update, and
 version bump — never a silent swap.
 
 Post-connect: after transport peer presence, prove L1 session/invite binding
-before `connected` / composer enable. Topic + Noise alone is not trust.
+before `connected` / composer enable. A blip re-runs that proof. Topic + Noise
+alone is not trust.
 
 ### Key schedule (session derive)
 
@@ -284,14 +289,43 @@ Rules (enforced in `P2PEncryptionService`):
 
 - Nonce length: **12 bytes (96 bits)**.
 - Per direction, use a distinct key (send vs recv) so nonce spaces never share.
+- Per session: `iv = HKDF-SHA256(ikm=nonceSeed, salt="send", info="iv", L=12)`.
 - For each seal under `sendKey`:
-  - `nonce = HKDF-SHA256(nonceSeed, salt=direction, info="nonce|{counter}", 12)`
+  - `nonce = iv XOR (0x00000000 || counter as u64 big-endian)`
   - then increment persisted `sendCounter` (never rewind after reconnect).
-- Open uses the peer’s counter space via `recvKey` + received nonce bytes.
+- Two counters under one key never share a nonce. The receiver derives the same nonce from the frame counter.
+- The sender refuses to seal once `sendCounter >= Number.MAX_SAFE_INTEGER`. The counter never wraps.
 - Counters persist with the session; app restart must restore counters before seal.
 - UI and transport must not invent nonces.
 
-See also `docs/security/encryption.md` § Nonce rules / Key schedule.
+### L2 live frame layout
+
+Every live frame (proof, proof-ack, chat content):
+
+```text
+payload = base64(0x02 || counter || ciphertext+tag)
+```
+
+| Field | Bytes | Value |
+|---|---|---|
+| version | 1 | `0x02` |
+| counter | 8 | sender `sendCounter`, u64 big-endian |
+| ciphertext+tag | ≥ 16 | ChaCha20-Poly1305 output |
+
+- The nonce is not on the wire.
+- A frame whose first byte is not `0x02`, or shorter than 25 bytes (1 + 8 + 16), is dropped.
+- Hard cut: the older `nonce(12) || ciphertext` layout is rejected. Both devices must run the same build.
+- Existing sessions keep their keys, counters and `nonceSeed` across the upgrade, so no re-invite is needed and a room stuck on the old 64-window resyncs on the first new frame. Desktop and mobile builds must ship together.
+- AAD: the 9-byte header (`0x02 || counter`) is appended to the proof or chat AAD for seal and open.
+
+Receive rule (`recvKey`):
+
+- Accept iff the counter is a safe integer (≤ 2^53−1), `counter >= recvCounter`, and the tag verifies. Then `recvCounter = counter + 1`.
+- No upper bound on the forward gap. Only the authenticated peer can produce a valid frame; a cap would recreate the stuck-window failure.
+- A lower counter (replay or stale reordered frame), an unsafe integer, or a tag failure drops the frame and leaves `recvCounter` unchanged.
+- Inbound frames for a room are handled one at a time, opened against the current session. The counter update is committed before the next frame is opened.
+
+See also `docs/security/encryption.md` § Nonce rules / Key schedule / Local storage rules.
 
 ---
 
@@ -445,9 +479,13 @@ accepted rooms.
 **Leave forever (revoke):** either peer may end a room before `roomTtl` by
 sending `chat.revoke` (`room_revoked`) to the other over L1. Wire fields:
 `inviteId`, optional `replayId`, `reasonCode`, and **`roomId`** (required for
-leave-forever). Receiver rule: **`{contact, revoke, roomId}` → destroy that
-room** (catalog + session + UI), and record a durable revoke tombstone so a
-later scan of the original on-chain `create` cannot resurrect it. Sender
+leave-forever). `roomId` is a capability of that room's counterpart only.
+Receiver rule: the sender's `paymentIdFrom` must match the contact that owns
+that `roomId` (or `inviteId`, for `user_declined`). Otherwise ignore the
+revoke — do not destroy and do not apply its topic epoch. Then
+**`{contact, revoke, roomId}` → destroy that room** (catalog + session + UI),
+and record a durable revoke tombstone so a later scan of the original on-chain
+`create` cannot resurrect it. Sender
 **destroys locally immediately** and fires the L1 revoke in the background —
 do **not** block leave on broadcast/confirm. The room **MUST** disappear from
 Chats at once. Decline of a pending invite still uses `user_declined`
@@ -473,6 +511,10 @@ Policy (see `src/services/p2p/holepunchPolicy.ts`):
 - Exponential backoff with jitter: 1s, 2s, 4s… **cap 60s**
 - Retry until `roomTtl` or user cancel; surface `connectAttempts`
 - Retryable: `timeout`, `unreachable`, `unknown`; not retryable: `crypto_mismatch` without rekey
+- `crypto_mismatch` only when the proof window ends with an in-window AEAD failure and
+  no valid proof/ack. A local proof send/persist failure is `unreachable`; stale or
+  malformed frames are dropped. A later openable peer frame relabels a
+  `crypto_mismatch` room to `timeout` — see `docs/security/encryption.md` (Post-connect verification)
 
 `connect_failed` enables **relay** send (grey bubbles), not live. Live resumes
 only when connect reaches `connected`. `pending` never enables send.
@@ -481,8 +523,11 @@ only when connect reaches `connected`. `pending` never enables send.
 
 ## 11. Tombstones
 
-On decline/expiry/destroy: wipe bootstrap ciphertext and ephemeral/session secrets;
-retain minimal `{ inviteId, replayId, roomId, contactId, status, TTLs, tombstonedAt }`
+On decline/expiry/destroy: wipe ephemeral/session secrets and any legacy
+`bootstrapEncrypted` key still on an old invite row. Local invite records store
+`roomId`, `inviteId`, and `replayId` in the clear. L1 confidentiality is Conceal
+MESSAGE on the chain. Retain minimal
+`{ inviteId, replayId, roomId, contactId, status, TTLs, tombstonedAt }`
 for replay/idempotency. GC after `max(inviteExpiry, roomTtl) + 7d` (keep replay ids).
 
 ---
@@ -507,7 +552,7 @@ Persist separately (do not collapse these):
   restore chat rooms (chain scan cannot recover both sides of the handshake).
   Accepted replays stay `awaitingChainSync` until near chain tip (revoke scan).
   Expired invite without accept → silent skip + revoked `roomId` tombstone.
-  @see `openspec/changes/repair-room-restoration/design.md`
+  @see `openspec/changes/archive/2026-09-22-repair-room-restoration/design.md`
 - Metadata export (`Settings → Backup`) includes contacts in the downloaded
   `.json` (no seed).
 - Raw session keys: memory / secure storage path; never in logs.
@@ -531,12 +576,25 @@ Wiring: `src/services/index.ts` imports **real** adapters; mocks commented out.
 ## 14. Content envelopes
 
 `ChatContentEnvelopeV1`: `schemaVersion`, `messageId`, `clientId`, `sentAt`,
-`kind: text|reaction|edit|delete`, optional `text` / `targetMessageId` / `reaction`.
+`kind: text|reaction|edit|delete`, optional `text` / `targetMessageId` /
+`reaction` / `replyToMessageId` / `replyPreview`.
 
 - **Live path:** L1 session seal → Holepunch bridge frame (`channel: "live"`).
 - **L1′ path:** plain `{contact,e,roomId,ts,text}` (`channel: "relay"`).
   Conceal MESSAGE encryption covers the chain; no second session-key seal.
-- Reaction / edit / delete remain **live-only**. L1′ is text only (§16).
+- Reaction / edit / delete / reply metadata (`replyToMessageId`,
+  `replyPreview`) remain **live-only**. L1′ is text only and has no reply
+  metadata (§16).
+- A live frame is dropped unless it parses: `schemaVersion` 1, known `kind`,
+  string ids ≤128, `sentAt` a date, `text` ≤8000 (`proof` text ≤128),
+  `replyPreview` ≤100, `reaction` ≤16. Edit and delete apply only to a row
+  with the same direction. An inbound id does not replace a stored row.
+- After an L2 reconnect with a successful post-connect proof, the sender SHALL
+  re-seal and resend its most recent live envelopes (best effort, no ACK; fresh
+  counters; at most 3 per room, first sent within the last 5 min, oldest first).
+  Receivers MUST treat `messageId` as idempotent and drop a live envelope
+  whose id they already hold as an inbound row. A replayed edit or delete is
+  not a row; it re-applies to its target idempotently.
 
 ---
 
@@ -568,7 +626,9 @@ Module `contact`, action `execute` (`e`):
 {contact,e,<roomId>,<sentAtUnix>,<text>}
 ```
 
-App-layer text (no `,` `{` `}` — SDK smart-message delimiter rules). Conceal
+App-layer **L1′ only**: strip `{` `}`; map `,` → `;` on the wire (restore on
+parse) so SDK smart-message commas stay structural. Live L2 text is unchanged.
+Conceal
 MESSAGE already encrypts the body with ChaCha + DH to sender/receiver view keys
 — chain observers without the view key cannot read it. No second L1 session seal.
 

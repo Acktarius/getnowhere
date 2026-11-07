@@ -36,10 +36,16 @@ Stay reachable for what matters; spend the rest of your time offline.
 
 The lite Conceal (CCX) wallet is how you exist here: create or import, sync,
 send, receive, and read history. The app does not offer deposit or withdrawal
-*creation*, even if related transactions can show up after sync.
+*creation*, even if related transactions can show up after sync. After import,
+you can change the wallet’s **creation height** in Settings → Sync (Blockchain
+rescan) so a later Resync starts from the right block instead of genesis.
 
-Your seed stays in memory for the session. Browser development uses web
-storage; a native secure adapter is the intended mobile direction.
+Your seed stays in memory for the session. On the **phone**, the wallet
+file lives in an app-private encrypted store, not in the in-app browser.
+Desktop and the website still use their usual on-device store. There is
+no cloud backup — keep a **Download wallet .json** if you want a file
+you control. See [privacy](/product/privacy-model) and
+[wallet backup and import](/product/wallet-backup-and-import).
 
 ## What this is not
 

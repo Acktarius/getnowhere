@@ -9,12 +9,13 @@ export function buildMobileBridgeInjection(
   bridgeToken: string,
   platform: "ios" | "android" = "ios",
   pendingWalletRestore: string | null = null,
+  initialLockGeneration = 0,
 ): string {
   const tokenJson = JSON.stringify(bridgeToken);
   const platformJson = JSON.stringify(platform);
   const restoreJson = JSON.stringify(pendingWalletRestore);
   const restoreReady = pendingWalletRestore ? "true" : "false";
-  const securityJs = securityBridgeInjectionJs();
+  const securityJs = securityBridgeInjectionJs(initialLockGeneration);
   return `(function(){
   if (window.gnhMobile) return;
   var token = ${tokenJson};

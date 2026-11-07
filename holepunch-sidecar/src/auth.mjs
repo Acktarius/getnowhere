@@ -1,6 +1,6 @@
 /**
  * Loopback host check and constant-time token compare for bridge auth.
- * @see openspec/changes/bridge-auth/design.md
+ * @see openspec/changes/archive/2026-08-02-bridge-auth/design.md
  */
 
 import { timingSafeEqual } from "node:crypto";

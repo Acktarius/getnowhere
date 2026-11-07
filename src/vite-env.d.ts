@@ -4,8 +4,6 @@ interface ImportMetaEnv {
   readonly VITE_HOLEPUNCH_WS_URL?: string;
   /** Base URL of the peer-wake poke gateway (e.g. https://poke.example.com). @see docs/features/peer-wake-notification.md */
   readonly VITE_POKE_GATEWAY_URL?: string;
-  /** Optional ntfy read token for gnh-* topics. Leave empty if topics are publicly readable. */
-  readonly VITE_NTFY_READ_TOKEN?: string;
 }
 
 interface ImportMeta {
@@ -42,6 +40,12 @@ interface GnhDesktopBridge {
    * @see docs/architecture/electron-desktop.md
    */
   ufwState?: "active" | "inactive" | "unknown";
+  /** Electron main: OS keystore, or wallet when Linux has no secret service. */
+  loadRoomSessions?(): Promise<
+    { mode: "os"; json: string | null } | { mode: "wallet" }
+  >;
+  saveRoomSessions?(json: string): Promise<{ mode: "os" } | { mode: "wallet" }>;
+  clearRoomSessions?(): Promise<void>;
 }
 
 /** Mobile Expo WebView bridge (Bare worklet behind postMessage). Token is RN-only. */
@@ -103,6 +107,12 @@ interface GnhMobileBridge {
     get(key: string): Promise<Record<string, unknown>>;
     set(key: string, value: string): Promise<Record<string, unknown>>;
     remove(key: string): Promise<Record<string, unknown>>;
+  };
+  walletFile?: {
+    exists(): Promise<{ exists?: boolean; reason?: string }>;
+    read(): Promise<{ value?: string; reason?: string }>;
+    write(value: string): Promise<{ ok?: boolean; reason?: string }>;
+    remove(): Promise<{ ok?: boolean; reason?: string }>;
   };
   /** Native sensitive clipboard write. Injected by the mobile host. */
   copySensitive?(value: string): Promise<void>;

@@ -1,0 +1,77 @@
+---
+title: Wallet backup and import
+description: Envelope 2→3, backup vs local passwords, and migrating from Conceal Next Wallet.
+---
+
+Get NowHere stores the open wallet as an encrypted JSON **envelope**. New
+saves and downloads use **Envelope 3** (Argon2id). Older **Envelope 1 / 2**
+backups (including Conceal Next Wallet exports) still open for import.
+
+Envelope version and password strength are separate. Envelope 3 is the wrap
+format. Strength rules apply when you **choose a new local password**.
+
+## Password rules (new local passwords)
+
+At least **13 characters**, with uppercase, lowercase, a digit, and a symbol
+(max 1024 UTF-8 bytes). Confirmation is required.
+
+## Import
+
+| Method | What you enter |
+| --- | --- |
+| Create / seed / keys / QR | A new local password that meets the rules |
+| File `.json` | **Backup password** (opens the file — weak is OK if it decrypts) **plus** a **new local password** that meets the rules |
+
+File import always collects both credentials before the wallet is written on
+this device. You are not asked “only if you want to change” after import —
+the new local password is required every time. You may type the same string
+twice if it already meets the rules; if the backup password is weak, you must
+pick a stronger local one.
+
+The selected source file is **never modified**. After import, local storage is
+a freshly salted Envelope 3 under the new local password.
+
+### Coming from Conceal Next Wallet
+
+1. Export or keep your next-wallet `.json` (often Envelope 2: top-level
+   `data` + `nonce`, no `envelope: 3`).
+2. In Get NowHere: Import → File.
+3. Enter the old backup password, then a compliant new local password.
+4. Land in the wallet; sync continues in the background.
+
+Chat rooms restore from **file** backup only. Seed, keys, and QR restore the
+wallet (and txs after sync) but do not rebuild rooms.
+
+## Backup download
+
+Settings → Backup → **Download wallet .json** asks for the **current** wallet
+password (the one that unlocks the open wallet). That password may still be
+weak if you never changed it after an older install. The file written is
+always Envelope 3.
+
+Encrypting uses Argon2id and can take several seconds — the download button
+shows **Encrypting…** until the save finishes.
+
+On Android, pick a folder (often under Downloads). On iOS, use the share
+sheet. Keep that file somewhere you control; there is no cloud backup.
+
+## Verify Envelope 3 (optional)
+
+A current Get NowHere download looks like:
+
+```json
+{
+  "envelope": 3,
+  "kdf": { "alg": "argon2id", "v": 19, "m": 32768, "t": 3, "p": 1, "salt": "…" },
+  "nonce": "…",
+  "data": [ … ]
+}
+```
+
+Envelope 2 typically has only `data` and `nonce` (no `envelope` / `kdf`).
+
+## Related
+
+- In-repo engineering notes: `docs/features/lite-wallet.md`
+- [Getting started](/getting-started) — first launch passwords
+- [Privacy](/product/privacy-model) — where the wallet file lives

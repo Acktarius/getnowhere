@@ -31,7 +31,9 @@ sync at ~2.5s while catching up and ~5s near tip (`useWalletLiveSync`). Each tic
 awaits sync then pushes **balance + history** into Zustand together (keep-alive
 wallet tab never remounts, so the store must stay current without Resync). Invite fetch
 uses a **mempool-first** path (`pollMempoolRuntime`) so L1 creates/registers do not wait
-on deep tip catch-up. Contact detail also refreshes invites every ~3s while open.
+on deep tip catch-up or on the native wallet-file write. Contact detail caps the first
+check (~8s) so a stuck persist cannot hide Create room, then polls every ~3s only while
+the relationship is not eligible or an invite is still outstanding.
 0-conf received copies are kept for a **2h grace** after leaving the mempool so the
 mempool→block gap cannot erase chat creates before Accept appears.
 
@@ -41,8 +43,38 @@ Supported methods (same as next-wallet):
 
 | Method | Password |
 |---|---|
-| QR / file backup | Existing backup password |
-| Seed / keys | New wallet encryption password |
+| QR / seed / keys | New wallet encryption password |
+| File backup | Existing backup password + confirmed new local password |
+
+Encrypted files are size-gated and parsed by `conceal-wallet-sdk`
+`parseEncryptedWalletJson`. Envelope 1/2/3 files remain readable; imported
+wallets and all new saves/downloads use Argon2id Envelope 3. The source backup
+file is never modified.
+
+### Coming from Conceal Next Wallet (Envelope 2)
+
+Typical beta path: an env2 `.json` whose backup password does **not** meet the
+new local policy (13+ characters with upper, lower, digit, and symbol).
+
+| Credential | Rule |
+|---|---|
+| **Backup password** (file only) | Opens the selected Envelope 1/2/3 file. Weak passwords are OK if they decrypt. |
+| **New local password** (always) | Required on every file import (and on create / QR / seed / keys). Must meet the policy above. Not optional “only if you want to change.” |
+| **Settings → Backup → Download** | Re-wraps under the **current** wallet password (weak OK if that is still the unlock password). Output is always Envelope 3. Does not rewrite the source file. |
+| **Settings → Wallet password** | Place to raise strength later; new password must meet the policy. |
+
+Envelope version and password strength are independent: Argon2id Envelope 3 is
+the wrap format; the 13+ policy gates **new** local passwords only. After a
+successful file import, the next Download emits a freshly salted Envelope 3
+under the new local password; the original next-wallet file stays Envelope 2
+on disk.
+
+Download encryption can take several seconds (Argon2id write profile); the
+download button shows **Encrypting…** until the file is written.
+
+New local wallet passwords require at least 13 characters with uppercase,
+lowercase, digit, and symbol characters, plus confirmation. They are capped at
+1024 UTF-8 bytes to match the Envelope 3 codec.
 
 After a successful import the app navigates to **`/wallet`** (not a passcode / password-change
 screen). App unlock passcode can be set later under Settings → Passcode.
@@ -59,10 +91,15 @@ chat rooms. Settings **Resync** re-scans txs for balance integrity only.
 
 - **Sync speed** — DOOM-labeled profiles; persisted as `options.readSpeed`.
 - **Read miner transactions** — persisted as `options.checkMinerTx`.
+- **Blockchain rescan** — Settings → Sync: creation height is editable (click the
+  value); clamped to `[0, tip)` and stored on the wallet for later Resync /
+  Delete and resync. Those buttons still only rewind or wipe+rewind from the
+  stored height — they do not change it.
 - **Wallet password** — re-encrypts the local wallet blob (`/settings/wallet-password`).
   Distinct from the app unlock passcode.
 - **Backup** — `/settings/backup`: reveal seed & keys, show export QR, download
-  encrypted wallet `.json`. On iOS (native wrapper), download opens the system
+  encrypted wallet `.json` (Argon2id Envelope 3; encrypting may take several
+  seconds). On iOS (native wrapper), download opens the system
   share sheet (Save to Files / share); Android uses the folder picker. Export QR
   uses the same password gate as reveal; payload is
   `conceal.<address>?spend_key=…?view_key=…?height=<creationHeight>` so import

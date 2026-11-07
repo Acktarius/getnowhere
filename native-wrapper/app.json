@@ -2,7 +2,7 @@
   "expo": {
     "name": "Get NowHere",
     "slug": "get-nowhere-wrapper",
-    "version": "0.4.11",
+    "version": "0.5.2",
     "newArchEnabled": true,
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -42,7 +42,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "allowBackup": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -52,6 +53,7 @@
       "./plugins/withGnhSecurity.js",
       "./plugins/withGnhBackgroundSync.js",
       "./plugins/withGnhNotifications.js",
+      "./plugins/withGnhNtfyWake.js",
       [
         "expo-notifications",
         {

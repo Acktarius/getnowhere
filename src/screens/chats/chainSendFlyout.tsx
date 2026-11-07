@@ -120,6 +120,7 @@ export function ChainSendFlyout({
               aria-label={flyoutAriaLabel(minutes)}
               disabled={disabled}
               onClick={() => pick(minutes)}
+              onContextMenu={(e) => e.preventDefault()}
               style={{
                 width: "100%",
                 height: 48,
@@ -151,6 +152,7 @@ export function ChainSendFlyout({
         className="btn btn--primary"
         disabled={disabled}
         onClick={onPrimaryClick}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerDown={onPointerDown}
         onPointerUp={clearHold}
         onPointerLeave={clearHold}

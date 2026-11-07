@@ -126,7 +126,11 @@ export type ChatMessage = {
   direction: "out" | "in";
   text: string;
   createdAt: string;
-  status: "queued" | "sending" | "delivered" | "failed";
+  /**
+   * Outbound: queued → sending → sent | failed. `delivered` is inbound-only until a peer ACK.
+   * @see docs/features/chat-relay.md
+   */
+  status: "queued" | "sending" | "sent" | "delivered" | "failed";
   /** `live` accent bubbles; `relay` grey (SMS-class). Default live for legacy rows. */
   channel?: MessageChannel;
   /** Mempool TTL unix seconds when this L1′ row is not mined. */
@@ -138,6 +142,10 @@ export type ChatMessage = {
   targetMessageId?: string;
   /** Reaction emoji when kind is reaction. */
   reaction?: string;
+  /** Parent message id for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyToMessageId?: string;
+  /** Frozen truncated quote for live text replies. @see docs/security/p2pchatprotocol.md */
+  replyPreview?: string;
   editedAt?: string;
   deletedAt?: string;
 };
@@ -215,8 +223,6 @@ export type SmartMessageInvite = {
   capabilities: string[];
   /** Display topic selected at create (mirrored from handshake.roomTopic). */
   roomTopic?: import("@/services/protocol/roomTopics").RoomTopicId;
-  /** Wiped on tombstone. */
-  bootstrapEncrypted?: string;
   status:
     | "draft"
     | "sent"
@@ -229,6 +235,8 @@ export type SmartMessageInvite = {
   createdAt: string;
   /** On-chain delivery tx hash when broadcast via buildMessageTransaction. */
   txHash?: string;
+  /** Initiator poke handle from inbound create `ph` (catalog may be absent). */
+  initiatorPokeHandle?: string;
   /**
    * True when first seen in mempool (blockHeight 0). Known paymentId contacts may
    * act on chat.create immediately; still treat new relationships cautiously.

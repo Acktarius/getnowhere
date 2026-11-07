@@ -95,8 +95,8 @@ describe("incomingFrameAadCandidates", () => {
     )) {
       opened = await P2PEncryptionAdapter.open({
         session: responder,
+        counter: sealed.counter,
         ciphertext: sealed.ciphertext,
-        nonce: sealed.nonce,
         aad,
       });
       if (opened) break;
@@ -128,8 +128,8 @@ describe("incomingFrameAadCandidates", () => {
     )) {
       opened = await P2PEncryptionAdapter.open({
         session: responder,
+        counter: sealed.counter,
         ciphertext: sealed.ciphertext,
-        nonce: sealed.nonce,
         aad,
       });
       if (opened) break;
@@ -154,8 +154,8 @@ describe("incomingFrameAadCandidates", () => {
     )) {
       opened = await P2PEncryptionAdapter.open({
         session: responder,
+        counter: sealed.counter,
         ciphertext: sealed.ciphertext,
-        nonce: sealed.nonce,
         aad,
       });
       if (opened) break;

@@ -1,0 +1,55 @@
+# Maintainer: Acktarius
+# Pacman package of the Electron Forge linux-x64 tree. The release workflow
+# fills pkgver and sha256sums. @see docs/builds/github-pages-and-desktop.md
+
+pkgname=getnowhere
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='Get NowHere desktop shell (Electron + local Hyperswarm sidecar)'
+arch=('x86_64')
+url='https://github.com/acktarius/getnowhere'
+license=('BSD-3-Clause')
+depends=(
+  alsa-lib
+  at-spi2-core
+  dbus
+  expat
+  glib2
+  glibc
+  gtk3
+  hicolor-icon-theme
+  libdrm
+  libgcc
+  libnotify
+  libstdc++
+  libxcb
+  libxcrypt-compat
+  mesa
+  nss
+  systemd-libs
+  xdg-utils
+)
+options=('!strip' '!debug' '!lto')
+source=(
+  "Get_NowHere-v${pkgver}-linux-x64.zip"
+  getnowhere.desktop
+  getnowhere.png
+  LICENSE
+)
+sha256sums=('ZIP_SHA256' 'DESKTOP_SHA256' 'ICON_SHA256' 'LICENSE_SHA256')
+
+package() {
+  local app=GetNowHere-linux-x64
+  [[ -x $app/getnowhere ]] || {
+    echo "missing $app/getnowhere in unpacked zip"
+    exit 1
+  }
+  # Prebuilt Electron runtime stays intact under /opt. @see https://wiki.archlinux.org/title/Electron_package_guidelines
+  install -dm755 "$pkgdir/opt/getnowhere"
+  cp -a "$app/." "$pkgdir/opt/getnowhere/"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"
+  install -Dm644 getnowhere.desktop "$pkgdir/usr/share/applications/getnowhere.desktop"
+  install -Dm644 getnowhere.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

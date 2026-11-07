@@ -183,6 +183,21 @@ describe("mobile app-access idle integration", () => {
       expect(screen.getByText("App lock")).toBeInTheDocument();
     });
     expect(screen.queryByTestId("main-app")).toBeNull();
+    // Bridge lockGeneration is native-owned; a JS lock must not overwrite it.
+    expect(window.gnhMobile?.setLockGeneration).not.toHaveBeenCalled();
+  });
+
+  it("completeAppAccessUnlock unlocks without touching bridge lockGeneration", async () => {
+    const { lockAppAccess, isAppAccessLocked } = await import(
+      "@/lib/mobile/AppAccessController"
+    );
+    const { completeAppAccessUnlock } = await import(
+      "@/lib/mobile/completeAppAccessUnlock"
+    );
+    lockAppAccess("manual");
+    completeAppAccessUnlock();
+    expect(isAppAccessLocked()).toBe(false);
+    expect(window.gnhMobile?.setLockGeneration).not.toHaveBeenCalled();
   });
 
   it("resets idle timer on user activity", async () => {

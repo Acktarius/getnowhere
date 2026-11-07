@@ -15,7 +15,7 @@ const SECRETS = {
 const revealSecrets = vi.fn(async (_password: string) => SECRETS);
 const downloadWalletBackup = vi.fn(async (_password: string) => ({
   filename: "wallet.json",
-  payload: { encrypted: true },
+  json: '{"encrypted":true}',
 }));
 const confirmBackup = vi.fn(async () => undefined);
 
@@ -77,7 +77,7 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     downloadWalletBackup.mockReset();
     downloadWalletBackup.mockResolvedValue({
       filename: "wallet.json",
-      payload: { encrypted: true },
+      json: '{"encrypted":true}',
     });
     mockedDownloadJson.mockReset();
     mockedDownloadJson.mockResolvedValue("downloaded");
@@ -160,12 +160,41 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     );
 
     expect(downloadWalletBackup).toHaveBeenCalledWith("correct-password");
-    expect(mockedDownloadJson).toHaveBeenCalledWith("wallet.json", {
-      encrypted: true,
-    });
+    expect(mockedDownloadJson).toHaveBeenCalledWith(
+      "wallet.json",
+      '{"encrypted":true}',
+    );
     expect(
       await screen.findByText(/Downloaded wallet\.json/i),
     ).toBeInTheDocument();
+  });
+
+  it("shows encrypting spinner while download is in progress", async () => {
+    let finishDownload!: (value: { filename: string; json: string }) => void;
+    downloadWalletBackup.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDownload = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
+
+    expect(screen.getByRole("button", { name: /Encrypting…/i })).toBeDisabled();
+
+    finishDownload({ filename: "wallet.json", json: '{"encrypted":true}' });
+
+    expect(
+      await screen.findByText(/Downloaded wallet\.json/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    ).toBeEnabled();
   });
 
   it("shows mobile save message when native file save is used", async () => {

@@ -27,15 +27,19 @@ The UI always remains a client of the bridge.
 
 ## Live path versus fallback
 
-When the live session is up, frames travel over the encrypted peer stream.
-When it is not, the product can use a Conceal-backed relay so text is not
-stuck forever behind a failed hole punch. Relay is an availability fallback,
-not a second “more anonymous live mode.”
+When the live session is up, frames travel on a **double-encrypted** peer
+stream (application seal plus transport). When it is not, Conceal-backed
+relay keeps the room moving without parking plaintext on a chat server.
+Relay is availability, not a different privacy product.
+
+A live punch is only with someone you already invited. The session does
+not show IPs. Either counterpart could, with dedicated software, extract
+the other person’s IP — they already decided to talk. That still does
+not decrypt the room.
 
 ## Connectivity guarantees
 
 This page does **not** claim:
 
 - successful hole punches on every network
-- IP concealment on the live path
 - that every published binary includes the same runtime

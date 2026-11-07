@@ -20,6 +20,27 @@ type LedgerState = {
   entries: Record<string, NotificationLedgerEntry>;
 };
 
+/** Cap so a long-lived install's ledger cannot grow without bound. @see SEC-2026-027 */
+const MAX_ENTRIES = 500;
+
+/** Evict oldest READ entries first when over cap; never drop unread state/badge. */
+function pruneToCap(
+  entries: Record<string, NotificationLedgerEntry>,
+): Record<string, NotificationLedgerEntry> {
+  const all = Object.values(entries);
+  const over = all.length - MAX_ENTRIES;
+  if (over <= 0) return entries;
+  const readOldestFirst = all
+    .filter((e) => e.read)
+    .sort((a, b) => a.occurredAtMs - b.occurredAtMs)
+    .slice(0, over);
+  if (readOldestFirst.length === 0) return entries;
+  const dropIds = new Set(readOldestFirst.map((e) => e.eventId));
+  const next: Record<string, NotificationLedgerEntry> = {};
+  for (const e of all) if (!dropIds.has(e.eventId)) next[e.eventId] = e;
+  return next;
+}
+
 function loadState(): LedgerState {
   try {
     const raw = getStorage().getItem(STORAGE_KEY);
@@ -58,6 +79,7 @@ export function recordNotificationLedgerEntry(
     ...entry,
     read: entry.read ?? false,
   };
+  state.entries = pruneToCap(state.entries);
   persistState(state);
   return true;
 }

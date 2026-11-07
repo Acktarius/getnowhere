@@ -1,13 +1,34 @@
 import { create } from "zustand";
 import { walletService } from "@/services";
 import {
+  clearSeedPhraseMemory,
   getInternalWalletNodeUrl,
   setInternalWalletNetwork,
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
+import { wipeWalletScopedLocalData } from "@/services/contacts/contactsPersistence";
+import { clearRecentLiveSends } from "@/services/p2p/HolepunchChatTransport";
+import {
+  hydrateRoomSessions,
+  lockRoomSessionMemory,
+} from "@/services/p2p/roomSessionStore";
 import { useContactsStore } from "@/state/contactsStore";
 import type { Transaction, WalletState } from "@/types/models";
 import type { ImportWalletInput } from "@/types/services";
+
+/** Reset contacts + chat in RAM so no stale data leaks into the new wallet session. */
+function resetContactsAndChatRam(): void {
+  useContactsStore.setState({ contacts: [], invites: [], hydrated: false });
+  // Lazy import avoids a chatStore → walletStore circular dep.
+  void import("@/state/chatStore").then((m) => {
+    m.useChatStore.setState({
+      rooms: [],
+      messagesByRoom: {},
+      activeRoomId: null,
+      loadingRooms: false,
+    });
+  });
+}
 
 type WalletStore = WalletState & {
   seedPhrase: string | null; // held only in-memory, never persisted to disk
@@ -20,8 +41,7 @@ type WalletStore = WalletState & {
   pendingFileImportRoomRestore: boolean;
   /** Returns true once after file import, then clears the flag. */
   takeFileImportRoomRestore: () => boolean;
-  createWallet: () => Promise<{ seedPhrase: string }>;
-  restoreWallet: (seed: string) => Promise<void>;
+  createWallet: (password: string) => Promise<{ seedPhrase: string }>;
   importWallet: (input: ImportWalletInput) => Promise<void>;
   /** Open a wallet already stored on this device (encryption password). */
   openStoredWallet: (password: string) => Promise<void>;
@@ -72,10 +92,10 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     return pending;
   },
 
-  async createWallet() {
+  async createWallet(password) {
     set({ initializing: true, error: null });
     try {
-      const res = await walletService.createWallet();
+      const res = await walletService.createWallet(password);
       const addr = await walletService.getAddress();
       set({
         initialized: true,
@@ -89,32 +109,12 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       });
       await get().refreshBalance();
       await get().refreshTransactions();
+      // Erase any previous wallet's contacts/rooms before loading the new identity.
+      wipeWalletScopedLocalData();
+      resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       return { seedPhrase: res.seedPhrase };
-    } catch (e) {
-      set({ initializing: false, error: (e as Error).message });
-      throw e;
-    }
-  },
-
-  async restoreWallet(seed) {
-    set({ initializing: true, error: null });
-    try {
-      const res = await walletService.restoreWallet({ seedPhrase: seed });
-      const addr = await walletService.getAddress();
-      set({
-        initialized: true,
-        locked: false,
-        address: addr,
-        seedRef: res.seedRef,
-        seedPhrase: res.seedPhrase,
-        syncStatus: "syncing",
-        syncProgress: 0.05,
-        initializing: false,
-      });
-      await useContactsStore.getState().hydrate();
-      // Tip catch-up in background — UI (L2 chat) must not wait.
-      void get().resync();
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
       throw e;
@@ -139,7 +139,12 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       if (input.method === "file") {
         set({ pendingFileImportRoomRestore: true });
       }
+      // Erase any previous wallet's contacts/rooms. File import re-populates
+      // from the wallet blob; seed/key/QR import starts with an empty addressBook.
+      wipeWalletScopedLocalData();
+      resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       void get().resync();
       if (input.method === "file") {
         void useContactsStore.getState().refreshInvites();
@@ -170,6 +175,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         initializing: false,
       });
       await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
       const { hydrateChatRoomsFromWallet } = await import(
         "@/services/p2p/HolepunchChatTransport"
       );
@@ -188,6 +194,8 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   async lock() {
     await walletService.lockWallet();
+    lockRoomSessionMemory();
+    clearRecentLiveSends();
     set({ locked: true });
     void import("@/lib/mobile/walletSessionBridge").then((m) => {
       m.clearNativeWalletSession();
@@ -197,6 +205,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     await walletService.unlockWallet("");
     set({ locked: false });
     await useContactsStore.getState().hydrate();
+    await hydrateRoomSessions();
     const { hydrateChatRoomsFromWallet } = await import(
       "@/services/p2p/HolepunchChatTransport"
     );
@@ -333,6 +342,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
   },
 
   clearSeed() {
+    clearSeedPhraseMemory();
     set({ seedPhrase: null });
   },
 }));

@@ -1,0 +1,33 @@
+{
+  "change": "chat-message-reply",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Reply action gating (online + inbound live + not deleted)",
+      "library": "src/components/MessageBubble.tsx",
+      "runtimeOwner": "ChatRoomScreen opens MessageBubble with onReply when holepunchLive",
+      "writes": "N/A (UI affordance only)",
+      "reads": "room.lifecycleStatus; message.channel/direction/deletedAt",
+      "uiConsumer": "Chat room message action menu",
+      "evidence": "tests for Reply visibility; forge e2e run; manual smoke in tasks 4.2"
+    },
+    {
+      "capability": "Pending reply composer + cancel on outside input",
+      "library": "src/screens/chats/ChatRoomScreen.tsx",
+      "runtimeOwner": "ChatRoomScreen composer bar pending-reply state",
+      "writes": "ephemeral pendingReply in screen state",
+      "reads": "selected parent message id + truncated preview",
+      "uiConsumer": "Composer preview strip above input",
+      "evidence": "UI/store tests; forge e2e run; manual smoke"
+    },
+    {
+      "capability": "Live text envelope reply fields + bubble quote",
+      "library": "src/types/protocol.ts; src/types/models.ts; src/services/p2p/HolepunchChatTransport.ts; src/state/chatStore.ts",
+      "runtimeOwner": "HolepunchChatTransport.sendMessage live path; chatStore.sendMessage",
+      "writes": "ChatMessage.replyToMessageId/replyPreview; ChatContentEnvelopeV1 same fields",
+      "reads": "pending reply snapshot at send",
+      "uiConsumer": "MessageBubble quote rendering",
+      "evidence": "tests/p2p or chat reply mapping tests; forge e2e run"
+    }
+  ]
+}

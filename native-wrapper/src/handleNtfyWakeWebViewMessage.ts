@@ -7,7 +7,6 @@ type NtfyWakeMessage = {
   action?: string;
   roomId?: string;
   topic?: string;
-  token?: string;
 };
 
 export function parseNtfyWakeMessage(raw: string): NtfyWakeMessage | null {
@@ -35,7 +34,8 @@ export function handleNtfyWakeWebViewMessage(raw: string): boolean {
     | undefined;
   if (!module) return false;
   if (msg.action === "subscribe" && msg.topic) {
-    module.subscribe(msg.roomId ?? "", msg.topic, msg.token ?? "");
+    // Empty token: the module omits Authorization, so the topic name is the capability.
+    module.subscribe(msg.roomId ?? "", msg.topic, "");
     return true;
   }
   if (msg.action === "unsubscribeRoom") {

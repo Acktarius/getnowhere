@@ -1,6 +1,6 @@
 /**
  * Replay chat rooms from wallet file backup messages (sent + received).
- * @see openspec/changes/repair-room-restoration/design.md
+ * @see openspec/changes/archive/2026-09-22-repair-room-restoration/design.md
  */
 import { messages } from "conceal-wallet-sdk";
 import {
@@ -125,7 +125,6 @@ async function inviteFromCreateRecord(
     senderAlias: parsed.payload.senderAlias,
     capabilities: parsed.payload.capabilities,
     roomTopic: hs.roomTopic,
-    bootstrapEncrypted: btoa(`${hs.roomId}:${hs.replayId}:${contact.id}`),
     status,
     createdAt: record.timestamp,
     txHash: record.id,

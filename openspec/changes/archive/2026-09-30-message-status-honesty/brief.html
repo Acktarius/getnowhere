@@ -1,0 +1,80 @@
+<!-- forge-brief-specs-hash:5ca7857898474e0f -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brief — honest message check marks + resend after reconnect</title>
+<style>
+  body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; color: #1c1c1c; background: #fff; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.5rem; } h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+  table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  code { background: #f3f3f3; padding: 0 .25rem; border-radius: 3px; }
+  .muted { color: #666; }
+</style>
+</head>
+<body>
+<h1>Honest message check marks + resend after reconnect</h1>
+
+<h2>TL;DR</h2>
+<p>Today every message you send on a live chat shows a double check mark instantly, even when the other phone never got it. After this change a sent message shows a <strong>single</strong> check, meaning "it left your device" — no false "delivered". On top of that, when the connection drops and comes back, your last few messages are quietly sent again so a message lost during a flaky moment still arrives.</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>Your bubbles show: <em>queued</em> (waiting for the connection), a clock (still going out), one ✓ (sent), or ⚠ (failed). Never ✓✓.</li>
+  <li>Chain-relay (grey) bubbles follow the same rule.</li>
+  <li>Old messages already on your device that showed ✓✓ now show one ✓. That is accurate: ✓✓ was only ever set at the moment the message was handed to the network.</li>
+  <li>If the other side flapped offline right after you sent, your last 3 live items from the past 5 minutes are re-sent once the connection is proven again. Edits, deletes and reactions count as items too. Only items that already show ✓ are re-sent, and re-sending doesn't change their check mark.</li>
+  <li>The other side ignores a re-sent item it already has. One exception: if they restarted the app with message history turned off, they may see it a second time.</li>
+  <li>A small safety fix: two items sent at the same instant in the same chat can no longer use the same encryption counter (each chat has its own counter).</li>
+</ul>
+
+<h2>How it works</h2>
+<p>Sending stays the same, but the app now only claims what it knows: the message was handed to the network. It remembers your last three live messages for five minutes. When the chat reconnects <em>and</em> the other device passes the usual security handshake, those messages are encrypted again with fresh counters and sent, oldest first, 300 ms apart. The receiver drops any message it already has.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant You
+  participant Network
+  participant Peer
+  You->>Network: send "hi" (bubble shows ✓)
+  Network--xPeer: lost (peer flapping)
+  Note over You,Peer: connection drops, then comes back
+  You->>Peer: handshake proof
+  Peer->>You: proof answer
+  You->>Peer: re-send "hi" (fresh encryption)
+  Peer->>Peer: new id → shows "hi"; known id → ignored
+</pre>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>No new screens or settings. Only the check marks look different.</li>
+  <li>For two-device testing, use a release APK instead of Metro: <code>npm run mobile:android:release:test</code>, then <code>adb install -r …-signed-test.apk</code>.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li>Best effort only: a message is not recovered if more than 3 were lost, more than 5 minutes passed, or your app was closed in between.</li>
+  <li>A recovered message appears at the bottom of the other person's chat (with its original time).</li>
+  <li>It cannot help while the separate "receive window" problem (logged as finding F4) has already broken the room — that room still needs a new invite.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>A real "delivered" receipt from the other device (✓✓ will come back only with that).</li>
+  <li>Chain-relay fallback behaviour.</li>
+  <li>Link liveness and clearer "online / waiting for contact" wording — separate later change.</li>
+  <li>Encryption counter durability on Android (F3) and receive-window recovery (F4) — separate later security change.</li>
+</ul>
+
+<h2>Work overview</h2>
+<table>
+  <tr><th>Group</th><th>What</th><th>Size</th></tr>
+  <tr><td>1. Honest status</td><td>Docs, new "sent" status, bubble icons, update existing tests</td><td>5 tasks</td></tr>
+  <tr><td>2. Resend after reconnect</td><td>One-at-a-time sending, replay list, receiver duplicate check, cleanup, loop test</td><td>5 tasks</td></tr>
+  <tr><td>3. Validation</td><td>All project checks, two-device manual check</td><td>2 tasks</td></tr>
+</table>
+<p class="muted">Diagrams need internet to render; the text stands on its own.</p>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+name: PPA source packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      debian_revision:
+        description: Revision before the series suffix (0 test, 1 release)
+        required: false
+        type: string
+        default: "1"
+      upload_suffix:
+        description: Launchpad upload count appended to the series name
+        required: false
+        type: string
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ppa-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  payload:
+    name: Package desktop tree
+    if: github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-f-droid')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      GNH_BUNDLE_NODE_VERSION: "24.14.1"
+      GNH_HOLEPUNCH_WS_URL: ""
+      VITE_HOLEPUNCH_WS_URL: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop-electron/package-lock.json
+            holepunch-sidecar/package-lock.json
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot dpkg
+
+      - name: Install UI deps
+        run: npm ci
+
+      - name: Build UI
+        run: npm run build
+
+      - name: Install desktop deps
+        working-directory: desktop-electron
+        run: npm ci
+
+      - name: Sync version from version file
+        run: |
+          set -euo pipefail
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          if [[ -z "$VERSION" ]]; then
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          npm version "${VERSION}" --prefix desktop-electron --no-git-tag-version --allow-same-version
+
+      - name: Package Linux desktop
+        working-directory: desktop-electron
+        run: npm run package
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: getnowhere-linux-payload
+          path: desktop-electron/out/GetNowHere-linux-x64/
+          if-no-files-found: error
+
+  source:
+    name: Source package (${{ matrix.series }})
+    needs: payload
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        series: [jammy, noble, resolute]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download desktop tree
+        uses: actions/download-artifact@v7
+        with:
+          name: getnowhere-linux-payload
+          path: payload
+
+      - name: Install source packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev debhelper python3
+
+      - name: Build unsigned source package
+        env:
+          PPA_SERIES: ${{ matrix.series }}
+          PPA_DEBIAN_REVISION: ${{ inputs.debian_revision }}
+          PPA_UPLOAD_SUFFIX: ${{ inputs.upload_suffix }}
+          PPA_HOMEPAGE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          export PPA_DEBIAN_REVISION="${PPA_DEBIAN_REVISION:-1}"
+          export PPA_UPLOAD_SUFFIX="${PPA_UPLOAD_SUFFIX:-1}"
+          VERSION="$(grep -E '^version=' version | cut -d= -f2- | tr -d '[:space:]')"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export PPA_COMMIT_SHORT="$(git rev-parse --short=7 HEAD)"
+          icon_args=()
+          if [[ -f desktop-electron/icons/icon.png ]]; then
+            icon_args=(--icon desktop-electron/icons/icon.png)
+          fi
+          bash scripts/ppa/build-source.sh \
+            --payload payload \
+            --version "$VERSION" \
+            "${icon_args[@]}" \
+            dist
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ppa-source-${{ matrix.series }}
+          path: dist/${{ matrix.series }}/
+          if-no-files-found: error

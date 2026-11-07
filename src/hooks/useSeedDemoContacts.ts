@@ -1,11 +1,13 @@
+import { omitMnemonic } from "conceal-wallet-sdk";
 import { useEffect, useState } from "react";
 import { createConcealAccount } from "@/services/conceal/ConcealWalletAdapter";
 import { contactsPersistenceReady } from "@/services/contacts/contactsPersistence";
 import { useContactsStore } from "@/state/contactsStore";
 
 /**
- * Seeds demo contacts only on a brand-new install (no persisted contacts yet).
- * Once contacts have been saved or hydrated, this never re-fills an empty list.
+ * Seeds demo contacts only in DEV on a brand-new install (no persisted contacts yet).
+ * Production builds never run this path. Once contacts have been saved or hydrated,
+ * this never re-fills an empty list.
  */
 export function useSeedDemoContacts() {
   const contacts = useContactsStore((s) => s.contacts);
@@ -14,15 +16,17 @@ export function useSeedDemoContacts() {
   const [seeded, setSeeded] = useState(false);
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     if (!hydrated || contacts.length > 0 || seeded) return;
     if (contactsPersistenceReady()) return;
     let cancelled = false;
     setSeeded(true);
     (async () => {
       try {
+        // Address-only — drop mnemonic from SDK Account immediately.
         const [acctA, acctB] = await Promise.all([
-          createConcealAccount("english"),
-          createConcealAccount("english"),
+          createConcealAccount("english").then(omitMnemonic),
+          createConcealAccount("english").then(omitMnemonic),
         ]);
         if (cancelled) return;
         await addContact({

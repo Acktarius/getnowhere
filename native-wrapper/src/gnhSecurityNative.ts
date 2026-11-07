@@ -1,6 +1,13 @@
 /** RN NativeModules wrapper for GnhSecurity (Android + iOS after prebuild). */
 import { NativeModules, Platform } from "react-native";
 
+type WalletFileNativeResult = {
+  exists?: boolean;
+  value?: string;
+  ok?: boolean;
+  reason?: string;
+};
+
 type GnhSecurityNative = {
   handleBiometricCommand(payloadJson: string): Promise<string>;
   securePrefsGet(key: string): Promise<string | null>;
@@ -8,6 +15,10 @@ type GnhSecurityNative = {
   securePrefsRemove(key: string): Promise<boolean>;
   copySensitive?(value: string): Promise<boolean>;
   clearClipboard?(): Promise<boolean>;
+  walletFileExists?(): Promise<WalletFileNativeResult>;
+  walletFileRead?(): Promise<WalletFileNativeResult>;
+  walletFileWrite?(value: string): Promise<WalletFileNativeResult>;
+  walletFileRemove?(): Promise<WalletFileNativeResult>;
 };
 
 const native: GnhSecurityNative | undefined =
@@ -53,4 +64,26 @@ export async function nativeCopySensitive(value: string): Promise<void> {
 export async function nativeClearClipboard(): Promise<void> {
   if (!native?.clearClipboard) throw new Error("unsupported");
   await native.clearClipboard();
+}
+
+export async function walletFileExists(): Promise<WalletFileNativeResult> {
+  if (!native?.walletFileExists) return { reason: "bridge-unavailable" };
+  return native.walletFileExists();
+}
+
+export async function walletFileRead(): Promise<WalletFileNativeResult> {
+  if (!native?.walletFileRead) return { reason: "bridge-unavailable" };
+  return native.walletFileRead();
+}
+
+export async function walletFileWrite(
+  value: string,
+): Promise<WalletFileNativeResult> {
+  if (!native?.walletFileWrite) return { reason: "bridge-unavailable" };
+  return native.walletFileWrite(value);
+}
+
+export async function walletFileRemove(): Promise<WalletFileNativeResult> {
+  if (!native?.walletFileRemove) return { reason: "bridge-unavailable" };
+  return native.walletFileRemove();
 }

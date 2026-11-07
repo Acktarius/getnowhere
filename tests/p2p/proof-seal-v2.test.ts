@@ -48,8 +48,8 @@ describe("v2 post-connect proof AEAD", () => {
     });
     const opened = await P2PEncryptionAdapter.open({
       session: recv,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildProofAad(roomId, recv),
     });
     expect(opened).not.toBeNull();
@@ -66,8 +66,8 @@ describe("v2 post-connect proof AEAD", () => {
     const wrongEpochRecv: P2PSessionConfig = { ...recv, topicEpoch: 0 };
     const opened = await P2PEncryptionAdapter.open({
       session: wrongEpochRecv,
+      counter: sealed.counter,
       ciphertext: sealed.ciphertext,
-      nonce: sealed.nonce,
       aad: buildProofAad(roomId, wrongEpochRecv),
     });
     expect(opened).toBeNull();

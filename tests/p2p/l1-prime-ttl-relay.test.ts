@@ -1,6 +1,6 @@
 /**
  * L1′ relay TTL send path (RED). Named caller: HolepunchChatTransport.sendRelayText.
- * @see openspec/changes/l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
+ * @see openspec/changes/archive/2026-09-03-l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -81,12 +81,14 @@ async function sendCreateInvite(): Promise<{ inviteId: string }> {
     senderAlias: "alice",
     relationshipId: "ab".repeat(32),
   });
-  const payload =
-    await ConcealSmartMessageAdapter.encryptInvitePayload(composed);
-  return ConcealSmartMessageAdapter.sendInviteMessage(CONTACT_ID, payload, {
-    recipientAddress: RECIPIENT_ADDRESS,
-    paymentId: PAYMENT_ID_TO,
-  });
+  return ConcealSmartMessageAdapter.sendInviteMessage(
+    CONTACT_ID,
+    composed.smartBody,
+    {
+      recipientAddress: RECIPIENT_ADDRESS,
+      paymentId: PAYMENT_ID_TO,
+    },
+  );
 }
 
 beforeEach(() => {

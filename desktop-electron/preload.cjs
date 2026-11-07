@@ -108,8 +108,23 @@ function createSidecarIpcApi() {
   };
 }
 
+function roomSessionApi() {
+  return {
+    loadRoomSessions() {
+      return ipcRenderer.invoke("gnh:room-sessions-load");
+    },
+    saveRoomSessions(json) {
+      return ipcRenderer.invoke("gnh:room-sessions-save", json);
+    },
+    clearRoomSessions() {
+      return ipcRenderer.invoke("gnh:room-sessions-clear");
+    },
+  };
+}
+
 /** @param {ReturnType<typeof normalizeGnhDesktopInfo>} info */
 function buildExposedBridge(info) {
+  const sessions = roomSessionApi();
   if (info.bridgeTransport === "ipc") {
     const ipcApi = createSidecarIpcApi();
     return {
@@ -118,6 +133,7 @@ function buildExposedBridge(info) {
       ...(info.role ? { role: info.role } : {}),
       sendCommand: ipcApi.sendCommand,
       onBridgeEvent: ipcApi.onBridgeEvent,
+      ...sessions,
     };
   }
   return {
@@ -126,6 +142,7 @@ function buildExposedBridge(info) {
     wsToken: info.wsToken ?? "",
     ufwState: info.ufwState,
     ...(info.role ? { role: info.role } : {}),
+    ...sessions,
   };
 }
 

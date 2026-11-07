@@ -1,0 +1,15 @@
+{
+  "change": "seal-pending-ephemeral-keys",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "pending-invite-ephemerals (blob persist + wipe)",
+      "library": "src/services/contacts/contactsPersistence.ts",
+      "runtimeOwner": "src/state/contactsStore.ts (sendInvite / acceptInvite / handoff / leave-revoke)",
+      "writes": "RawWalletV1.pendingInviteEphemerals via persistRuntime",
+      "reads": "encrypted wallet blob after unlock",
+      "uiConsumer": "N/A (no new UI)",
+      "evidence": "tests for blob round-trip, migration, wipe on handoff and leave/revoke"
+    }
+  ]
+}

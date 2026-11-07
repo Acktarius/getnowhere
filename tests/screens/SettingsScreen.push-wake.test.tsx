@@ -41,6 +41,7 @@ vi.mock("@/lib/network/node-preference", () => ({
 vi.mock("@/services/conceal/ConcealWalletService", () => ({
   getInternalWalletNodeUrl: () => "https://example.node/",
   updateWalletSyncSettings: vi.fn(async () => undefined),
+  setWalletCreationHeight: vi.fn(async (h: number) => h),
 }));
 
 vi.mock("@/hooks/useNavNotificationBadges", () => ({
@@ -88,6 +89,7 @@ function renderSettings() {
 describe("SettingsScreen push wake toggle", () => {
   beforeEach(() => {
     getStorage().removeItem("gnh.settings");
+    useSettingsStore.getState().reset();
     applyPushWakeEnabled.mockClear();
   });
 
@@ -95,19 +97,47 @@ describe("SettingsScreen push wake toggle", () => {
     cleanup();
   });
 
-  it("renders Wake contact on relay on mobile host", () => {
+  it("renders Wake contact on mobile host", () => {
     renderSettings();
-    expect(screen.getByText("Wake contact on relay")).toBeTruthy();
+    expect(screen.getByText("Wake contact")).toBeTruthy();
   });
 
   it("toggle is disabled (no switch) when Notifications is off", () => {
     renderSettings();
     expect(
-      screen.queryByRole("switch", { name: /wake contact on relay/i }),
+      screen.queryByRole("switch", { name: /^wake contact$/i }),
     ).toBeNull();
     expect(
       screen.getAllByText("Turn on Notifications first.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("describes wake as accepted-invite and new-message ping when Notifications is on", () => {
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(
+      screen.getByText(
+        "Generic APNs/ntfy ping when a room invite is accepted or a room gets a new message. No names or preview.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("describes banner as lock-screen alert when Notifications is on and tips are off", () => {
+    useSettingsStore.getState().setShowTips(false);
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(screen.getByText("Lock screen alert")).toBeTruthy();
+  });
+
+  it("describes banner with invite/chain hint when Notifications is on and tips are on", () => {
+    useSettingsStore.getState().setShowTips(true);
+    useSettingsStore.getState().setPrivacy({ notificationsEnabled: true });
+    renderSettings();
+    expect(
+      screen.getByText(
+        "Lock screen alert when invitation accepted or chain message received",
+      ),
+    ).toBeTruthy();
   });
 
   it("calls applyPushWakeEnabled when toggled with Notifications on", async () => {
@@ -115,7 +145,7 @@ describe("SettingsScreen push wake toggle", () => {
     const user = userEvent.setup();
     renderSettings();
     const toggle = screen.getByRole("switch", {
-      name: /wake contact on relay/i,
+      name: /^wake contact$/i,
     });
     await user.click(toggle);
     expect(applyPushWakeEnabled).toHaveBeenCalledWith(true);

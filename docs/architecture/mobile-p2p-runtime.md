@@ -189,24 +189,32 @@ Controls match packaged desktop / sidecar where applicable:
 | Opaque L1-sealed frames | Unchanged app crypto path |
 | Per-launch bridge token (`randomUUID`, constant-time compare) | `GnhMobileBridge` + `bare/auth.mjs` |
 | RN IPC NDJSON line cap (`maxNdjsonLineBytes` 262144) | `GnhMobileBridge` → `IpcLineProcessor` / `createLineReader.ts` |
-| WebView navigation restricted to packaged `ui/` (Android `android_asset`, iOS app-bundle folder) | `App.tsx` → `webviewNavigation.ts` / `bundledUiUri.ts` |
+| WebView navigation restricted to packaged `ui/` (Android `android_asset`, iOS app-bundle `ui/`) — iOS `/var`→`/private/var` via `buildIosBundledUiPaths` / `normalizeIosFileUrl` | `App.tsx` → `webviewNavigation.ts` / `bundledUiUri.ts` |
+| `allowingReadAccessToURL` scoped to `ui/` only (same canonical path as WebView `source`; not the whole `.app` root) | `bundledUiUri.getBundledUiReadAccessUrl()` |
 | Bridge token not readable in WebView JS (`sendCommand` closure only) | `injectMobileBridge.ts` |
 | CSPRNG-only bridge token (expo-crypto on RN) | `bridgeToken.ts` + `App.tsx` |
 | `worklet.start(..., [bridgeToken])` → `Bare.argv[0]` in worklet | `GnhMobileBridge.doStart()` + `bare/entry.mjs` |
 | Bridge command rate limits (`rate_limited`) | `bare/bridge.mjs` + `bare/rateLimit.mjs` |
+| Swarm ingress limits (`remote_rate_limited`) | `bare/swarm.mjs` + `bare/rateLimit.mjs` (sidecar parity) |
 | Ephemeral loopback port | N/A — bridge is in-process only |
 | Worklet teardown | `App.tsx` cleanup → `GnhMobileBridge.destroy()` → `worklet.terminate()` (no in-worklet SIGTERM) |
 
 **Pending hardening (2026-08 review):** findings 08–15 addressed in code/docs;
 manual Android smoke (task 6.2) and Hermes `crypto.randomUUID` device check remain.
-OpenSpec `openspec/changes/mobile-bridge-hardening/`.
+OpenSpec `openspec/changes/archive/2026-08-06-mobile-bridge-hardening/`.
 
 ### WebView trust model
 
 The bundled Vite UI runs inside a mobile WebView loading only the packaged `ui/`
 tree (`file:///android_asset/ui/` on Android; `…/App.app/ui/` on iOS). Top-level
 navigation to `http(s)://`, `intent://`, or other asset paths is blocked via
-`onShouldStartLoadWithRequest`. The per-launch
+`onShouldStartLoadWithRequest` using `isAllowedWebViewNavigationUrl`. On iOS,
+`buildIosBundledUiPaths` / `normalizeIosFileUrl` canonicalize the WebView `source`,
+allowlist prefix, and `allowingReadAccessToURL` to the same `/private/var`…`/ui`
+form (also `file://localhost/…` and percent-encoding). Navigation allowlist
+accepts expo’s prefix **or** any `*.app/ui/` file URL — still not the whole
+`.app` root (SEC-2026-023). Denied URLs log `[gnh-webview] nav denied` for
+device syslog. The per-launch
 bridge token lives in the RN host and in the injected script closure — it is **not**
 published as `window.gnhMobile.bridgeToken`. WebView JS can call `sendCommand` (which
 still attaches the token in postMessage payloads validated by RN), but cannot read
@@ -219,7 +227,11 @@ Bridge tokens are UUID v4 from CSPRNG. On Hermes/RN, `expo-crypto` provides nati
 fallback. The
 worklet enforces per-type token-bucket rate limits on `join`, `leave`, `frame`,
 and `ping` (default burst: 8 join/leave, 40 frame/s sustained); excess commands
-return `{ type: "error", code: "rate_limited" }`.
+return `{ type: "error", code: "rate_limited" }`. The Node sidecar uses the same
+buckets (`holepunch-sidecar/src/rateLimit.mjs`). Remote Hyperswarm ingress uses
+a tighter pair of buckets (20 burst / 10 frames/s, 8 MiB burst / 4 MiB/s) plus
+an 8-stream inbound cap; excess emits `remote_rate_limited` and does not mark
+the bridge offline (`docs/architecture/holepunch-sidecar.md`).
 
 Bridge tokens are UUID v4 (`crypto.randomUUID`) — fixed 36-character length. The
 constant-time compare may short-circuit on length mismatch; this is acceptable

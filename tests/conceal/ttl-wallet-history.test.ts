@@ -1,6 +1,6 @@
 /**
  * Expired L1′ TTL must leave wallet history, not linger as 0-conf pending.
- * @see openspec/changes/l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
+ * @see openspec/changes/archive/2026-09-03-l1-prime-ttl-relay/specs/l1-prime-ttl-relay/spec.md
  */
 import type { RawWalletV1 } from "conceal-wallet-sdk";
 import { describe, expect, it } from "vitest";

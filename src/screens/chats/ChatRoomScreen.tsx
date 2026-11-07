@@ -11,8 +11,12 @@ import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { NonSelectableText } from "@/components/NonSelectableText";
 import { Sheet } from "@/components/Sheet";
 import { RoomLifecyclePill } from "@/components/StatusBadges";
+import {
+  dismissIosKeyboard,
+  useIosKeyboardInset,
+} from "@/hooks/useIosKeyboardInset";
 import { useVisualViewportBottomInset } from "@/hooks/useVisualViewportBottomInset";
-import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { isMobileHost, isMobileIos } from "@/lib/mobile/gnhMobileBridgeTypes";
 import {
   ChainSendFlyout,
   ttlUnixFromDuration,
@@ -43,7 +47,11 @@ import {
   composerDisabledReason,
   composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
-import { isRoomExpired, nowUnix } from "@/services/protocol/roomLifecycle";
+import {
+  isRelayEligibleStatus,
+  isRoomExpired,
+  nowUnix,
+} from "@/services/protocol/roomLifecycle";
 import { useChatStore } from "@/state/chatStore";
 import { probeInitiatorHandoff, useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
@@ -54,9 +62,18 @@ import {
   type ConnectFailureCode,
   RELAY_MAX_TEXT_CHARS,
 } from "@/types/protocol";
-import { formatUnixDateTime, shortTopicRef } from "@/utils/format";
+import { formatUnixDateTime, shortRoomId, shortTopicRef } from "@/utils/format";
+import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+
+/** L1′ mempool rescan while Holepunch is down (accepted / connecting / failed). */
+const ROOM_RELAY_POLL_MS = 2500;
+/**
+ * L2 live (or pre-accept): no room-level mempool hammer — wallet live sync owns
+ * relays; openRoom is only a slow peer/lifecycle safety net.
+ */
+const ROOM_CONNECTED_POLL_MS = 15_000;
 
 function placeholderContact(alias: string): Contact {
   return {
@@ -130,10 +147,14 @@ function LoadingDiagnosticsSheet({
   return (
     <Sheet open={open} title="Room diagnostics" onClose={onClose}>
       <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-        <div>
-          Room id:{" "}
-          <NonSelectableText className="mono">{roomId}</NonSelectableText>
-          <CopyButton value={roomId} />
+        <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
+          <span>
+            Room id:{" "}
+            <NonSelectableText className="mono">
+              {shortRoomId(roomId)}
+            </NonSelectableText>
+          </span>
+          <CopyButton value={shortRoomId(roomId)} />
         </div>
         <div>Contact: {contactAlias ?? "…"}</div>
         <div>{roomExpiryDiagnosticLine(roomTtl)}</div>
@@ -150,7 +171,16 @@ function LoadingDiagnosticsSheet({
 }
 
 export function ChatRoomScreen() {
-  const { roomId = "" } = useParams();
+  const { roomId: _roomIdParam = "" } = useParams();
+  const [roomId] = useState(() => _roomIdParam);
+
+  // Electron only: strip roomId from hash before Chromium logs it. @see docs/guidelines/security-module-review.md SEC-2026-003
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.gnhDesktop != null) {
+      window.history.replaceState(null, "", "#/chats");
+    }
+  }, []);
+
   const navigate = useNavigate();
   const openRoom = useChatStore((s) => s.openRoom);
   const bootstrapRoom = useChatStore((s) => s.bootstrapRoom);
@@ -186,6 +216,10 @@ export function ChatRoomScreen() {
   });
 
   const [draft, setDraft] = useState("");
+  const [pendingReply, setPendingReply] = useState<{
+    replyToMessageId: string;
+    replyPreview: string;
+  } | null>(null);
   const [diagOpen, setDiagOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -206,8 +240,42 @@ export function ChatRoomScreen() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const composerBarRef = useRef<HTMLDivElement>(null);
   const mobileHost = isMobileHost();
-  const keyboardInset = useVisualViewportBottomInset(mobileHost);
+  const iosHost = isMobileIos();
+  /** @see docs/architecture/web-vs-wrapper.md — chat room keyboard */
+  const keyboardFrame = useVisualViewportBottomInset(mobileHost);
+  const nativeKeyboardHeight = useIosKeyboardInset(iosHost);
+  const [iosComposerFocused, setIosComposerFocused] = useState(false);
+  // iOS pan (offsetTop > 0) already shrinks the shell; don't add native height too.
+  // Unfocused: inset stays 0 so the composer returns to the bottom with the keyboard.
+  const iosPan = iosHost && iosComposerFocused && keyboardFrame.offsetTop > 0;
+  const keyboardInset =
+    iosHost && !iosComposerFocused
+      ? 0
+      : nativeKeyboardHeight != null && !iosPan
+        ? nativeKeyboardHeight
+        : keyboardFrame.bottomInset;
+  const iosKeyboardOpen =
+    iosHost &&
+    iosComposerFocused &&
+    (keyboardInset > 0 || keyboardFrame.offsetTop > 0);
   const [composerBarHeight, setComposerBarHeight] = useState(64);
+
+  function scrollThreadToEnd() {
+    const el = scrollerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }
+
+  /** Keyboard / flex layout settle after the first paint — retry briefly. */
+  function scheduleScrollThreadToEnd() {
+    scrollThreadToEnd();
+    requestAnimationFrame(() => {
+      scrollThreadToEnd();
+      requestAnimationFrame(scrollThreadToEnd);
+    });
+    window.setTimeout(scrollThreadToEnd, 50);
+    window.setTimeout(scrollThreadToEnd, 150);
+    window.setTimeout(scrollThreadToEnd, 300);
+  }
 
   useEffect(() => {
     const el = composerBarRef.current;
@@ -221,9 +289,22 @@ export function ChatRoomScreen() {
     return () => ro.disconnect();
   }, [mobileHost]);
 
+  /** Undo document scroll iOS applies on focus; shell may pin when offsetTop > 0. */
+  useEffect(() => {
+    if (!mobileHost) return;
+    if (keyboardInset <= 0 && keyboardFrame.offsetTop <= 0) return;
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [mobileHost, keyboardInset, keyboardFrame.offsetTop]);
+
   useEffect(() => {
     if (!roomId) return;
     useNotificationStore.getState().markRoomSeen(roomId);
+  }, [roomId]);
+
+  useEffect(() => {
+    setPendingReply(null);
   }, [roomId]);
 
   const invites = useContactsStore((s) => s.invites);
@@ -336,8 +417,8 @@ export function ChatRoomScreen() {
   // Reconnect when accepted/pending but never called connect() (attempts === 0).
   useEffect(() => {
     if (!room) return;
-    // crypto_mismatch is not auto-retryable — session keys diverged; user must
-    // resend/accept.  Stop polling immediately to prevent the connected↔mismatch loop.
+    // crypto_mismatch is not auto-retryable: stop polling. A later openable peer
+    // frame relabels it timeout, which re-runs this effect.
     if (
       room.lifecycleStatus === "connect_failed" &&
       !isRetryableConnectFailure(
@@ -387,16 +468,26 @@ export function ChatRoomScreen() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [room?.lifecycleStatus, room?.connectAttempts, roomId, openRoom]);
+  }, [
+    room?.lifecycleStatus,
+    room?.connectAttempts,
+    room?.lastConnectError,
+    roomId,
+    openRoom,
+  ]);
 
-  // Keep UI peer/lifecycle in sync; always rescan L3 (Holepunch can fail mid-chat).
+  // Peer/lifecycle safety net; fast L1′ mempool rescan only while Holepunch is down.
+  // When connected, wallet live sync already polls relays — avoid double mempool WASM.
   useEffect(() => {
+    const status = room?.lifecycleStatus;
+    const fastRelay = status != null && isRelayEligibleStatus(status);
+    const intervalMs = fastRelay ? ROOM_RELAY_POLL_MS : ROOM_CONNECTED_POLL_MS;
     let cancelled = false;
     const tick = async () => {
       try {
         if (cancelled) return;
         await openRoom(roomId);
-        await refreshRelays();
+        if (fastRelay) await refreshRelays();
       } catch {
         /* ignore */
       }
@@ -404,12 +495,12 @@ export function ChatRoomScreen() {
     void tick();
     const id = window.setInterval(() => {
       void tick();
-    }, 2500);
+    }, intervalMs);
     return () => {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [roomId, openRoom, refreshRelays]);
+  }, [roomId, room?.lifecycleStatus, openRoom, refreshRelays]);
 
   // One-shot rescan when room becomes relay-eligible (pending → accepted/…).
   useEffect(() => {
@@ -443,9 +534,27 @@ export function ChatRoomScreen() {
   );
 
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    scheduleScrollThreadToEnd();
   }, [visibleMessages.length]);
+
+  /** Stick latest bubble above composer when keyboard / frame changes. */
+  useEffect(() => {
+    if (!mobileHost) return;
+    scheduleScrollThreadToEnd();
+  }, [mobileHost, keyboardInset, keyboardFrame.height, composerBarHeight]);
+
+  useEffect(() => {
+    if (!mobileHost) return;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (keyboardInset > 0 || document.activeElement === composerRef.current) {
+        scrollThreadToEnd();
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobileHost, keyboardInset]);
 
   useEffect(() => {
     const status = displayRoom.lifecycleStatus;
@@ -491,11 +600,26 @@ export function ChatRoomScreen() {
     }
     const text = draft.trim();
     const ttlUnixSeconds = ttlUnixFromDuration(durationSeconds, nowUnix());
+    const reply =
+      holepunchLive && pendingReply && !viaChain ? pendingReply : undefined;
     setDraft("");
+    setPendingReply(null);
     composerRef.current?.focus({ preventScroll: mobileHost });
-    void send(roomId, text, ttlUnixSeconds).catch((e) => {
+    void send(roomId, text, ttlUnixSeconds, reply).catch((e) => {
       toastError((e as Error).message || "Send failed.");
     });
+  }
+
+  function startReply(message: ChatMessage) {
+    if (!holepunchLive) return;
+    if (message.direction !== "in") return;
+    if (message.channel === "relay") return;
+    if (message.deletedAt || message.kind === "delete") return;
+    setPendingReply({
+      replyToMessageId: message.id,
+      replyPreview: truncateReplyPreview(message.text),
+    });
+    composerRef.current?.focus({ preventScroll: mobileHost });
   }
 
   async function handleRetry() {
@@ -532,7 +656,6 @@ export function ChatRoomScreen() {
         <ChatRoomHeader
           contact={displayContact}
           peerStatus="offline"
-          roomId={roomId}
           roomTopic={displayRoom.roomTopic}
           onShowDiagnostics={() => setDiagOpen(true)}
           onLeaveRoom={() => setLeaveOpen(true)}
@@ -570,20 +693,43 @@ export function ChatRoomScreen() {
 
   const offline = displayRoom.peerStatus === "offline";
 
+  // Pin only when iOS pans the visual viewport; Android overlays keep offsetTop 0.
+  // Native keyboard height (no pan) lifts the composer instead of pinning.
+  const pinToVisualViewport = mobileHost && iosPan;
+  // When pinned to vv.height the shell already excludes the keyboard — don't
+  // double-count inset in padding. Android (no pin) needs inset in padding.
+  const threadBottomPad = mobileHost
+    ? composerBarHeight + (pinToVisualViewport ? 0 : keyboardInset) + 8
+    : 0;
+
   return (
     <div
       className="screen"
-      style={{
-        paddingBottom: 0,
-        height: "100dvh",
-        maxHeight: "100dvh",
-        overflow: "hidden",
-      }}
+      style={
+        pinToVisualViewport
+          ? {
+              position: "fixed",
+              top: keyboardFrame.offsetTop,
+              left: 0,
+              right: 0,
+              width: "100%",
+              height: keyboardFrame.height,
+              maxHeight: keyboardFrame.height,
+              overflow: "hidden",
+              paddingBottom: 0,
+              zIndex: 2,
+            }
+          : {
+              paddingBottom: 0,
+              height: "100dvh",
+              maxHeight: "100dvh",
+              overflow: "hidden",
+            }
+      }
     >
       <ChatRoomHeader
         contact={displayContact}
         peerStatus={displayRoom.peerStatus}
-        roomId={roomId}
         roomTopic={displayRoom.roomTopic}
         onShowDiagnostics={() => setDiagOpen(true)}
         onLeaveRoom={() => setLeaveOpen(true)}
@@ -660,15 +806,35 @@ export function ChatRoomScreen() {
         <ChatTopicBackdrop topicId={displayRoom.roomTopic} />
         <div
           ref={scrollerRef}
+          onClick={
+            iosHost
+              ? (e) => {
+                  const target = e.target;
+                  if (!(target instanceof Element)) return;
+                  if (
+                    target.closest(
+                      "button, a, input, textarea, select, [role='button']",
+                    )
+                  ) {
+                    return;
+                  }
+                  if (document.activeElement !== composerRef.current) return;
+                  composerRef.current?.blur();
+                  dismissIosKeyboard();
+                }
+              : undefined
+          }
           style={{
             flex: 1,
             minHeight: 0,
             minWidth: 0,
             overflowY: "auto",
             overflowX: "hidden",
-            padding: mobileHost
-              ? `16px 14px ${composerBarHeight + 8}px`
-              : "16px 14px 8px",
+            padding: iosHost
+              ? "16px 14px 0px"
+              : mobileHost
+                ? `16px 14px ${threadBottomPad}px`
+                : "16px 14px 8px",
             display: "flex",
             flexDirection: "column",
             position: "relative",
@@ -772,6 +938,15 @@ export function ChatRoomScreen() {
                       ? (emoji) => sendReaction(roomId, m.id, emoji)
                       : undefined
                   }
+                  onReply={
+                    holepunchLive &&
+                    m.direction === "in" &&
+                    m.channel !== "relay" &&
+                    !m.deletedAt &&
+                    m.kind !== "delete"
+                      ? () => startReply(m)
+                      : undefined
+                  }
                   onEdit={
                     holepunchLive && m.direction === "out"
                       ? (text) => editMessage(roomId, m.id, text)
@@ -786,12 +961,29 @@ export function ChatRoomScreen() {
               ))}
             </>
           )}
+          {iosHost ? (
+            // WKWebView omits padding-bottom from this flex scroller's scroll height.
+            <div
+              aria-hidden
+              style={{ height: threadBottomPad, flexShrink: 0 }}
+            />
+          ) : null}
         </div>
       </div>
 
       <div
         ref={composerBarRef}
-        className={mobileHost ? "chat-room-composer--mobile" : undefined}
+        className={
+          !mobileHost
+            ? undefined
+            : [
+                "chat-room-composer--mobile",
+                iosHost ? "chat-room-composer--ios" : "",
+                iosKeyboardOpen ? "chat-room-composer--keyboard" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")
+        }
         style={{
           ...(mobileHost
             ? { bottom: keyboardInset }
@@ -799,60 +991,98 @@ export function ChatRoomScreen() {
                 padding: "10px 12px 14px",
                 borderTop: "1px solid var(--border)",
                 display: "flex",
+                flexDirection: "column",
                 gap: 8,
-                alignItems: "flex-end",
                 flexShrink: 0,
                 background: "var(--bg)",
               }),
         }}
       >
-        <textarea
-          ref={composerRef}
-          value={draft}
-          disabled={!composeAllowed}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            !composeAllowed
-              ? (disabledReason ?? "Messaging unavailable…")
-              : viaChain
-                ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
-                : "Message…"
-          }
-          rows={1}
-          maxLength={viaChain ? RELAY_MAX_TEXT_CHARS : undefined}
+        {pendingReply ? (
+          <div
+            style={{
+              padding: "6px 10px",
+              borderRadius: 10,
+              background: "var(--bg-elev-2)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text-muted, var(--text))",
+              fontSize: 12,
+              lineHeight: 1.35,
+              overflow: "hidden",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              wordBreak: "break-word",
+              opacity: 0.9,
+            }}
+          >
+            {pendingReply.replyPreview}
+          </div>
+        ) : null}
+        <div
           style={{
-            flex: 1,
-            resize: "none",
-            minHeight: 40,
-            maxHeight: 120,
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            background: "var(--bg-elev-1)",
-            color: "var(--text)",
-            font: "inherit",
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-end",
+            width: "100%",
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void handleSend();
+        >
+          <textarea
+            ref={composerRef}
+            enterKeyHint={iosHost ? "enter" : undefined}
+            value={draft}
+            disabled={!composeAllowed}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={
+              !composeAllowed
+                ? (disabledReason ?? "Messaging unavailable…")
+                : viaChain
+                  ? `Message via chain (max ${RELAY_MAX_TEXT_CHARS})…`
+                  : "Message…"
             }
-          }}
-          onFocus={() => {
-            if (!mobileHost) return;
-            const scroller = scrollerRef.current;
-            if (!scroller) return;
-            const scrollTop = scroller.scrollTop;
-            requestAnimationFrame(() => {
-              scroller.scrollTop = scrollTop;
-            });
-          }}
-        />
-        <ChainSendFlyout
-          viaChain={viaChain}
-          disabled={!composeAllowed || !draft.trim()}
-          onSend={(durationSeconds) => handleSend(durationSeconds)}
-        />
+            rows={1}
+            maxLength={viaChain ? RELAY_MAX_TEXT_CHARS : undefined}
+            style={{
+              flex: 1,
+              resize: "none",
+              minHeight: 40,
+              maxHeight: 120,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              background: "var(--bg-elev-1)",
+              color: "var(--text)",
+              font: "inherit",
+            }}
+            onKeyDown={(e) => {
+              // iOS Return stays a newline. Send (including TTL) is the button.
+              if (iosHost) return;
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void handleSend();
+              }
+            }}
+            onBlur={() => {
+              window.setTimeout(() => {
+                const active = document.activeElement;
+                if (active === composerRef.current) return;
+                if (composerBarRef.current?.contains(active)) return;
+                if (iosHost) setIosComposerFocused(false);
+                setPendingReply(null);
+              }, 0);
+            }}
+            onFocus={() => {
+              if (iosHost) setIosComposerFocused(true);
+              if (!mobileHost) return;
+              scheduleScrollThreadToEnd();
+            }}
+          />
+          <ChainSendFlyout
+            viaChain={viaChain}
+            disabled={!composeAllowed || !draft.trim()}
+            onSend={(durationSeconds) => handleSend(durationSeconds)}
+          />
+        </div>
       </div>
 
       <Sheet
@@ -861,23 +1091,22 @@ export function ChatRoomScreen() {
         onClose={() => setDiagOpen(false)}
       >
         <div className="stack stack--gap-2" style={{ fontSize: 13 }}>
-          <div>
-            Room id:{" "}
-            <NonSelectableText className="mono">
-              {displayRoom.id}
-            </NonSelectableText>
-            <CopyButton value={displayRoom.id} />
+          <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
+            <span>
+              Room id:{" "}
+              <NonSelectableText className="mono">
+                {shortRoomId(displayRoom.id)}
+              </NonSelectableText>
+            </span>
+            <CopyButton value={shortRoomId(displayRoom.id)} />
           </div>
-          {/* Must match the peer's value and the sidecar's `topic <prefix>…` log. */}
+          {/* Display-only (no Copy). Must match the peer and sidecar `topic <prefix>…` log. */}
           <div>
             Topic:{" "}
             {discoveryTopicRef ? (
-              <>
-                <NonSelectableText className="mono">
-                  {shortTopicRef(discoveryTopicRef)}
-                </NonSelectableText>
-                <CopyButton value={discoveryTopicRef} />
-              </>
+              <NonSelectableText className="mono">
+                {shortTopicRef(discoveryTopicRef)}
+              </NonSelectableText>
             ) : (
               "— not joined yet —"
             )}

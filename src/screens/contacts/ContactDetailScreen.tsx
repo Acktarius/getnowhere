@@ -58,12 +58,17 @@ import { useChatStore } from "@/state/chatStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useNotificationStore } from "@/state/notificationStore";
 import { toastError } from "@/state/toastStore";
+import { useWalletStore } from "@/state/walletStore";
 import { shortAddress, timeAgo } from "@/utils/format";
+
+/** First invite-scan cap. Matches the mempool sync race in ConcealSmartMessageAdapter. */
+const INVITE_CHECK_CAP_MS = 8_000;
 
 export function ContactDetailScreen() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const contact = useContactsStore((s) => s.getById(id));
+  const myAddress = useWalletStore((s) => s.address);
   const getById = useContactsStore((s) => s.getById);
   const savePaymentIdTo = useContactsStore((s) => s.savePaymentIdTo);
   const updateContact = useContactsStore((s) => s.updateContact);
@@ -94,7 +99,6 @@ export function ContactDetailScreen() {
   });
 
   const [copiedAddr, setCopiedAddr] = useState(false);
-  const [copiedFrom, setCopiedFrom] = useState(false);
   const [sendingInvite, setSendingInvite] = useState(false);
   const [createSheet, setCreateSheet] = useState(false);
   const [inviteExpiryHours, setInviteExpiryHours] = useState(
@@ -143,34 +147,46 @@ export function ContactDetailScreen() {
     [contact, invites],
   );
 
-  // Sync + scan on-chain creates so inviteStatus becomes "received" and Accept shows.
-  // Always run once on mount; keep interval only while shouldPoll is true.
+  // One capped scan on mount so a stuck persist cannot hide Create room.
+  // Keep the interval only while shouldPoll is true.
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
     let first = true;
+    let capTimer = 0;
     const run = async () => {
-      if (first) setRefreshingInvite(true);
+      const showSpinner = first;
+      first = false;
+      if (showSpinner) setRefreshingInvite(true);
       try {
-        await refreshInvites();
+        const pending = refreshInvites();
+        if (showSpinner) {
+          await Promise.race([
+            pending,
+            new Promise<void>((resolve) => {
+              capTimer = window.setTimeout(resolve, INVITE_CHECK_CAP_MS);
+            }),
+          ]);
+        } else {
+          await pending;
+        }
       } catch {
         /* wallet may still be syncing */
       } finally {
-        if (first && !cancelled) setRefreshingInvite(false);
-        first = false;
+        if (showSpinner) window.clearTimeout(capTimer);
+        if (showSpinner && !cancelled) setRefreshingInvite(false);
       }
     };
     void run();
-    if (!shouldPoll)
-      return () => {
-        cancelled = true;
-      };
-    const timerId = window.setInterval(() => {
-      void run();
-    }, 3000);
+    const timerId = shouldPoll
+      ? window.setInterval(() => {
+          void run();
+        }, 3000)
+      : 0;
     return () => {
       cancelled = true;
-      window.clearInterval(timerId);
+      window.clearTimeout(capTimer);
+      if (timerId) window.clearInterval(timerId);
     };
   }, [id, refreshInvites, shouldPoll]);
 
@@ -229,7 +245,7 @@ export function ContactDetailScreen() {
 
   if (!contact) {
     return (
-      <div className="screen">
+      <div className="screen screen--detail">
         <TopBar title="Contact" leading={<BackLink to="/contacts" />} />
         <EmptyState
           title="Contact not found"
@@ -372,7 +388,7 @@ export function ContactDetailScreen() {
   }
 
   return (
-    <div className="screen">
+    <div className="screen screen--detail">
       <TopBar
         title={contact.alias}
         leading={<BackLink to="/contacts" />}
@@ -389,7 +405,9 @@ export function ContactDetailScreen() {
       />
       <div
         className="screen-scroll stack stack--gap-4"
-        style={{ padding: "16px 16px 32px" }}
+        style={{
+          padding: "16px 16px calc(32px + env(safe-area-inset-bottom, 0px))",
+        }}
       >
         <div
           className="card center stack stack--gap-3 fade-in-up"
@@ -437,22 +455,6 @@ export function ContactDetailScreen() {
               {copiedAddr ? <Check size={13} /> : <Copy size={13} />}{" "}
               {copiedAddr ? "Copied" : "Copy address"}
             </button>
-            <button
-              type="button"
-              className="btn btn--sm btn--secondary"
-              onClick={() => {
-                void copySensitive(contact.paymentIdFrom).then(
-                  () => {
-                    setCopiedFrom(true);
-                    setTimeout(() => setCopiedFrom(false), 1800);
-                  },
-                  () => setCopiedFrom(false),
-                );
-              }}
-            >
-              {copiedFrom ? <Check size={13} /> : <Copy size={13} />}{" "}
-              {copiedFrom ? "Copied" : "Copy your ID"}
-            </button>
           </div>
           {contact.lastInteractionAt && (
             <div className="faint" style={{ fontSize: 11.5 }}>
@@ -461,95 +463,7 @@ export function ContactDetailScreen() {
           )}
         </div>
 
-        <RelationshipStateCard contact={contact} />
-
         <ContactCategoryTagCard contact={contact} />
-
-        {contactRooms.length > 0 && (
-          <div className="stack stack--gap-2 fade-in-up">
-            <div className="card__title" style={{ paddingLeft: 4 }}>
-              Rooms
-            </div>
-            <div className="card card--flush">
-              {contactRooms.map((catalog) => {
-                const live = rooms.find((r) => r.id === catalog.id);
-                const lifecycle =
-                  live?.lifecycleStatus ?? catalog.lifecycleStatus;
-                const relayCount = roomRelayBadge(catalog.id);
-                return (
-                  <Link
-                    key={catalog.id}
-                    to={`/chats/${catalog.id}`}
-                    className="row row--clickable"
-                    style={{ textDecoration: "none" }}
-                  >
-                    <div className="row__avatar-wrap">
-                      <div className="row__avatar">
-                        <RoomTopicIcon topicId={catalog.roomTopic} size={18} />
-                      </div>
-                      {relayCount > 0 ? (
-                        <NotifyPin count={relayCount} variant="relay" />
-                      ) : null}
-                    </div>
-                    <div className="row__main">
-                      <div className="row__title">
-                        {roomTopicLabel(catalog.roomTopic)}
-                      </div>
-                      <div className="row__sub">
-                        {catalog.awaitingChainSync
-                          ? "Syncing wallet — room enables near chain tip"
-                          : lifecycle === "connected"
-                            ? "Connected"
-                            : isRelayEligibleStatus(lifecycle)
-                              ? "Chain relay"
-                              : `Status: ${lifecycle}`}
-                      </div>
-                    </div>
-                    <ArrowRight
-                      size={16}
-                      style={{ color: "var(--text-faint)", flexShrink: 0 }}
-                    />
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        <div className="stack stack--gap-3 fade-in-up">
-          <div className="card__title" style={{ paddingLeft: 4 }}>
-            Payment identifiers
-          </div>
-          <PaymentIdField
-            label="paymentIdFrom"
-            direction="from"
-            value={contact.paymentIdFrom}
-            hint="You are the receiver for this ID: share it with your counterpart. You use it on receive to identify them (they store it as their paymentIdTo)."
-            editable
-            allowGenerate
-            showQr
-            qrKind="paymentId"
-            onEdit={(v) => updateContact(contact.id, { paymentIdFrom: v })}
-          />
-          <PaymentIdField
-            label="paymentIdTo"
-            direction="to"
-            value={contact.paymentIdTo ?? ""}
-            missing={!contact.paymentIdTo}
-            hint="That has been provided to you by your contact, so he/she can identify you. Use it when sending to them."
-            editable
-            showQr
-            qrKind="paymentId"
-            onEdit={(v) => savePaymentIdTo(contact.id, v)}
-          />
-        </div>
-
-        {contact.notes && (
-          <div className="card">
-            <div className="card__title">Notes</div>
-            <p style={{ fontSize: 14, lineHeight: 1.5 }}>{contact.notes}</p>
-          </div>
-        )}
 
         <div className="stack stack--gap-2 fade-in-up">
           {eligible ? (
@@ -697,27 +611,114 @@ export function ContactDetailScreen() {
           )}
 
           {error && <div className="field__error">{error}</div>}
+        </div>
 
-          <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
-            <button
-              className="btn btn--secondary grow"
-              onClick={() => archiveContact(contact.id)}
-            >
-              <Archive size={15} /> Archive
-            </button>
-            <button
-              className="btn btn--secondary grow"
-              onClick={() => setConfirmBlock(true)}
-            >
-              <Ban size={15} /> Block
-            </button>
-            <button
-              className="btn btn--danger grow"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 size={15} /> Delete
-            </button>
+        {contactRooms.length > 0 && (
+          <div className="stack stack--gap-2 fade-in-up">
+            <div className="card__title" style={{ paddingLeft: 4 }}>
+              Rooms
+            </div>
+            <div className="card card--flush">
+              {contactRooms.map((catalog) => {
+                const live = rooms.find((r) => r.id === catalog.id);
+                const lifecycle =
+                  live?.lifecycleStatus ?? catalog.lifecycleStatus;
+                const relayCount = roomRelayBadge(catalog.id);
+                return (
+                  <Link
+                    key={catalog.id}
+                    to={`/chats/${catalog.id}`}
+                    className="row row--clickable"
+                    style={{ textDecoration: "none" }}
+                  >
+                    <div className="row__avatar-wrap">
+                      <div className="row__avatar">
+                        <RoomTopicIcon topicId={catalog.roomTopic} size={18} />
+                      </div>
+                      {relayCount > 0 ? (
+                        <NotifyPin count={relayCount} variant="relay" />
+                      ) : null}
+                    </div>
+                    <div className="row__main">
+                      <div className="row__title">
+                        {roomTopicLabel(catalog.roomTopic)}
+                      </div>
+                      <div className="row__sub">
+                        {catalog.awaitingChainSync
+                          ? "Syncing wallet — room enables near chain tip"
+                          : lifecycle === "connected"
+                            ? "Connected"
+                            : isRelayEligibleStatus(lifecycle)
+                              ? "Chain relay"
+                              : `Status: ${lifecycle}`}
+                      </div>
+                    </div>
+                    <ArrowRight
+                      size={16}
+                      style={{ color: "var(--text-faint)", flexShrink: 0 }}
+                    />
+                  </Link>
+                );
+              })}
+            </div>
           </div>
+        )}
+
+        <div className="stack stack--gap-3 fade-in-up">
+          <div className="card__title" style={{ paddingLeft: 4 }}>
+            Payment identifiers
+          </div>
+          <PaymentIdField
+            label="paymentIdFrom"
+            direction="from"
+            value={contact.paymentIdFrom}
+            hint="You generate this payment ID so you can identify transactions From your counterpart. They will use it as a payment ID To you."
+            editable
+            allowGenerate
+            showQr
+            qrKind="paymentId"
+            onEdit={(v) => updateContact(contact.id, { paymentIdFrom: v })}
+          />
+          <PaymentIdField
+            label="paymentIdTo"
+            direction="to"
+            value={contact.paymentIdTo ?? ""}
+            missing={!contact.paymentIdTo}
+            hint="That has been provided to you by your contact, so he/she can identify you when you are sending to them."
+            editable
+            showQr
+            qrKind="paymentId"
+            onEdit={(v) => savePaymentIdTo(contact.id, v)}
+          />
+          <RelationshipStateCard contact={contact} />
+        </div>
+
+        {contact.notes && (
+          <div className="card">
+            <div className="card__title">Notes</div>
+            <p style={{ fontSize: 14, lineHeight: 1.5 }}>{contact.notes}</p>
+          </div>
+        )}
+
+        <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
+          <button
+            className="btn btn--secondary grow"
+            onClick={() => archiveContact(contact.id)}
+          >
+            <Archive size={15} /> Archive
+          </button>
+          <button
+            className="btn btn--secondary grow"
+            onClick={() => setConfirmBlock(true)}
+          >
+            <Ban size={15} /> Block
+          </button>
+          <button
+            className="btn btn--danger grow"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={15} /> Delete
+          </button>
         </div>
       </div>
 
@@ -795,7 +796,18 @@ export function ContactDetailScreen() {
 
       <Sheet
         open={shareSheet}
-        title="Share your identity"
+        title={
+          <div
+            className="row-flex row-flex--between"
+            style={{ gap: 8, alignItems: "center", paddingRight: 36 }}
+          >
+            <span>Share your identity</span>
+            <CopyButton
+              label="Copy both"
+              value={shareIdentityClipboard(myAddress, contact.paymentIdFrom)}
+            />
+          </div>
+        }
         onClose={() => setShareSheet(false)}
       >
         <div className="stack stack--gap-3">
@@ -807,7 +819,7 @@ export function ContactDetailScreen() {
           </p>
           <ShareRow
             label="Your CCX address"
-            value={contact.ccxAddress}
+            value={myAddress}
             qrKind="address"
           />
           <ShareRow
@@ -849,6 +861,19 @@ export function ContactDetailScreen() {
       />
     </div>
   );
+}
+
+function shareIdentityClipboard(
+  ccxAddress: string,
+  paymentIdFrom: string,
+): string {
+  return [
+    "## Share your Info:",
+    "### your CCX address, so they can write to you:",
+    ccxAddress,
+    "### payment Id , they use to identify themselves when they write TO you:",
+    paymentIdFrom,
+  ].join("\n");
 }
 
 function ShareRow({

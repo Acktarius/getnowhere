@@ -12,14 +12,21 @@ WebView loads bundled Vite UI; native Expo shell routes `postMessage` JSON.
   equivalent). No universal access, no iframe callers.
 - Bridge token for P2P (`gnh-bridge`) stays in injection closure — not on
   `window.gnhMobile`.
-- **Lock generation:** monotonic integer incremented on each app-access lock.
-  Native and JS include `lockGeneration` on biometric requests; stale responses
-  are discarded when `response.lockGeneration !== current`.
+- **Lock generation:** monotonic integer owned by the RN host, incremented each
+  time the app backgrounds. Native pushes it into the WebView
+  (`setLockGeneration`) on pre-load injection and on foreground. The UI only
+  echoes it on security commands and MUST NOT write its own counter there
+  (`AppAccessController` keeps a separate UI-only generation). Stale responses
+  are discarded when `response.lockGeneration !== current`. It never wraps back
+  to an old value, so a late response from a previous session cannot match.
 - **Single in-flight biometric:** native shell rejects a second prompt while one
   is active.
 - **Locked-state reject:** while app access is locked, reject `gnh-bridge`
   commands and biometric enroll except unlock/lifecycle/securePrefs reads needed
   for unlock.
+- **Native stale-response drop:** RN drops security responses whose
+  `lockGeneration` no longer matches the current native generation before
+  injecting `_resolveSecurity(...)` into WebView JS.
 
 ## Message envelope
 
@@ -36,6 +43,38 @@ All security channels use:
 
 `requestId` correlates command ↔ response. `lockGeneration` optional on
 lifecycle events; required on biometric commands/responses.
+
+## Native lock-gate policy
+
+When the RN host marks app access locked (generation `N`), commands are handled
+as follows:
+
+- `gnh-bridge`: reject while locked.
+- `gnh-biometric`: allow only `isAvailable` and `unlockAppAccess`, and only when
+  command `lockGeneration === N`.
+- `gnh-secure-prefs`: allow only `get` for
+  `gnh.appAccessCredentialId` / `gnh-biometric-enrollment`, and only when
+  `lockGeneration === N`.
+- `gnh-wallet-file`: reject while locked.
+
+Unlock success (`unlockAppAccess` with `{ ok: true }`) clears native locked
+state for the matching generation only.
+
+**When the gate locks and releases** (`native-wrapper/src/nativeLockGate.ts`):
+
+- Lock: immediately on AppState `background` (generation `+1`).
+- Release on `active`, without biometrics, only when the UI would not lock
+  either — no wallet file, app access not enrolled, auto-lock timeout `0`, or
+  time in background below the timeout. Otherwise it stays locked until
+  `unlockAppAccess`. Unknown elapsed time while enrolled stays locked.
+- Wallet presence (`walletFileExists`) and enrollment
+  (`gnh.appAccessCredentialId`, written/removed only by the native biometric
+  module) are read natively on launch and after each lock. Only an explicit
+  `exists: false` counts as no wallet; any read failure counts as present /
+  enrolled. @see docs/storage/mobile-durable-storage.md § Reinstall
+- The timeout comes from `gnh-wallet-session` `keep` / `setTimeout`
+  (`autoLockTimeoutSec`, default 300). Native ignores it while locked, so a
+  locked WebView cannot shorten the gate.
 
 ## Channels
 
@@ -63,6 +102,12 @@ Injected via `_dispatchLifecycleEvent`. No response.
 **Native-only decrypt:** Keystore/Keychain secrets never cross the bridge.
 `unlockDataUnlock` returns wallet password only after biometric success.
 
+iOS enroll: `SecItemAdd` runs on the `evaluatePolicy` callback, with
+`interactionNotAllowed` set and that same `LAContext`. Device log of the
+previous path: `SecSecurityClientGet new thread!`, then `insert failed`
+`-25330` (`Authentication is needed`), then a second synchronous
+`evaluateAccessControl` that is what actually inserts the item.
+
 **Errors:** `unsupported`, `cancelled`, `invalidated`, `locked`, `busy`, `failed`.
 
 ### `gnh-secure-prefs` (WebView ↔ native)
@@ -75,6 +120,26 @@ Injected via `_dispatchLifecycleEvent`. No response.
 
 Values are JSON strings. Used for enrollment envelopes and app passcode hash —
 not WebView `localStorage` on device.
+
+`set` / `remove` reply `{ ok: true }` only once the value is stored (Android
+`commit()`, iOS Keychain status); otherwise `{ error: "failed" }`. Room-session
+counters rely on this (`docs/security/encryption.md`, Local storage rules).
+
+### `gnh-wallet-file` (WebView ↔ native)
+
+| `action` | Payload | Response |
+|----------|---------|----------|
+| `exists` | — | `{ exists: boolean }` or `{ reason }` |
+| `read` | — | `{ value: string }` or `{ reason }` (never `value: null` for AEAD fail) |
+| `write` | `{ value }` | `{ ok: true }` or `{ reason }` |
+| `remove` | — | `{ ok: true }` or `{ reason }` |
+
+`reason` is a storage error (`auth-failed`, `invalid-envelope`, `io-error`,
+`key-unavailable`, `bridge-unavailable`). Failures use `reason`, not
+`error`, so the injected promise resolves and JS can map tri-state presence.
+Native resolves `{ reason }` (does not reject). JS catch logs action, error
+name, and value **length** only — never the blob. @see
+`docs/storage/mobile-durable-storage.md`
 
 ### `gnh-privacy` (WebView → native events and commands)
 

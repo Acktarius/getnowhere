@@ -7,12 +7,43 @@ import {
   setBiometricStorageAdapter,
 } from "@/lib/auth/biometric-storage";
 import { saveBiometricEnrollment } from "@/lib/auth/biometric-store";
+import type { WalletFileExistsResult } from "@/services/storage/adapters/mobileNativeStorageAdapter";
+import {
+  installMobileNativeStorageAdapter,
+  resetMobileNativeStorageForTests,
+} from "@/services/storage/installMobileNativeStorage";
 import {
   getStorage,
   setActiveStorageAdapter,
   webStorageAdapter,
 } from "@/services/storage/StorageAdapter";
 import { useSettingsStore } from "@/state/settingsStore";
+
+async function installMobileStorageWithWallet(
+  exists: WalletFileExistsResult,
+): Promise<void> {
+  const prefs = new Map<string, string>();
+  await installMobileNativeStorageAdapter({
+    isMobile: true,
+    backends: {
+      prefs: {
+        get: async (key) => prefs.get(key) ?? null,
+        set: async (key, value) => {
+          prefs.set(key, value);
+        },
+        remove: async (key) => {
+          prefs.delete(key);
+        },
+      },
+      walletFile: {
+        exists: async () => exists,
+        read: async () => ({ ok: true, value: "{}" }),
+        write: async () => {},
+        remove: async () => {},
+      },
+    },
+  });
+}
 
 /** App-access credential key — same as src/lib/mobile/app-access-biometric.ts */
 const APP_ACCESS_CREDENTIAL_KEY = "gnh.appAccessCredentialId";
@@ -83,7 +114,63 @@ describe("reconcileBiometricSettingsWithEnrollments", () => {
 
   afterEach(() => {
     delete window.gnhMobile;
+    resetMobileNativeStorageForTests();
     setActiveStorageAdapter(webStorageAdapter);
+  });
+
+  it("no wallet (fresh iOS reinstall): clears resurfaced enrollments and both flags", async () => {
+    installGnhMobile({ appAccessCredentialId: "stale-app-cred" });
+    await installMobileStorageWithWallet({ ok: true, exists: false });
+    seedBiometricFlagsOn();
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    const store = useSettingsStore.getState();
+    expect(store.appAccessBiometricEnabled).toBe(false);
+    expect(store.dataUnlockBiometricEnabled).toBe(false);
+    expect(window.gnhMobile?.biometric?.removeCredential).toHaveBeenCalledWith(
+      "stale-app-cred",
+    );
+  });
+
+  it("no wallet with flags already off: still removes a leftover app-access credential", async () => {
+    installGnhMobile({ appAccessCredentialId: "stale-app-cred" });
+    await installMobileStorageWithWallet({ ok: true, exists: false });
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    expect(window.gnhMobile?.biometric?.removeCredential).toHaveBeenCalledWith(
+      "stale-app-cred",
+    );
+  });
+
+  it("unreadable wallet: keeps flags and credentials (cannot strip the lock)", async () => {
+    installGnhMobile({ appAccessCredentialId: "app-cred-present" });
+    await installMobileStorageWithWallet({
+      ok: false,
+      reason: "key-unavailable",
+    });
+    seedBiometricFlagsOn();
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    expect(useSettingsStore.getState().appAccessBiometricEnabled).toBe(true);
+    expect(
+      window.gnhMobile?.biometric?.removeCredential,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("wallet present: keeps app-access flag and credential", async () => {
+    installGnhMobile({ appAccessCredentialId: "app-cred-present" });
+    await installMobileStorageWithWallet({ ok: true, exists: true });
+    seedBiometricFlagsOn();
+
+    await reconcileBiometricSettingsWithEnrollments();
+
+    expect(useSettingsStore.getState().appAccessBiometricEnabled).toBe(true);
+    expect(
+      window.gnhMobile?.biometric?.removeCredential,
+    ).not.toHaveBeenCalled();
   });
 
   it("clears both biometric flags when enrollments are missing", async () => {

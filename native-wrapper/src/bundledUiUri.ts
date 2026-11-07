@@ -2,10 +2,14 @@
  * Bundled Vite UI file:// URIs for WebView.
  * Android: android_asset. iOS: app-bundle ui/ (copied by withGnhIosUiBundle).
  * @see docs/builds/expo-eas-ios-build.md
+ * @see docs/architecture/mobile-p2p-runtime.md
  */
 import { bundleDirectory } from "expo-file-system/legacy";
 import { Platform } from "react-native";
-import { ANDROID_UI_ASSET_PREFIX } from "./webviewNavigation";
+import {
+  ANDROID_UI_ASSET_PREFIX,
+  buildIosBundledUiPaths,
+} from "./webviewNavigation";
 
 /** Absolute file:// URI to index.html, or null if unavailable. */
 export function getBundledUiIndexUri(): string | null {
@@ -14,25 +18,25 @@ export function getBundledUiIndexUri(): string | null {
   }
   if (Platform.OS === "ios") {
     if (!bundleDirectory) return null;
-    return `${bundleDirectory}ui/index.html`;
+    return buildIosBundledUiPaths(bundleDirectory).indexUri;
   }
   return null;
 }
 
-/** Trailing-slash prefix for iOS allowlist; null on Android. */
+/**
+ * Trailing-slash prefix for the iOS navigation allowlist.
+ * Same canonical base as source + read access.
+ */
 export function getIosUiAssetPrefix(): string | null {
   if (Platform.OS !== "ios" || !bundleDirectory) return null;
-  return `${bundleDirectory}ui/`;
+  return buildIosBundledUiPaths(bundleDirectory).assetPrefix;
 }
 
 /**
- * iOS WKWebView allowingReadAccessToURL.
- * Use the .app bundle root (not just ui/) so iOS grants access even after
- * WKWebView resolves the /var → /private/var symlink.
+ * iOS WKWebView allowingReadAccessToURL — scoped to ui/ only.
+ * Must match the canonical form of the index URI parent path.
  */
 export function getBundledUiReadAccessUrl(): string | undefined {
   if (Platform.OS !== "ios" || !bundleDirectory) return undefined;
-  return bundleDirectory.endsWith("/")
-    ? bundleDirectory.slice(0, -1)
-    : bundleDirectory;
+  return buildIosBundledUiPaths(bundleDirectory).readAccessUrl;
 }
