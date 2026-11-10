@@ -68,6 +68,40 @@ import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
+/** Handshake probe lines. A saved-session rejoin never scans registers. */
+export function registerScanDiag(
+  probe: {
+    hasInitiatorKey: boolean;
+    registerCount: number;
+    matchingRegister: boolean;
+  } | null,
+  lifecycleStatus: string,
+): {
+  initiatorKey: string;
+  registersScanned: string;
+  matchingRegister: string;
+} {
+  if (probe) {
+    return {
+      initiatorKey: probe.hasInitiatorKey ? "yes" : "NO — resend invite",
+      registersScanned: String(probe.registerCount),
+      matchingRegister: probe.matchingRegister ? "yes" : "no",
+    };
+  }
+  if (lifecycleStatus === "pending") {
+    return {
+      initiatorKey: "…",
+      registersScanned: "…",
+      matchingRegister: "…",
+    };
+  }
+  return {
+    initiatorKey: "saved session",
+    registersScanned: "skipped",
+    matchingRegister: "skipped",
+  };
+}
+
 /** L1′ mempool rescan while Holepunch is down (accepted / connecting / failed). */
 const ROOM_RELAY_POLL_MS = 2500;
 /**
@@ -347,6 +381,10 @@ export function ChatRoomScreen() {
   }, [room, catalogRoom, roomId, inviteForRoom]);
 
   const discoveryTopicRef = getTopicRefForRoom(displayRoom.id);
+  const registerDiag = registerScanDiag(
+    handoffProbe,
+    displayRoom.lifecycleStatus,
+  );
 
   const linkedContact = useContactsStore((s) => {
     const cid = displayRoom.contactId;
@@ -1127,23 +1165,9 @@ export function ChatRoomScreen() {
           <div>Peer: {displayRoom.peerStatus}</div>
           <div>Bootstrap: {displayRoom.bootstrapSource}</div>
           <div>Connect attempts: {displayRoom.connectAttempts ?? 0}</div>
-          <div>
-            Initiator key:{" "}
-            {handoffProbe
-              ? handoffProbe.hasInitiatorKey
-                ? "yes"
-                : "NO — resend invite"
-              : "…"}
-          </div>
-          <div>Registers scanned: {handoffProbe?.registerCount ?? "…"}</div>
-          <div>
-            Matching register:{" "}
-            {handoffProbe
-              ? handoffProbe.matchingRegister
-                ? "yes"
-                : "no"
-              : "…"}
-          </div>
+          <div>Initiator key: {registerDiag.initiatorKey}</div>
+          <div>Registers scanned: {registerDiag.registersScanned}</div>
+          <div>Matching register: {registerDiag.matchingRegister}</div>
           {handoffHint && <div>Handoff: {handoffHint}</div>}
           {displayRoom.lastConnectError && (
             <div>Last error: {displayRoom.lastConnectError}</div>
