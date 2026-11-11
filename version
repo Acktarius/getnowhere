@@ -1,4 +1,4 @@
 # Mobile release versioning (npm run mobile:android:release)
-version=0.5.2
-buildversionIos=15
-buildVersionAndroid=33
+version=0.5.3
+buildversionIos=16
+buildVersionAndroid=34
