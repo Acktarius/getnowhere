@@ -170,9 +170,6 @@ export const CREATE_PACK_BYTES = CREATE_PACK_BYTES_V1 + 1;
 /** v2 slim + uint32 topicEpoch + roomTopic byte. */
 export const CREATE_PACK_BYTES_V2 = CREATE_PACK_BYTES_V1 + 4 + 1;
 
-/** @deprecated alias — pre-topic pack length still accepted on parse. */
-export const CREATE_PACK_BYTES_LEGACY_SLIM = CREATE_PACK_BYTES_V1;
-
 /** Legacy 136-byte pack (pre-slim) — still accepted on parse. */
 export const CREATE_PACK_BYTES_LEGACY = 136;
 

@@ -13,6 +13,7 @@ import { ToastHost } from "@/components/ToastHost";
 import { useAppAccessLocked } from "@/hooks/useAppAccessLocked";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { useMobileAppAccess } from "@/hooks/useMobileAppAccess";
+import { usePushTokenBridge } from "@/hooks/usePushTokenBridge";
 import { useSeedDemoContacts } from "@/hooks/useSeedDemoContacts";
 import { useWalletLiveSync } from "@/hooks/useWalletLiveSync";
 import { MainTabShell } from "@/layouts/MainTabShell";
@@ -39,6 +40,7 @@ import { useWalletStore } from "@/state/walletStore";
 function AppInner() {
   useApplyTheme();
   useMobileAppAccess();
+  usePushTokenBridge();
   const location = useLocation();
   const init = useAuthStore((s) => s.init);
   const appAccessLocked = useAppAccessLocked();
