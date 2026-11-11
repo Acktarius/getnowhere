@@ -1,0 +1,77 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreBinaries": ["swiftc", "mktemp", "java", "sha256sum"],
+  "ignoreUnresolved": ["./gradlew"],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "index.html",
+        "scripts/**/*.{js,mjs,ts}",
+        "tests/**/*.{test,spec}.{ts,tsx}",
+        "tests/native-wrapper/stubs/**/*.{ts,tsx}"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.{ts,tsx}",
+        "scripts/**/*.{js,mjs,ts}",
+        "!**/*.d.ts"
+      ]
+    },
+    "desktop-electron": {
+      "entry": [
+        "preload.cjs",
+        "preload-bridge.cjs",
+        "scripts/**/*.mjs",
+        "test/**/*.mjs"
+      ],
+      "project": ["**/*.{mjs,cjs,js}", "!node_modules/**"],
+      "ignoreDependencies": ["@electron-forge/shared-types"]
+    },
+    "holepunch-sidecar": {
+      "entry": ["scripts/**/*.mjs", "test/**/*.mjs"],
+      "project": ["src/**/*.mjs", "scripts/**/*.mjs", "test/**/*.mjs"]
+    },
+    "native-wrapper": {
+      "entry": [
+        "bare/entry.mjs",
+        "bare/test/**/*.mjs",
+        "plugins/**/*.{js,cjs,mjs}",
+        "scripts/**/*.{js,mjs,ts}"
+      ],
+      "project": [
+        "App.tsx",
+        "bare/**/*.{mjs,js}",
+        "plugins/**/*.{js,cjs,mjs}",
+        "scripts/**/*.{js,mjs,ts}",
+        "src/**/*.{ts,tsx}",
+        "!assets/**"
+      ],
+      "ignoreDependencies": [
+        "bare-type",
+        "bare-url",
+        "sodium-native",
+        "udx-native",
+        "bare-pack",
+        "b4a",
+        "hyperswarm",
+        "@expo/config-plugins",
+        "expo-updates",
+        "expo-system-ui"
+      ]
+    },
+    "poke-gateway": {
+      "entry": ["test/**/*.{test,spec}.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "documentation/website": {
+      "entry": ["app/**/*.{ts,tsx}", "scripts/**/*.{js,mjs,ts}"],
+      "project": [
+        "app/**/*.{ts,tsx,css}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "scripts/**/*.{js,mjs,ts}",
+        "../content/**/*.mdx"
+      ]
+    }
+  }
+}

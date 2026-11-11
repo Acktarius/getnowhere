@@ -36,7 +36,8 @@
     "types": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format ."
+    "knip": "npx knip --include files,duplicates",
+    "preflight": "tsc -b && vitest run && biome check . && biome lint . && biome format . && npm run knip"
   },
   "dependencies": {
     "@noble/ciphers": "^2.2.0",
