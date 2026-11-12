@@ -26,6 +26,11 @@ messages before they mine. Chat `create` / `register` from a **known** `paymentI
 (existing contact) are actionable immediately. Unknown payment IDs never become invites.
 Do not treat 0-conf as proof for establishing a *new* relationship.
 
+**Daemon deadline:** each daemon HTTP call keeps its abort timer armed until the
+response body is buffered (`src/services/conceal/sync/daemon-fetch.ts`, 30s). A
+stall after response headers rejects as a timeout, so range fetch can split and
+retry. Sync does not stay in flight until the WebView process restarts.
+
 **Live poll (parity with next-wallet #112):** while the wallet is open, the app polls
 sync at ~2.5s while catching up and ~5s near tip (`useWalletLiveSync`). Each tick
 awaits sync then pushes **balance + history** into Zustand together (keep-alive

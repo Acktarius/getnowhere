@@ -8,6 +8,10 @@ import type {
   WalletSync,
 } from "conceal-wallet-sdk";
 import * as sdk from "conceal-wallet-sdk";
+import {
+  DAEMON_REQUEST_TIMEOUT_MS,
+  daemonFetch,
+} from "@/services/conceal/sync/daemon-fetch";
 
 // ===== WASM init guard =====
 //
@@ -193,6 +197,8 @@ export function buildDaemon(
   return sdk.createDaemonClient({
     nodeUrl: resolveDaemonNodeUrl(nodeUrl),
     allowInsecure: true,
+    timeoutMs: DAEMON_REQUEST_TIMEOUT_MS,
+    fetch: daemonFetch,
   });
 }
 

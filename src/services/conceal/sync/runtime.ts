@@ -81,6 +81,10 @@ import { fetchSmartNodes, nodeUrlToPoolHost } from "@/lib/network/smart-nodes";
 import { syncProfileFromReadSpeed } from "@/lib/sync-speed";
 import { clampCreationHeight } from "@/lib/wallet/creation-height";
 import {
+  DAEMON_REQUEST_TIMEOUT_MS,
+  daemonFetch,
+} from "@/services/conceal/sync/daemon-fetch";
+import {
   notifyHistoryPossiblyChanged,
   notifySyncReachedTip,
   prepareRawForHistoryPublish,
@@ -433,6 +437,8 @@ export function buildDaemon(nodeUrl: string): DaemonClient {
   return createDaemonClient({
     nodeUrl: resolveDaemonNodeUrl(nodeUrl),
     allowInsecure: true,
+    timeoutMs: DAEMON_REQUEST_TIMEOUT_MS,
+    fetch: daemonFetch,
   });
 }
 
