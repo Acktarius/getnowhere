@@ -361,14 +361,16 @@ jobs:
           desk_sum=$(sha256sum "$work/getnowhere.desktop" | awk '{print $1}')
           icon_sum=$(sha256sum "$work/getnowhere.png" | awk '{print $1}')
           license_sum=$(sha256sum "$work/LICENSE" | awk '{print $1}')
+          wrapper_sum=$(sha256sum "$work/install-cli-wrapper.sh" | awk '{print $1}')
           sed -i \
             -e "s/^pkgver=.*/pkgver=${{ steps.ver.outputs.version }}/" \
             -e "s/ZIP_SHA256/${zip_sum}/" \
             -e "s/DESKTOP_SHA256/${desk_sum}/" \
             -e "s/ICON_SHA256/${icon_sum}/" \
             -e "s/LICENSE_SHA256/${license_sum}/" \
+            -e "s/WRAPPER_SHA256/${wrapper_sum}/" \
             "$work/PKGBUILD"
-          grep -q 'ZIP_SHA256\|DESKTOP_SHA256\|ICON_SHA256\|LICENSE_SHA256' "$work/PKGBUILD" && {
+          grep -q 'ZIP_SHA256\|DESKTOP_SHA256\|ICON_SHA256\|LICENSE_SHA256\|WRAPPER_SHA256' "$work/PKGBUILD" && {
             echo "PKGBUILD still has checksum placeholders"
             exit 1
           }

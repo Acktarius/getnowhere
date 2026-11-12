@@ -32,8 +32,14 @@ describe("Arch package recipe", () => {
     expect(pkgbuild).toContain(
       'find "$pkgdir/opt/getnowhere" -type d -exec chmod 755 {} +',
     );
+    expect(pkgbuild).toContain("install-cli-wrapper.sh");
+    expect(pkgbuild).toContain("WRAPPER_SHA256");
+    expect(pkgbuild).not.toContain("$startdir");
     expect(pkgbuild).toContain(
       'bash "$wrapper" "$pkgver" /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"',
+    );
+    expect(pkgbuild).toContain(
+      'local wrapper="$srcdir/install-cli-wrapper.sh"',
     );
     expect(pkgbuild).not.toContain(
       'ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"',
@@ -77,6 +83,7 @@ describe("release workflow Arch job", () => {
     expect(workflow).toContain("makepkg --nodeps --noconfirm --log");
     expect(workflow).toContain('cp LICENCE "$work/LICENSE"');
     expect(workflow).toContain("LICENSE_SHA256");
+    expect(workflow).toContain("WRAPPER_SHA256");
     expect(workflow).toContain("namcap --exclude=elfpaths PKGBUILD");
     expect(workflow).toContain("namcap reported errors:");
     expect(workflow).toContain("/usr/share/licenses/getnowhere/LICENSE");

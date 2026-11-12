@@ -35,8 +35,15 @@ source=(
   getnowhere.desktop
   getnowhere.png
   LICENSE
+  install-cli-wrapper.sh
 )
-sha256sums=('ZIP_SHA256' 'DESKTOP_SHA256' 'ICON_SHA256' 'LICENSE_SHA256')
+sha256sums=(
+  'ZIP_SHA256'
+  'DESKTOP_SHA256'
+  'ICON_SHA256'
+  'LICENSE_SHA256'
+  'WRAPPER_SHA256'
+)
 
 package() {
   local app=GetNowHere-linux-x64
@@ -50,8 +57,7 @@ package() {
   # Forge zip dirs are often mode 700; pacman stores those modes.
   find "$pkgdir/opt/getnowhere" -type d -exec chmod 755 {} +
   find "$pkgdir/opt/getnowhere" -type f -exec chmod a+rX {} +
-  local wrapper="$startdir/install-cli-wrapper.sh"
-  [[ -f $wrapper ]] || wrapper="$startdir/../install-cli-wrapper.sh"
+  local wrapper="$srcdir/install-cli-wrapper.sh"
   [[ -f $wrapper ]] || {
     echo "missing install-cli-wrapper.sh"
     exit 1
