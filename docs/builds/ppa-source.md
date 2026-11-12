@@ -9,7 +9,8 @@ A manual `workflow_dispatch` run stores `ppa-source-jammy`, `ppa-source-noble`, 
 `scripts/ppa/publish-latest.sh` uses `gh` to download the artifacts from the latest successful run, or from `--run <run-id>`. It puts the maintainer from `.env` into the changelog, signs the source locally, and runs `dput`. Launchpad builds the `.deb`.
 
 Version form is `<upstream>-<revision>~<series><upload>`, for example
-`0.5.1-1~jammy1`. Launchpad rejects a repeated version. Set
+`0.5.1-1~jammy1`. `getnowhere -v` and `getnowhere --version` print the bare
+upstream version (`0.5.1`) and exit. Launchpad rejects a repeated version. Set
 `PPA_UPLOAD_SUFFIX=2` in `.env` before a second upload of the same upstream
 version. There is no `package/deb/` directory; the workflow writes `debian/`
 while it builds the source package.

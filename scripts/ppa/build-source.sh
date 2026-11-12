@@ -123,8 +123,11 @@ for series in "${series_list[@]}"; do
   mkdir -p "$series_root"
   cp -a "$pristine" "$tree"
   cp -a "$work/${pkg}_${version}.orig.tar.gz" "$series_root/"
+  cli_wrapper=$(dirname "$(readlink -f "$0")")/../../desktop-electron/packaging/install-cli-wrapper.sh
+  [[ -f "$cli_wrapper" ]] || die "missing install-cli-wrapper.sh"
   export TREE="$tree" DEB_VERSION="$deb_version" SERIES="$series"
   export CHANGELOG_DATE="$changelog_date" ICON_PATH="${icon}"
+  export APP_VERSION="$version" CLI_WRAPPER="$(readlink -f "$cli_wrapper")"
   python3 <<'PY'
 import os
 import shutil
@@ -221,8 +224,10 @@ override_dh_shlibdeps:
 override_dh_auto_install:
 \tinstall -d debian/getnowhere/usr/lib/getnowhere
 \tcp -a payload/. debian/getnowhere/usr/lib/getnowhere/
+\tfind debian/getnowhere/usr/lib/getnowhere -type d -exec chmod 755 {} +
+\tfind debian/getnowhere/usr/lib/getnowhere -type f -exec chmod a+rX {} +
 \tinstall -d debian/getnowhere/usr/bin
-\tln -s ../lib/getnowhere/getnowhere debian/getnowhere/usr/bin/getnowhere
+\tbash debian/install-cli-wrapper.sh @VERSION@ /usr/lib/getnowhere/getnowhere debian/getnowhere/usr/bin/getnowhere
 \tinstall -d debian/getnowhere/usr/share/applications
 \tinstall -m 644 debian/getnowhere.desktop debian/getnowhere/usr/share/applications/getnowhere.desktop
 \tif [ -f debian/getnowhere.png ]; then \\
@@ -236,7 +241,10 @@ override_dh_auto_install:
 override_dh_missing:
 \t@:
 """
-(debian / "rules").write_text(rules)
+wrapper = Path(os.environ["CLI_WRAPPER"])
+shutil.copyfile(wrapper, debian / "install-cli-wrapper.sh")
+os.chmod(debian / "install-cli-wrapper.sh", 0o755)
+(debian / "rules").write_text(rules.replace("@VERSION@", os.environ["APP_VERSION"]))
 os.chmod(debian / "rules", 0o755)
 PY
 

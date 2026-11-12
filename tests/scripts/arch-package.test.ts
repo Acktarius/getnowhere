@@ -30,6 +30,12 @@ describe("Arch package recipe", () => {
     expect(pkgbuild).toContain("options=('!strip' '!debug' '!lto')");
     expect(pkgbuild).toContain('install -dm755 "$pkgdir/opt/getnowhere"');
     expect(pkgbuild).toContain(
+      'find "$pkgdir/opt/getnowhere" -type d -exec chmod 755 {} +',
+    );
+    expect(pkgbuild).toContain(
+      'bash "$wrapper" "$pkgver" /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"',
+    );
+    expect(pkgbuild).not.toContain(
       'ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"',
     );
     expect(pkgbuild).toContain(
@@ -75,6 +81,10 @@ describe("release workflow Arch job", () => {
     expect(workflow).toContain("namcap reported errors:");
     expect(workflow).toContain("/usr/share/licenses/getnowhere/LICENSE");
     expect(workflow).toContain("pacman -U --noconfirm");
+    expect(workflow).toContain("directories are not world-traversable:");
+    expect(workflow).toContain("getnowhere --version");
+    expect(workflow).toContain("getnowhere -v");
+    expect(workflow).toContain("packaging/deb-cli-wrapper.sh");
     expect(workflow).toContain(
       "needs: [desktop-linux, desktop-windows, desktop-arch-test]",
     );

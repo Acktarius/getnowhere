@@ -47,8 +47,16 @@ package() {
   # Prebuilt Electron runtime stays intact under /opt. @see https://wiki.archlinux.org/title/Electron_package_guidelines
   install -dm755 "$pkgdir/opt/getnowhere"
   cp -a "$app/." "$pkgdir/opt/getnowhere/"
-  install -dm755 "$pkgdir/usr/bin"
-  ln -s /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"
+  # Forge zip dirs are often mode 700; pacman stores those modes.
+  find "$pkgdir/opt/getnowhere" -type d -exec chmod 755 {} +
+  find "$pkgdir/opt/getnowhere" -type f -exec chmod a+rX {} +
+  local wrapper="$startdir/install-cli-wrapper.sh"
+  [[ -f $wrapper ]] || wrapper="$startdir/../install-cli-wrapper.sh"
+  [[ -f $wrapper ]] || {
+    echo "missing install-cli-wrapper.sh"
+    exit 1
+  }
+  bash "$wrapper" "$pkgver" /opt/getnowhere/getnowhere "$pkgdir/usr/bin/getnowhere"
   install -Dm644 getnowhere.desktop "$pkgdir/usr/share/applications/getnowhere.desktop"
   install -Dm644 getnowhere.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/getnowhere.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

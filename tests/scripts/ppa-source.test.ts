@@ -118,6 +118,26 @@ describe("ppa source packages", () => {
       { encoding: "utf8" },
     );
     expect(names).toContain("getnowhere-1.2.3/payload/getnowhere");
+    const rules = readFileSync(
+      path.join(dir, "work/jammy/getnowhere-1.2.3/debian/rules"),
+      "utf8",
+    );
+    expect(rules).toContain(
+      "find debian/getnowhere/usr/lib/getnowhere -type d -exec chmod 755 {} +",
+    );
+    expect(rules).toContain(
+      "bash debian/install-cli-wrapper.sh 1.2.3 /usr/lib/getnowhere/getnowhere debian/getnowhere/usr/bin/getnowhere",
+    );
+    expect(rules).not.toContain("ln -s ../lib/getnowhere/getnowhere");
+    expect(
+      readFileSync(
+        path.join(
+          dir,
+          "work/jammy/getnowhere-1.2.3/debian/install-cli-wrapper.sh",
+        ),
+        "utf8",
+      ),
+    ).toContain("printf '%s\\n'");
     expect(names).not.toContain("debian/");
     expect(
       existsSync(

@@ -76,7 +76,21 @@ jobs:
 
       - name: Make Linux package
         working-directory: desktop-electron
-        run: npm run make
+        run: umask 022 && npm run make
+
+      - name: Deb version wrapper
+        working-directory: desktop-electron
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -t debs < <(find out/make -type f -name '*.deb')
+          if ((${#debs[@]} != 1)); then
+            echo "ERROR: expected one deb, found ${#debs[@]}"
+            printf '%s\n' "${debs[@]}"
+            exit 1
+          fi
+          bash packaging/deb-cli-wrapper.sh "${debs[0]}" "$VERSION"
 
       - name: Build AppImage (linuxdeploy)
         working-directory: desktop-electron
@@ -337,6 +351,7 @@ jobs:
           work=/home/builder/pkg
           mkdir -p "$work"
           cp desktop-electron/packaging/arch/PKGBUILD "$work/"
+          cp desktop-electron/packaging/install-cli-wrapper.sh "$work/"
           cp desktop-electron/packaging/arch/getnowhere.desktop "$work/"
           cp desktop-electron/icons/icon.png "$work/getnowhere.png"
           cp LICENCE "$work/LICENSE"
@@ -369,6 +384,7 @@ jobs:
         working-directory: ${{ steps.prep.outputs.work }}
         env:
           FILE_VERSION: ${{ steps.ver.outputs.file_version }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           mapfile -t pkgs < <(ls -1 getnowhere-*.pkg.tar.zst)
@@ -392,8 +408,18 @@ jobs:
             echo "opt/getnowhere/getnowhere missing or not executable"
             exit 1
           }
-          bsdtar -tvf "$pkg" usr/bin/getnowhere | grep -q '^lrwx' || {
-            echo "usr/bin/getnowhere symlink missing"
+          closed=$(bsdtar -tvf "$pkg" | awk '$1 ~ /^d/ && substr($1, 10, 1) != "x" { print }')
+          if [[ -n "$closed" ]]; then
+            echo "directories are not world-traversable:"
+            echo "$closed"
+            exit 1
+          fi
+          bsdtar -tvf "$pkg" usr/bin/getnowhere | grep -q '^-rwx' || {
+            echo "usr/bin/getnowhere wrapper missing or not executable"
+            exit 1
+          }
+          bsdtar -xOf "$pkg" usr/bin/getnowhere | grep -q "printf '%s\\\\n' '${VERSION}'" || {
+            echo "usr/bin/getnowhere does not print ${VERSION}"
             exit 1
           }
           grep -q '/usr/share/applications/getnowhere.desktop$' <<< "$files"
@@ -447,6 +473,14 @@ jobs:
           pacman -U --noconfirm "$pkg"
           test -x /usr/bin/getnowhere
           test -f /usr/share/applications/getnowhere.desktop
+          id tester >/dev/null 2>&1 || useradd -m tester
+          su tester -s /bin/bash -c 'test -x /opt/getnowhere && test -x /opt/getnowhere/getnowhere'
+          ver=$(printf '%s\n' "$pkg" | sed -n 's/^Get_NowHere-v\(.*\)-x86_64\.pkg\.tar\.zst$/\1/p')
+          [[ -n "$ver" ]] || { echo "could not parse version from $pkg"; exit 1; }
+          got=$(timeout 5 su tester -s /bin/bash -c 'getnowhere --version')
+          [[ "$got" == "$ver" ]] || { echo "expected $ver, got $got"; exit 1; }
+          got=$(timeout 5 su tester -s /bin/bash -c 'getnowhere -v')
+          [[ "$got" == "$ver" ]] || { echo "expected $ver from -v, got $got"; exit 1; }
           test -f /usr/share/icons/hicolor/256x256/apps/getnowhere.png
           ldd /opt/getnowhere/getnowhere > ldd.out
           cat ldd.out
@@ -514,6 +548,7 @@ jobs:
 
             - **Linux:** `.AppImage` (Debian/Ubuntu + Arch), `.deb` + `.zip`
             - **Arch / Omarchy:** `.pkg.tar.zst` (`sudo pacman -U`)
+            - **Version:** `getnowhere -v` or `getnowhere --version` prints the bare version and exits (`.deb` and Arch package)
             - **Windows:** `.zip` (extract and run `getnowhere.exe`)
             - **Bridge:** UI ↔ sidecar over OS local IPC (not loopback WebSocket)
             - **Artifact version:** from repo `version` file (`${{ steps.ver.outputs.file_version }}`), not the git tag name
