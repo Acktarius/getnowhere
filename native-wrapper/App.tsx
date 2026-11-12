@@ -66,11 +66,13 @@ import {
   normalizeAutoLockTimeoutSec,
   shouldStayLockedOnForeground,
 } from "./src/nativeLockGate";
+import { parseRecoverWorkletCommand } from "./src/recoverWorkletMessage";
 import {
   buildSaveTextFileResolveScript,
   handleSaveTextFileWebViewMessage,
 } from "./src/saveTextFileFromWebView";
 import { buildLifecycleDispatchScript } from "./src/securityBridgeInjection";
+import { tokensEqual } from "./src/tokensEqual";
 import {
   applyWalletSessionMessage,
   buildWalletSessionRestoreScript,
@@ -499,6 +501,20 @@ export default function App() {
       ) {
         return;
       }
+      const recoverWorklet = parseRecoverWorkletCommand(raw);
+      if (recoverWorklet) {
+        if (
+          !nativeLockRef.current.locked &&
+          tokensEqual(recoverWorklet.token, bridgeToken)
+        ) {
+          void bridgeRef.current?.recover().then(() => {
+            webViewRef.current?.injectJavaScript(
+              buildBridgeEventDispatchScript({ type: "pong" }),
+            );
+          });
+        }
+        return;
+      }
       const lifecycleMsg = parseLifecycleHostMessage(raw);
       if (lifecycleMsg?.type === "ui-ready") {
         console.warn("[gnh-lifecycle] WebView ui-ready");
@@ -565,6 +581,7 @@ export default function App() {
       flushPendingForeground,
       injectPokeToken,
       unlockNativeSecurityGate,
+      bridgeToken,
     ],
   );
 

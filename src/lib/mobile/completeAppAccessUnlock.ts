@@ -1,5 +1,6 @@
 import { unlockAppAccess as unlockAppAccessController } from "@/lib/mobile/AppAccessController";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { rejoinSavedRoomsAfterUnlock } from "@/services/p2p/foregroundRoomRejoin";
 
 /**
  * Call after successful biometric app-access unlock.
@@ -9,4 +10,5 @@ import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 export function completeAppAccessUnlock(): void {
   if (!isMobileHost()) return;
   unlockAppAccessController();
+  void rejoinSavedRoomsAfterUnlock();
 }

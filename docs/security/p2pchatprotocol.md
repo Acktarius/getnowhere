@@ -515,6 +515,10 @@ Policy (see `src/services/p2p/holepunchPolicy.ts`):
   no valid proof/ack. A local proof send/persist failure is `unreachable`; stale or
   malformed frames are dropped. A later openable peer frame relabels a
   `crypto_mismatch` room to `timeout` — see `docs/security/encryption.md` (Post-connect verification)
+- A locked app-access gate does not call `join` and is not `unreachable`. After the
+  gate opens, each saved session rejoins its stored `topicRef` (HKDF epoch and suite
+  unchanged) and must pass the sealed proof again before `connected`. A room that
+  already has a reusable session does not run the first-handshake register probe.
 
 `connect_failed` enables **relay** send (grey bubbles), not live. Live resumes
 only when connect reaches `connected`. `pending` never enables send.

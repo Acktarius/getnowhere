@@ -273,6 +273,11 @@ export function loadRoomSession(
   return readAll()[roomId];
 }
 
+/** Room ids that have a persisted Holepunch session. */
+export function listRoomSessionIds(): string[] {
+  return Object.keys(readAll());
+}
+
 /** Counters only move forward. A later save cannot rewind a seal. @see docs/security/encryption.md */
 export async function saveRoomSession(
   session: PersistedRoomSession,

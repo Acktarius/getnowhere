@@ -5,6 +5,8 @@
  */
 
 import type { RawWalletV1 } from "conceal-wallet-sdk";
+import { isAppAccessLocked } from "@/lib/mobile/AppAccessController";
+import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import { ConcealSmartMessageAdapter } from "@/services/conceal/ConcealSmartMessageAdapter";
 import {
@@ -42,6 +44,10 @@ import {
   importKeyHex,
   P2PEncryptionAdapter,
 } from "@/services/p2p/P2PEncryptionAdapter";
+import {
+  reusableLiveContract,
+  reusableSessionBlock,
+} from "@/services/p2p/reusableSession";
 import {
   isRoomRevoked,
   rememberRevokedRoom,
@@ -687,14 +693,30 @@ export function contractFromSavedSession(
   };
 }
 
-function persistLiveSession(state: RoomState): void {
+function isAppAccessLockError(error: unknown): boolean {
+  return error instanceof Error && error.message === "App access locked";
+}
+
+/** In-memory rooms, including a session whose disk save has not landed. */
+export function listLiveRoomIds(): string[] {
+  return [...rooms.keys()];
+}
+
+/** True when this room already has a contract that may rejoin its stored topic. */
+export function hasLiveRejoinContract(roomId: string): boolean {
+  if (isRoomRevoked(roomId)) return false;
+  const contract = rooms.get(roomId)?.contract ?? contractsByRoom.get(roomId);
+  return reusableLiveContract(roomId, contract);
+}
+
+async function persistLiveSession(state: RoomState): Promise<void> {
   const contract = state.contract ?? contractsByRoom.get(state.room.id);
   const session = state.session;
   if (!contract || !session) return;
   const sendKeyHex = exportKeyHex(session.sendKeyRef);
   const recvKeyHex = exportKeyHex(session.recvKeyRef);
   if (!sendKeyHex || !recvKeyHex) return;
-  void saveRoomSession({
+  await saveRoomSession({
     roomId: state.room.id,
     contactId: state.room.contactId,
     contract: {
@@ -707,7 +729,7 @@ function persistLiveSession(state: RoomState): void {
     sendCounter: session.sendCounter,
     recvCounter: session.recvCounter,
     savedAt: new Date().toISOString(),
-  }).catch(() => undefined);
+  });
 }
 
 /** Restore crypto session + rejoin swarm after reload. */
@@ -724,21 +746,30 @@ export async function restoreRoomSession(
     return null;
   }
   const saved = loadRoomSession(roomId);
-  if (!saved) return null;
-  if (isRoomExpired(saved.contract.roomTtl)) {
+  const savedBlock = reusableSessionBlock(saved);
+  if (saved && isRoomExpired(saved.contract.roomTtl)) {
     void removeRoomSession(roomId).catch(() => undefined);
     return null;
   }
-  importKeyHex(saved.contract.sendKeyRef, saved.sendKeyHex);
-  importKeyHex(saved.contract.recvKeyRef, saved.recvKeyHex);
-  const contract: HolepunchBootstrapContract = {
-    ...saved.contract,
-    sendCounter: saved.sendCounter,
-    recvCounter: saved.recvCounter,
-  };
+  // Unsupported material must not become a new handshake or a different topic.
+  if (savedBlock === "unsupported") return null;
+  const live = rooms.get(roomId)?.contract ?? contractsByRoom.get(roomId);
+  let contract: HolepunchBootstrapContract | null = null;
+  if (saved && savedBlock === "ok") {
+    importKeyHex(saved.contract.sendKeyRef, saved.sendKeyHex);
+    importKeyHex(saved.contract.recvKeyRef, saved.recvKeyHex);
+    contract = {
+      ...saved.contract,
+      sendCounter: saved.sendCounter,
+      recvCounter: saved.recvCounter,
+    };
+  } else if (reusableLiveContract(roomId, live)) {
+    contract = live ?? null;
+  }
+  if (!contract) return null;
   let state = rooms.get(roomId);
   if (!state) {
-    state = ensureRoom(saved.contactId, {
+    state = ensureRoom(saved?.contactId ?? "", {
       roomId,
       roomKeyRef: contract.sessionId,
       bootstrapSource: "conceal-smart-message",
@@ -768,7 +799,7 @@ function maybeMarkConnected(topicRef: string, peerCount: number): void {
         lastConnectError: undefined,
       };
       rooms.set(roomId, state);
-      persistLiveSession(state);
+      void persistLiveSession(state).catch(() => undefined);
       emitRoom(state.room);
       continue;
     }
@@ -932,6 +963,14 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
 
 async function attemptConnect(state: RoomState): Promise<ChatRoom> {
   wireBackendOnce();
+  // A locked gate is not a swarm failure. Do not join and do not record unreachable.
+  if (isMobileHost() && isAppAccessLocked()) {
+    return state.room;
+  }
+  const previousStatus = state.room.lifecycleStatus;
+  const previousPeer = state.room.peerStatus;
+  const previousAttempts = state.room.connectAttempts ?? 0;
+  const previousError = state.room.lastConnectError;
   beginProofAttempt(state.room.id);
   const contract = state.contract ?? contractsByRoom.get(state.room.id);
   if (!contract) throw new Error("Missing Holepunch bootstrap contract.");
@@ -981,7 +1020,18 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
   try {
     await backend().ensureConnected();
     await backend().join(topicRef, state.room.id);
-  } catch {
+  } catch (error) {
+    if (isAppAccessLockError(error)) {
+      state.room = {
+        ...state.room,
+        lifecycleStatus: previousStatus,
+        peerStatus: previousPeer,
+        connectAttempts: previousAttempts,
+        lastConnectError: previousError,
+      };
+      rooms.set(state.room.id, state);
+      return state.room;
+    }
     state.room = {
       ...state.room,
       lifecycleStatus: "connect_failed",
@@ -1045,7 +1095,11 @@ async function attemptConnect(state: RoomState): Promise<ChatRoom> {
       touchLastLiveAt(state.room.id);
       clearL2Blip(state.room.id);
       nextAutoRetryAt.delete(state.room.id);
-      persistLiveSession(state);
+      try {
+        await persistLiveSession(state);
+      } catch (error) {
+        console.warn("[gnh] room session save failed", error);
+      }
       emitRoom(state.room);
       void resendRecentLiveSends(state.room.id).catch(() => undefined);
       return state.room;

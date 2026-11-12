@@ -32,6 +32,7 @@ import { AboutScreen } from "@/screens/settings/AboutScreen";
 import { BackupSettingsScreen } from "@/screens/settings/BackupSettingsScreen";
 import { SecuritySettingsScreen } from "@/screens/settings/SecuritySettingsScreen";
 import { WalletPasswordScreen } from "@/screens/settings/WalletPasswordScreen";
+import { installForegroundRoomRejoin } from "@/services/p2p/foregroundRoomRejoin";
 import { isOnboarded, useAuthStore } from "@/state/authStore";
 import { useContactsStore } from "@/state/contactsStore";
 import { useSettingsStore } from "@/state/settingsStore";
@@ -55,6 +56,7 @@ function AppInner() {
     scrubLeftoverDaemonCaches();
     if (isMobileHost()) installBackgroundRemoteSyncHook();
     const unsubCheckpoint = installSyncLifecycleCheckpoint();
+    const unsubRejoin = installForegroundRoomRejoin();
     init().then(async () => {
       await hydrateContacts();
       if (isMobileHost()) {
@@ -74,7 +76,10 @@ function AppInner() {
       }
       setReady(true);
     });
-    return unsubCheckpoint;
+    return () => {
+      unsubCheckpoint();
+      unsubRejoin();
+    };
   }, [init, hydrateContacts]);
 
   const onboarded = isOnboarded();

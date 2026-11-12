@@ -27,6 +27,7 @@ import {
   getLastSidecarDetail,
   getMessagesForRoom,
   getTopicRefForRoom,
+  hasLiveRejoinContract,
   restoreRoomSession,
 } from "@/services/p2p/HolepunchChatTransport";
 import {
@@ -36,6 +37,10 @@ import {
 import { isRetryableConnectFailure } from "@/services/p2p/holepunchPolicy";
 import { resolveRoomTtl } from "@/services/p2p/resolveRoomTtl";
 import {
+  REUSABLE_SESSION_BLOCKED_HINT,
+  reusableSessionBlock,
+} from "@/services/p2p/reusableSession";
+import {
   loadCatalogRoom,
   peekCatalogRoom,
 } from "@/services/p2p/roomCatalogStore";
@@ -43,6 +48,7 @@ import {
   canBroadcastRoomRevoke,
   resolveRoomRevokeIds,
 } from "@/services/p2p/roomRevoke";
+import { loadRoomSession } from "@/services/p2p/roomSessionStore";
 import {
   canComposeMessages,
   composerDisabledReason,
@@ -481,18 +487,32 @@ export function ChatRoomScreen() {
           .getState()
           .rooms.find((r) => r.id === roomId);
         if (cancelled) return;
-        if (latest?.lifecycleStatus === "connected") return;
-
-        // Saved session rejoins the swarm. The register scan is only the
-        // first handshake, after the initiator key has been discarded.
-        const restored = await restoreRoomSession(roomId);
-        if (restored) {
-          useChatStore.setState((s) => ({
-            rooms: [...s.rooms.filter((r) => r.id !== roomId), restored],
-          }));
+        if (latest?.lifecycleStatus === "connected") {
+          setHandoffHint(null);
+          setHandoffProbe(null);
           return;
         }
+
+        // A saved or in-memory session rejoins its stored topic.
+        // The register scan is only the first handshake.
+        const savedBlock = reusableSessionBlock(loadRoomSession(roomId));
+        if (savedBlock === "unsupported") {
+          setHandoffHint(REUSABLE_SESSION_BLOCKED_HINT);
+          setHandoffProbe(null);
+          return;
+        }
+        const restored = await restoreRoomSession(roomId);
         if (cancelled) return;
+        if (restored || savedBlock === "ok" || hasLiveRejoinContract(roomId)) {
+          if (restored) {
+            useChatStore.setState((s) => ({
+              rooms: [...s.rooms.filter((r) => r.id !== roomId), restored],
+            }));
+          }
+          setHandoffHint(null);
+          setHandoffProbe(null);
+          return;
+        }
 
         const probe = await probeInitiatorHandoff(roomId);
         if (cancelled) return;

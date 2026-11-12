@@ -61,6 +61,23 @@ export class GnhMobileBridge {
     }
   }
 
+  /**
+   * Drop a suspended worklet and start a fresh one.
+   * The saved topic is rejoined by the UI; this does not rotate HKDF material.
+   */
+  async recover(): Promise<void> {
+    const previous = this.worklet;
+    this.worklet = null;
+    this.startPromise = null;
+    this.ipcProcessor?.reset();
+    try {
+      previous?.terminate();
+    } catch {
+      /* already dead */
+    }
+    await this.ensureStarted();
+  }
+
   /** Start Bare worklet from packed bundle bytes. */
   async ensureStarted(): Promise<void> {
     if (this.worklet) return;
