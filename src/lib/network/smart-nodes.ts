@@ -1,6 +1,7 @@
 import { getCuratedPoolListUrl } from "@/lib/config";
 import type { SmartNode } from "@/lib/types/smart-node";
 import { normalizeNodeUrl } from "@/lib/validation/node-url";
+import { fetchWithBufferedBody } from "@/services/conceal/sync/daemon-fetch";
 
 type PoolListEntry = {
   id: string;
@@ -79,10 +80,14 @@ export async function fetchSmartNodes(
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
   try {
-    const response = await fetch(getCuratedPoolListUrl(), {
-      method: "GET",
-      signal: controller.signal,
-    });
+    const response = await fetchWithBufferedBody(
+      globalThis.fetch.bind(globalThis),
+      getCuratedPoolListUrl(),
+      {
+        method: "GET",
+        signal: controller.signal,
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Smart nodes pool HTTP ${response.status}`);

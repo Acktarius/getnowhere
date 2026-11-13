@@ -28,8 +28,10 @@ Do not treat 0-conf as proof for establishing a *new* relationship.
 
 **Daemon deadline:** each daemon HTTP call keeps its abort timer armed until the
 response body is buffered (`src/services/conceal/sync/daemon-fetch.ts`, 30s). A
-stall after response headers rejects as a timeout, so range fetch can split and
-retry. Sync does not stay in flight until the WebView process restarts.
+stall after response headers, or a `fetch` that never settles when the WebView
+ignores abort, rejects as a timeout, so range fetch can split and retry. The
+deep-catch-up pool list and node probes use that same buffered read (10s), so
+one hung peer cannot freeze height updates until the process is killed.
 
 **Live poll (parity with next-wallet #112):** while the wallet is open, the app polls
 sync at ~2.5s while catching up and ~5s near tip (`useWalletLiveSync`). Each tick

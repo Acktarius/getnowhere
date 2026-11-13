@@ -88,8 +88,8 @@ async function bufferBody(
 }
 
 /**
- * Read the full body before resolving so the SDK timeout covers the download.
- * An abort cancels the body and rejects with `AbortError` (a timeout, not bad JSON).
+ * Buffer the body under `signal`, and race the initial fetch the same way.
+ * An abort rejects with `AbortError` even when the WebView ignores cancellation.
  */
 export async function fetchWithBufferedBody(
   base: typeof fetch,
@@ -98,7 +98,7 @@ export async function fetchWithBufferedBody(
 ): Promise<Response> {
   const signal = init?.signal ?? null;
   throwIfAborted(signal);
-  const response = await base(input, init);
+  const response = await raceAbort(base(input, init), signal, () => {});
   const bytes = await bufferBody(response, signal);
   return new Response(bytes, {
     status: response.status,

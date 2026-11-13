@@ -1,3 +1,5 @@
+import { fetchWithBufferedBody } from "@/services/conceal/sync/daemon-fetch";
+
 /** Daemon URLs must be HTTPS with a trailing slash before RPC paths. */
 export function normalizeNodeUrl(url: string): string {
   const trimmed = url.trim();
@@ -50,11 +52,15 @@ export async function testNodeUrlReachability(
   const timeoutId = setTimeout(() => controller.abort(), NODE_TEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${normalized}getheight`, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-    });
+    const response = await fetchWithBufferedBody(
+      globalThis.fetch.bind(globalThis),
+      `${normalized}getheight`,
+      {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Node returned HTTP ${response.status}.`);

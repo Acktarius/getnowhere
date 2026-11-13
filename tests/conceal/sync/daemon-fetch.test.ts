@@ -45,6 +45,17 @@ function rawTx(height: number) {
 }
 
 describe("daemon body deadline", () => {
+  it("rejects when fetch never settles and the abort signal fires", async () => {
+    const controller = new AbortController();
+    const pending = fetchWithBufferedBody(
+      () => new Promise<Response>(() => {}),
+      "https://node.example/getheight",
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   it("rejects a body that stalls after headers and still returns the next full range", async () => {
     let calls = 0;
     const stall = stalledBody();
