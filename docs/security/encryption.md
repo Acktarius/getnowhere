@@ -225,9 +225,10 @@ keeps its own on-wire protection (L1 session seal over L2 vs Conceal MESSAGE).
 ### Post-connect verification (required)
 
 After transport peer presence (`peers.count >= 1`), the connecting side sends a
-sealed `kind: "proof"` frame (`text: proof:v1:<sessionId>`). A peer that is not
-itself mid-handshake answers with `proof-ack:v1:<sessionId>` (acks never re-ack,
-so no ping-pong). AEAD open success on either proof or ack proves L1 session
+sealed `kind: "proof"` frame (`text: proof:v1:<sessionId>`). The peer that opens
+that request answers with `proof-ack:v1:<sessionId>`, including when it is
+mid-handshake itself. Acks never re-ack, so two reconnecting peers each send
+one ack and stop. AEAD open success on either proof or ack proves L1 session
 keys. Outcomes (session row kept either way, counters do not rewind):
 
 - Valid proof or ack within the window → `connected`, even if bad frames arrived first.

@@ -917,9 +917,9 @@ function handleIncomingFrame(roomId: string, payloadB64: string): void {
         ) {
           proofArrivedEarly.set(roomId, attemptGen);
         }
-        // Idle side answers a reconnecting peer's request; acks never re-ack,
-        // so this cannot ping-pong.
-        if (isRequest && !resolver) {
+        // Answer even while we are waiting. Acks never re-ack, so no ping-pong.
+        // @see docs/security/encryption.md
+        if (isRequest) {
           void sendProofFrame(state, "proof-ack").catch(() => {});
         }
         return;

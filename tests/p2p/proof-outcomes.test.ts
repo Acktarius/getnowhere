@@ -222,6 +222,49 @@ describe("post-connect proof outcomes", () => {
     expect(result.lastConnectError).toBe("unreachable");
   });
 
+  it("answers a peer proof with proof-ack while still waiting", async () => {
+    const { peer, contract } = await buildResponderConnect();
+    const reader = new Peer({ ...peer.session });
+    const outboundTexts: string[] = [];
+    let answered = false;
+    __setHolepunchSidecarBackend(
+      createBackend((payload, deliver) => {
+        void (async () => {
+          const frame = decodeLiveFrame(payload);
+          if (!frame) return;
+          const opened = await P2PEncryptionAdapter.open({
+            session: reader.session,
+            counter: frame.counter,
+            ciphertext: frame.ciphertext,
+            aad: buildProofAad(reader.session.roomId, reader.session),
+          });
+          if (!opened) return;
+          reader.session = opened.session;
+          const text = JSON.parse(new TextDecoder().decode(opened.plaintext))
+            .text as string;
+          outboundTexts.push(text);
+          if (answered || !text.startsWith("proof:v1:")) return;
+          answered = true;
+          deliver(await peer.sealProof("proof"));
+        })();
+      }),
+    );
+
+    const result = await HolepunchChatTransport.connect(contract);
+    for (
+      let i = 0;
+      i < 20 && !outboundTexts.some((t) => t.startsWith("proof-ack:v1:"));
+      i++
+    ) {
+      await flush();
+    }
+
+    expect(result.lifecycleStatus).toBe("connected");
+    expect(outboundTexts.filter((t) => t.startsWith("proof-ack:v1:"))).toEqual([
+      expect.stringMatching(/^proof-ack:v1:/),
+    ]);
+  });
+
   it("connects when a forged in-window frame arrives before the real ack", async () => {
     const { peer, contract } = await buildResponderConnect();
     __setHolepunchSidecarBackend(
