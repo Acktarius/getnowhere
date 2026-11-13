@@ -760,7 +760,7 @@ export function ChatRoomScreen() {
     );
   }
 
-  const offline = displayRoom.peerStatus === "offline";
+  const online = displayRoom.peerStatus === "online";
 
   // Pin only when iOS pans the visual viewport; Android overlays keep offsetTop 0.
   // Native keyboard height (no pan) lifts the composer instead of pinning.
@@ -1205,8 +1205,8 @@ export function ChatRoomScreen() {
             </div>
           )}
           <div className="row-flex" style={{ gap: 8 }}>
-            {offline ? <WifiOff size={14} /> : <Wifi size={14} />}
-            <span>{offline ? "Offline" : "Online"}</span>
+            {online ? <Wifi size={14} /> : <WifiOff size={14} />}
+            <span>{online ? "Online" : "Offline"}</span>
           </div>
         </div>
       </Sheet>
