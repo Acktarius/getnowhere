@@ -86,6 +86,8 @@ lowercase, digit, and symbol characters, plus confirmation. They are capped at
 After a successful import the app navigates to **`/wallet`** (not a passcode / password-change
 screen). App unlock passcode can be set later under Settings → Passcode.
 
+**New wallet:** create calls daemon `getheight` and stores that tip as `creationHeight`, so sync starts at the current chain. If the daemon does not return a positive height, create uses `heightAtVersion` from the repo-root `version` file instead of block 0.
+
 **Open / import / restore:** decrypt and enter the app immediately. Tip catch-up runs in the
 background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync continues.
 

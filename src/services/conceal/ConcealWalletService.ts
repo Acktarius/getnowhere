@@ -4,6 +4,7 @@ import {
   getBalance as sdkGetBalance,
   getTransactions as sdkGetTransactions,
 } from "conceal-wallet-sdk";
+import { heightAtVersion } from "@/lib/wallet/height-at-version";
 import {
   buildDaemon,
   DEFAULT_DAEMON_NODES,
@@ -177,13 +178,31 @@ async function adoptBuiltWallet(
   };
 }
 
+/**
+ * Tip for a brand-new wallet. A missing or non-positive daemon height uses
+ * `heightAtVersion` so create does not scan from genesis.
+ */
+async function creationHeightForNewWallet(): Promise<number> {
+  try {
+    const height = await buildDaemon().getHeight();
+    if (Number.isFinite(height) && height > 0) return Math.floor(height);
+  } catch {
+    // Unreachable daemon — fall through to the version-file floor.
+  }
+  return heightAtVersion();
+}
+
 export const ConcealWalletService: WalletService = {
   async createWallet(password: string): Promise<CreateWalletResult> {
     await ensureWasmReady();
     // generateMnemonic + buildFromMnemonic applies omitMnemonic on the Account
     // while keeping the phrase only on BuiltWallet for one-time UI reveal.
     const phrase = await generateConcealMnemonic("english");
-    return adoptBuiltWallet(buildFromMnemonic(phrase, 0), password);
+    const creationHeight = await creationHeightForNewWallet();
+    return adoptBuiltWallet(
+      buildFromMnemonic(phrase, creationHeight),
+      password,
+    );
   },
 
   async importWallet(input: ImportWalletInput): Promise<CreateWalletResult> {

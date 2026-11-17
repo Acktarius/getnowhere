@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { heightAtVersion } from "@/lib/wallet/height-at-version";
 
 const adoptMock = vi.fn();
+const buildDaemonMock = vi.fn();
 const buildFromSpendKeyMock = vi.fn();
 const ensureWasmReadyMock = vi.fn();
 const openEncryptedWalletFileMock = vi.fn();
@@ -16,7 +18,7 @@ vi.mock("@/services/conceal/ConcealWalletAdapter", () => ({
   encodeCcxAddress: encodeCcxAddressMock,
   previewKeysFromSpend: vi.fn(),
   validateCcxAddress: vi.fn(),
-  buildDaemon: vi.fn(),
+  buildDaemon: buildDaemonMock,
   createConcealAccount: vi.fn(),
   DEFAULT_DAEMON_NODES: [],
   generateConcealMnemonic: generateConcealMnemonicMock,
@@ -154,10 +156,72 @@ describe("ConcealWalletService.createWallet", () => {
       "@/services/conceal/ConcealWalletService"
     );
 
+    buildDaemonMock.mockReturnValue({
+      getHeight: vi.fn(async () => 2_202_191),
+    });
+
     await ConcealWalletService.createWallet("NewWalletPassword1!");
 
+    expect(buildDaemonMock).toHaveBeenCalledWith();
+    expect(buildFromMnemonicMock).toHaveBeenCalledWith(
+      "generated seed",
+      2_202_191,
+    );
     expect(adoptMock).toHaveBeenCalledWith(
       expect.objectContaining({ password: "NewWalletPassword1!" }),
+    );
+  });
+
+  it("stores heightAtVersion when the daemon height is unavailable", async () => {
+    generateConcealMnemonicMock.mockResolvedValue("generated seed");
+    buildFromMnemonicMock.mockReturnValue({
+      keys: { pub: { spend: "a", view: "b" }, priv: { spend: "c", view: "d" } },
+      raw: { transactions: [] },
+      address: "ccx7created",
+      mnemonic: "generated seed",
+    });
+    adoptMock.mockResolvedValue(undefined);
+    buildDaemonMock.mockReturnValue({
+      getHeight: vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    });
+
+    const { ConcealWalletService } = await import(
+      "@/services/conceal/ConcealWalletService"
+    );
+
+    await ConcealWalletService.createWallet("NewWalletPassword1!");
+
+    expect(buildFromMnemonicMock).toHaveBeenCalledWith(
+      "generated seed",
+      heightAtVersion(),
+    );
+    expect(heightAtVersion()).toBeGreaterThan(0);
+  });
+
+  it("stores heightAtVersion when the daemon reports height 0", async () => {
+    generateConcealMnemonicMock.mockResolvedValue("generated seed");
+    buildFromMnemonicMock.mockReturnValue({
+      keys: { pub: { spend: "a", view: "b" }, priv: { spend: "c", view: "d" } },
+      raw: { transactions: [] },
+      address: "ccx7created",
+      mnemonic: "generated seed",
+    });
+    adoptMock.mockResolvedValue(undefined);
+    buildDaemonMock.mockReturnValue({
+      getHeight: vi.fn(async () => 0),
+    });
+
+    const { ConcealWalletService } = await import(
+      "@/services/conceal/ConcealWalletService"
+    );
+
+    await ConcealWalletService.createWallet("NewWalletPassword1!");
+
+    expect(buildFromMnemonicMock).toHaveBeenCalledWith(
+      "generated seed",
+      heightAtVersion(),
     );
   });
 });
