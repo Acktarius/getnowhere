@@ -5,7 +5,7 @@ import {
   Radio,
   ShieldCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { BrandMark, Wordmark } from "@/components/Brand";
 import { SecureInput } from "@/components/SecureInput";
@@ -114,6 +114,44 @@ export function WelcomeScreen() {
 
   const showOpen = stored === true;
   const showWalletBioUnlock = isMobileHost() && dataUnlockBiometricEnabled;
+  const isDesktop = typeof window !== "undefined" && window.gnhDesktop != null;
+
+  function submitOpen(e: FormEvent) {
+    e.preventDefault();
+    if (initializing || password.length < 1) return;
+    void handleOpen();
+  }
+
+  const openFields = (
+    <>
+      <p className="muted" style={{ fontSize: 13.5 }}>
+        Enter the encryption password for the wallet stored on this device.
+      </p>
+      <SecureInput
+        label="Wallet password"
+        value={password}
+        onChange={setPassword}
+        placeholder="Password"
+        revealable
+        autoFocus={!showWalletBioUnlock}
+      />
+      {error && openSheet && <div className="field__error">{error}</div>}
+      <button
+        type={isDesktop ? "submit" : "button"}
+        className="btn btn--block btn--primary"
+        disabled={initializing || password.length < 1}
+        onClick={isDesktop ? undefined : () => void handleOpen()}
+      >
+        {initializing ? (
+          <>
+            <Loader2 size={16} className="spin" /> Opening…
+          </>
+        ) : (
+          "Open"
+        )}
+      </button>
+    </>
+  );
 
   return (
     <div className="screen" style={{ padding: 0 }}>
@@ -277,34 +315,13 @@ export function WelcomeScreen() {
           setError(null);
         }}
       >
-        <div className="stack stack--gap-3">
-          <p className="muted" style={{ fontSize: 13.5 }}>
-            Enter the encryption password for the wallet stored on this device.
-          </p>
-          <SecureInput
-            label="Wallet password"
-            value={password}
-            onChange={setPassword}
-            placeholder="Password"
-            revealable
-            autoFocus={!showWalletBioUnlock}
-          />
-          {error && openSheet && <div className="field__error">{error}</div>}
-          <button
-            type="button"
-            className="btn btn--block btn--primary"
-            disabled={initializing || password.length < 1}
-            onClick={() => void handleOpen()}
-          >
-            {initializing ? (
-              <>
-                <Loader2 size={16} className="spin" /> Opening…
-              </>
-            ) : (
-              "Open"
-            )}
-          </button>
-        </div>
+        {isDesktop ? (
+          <form className="stack stack--gap-3" onSubmit={submitOpen}>
+            {openFields}
+          </form>
+        ) : (
+          <div className="stack stack--gap-3">{openFields}</div>
+        )}
       </Sheet>
     </div>
   );
