@@ -103,7 +103,10 @@ chat rooms. Settings **Resync** re-scans txs for balance integrity only.
 - **Blockchain rescan** — Settings → Sync: creation height is editable (click the
   value); clamped to `[0, tip)` and stored on the wallet for later Resync /
   Delete and resync. Those buttons still only rewind or wipe+rewind from the
-  stored height — they do not change it.
+  stored height — they do not change it. While a scan is in progress the height
+  stays editable; confirming a new value discards transactions found so far and
+  restarts the scan from that height. When the wallet is not syncing, editing
+  the height only saves it.
 - **Wallet password** — re-encrypts the local wallet blob (`/settings/wallet-password`).
   Distinct from the app unlock passcode.
 - **Backup** — `/settings/backup`: reveal seed & keys, show export QR, download

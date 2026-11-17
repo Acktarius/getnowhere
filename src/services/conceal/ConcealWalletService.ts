@@ -25,7 +25,9 @@ import {
   lock as lockRuntime,
   nodeUrlFromRaw,
   persistRuntime,
+  clampWalletCreationHeight as runtimeClampWalletCreationHeight,
   resetAndRescanFromCreationHeight as runtimeResetAndRescanFromCreationHeight,
+  restartScanFromCreationHeight as runtimeRestartScanFromCreationHeight,
   resyncFromCreationHeight as runtimeResyncFromCreationHeight,
   setWalletCreationHeight as runtimeSetWalletCreationHeight,
   sendCcx,
@@ -513,6 +515,23 @@ export async function updateWalletSyncSettings(input: {
 /** Persist creation height only; Resync / Delete and resync stay unchanged. */
 export async function setWalletCreationHeight(height: number): Promise<number> {
   return runtimeSetWalletCreationHeight(height);
+}
+
+/** Clamp a proposed creation height below the daemon tip. Does not save it. */
+export async function clampWalletCreationHeight(
+  height: number,
+): Promise<number> {
+  return runtimeClampWalletCreationHeight(height);
+}
+
+/**
+ * Discard the scan in progress and start again from `height`.
+ * Used when the user changes creation height while syncing.
+ */
+export async function restartScanFromCreationHeight(
+  height: number,
+): Promise<number> {
+  return runtimeRestartScanFromCreationHeight(height);
 }
 
 export {

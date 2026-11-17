@@ -3,6 +3,7 @@ import { walletService } from "@/services";
 import {
   clearSeedPhraseMemory,
   getInternalWalletNodeUrl,
+  restartScanFromCreationHeight as restartScanFromHeight,
   setInternalWalletNetwork,
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
@@ -58,6 +59,8 @@ type WalletStore = WalletState & {
   resync: () => Promise<void>;
   resyncFromCreationHeight: () => Promise<void>;
   resetAndRescanFromCreationHeight: () => Promise<void>;
+  /** Wipe the in-flight scan and start again from `height`. Returns the clamped height. */
+  restartScanFromCreationHeight: (height: number) => Promise<number>;
   setNetwork: (n: WalletState["network"]) => void;
   setNode: (url: string) => void;
   getNode: () => string;
@@ -290,6 +293,33 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       await get().refreshBalance();
       await get().refreshTransactions();
       void useContactsStore.getState().refreshInvites();
+    } catch (error) {
+      set({
+        syncStatus: "error",
+        syncProgress: 0,
+        lastSyncError: (error as Error)?.message ?? String(error),
+      });
+      throw error;
+    }
+  },
+
+  async restartScanFromCreationHeight(height: number) {
+    set({
+      syncStatus: "syncing",
+      syncProgress: 0.05,
+      lastSyncError: undefined,
+    });
+    try {
+      const saved = await restartScanFromHeight(height);
+      set({
+        syncStatus: "synced",
+        syncProgress: 1,
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncError: undefined,
+      });
+      await get().refreshBalance();
+      await get().refreshTransactions();
+      return saved;
     } catch (error) {
       set({
         syncStatus: "error",

@@ -36,6 +36,7 @@ import {
 import { getNodeUrlFormatHints } from "@/lib/validation/node-url";
 import { parseCreationHeightInput } from "@/lib/wallet/creation-height";
 import {
+  clampWalletCreationHeight,
   getInternalWalletNodeUrl,
   setWalletCreationHeight,
   updateWalletSyncSettings,
@@ -65,6 +66,9 @@ export function SettingsScreen() {
   const resetAndRescanFromCreationHeight = useWalletStore(
     (w) => w.resetAndRescanFromCreationHeight,
   );
+  const restartScanFromCreationHeight = useWalletStore(
+    (w) => w.restartScanFromCreationHeight,
+  );
   const syncStatus = useWalletStore((w) => w.syncStatus);
   const [showNodeSheet, setShowNodeSheet] = useState(false);
   const [customUrl, setCustomUrl] = useState("");
@@ -79,6 +83,9 @@ export function SettingsScreen() {
   const [editingCreationHeight, setEditingCreationHeight] = useState(false);
   const [creationHeightBusy, setCreationHeightBusy] = useState(false);
   const [wipeConfirm, setWipeConfirm] = useState<WipeConfirm | null>(null);
+  const [restartConfirmHeight, setRestartConfirmHeight] = useState<
+    number | null
+  >(null);
 
   useEffect(() => {
     void refreshAutoNode();
@@ -152,6 +159,16 @@ export function SettingsScreen() {
     }
     setCreationHeightBusy(true);
     try {
+      if (syncStatus === "syncing") {
+        const clamped = await clampWalletCreationHeight(parsed);
+        if (clamped === creationHeight) {
+          setEditingCreationHeight(false);
+          return;
+        }
+        setRestartConfirmHeight(clamped);
+        setEditingCreationHeight(false);
+        return;
+      }
       const saved = await setWalletCreationHeight(parsed);
       setCreationHeight(saved);
       setCreationHeightDraft(String(saved));
@@ -164,6 +181,23 @@ export function SettingsScreen() {
     } catch (err) {
       toastError((err as Error)?.message ?? "Could not save creation height.");
       cancelEditCreationHeight();
+    } finally {
+      setCreationHeightBusy(false);
+    }
+  }
+
+  async function runRestartFromHeight() {
+    if (restartConfirmHeight === null) return;
+    const height = restartConfirmHeight;
+    setCreationHeightBusy(true);
+    try {
+      const saved = await restartScanFromCreationHeight(height);
+      setCreationHeight(saved);
+      setCreationHeightDraft(String(saved));
+      setRestartConfirmHeight(null);
+      toastSuccess(`Scan restarted from ${saved}.`);
+    } catch (err) {
+      toastError((err as Error)?.message ?? "Could not restart the scan.");
     } finally {
       setCreationHeightBusy(false);
     }
@@ -484,10 +518,7 @@ export function SettingsScreen() {
                             className="btn btn--ghost btn--sm"
                             aria-label="Edit creation height"
                             disabled={
-                              creationHeightBusy ||
-                              resyncBusy ||
-                              settingsBusy ||
-                              syncStatus === "syncing"
+                              creationHeightBusy || resyncBusy || settingsBusy
                             }
                             onClick={() => beginEditCreationHeight()}
                             style={{
@@ -613,6 +644,20 @@ export function SettingsScreen() {
         busyLabel="Deleting…"
         onConfirm={() => runWipe("delete")}
         onClose={() => setWipeConfirm(null)}
+      />
+      <ConfirmModal
+        open={restartConfirmHeight !== null}
+        title="Restart scan?"
+        body={
+          restartConfirmHeight !== null
+            ? `Discard the transactions found so far and start a new scan from ${restartConfirmHeight}?`
+            : ""
+        }
+        confirmLabel="Restart scan"
+        destructive
+        busyLabel="Restarting…"
+        onConfirm={() => runRestartFromHeight()}
+        onClose={() => setRestartConfirmHeight(null)}
       />
       <ConfirmModal
         open={wipeConfirm === "delete-resync"}

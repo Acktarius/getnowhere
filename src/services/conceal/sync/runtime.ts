@@ -261,6 +261,11 @@ interface RuntimeCoordination {
   persistChain: Promise<void>;
   /** Last scannedHeight written as a mid-sync checkpoint; reset at sync chain start. */
   lastCheckpointHeight: number;
+  /**
+   * Height to wipe and rescan from, set while a scan is running.
+   * The in-flight scan applies it at the next batch boundary, then a follow-up scan starts.
+   */
+  restartAtHeight: number | null;
 }
 
 /** Cache of every UNLOCKED wallet runtime, keyed by registry id. */
@@ -284,6 +289,7 @@ function coordinationFor(id: string): RuntimeCoordination {
       pendingSync: false,
       persistChain: Promise.resolve(),
       lastCheckpointHeight: 0,
+      restartAtHeight: null,
     };
     coordination.set(id, state);
   }
@@ -658,10 +664,78 @@ export async function setWalletCreationHeight(
   height: number,
   rt: SdkRuntime = requireRuntime(),
 ): Promise<number> {
-  const tip = await rt.daemon.getHeight();
-  const clamped = clampCreationHeight(height, tip);
+  const clamped = await clampWalletCreationHeight(height, rt);
   rt.raw = { ...rt.raw, creationHeight: clamped };
   await persistRuntime(rt);
+  return clamped;
+}
+
+/** Clamp a creation height to `[0, tip)` without writing it. */
+export async function clampWalletCreationHeight(
+  height: number,
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const tip = await rt.daemon.getHeight();
+  return clampCreationHeight(height, tip);
+}
+
+/** Stop signal so a bulk fetch can exit without logging a sync failure. */
+class ScanRestartSignal extends Error {
+  constructor() {
+    super("scan restart");
+    this.name = "ScanRestartSignal";
+  }
+}
+
+function isScanRestart(error: unknown): boolean {
+  return error instanceof ScanRestartSignal;
+}
+
+/**
+ * Wipe folded history and pin the cursor at `restartAtHeight`.
+ * Returns true when a restart was pending. The follow-up scan is `pendingSync`.
+ */
+async function settleScanRestart(
+  rt: SdkRuntime,
+  coord: RuntimeCoordination,
+): Promise<boolean> {
+  const next = coord.restartAtHeight;
+  if (next === null) return false;
+  coord.restartAtHeight = null;
+  rt.raw = clearReceivedRecords({ ...rt.raw, creationHeight: next });
+  rt.state = {
+    ...rt.state,
+    scannedHeight: next,
+    outputs: [],
+    spentKeyImages: [],
+    transactions: [],
+    deposits: [],
+    spentDepositRefs: [],
+  };
+  await persistRuntime(rt);
+  return true;
+}
+
+/**
+ * Replace an in-flight scan with a wipe and a new scan from `height`.
+ * When nothing is scanning, still wipes and syncs so a just-finished scan
+ * does not ignore a confirm that was already shown.
+ */
+export async function restartScanFromCreationHeight(
+  height: number,
+  rt: SdkRuntime = requireRuntime(),
+): Promise<number> {
+  const clamped = await clampWalletCreationHeight(height, rt);
+  const coord = coordinationFor(runtimeId(rt));
+  const inflight = coord.inFlightSync;
+  if (inflight) {
+    coord.restartAtHeight = clamped;
+    coord.pendingSync = true;
+    await inflight;
+    return clamped;
+  }
+  rt.raw = { ...rt.raw, creationHeight: clamped };
+  await resetAndRescanFromCreationHeight(rt);
   return clamped;
 }
 
@@ -1168,6 +1242,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
   // failure (or fewer than two usable nodes) falls through to the single-node pipeline below, which
   // covers the ENTIRE remaining range from `scanned`. Block ranges are public, so distributing them
   // across nodes leaks nothing about ownership.
+  if (await settleScanRestart(rt, coord)) return height;
+
   const usingCustomNode = Boolean(rt.raw.options?.customNode);
   if (!usingCustomNode && useHeavyPath) {
     const bulkEnd = height - MULTI_SOURCE_TIP_MARGIN; // half-open exclusive; the tip stays on home
@@ -1191,6 +1267,7 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
             // awaited sequentially by the driver, so applies stay strictly ordered even though scans
             // run in parallel.
             onBatch: async (items, _batchStart, batchEnd) => {
+              if (coord.restartAtHeight !== null) throw new ScanRestartSignal();
               const results = await scanBatch(
                 items,
                 rt.account.keys,
@@ -1203,7 +1280,8 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
         }
       } catch (error) {
         // Non-fatal: the single-node pipeline below resumes from wherever the bulk got to.
-        if (!multiSourceWarned.has(rt)) {
+        // A restart is handled after this block; it is not a node failure.
+        if (!isScanRestart(error) && !multiSourceWarned.has(rt)) {
           multiSourceWarned.add(rt);
           console.warn(
             "Multi-source bulk sync failed (falling back to single node):",
@@ -1267,10 +1345,18 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
     return { endBlock, data };
   };
 
+  if (await settleScanRestart(rt, coord)) return height;
+
   let pending = scanned < height ? fetchFrom(scanned) : null;
   while (pending) {
+    if (await settleScanRestart(rt, coord)) return height;
     const { endBlock, data } = pending;
     const scanResults = await data;
+    if (coord.restartAtHeight !== null) {
+      pending = null;
+      await settleScanRestart(rt, coord);
+      return height;
+    }
     // Kick off the next range's fetch + scan BEFORE applying, so it runs during the apply.
     pending = endBlock < height ? fetchFrom(endBlock) : null;
     foldBatch(scanResults, endBlock);
