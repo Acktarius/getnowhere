@@ -325,7 +325,7 @@ button {
   background: var(--bg-press);
   transform: scale(0.96);
 }
-.topbar__leave-btn {
+.leave-room-btn {
   flex-shrink: 0;
   letter-spacing: 0.04em;
   font-size: 11px;
@@ -334,12 +334,12 @@ button {
   padding-inline: 10px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .topbar__leave-btn:hover:not(:disabled) {
+  .leave-room-btn:hover:not(:disabled) {
     color: var(--danger);
     background: var(--danger-soft);
   }
 }
-.topbar__leave-btn:disabled {
+.leave-room-btn:disabled {
   opacity: 0.55;
 }
 

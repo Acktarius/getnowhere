@@ -11,9 +11,6 @@ type Props = {
   peerStatus: "offline" | "connecting" | "online";
   roomTopic?: RoomTopicId;
   onShowDiagnostics?: () => void;
-  /** Opens leave confirmation — L1 revoke + destroy room. */
-  onLeaveRoom?: () => void;
-  leaving?: boolean;
 };
 
 export function ChatRoomHeader({
@@ -21,8 +18,6 @@ export function ChatRoomHeader({
   peerStatus,
   roomTopic,
   onShowDiagnostics,
-  onLeaveRoom,
-  leaving,
 }: Props) {
   return (
     <header className="topbar topbar--bordered">
@@ -51,16 +46,6 @@ export function ChatRoomHeader({
           <PeerStatusIndicator status={peerStatus} />
         </div>
       </div>
-      {onLeaveRoom && (
-        <button
-          type="button"
-          className="btn btn--sm btn--ghost topbar__leave-btn"
-          onClick={onLeaveRoom}
-          disabled={leaving}
-        >
-          {leaving ? "Leaving…" : "LEAVE ROOM"}
-        </button>
-      )}
       {onShowDiagnostics && (
         <button
           className="topbar__icon-btn"

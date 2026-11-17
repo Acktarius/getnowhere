@@ -130,6 +130,36 @@ function placeholderContact(alias: string): Contact {
   };
 }
 
+function DiagnosticStatusRow({
+  online,
+  leaving,
+  onLeave,
+}: {
+  online: boolean;
+  leaving: boolean;
+  onLeave: () => void;
+}) {
+  return (
+    <div
+      className="row-flex row-flex--between"
+      style={{ gap: 8, alignItems: "center" }}
+    >
+      <div className="row-flex" style={{ gap: 8, alignItems: "center" }}>
+        {online ? <Wifi size={14} /> : <WifiOff size={14} />}
+        <span>{online ? "Online" : "Offline"}</span>
+      </div>
+      <button
+        type="button"
+        className="btn btn--sm btn--ghost leave-room-btn"
+        onClick={onLeave}
+        disabled={leaving}
+      >
+        {leaving ? "Leaving…" : "LEAVE ROOM"}
+      </button>
+    </div>
+  );
+}
+
 function roomExpiryDiagnosticLine(roomTtl?: number): string {
   if (!roomTtl) return "Room expiry: —";
   const suffix = isRoomExpired(roomTtl) ? " (elapsed)" : "";
@@ -177,12 +207,16 @@ function LoadingDiagnosticsSheet({
   roomId,
   contactAlias,
   roomTtl,
+  leaving,
+  onLeave,
   onClose,
 }: {
   open: boolean;
   roomId: string;
   contactAlias?: string;
   roomTtl?: number;
+  leaving: boolean;
+  onLeave: () => void;
   onClose: () => void;
 }) {
   return (
@@ -206,6 +240,11 @@ function LoadingDiagnosticsSheet({
         <div className="muted" style={{ fontSize: 12 }}>
           Full room state appears once opening finishes.
         </div>
+        <DiagnosticStatusRow
+          online={false}
+          leaving={leaving}
+          onLeave={onLeave}
+        />
       </div>
     </Sheet>
   );
@@ -719,6 +758,11 @@ export function ChatRoomScreen() {
     }
   }
 
+  function requestLeave() {
+    setDiagOpen(false);
+    setLeaveOpen(true);
+  }
+
   if (!openingRoom && !room && !catalogRoom) {
     return (
       <div className="screen">
@@ -727,8 +771,6 @@ export function ChatRoomScreen() {
           peerStatus="offline"
           roomTopic={displayRoom.roomTopic}
           onShowDiagnostics={() => setDiagOpen(true)}
-          onLeaveRoom={() => setLeaveOpen(true)}
-          leaving={revoking}
         />
         <EmptyState
           title="Room unavailable"
@@ -747,6 +789,8 @@ export function ChatRoomScreen() {
           roomId={roomId}
           contactAlias={displayContact.alias}
           roomTtl={diagnosticRoomTtl}
+          leaving={revoking}
+          onLeave={requestLeave}
           onClose={() => setDiagOpen(false)}
         />
         <LeaveRoomModal
@@ -801,8 +845,6 @@ export function ChatRoomScreen() {
         peerStatus={displayRoom.peerStatus}
         roomTopic={displayRoom.roomTopic}
         onShowDiagnostics={() => setDiagOpen(true)}
-        onLeaveRoom={() => setLeaveOpen(true)}
-        leaving={revoking}
       />
       <div
         style={{
@@ -1204,10 +1246,11 @@ export function ChatRoomScreen() {
               failing.
             </div>
           )}
-          <div className="row-flex" style={{ gap: 8 }}>
-            {online ? <Wifi size={14} /> : <WifiOff size={14} />}
-            <span>{online ? "Online" : "Offline"}</span>
-          </div>
+          <DiagnosticStatusRow
+            online={online}
+            leaving={revoking}
+            onLeave={requestLeave}
+          />
         </div>
       </Sheet>
 
