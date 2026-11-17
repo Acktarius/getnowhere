@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ContactCategoryTagCard } from "@/components/ContactCategoryTagCard";
+import { ContactSyncChip } from "@/components/ContactSyncChip";
 import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { NonSelectableText } from "@/components/NonSelectableText";
@@ -69,6 +70,7 @@ export function ContactDetailScreen() {
   const navigate = useNavigate();
   const contact = useContactsStore((s) => s.getById(id));
   const myAddress = useWalletStore((s) => s.address);
+  const walletSynced = useWalletStore((s) => s.syncStatus) === "synced";
   const getById = useContactsStore((s) => s.getById);
   const savePaymentIdTo = useContactsStore((s) => s.savePaymentIdTo);
   const updateContact = useContactsStore((s) => s.updateContact);
@@ -392,6 +394,7 @@ export function ContactDetailScreen() {
       <TopBar
         title={contact.alias}
         leading={<BackLink to="/contacts" />}
+        center={walletSynced ? undefined : <ContactSyncChip />}
         trailing={
           <button
             className="topbar__icon-btn"
@@ -537,6 +540,8 @@ export function ContactDetailScreen() {
               ) : canInvite || canNewTopicRoom ? (
                 <button
                   className="btn btn--block btn--primary"
+                  disabled={!walletSynced}
+                  title={walletSynced ? undefined : "Wallet is still syncing"}
                   onClick={() => setCreateSheet(true)}
                 >
                   <MessageSquarePlus size={16} /> Create room

@@ -96,6 +96,14 @@ background (`resync` + `useWalletLiveSync`) so L2 chat is usable while L1 sync c
 show smart-message **transactions** in history (fee dot) but do **not** recreate
 chat rooms. Settings **Resync** re-scans txs for balance integrity only.
 
+## First screen
+
+Opening a stored wallet lands on **Chats** when that wallet has a contact or a room, and on **Wallet** when both are empty. Creating a wallet opens **Wallet**. Import opens **Wallet**.
+
+While the wallet is synced and total balance is at or under **0.0111 CCX** (one on-chain fallback message), Wallet shows a hint that CCX is needed for room creation and fallback messaging on the blockchain. The hint appears after sync settles, so a not-yet-loaded balance does not flash it.
+
+On a contact, **Create room** stays disabled until `syncStatus` is `synced`. Until then the contact banner shows wallet icon, scanned height / chain tip, and a spinning arrow between the name and the share button.
+
 ## Settings
 
 - **Sync speed** — DOOM-labeled profiles; persisted as `options.readSpeed`.

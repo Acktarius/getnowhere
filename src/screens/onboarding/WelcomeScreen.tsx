@@ -14,6 +14,7 @@ import { initMobileBiometricStorage } from "@/lib/auth/biometric-storage";
 import { getBiometricEnrollment } from "@/lib/auth/biometric-store";
 import { PasskeyError, unlockWithBiometric } from "@/lib/auth/platform-unlock";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { postUnlockPath } from "@/lib/wallet/post-unlock-path";
 import { markOnboarded } from "@/state/authStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useWalletStore } from "@/state/walletStore";
@@ -88,7 +89,7 @@ export function WelcomeScreen() {
       markOnboarded();
       setOpenSheet(false);
       setPassword("");
-      navigate("/chats");
+      navigate(postUnlockPath());
     } catch (e) {
       setError((e as Error).message);
     }

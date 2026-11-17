@@ -14,6 +14,7 @@ import { CopyButton } from "@/components/CopyButton";
 import { EmptyState } from "@/components/EmptyState";
 import { NonSelectableText } from "@/components/NonSelectableText";
 import { ReceiveSheet } from "@/components/ReceiveSheet";
+import { RelationshipFuelHint } from "@/components/RelationshipFuelHint";
 import { SendSheet } from "@/components/SendSheet";
 import { Sheet } from "@/components/Sheet";
 import { TopBar } from "@/components/TopBar";
@@ -226,6 +227,11 @@ export function WalletScreen() {
               onToggleLock={() => lock()}
             />
           </div>
+
+          <RelationshipFuelHint
+            balanceCcx={balanceTotal}
+            syncStatus={syncStatus}
+          />
 
           <div className="row-flex" style={{ gap: 10 }}>
             <button

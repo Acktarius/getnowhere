@@ -1,7 +1,7 @@
 /// <reference path="../../src/vite-env.d.ts" />
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { openStoredWallet, hasStoredWallet } = vi.hoisted(() => ({
@@ -25,6 +25,25 @@ vi.mock("@/state/walletStore", () => ({
 }));
 
 import { WelcomeScreen } from "@/screens/onboarding/WelcomeScreen";
+import { useChatStore } from "@/state/chatStore";
+import { useContactsStore } from "@/state/contactsStore";
+import type { Contact } from "@/types/models";
+
+function LocationProbe() {
+  const { pathname } = useLocation();
+  return <div data-testid="landed">{pathname}</div>;
+}
+
+function renderWelcomeLanding() {
+  return render(
+    <MemoryRouter initialEntries={["/welcome"]}>
+      <Routes>
+        <Route path="/welcome" element={<WelcomeScreen />} />
+        <Route path="*" element={<LocationProbe />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 function renderWelcome() {
   return render(
@@ -105,5 +124,39 @@ describe("WelcomeScreen desktop wallet open", () => {
 
     await user.click(screen.getByRole("button", { name: "Open" }));
     expect(openStoredWallet).toHaveBeenCalledWith("secret");
+  });
+
+  it("opens the wallet tab when there are no contacts and no rooms", async () => {
+    useContactsStore.setState({ contacts: [], invites: [] });
+    useChatStore.setState({ rooms: [], messagesByRoom: {} });
+    const user = userEvent.setup();
+    renderWelcomeLanding();
+
+    await openPasswordSheet(user);
+    await user.type(screen.getByPlaceholderText("Password"), "secret");
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByTestId("landed")).toHaveTextContent("/wallet");
+  });
+
+  it("opens chats when a contact already exists", async () => {
+    useContactsStore.setState({
+      contacts: [
+        {
+          id: "c1",
+          alias: "Ada",
+          relationshipStatus: "pending",
+        } as Contact,
+      ],
+      invites: [],
+    });
+    const user = userEvent.setup();
+    renderWelcomeLanding();
+
+    await openPasswordSheet(user);
+    await user.type(screen.getByPlaceholderText("Password"), "secret");
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByTestId("landed")).toHaveTextContent("/chats");
   });
 });

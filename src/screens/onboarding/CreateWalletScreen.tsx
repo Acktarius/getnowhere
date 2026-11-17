@@ -85,7 +85,7 @@ export function CreateWalletScreen() {
       setEnrollBusy(false);
     }
     markOnboarded();
-    navigate("/contacts");
+    navigate("/wallet");
   }
 
   const passwordStrength = walletPasswordStrength(walletPassword);

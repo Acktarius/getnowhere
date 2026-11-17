@@ -5,6 +5,8 @@ type Props = {
   title: ReactNode;
   subtitle?: ReactNode;
   leading?: ReactNode;
+  /** Sits in the free space between the title and the trailing actions. */
+  center?: ReactNode;
   trailing?: ReactNode;
   bordered?: boolean;
 };
@@ -13,16 +15,32 @@ export function TopBar({
   title,
   subtitle,
   leading,
+  center,
   trailing,
   bordered,
 }: Props) {
   return (
     <header className={`topbar ${bordered ? "topbar--bordered" : ""}`}>
       {leading}
-      <div className="grow" style={{ minWidth: 0 }}>
+      <div
+        className={center ? undefined : "grow"}
+        style={{ minWidth: 0, flex: center ? "0 1 auto" : undefined }}
+      >
         <div className="topbar__title">{title}</div>
         {subtitle && <div className="topbar__sub">{subtitle}</div>}
       </div>
+      {center ? (
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          {center}
+        </div>
+      ) : null}
       {trailing}
     </header>
   );
