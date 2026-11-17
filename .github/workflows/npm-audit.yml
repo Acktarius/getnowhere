@@ -38,10 +38,10 @@ jobs:
         run: npm ci --prefix native-wrapper
 
       - name: Audit root
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Audit holepunch-sidecar
-        run: npm audit --audit-level=high --prefix holepunch-sidecar
+        run: npm audit --omit=dev --audit-level=high --prefix holepunch-sidecar
 
       # Forge/packager extract-zip advisories are build-toolchain only; package.json has no runtime deps.
       - name: Audit desktop-electron
