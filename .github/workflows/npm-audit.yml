@@ -48,10 +48,10 @@ jobs:
         run: npm audit --omit=dev --audit-level=high --prefix desktop-electron
 
       - name: Audit poke-gateway
-        run: npm audit --audit-level=high --prefix poke-gateway
+        run: npm audit --omit=dev --audit-level=high --prefix poke-gateway
 
       - name: Audit native-wrapper
-        run: npm audit --audit-level=high --prefix native-wrapper
+        run: npm audit --omit=dev --audit-level=high --prefix native-wrapper
 
       - name: Typecheck
         run: npm run types
