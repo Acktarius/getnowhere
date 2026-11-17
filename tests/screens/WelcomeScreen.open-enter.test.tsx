@@ -55,7 +55,18 @@ describe("WelcomeScreen desktop wallet open", () => {
     delete window.gnhMobile;
   });
 
-  it("opens the stored wallet when Enter is pressed on desktop", async () => {
+  it("opens the stored wallet when Enter is pressed in dev", async () => {
+    const user = userEvent.setup();
+    renderWelcome();
+
+    const password = await openPasswordSheet(user);
+    await user.type(password, "secret");
+    await user.keyboard("{Enter}");
+
+    expect(openStoredWallet).toHaveBeenCalledWith("secret");
+  });
+
+  it("opens the stored wallet when Enter is pressed in Electron", async () => {
     window.gnhDesktop = { role: "alice" };
     const user = userEvent.setup();
     renderWelcome();
@@ -67,8 +78,7 @@ describe("WelcomeScreen desktop wallet open", () => {
     expect(openStoredWallet).toHaveBeenCalledWith("secret");
   });
 
-  it("opens the stored wallet when Open is clicked on desktop", async () => {
-    window.gnhDesktop = { role: "alice" };
+  it("opens the stored wallet when Open is clicked", async () => {
     const user = userEvent.setup();
     renderWelcome();
 
@@ -79,7 +89,11 @@ describe("WelcomeScreen desktop wallet open", () => {
     expect(openStoredWallet).toHaveBeenCalledWith("secret");
   });
 
-  it("leaves Enter inert outside the desktop host", async () => {
+  it("leaves Enter inert on the mobile host", async () => {
+    window.gnhMobile = {
+      sendCommand: () => undefined,
+      onBridgeEvent: () => () => undefined,
+    };
     const user = userEvent.setup();
     renderWelcome();
 

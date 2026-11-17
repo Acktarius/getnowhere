@@ -114,7 +114,8 @@ export function WelcomeScreen() {
 
   const showOpen = stored === true;
   const showWalletBioUnlock = isMobileHost() && dataUnlockBiometricEnabled;
-  const isDesktop = typeof window !== "undefined" && window.gnhDesktop != null;
+  /** Enter submits on desktop and `npm run dev`. Mobile stays click-only. */
+  const submitOnEnter = !isMobileHost();
 
   function submitOpen(e: FormEvent) {
     e.preventDefault();
@@ -137,10 +138,10 @@ export function WelcomeScreen() {
       />
       {error && openSheet && <div className="field__error">{error}</div>}
       <button
-        type={isDesktop ? "submit" : "button"}
+        type={submitOnEnter ? "submit" : "button"}
         className="btn btn--block btn--primary"
         disabled={initializing || password.length < 1}
-        onClick={isDesktop ? undefined : () => void handleOpen()}
+        onClick={submitOnEnter ? undefined : () => void handleOpen()}
       >
         {initializing ? (
           <>
@@ -315,7 +316,7 @@ export function WelcomeScreen() {
           setError(null);
         }}
       >
-        {isDesktop ? (
+        {submitOnEnter ? (
           <form className="stack stack--gap-3" onSubmit={submitOpen}>
             {openFields}
           </form>
