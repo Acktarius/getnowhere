@@ -49,6 +49,7 @@ describe("ContactDetailScreen create room", () => {
       initialized: false,
       address: "",
       syncStatus: "idle",
+      balanceAvailable: 0,
     });
   });
 
@@ -61,11 +62,24 @@ describe("ContactDetailScreen create room", () => {
     expect(createRoom).toBeDisabled();
     expect(screen.getByLabelText(/Wallet sync/)).toBeTruthy();
 
-    useWalletStore.setState({ syncStatus: "synced" });
+    useWalletStore.setState({ syncStatus: "synced", balanceAvailable: 1 });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create room" })).toBeEnabled();
     });
+    expect(screen.queryByLabelText(/Wallet sync/)).toBeNull();
+    expect(screen.queryByText("Insufficient funds")).toBeNull();
+  });
+
+  it("keeps create room disabled with an Insufficient funds chip when synced without fuel", async () => {
+    useWalletStore.setState({ syncStatus: "synced", balanceAvailable: 0 });
+    renderContact();
+
+    const createRoom = await screen.findByRole("button", {
+      name: "Create room",
+    });
+    expect(createRoom).toBeDisabled();
+    expect(screen.getByText("Insufficient funds")).toBeTruthy();
     expect(screen.queryByLabelText(/Wallet sync/)).toBeNull();
   });
 });
