@@ -114,6 +114,7 @@ type ContactsStore = {
     raw: string;
     myAddress: string;
     replyHandle?: string;
+    confirmSecond?: boolean;
   }) => Promise<InvitePasteOutcome>;
   cancelInviteLink: (id: string) => void;
   updateContact: (id: string, patch: Partial<Contact>) => void;
@@ -797,14 +798,27 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     return { contact, link };
   },
 
-  async pasteInviteLink({ raw, myAddress, replyHandle }) {
+  async pasteInviteLink({ raw, myAddress, replyHandle, confirmSecond }) {
     const outcome = interpretInvitePaste({
       raw,
       myAddress,
       contacts: get().contacts,
       replyHandle,
       replyPaymentIdFrom: replyHandle ? generatePaymentId() : undefined,
+      confirmSecond,
     });
+    if (outcome.type === "remember-alias") {
+      const now = new Date().toISOString();
+      set((s) => ({
+        contacts: s.contacts.map((c) =>
+          c.id === outcome.contactId
+            ? { ...c, alsoKnownAs: outcome.alsoKnownAs, updatedAt: now }
+            : c,
+        ),
+      }));
+      schedulePersistContacts(get);
+      return outcome;
+    }
     if (outcome.type === "create-redeemer") {
       const now = new Date().toISOString();
       const base: Contact = {

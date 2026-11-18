@@ -3,13 +3,17 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { Sheet } from "@/components/Sheet";
 import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
 import {
+  alreadySavedMessage,
   encodeInviteLink,
   INVITE_PASTE_MESSAGE,
   type InvitePasteOutcome,
   ONE_PERSON_LINK_WARNING,
   REPLY_TIMING_NOTICE,
+  rememberedAliasMessage,
+  secondContactMessage,
 } from "@/lib/invite-link";
 import { useContactsStore } from "@/state/contactsStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { Contact } from "@/types/models";
 
 function shortPid(value: string): string {
@@ -133,6 +137,7 @@ export function PasteInviteLinkSheet({
   onClose: () => void;
 }) {
   const pasteInviteLink = useContactsStore((s) => s.pasteInviteLink);
+  const showTips = useSettingsStore((s) => s.showTips);
   const [raw, setRaw] = useState("");
   const [handle, setHandle] = useState("");
   const [askingHandle, setAskingHandle] = useState(false);
@@ -142,11 +147,18 @@ export function PasteInviteLinkSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [warningOpen, setWarningOpen] = useState(false);
+  const [confirmSecond, setConfirmSecond] = useState(false);
+  const [secondPrompt, setSecondPrompt] = useState<{
+    alias: string;
+    linkName: string;
+  } | null>(null);
 
   function close() {
     setRaw("");
     setHandle("");
     setWarningOpen(false);
+    setConfirmSecond(false);
+    setSecondPrompt(null);
     setAskingHandle(false);
     setPreview(null);
     setReplyLink(null);
@@ -186,10 +198,25 @@ export function PasteInviteLinkSheet({
     if (outcome.type === "noop") {
       setDone("This reply was already saved.");
       setError(null);
+      return;
+    }
+    if (outcome.type === "already") {
+      setDone(alreadySavedMessage(outcome.alias));
+      setError(null);
+      return;
+    }
+    if (outcome.type === "remember-alias") {
+      setDone(rememberedAliasMessage(outcome.alsoKnownAs, outcome.alias));
+      setError(null);
+      return;
+    }
+    if (outcome.type === "confirm-second") {
+      setSecondPrompt({ alias: outcome.alias, linkName: outcome.linkName });
+      setError(null);
     }
   }
 
-  async function submit(withHandle?: string) {
+  async function submit(withHandle?: string, allowSecond?: boolean) {
     setBusy(true);
     setError(null);
     try {
@@ -197,6 +224,7 @@ export function PasteInviteLinkSheet({
         raw,
         myAddress,
         replyHandle: withHandle,
+        confirmSecond: allowSecond ?? confirmSecond,
       });
       if (
         outcome.type === "create-redeemer" ||
@@ -236,7 +264,10 @@ export function PasteInviteLinkSheet({
               <button
                 type="button"
                 className="btn btn--block btn--secondary"
-                onClick={() => setWarningOpen(true)}
+                onClick={() => {
+                  if (showTips) setWarningOpen(true);
+                  else close();
+                }}
               >
                 Done
               </button>
@@ -315,6 +346,23 @@ export function PasteInviteLinkSheet({
         confirmLabel="Got it"
         cancelLabel="Back"
         onConfirm={close}
+      />
+      <ConfirmModal
+        open={open && secondPrompt !== null}
+        onClose={() => setSecondPrompt(null)}
+        title="Already in your contacts"
+        body={
+          secondPrompt
+            ? secondContactMessage(secondPrompt.alias, secondPrompt.linkName)
+            : undefined
+        }
+        confirmLabel="Add second contact"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          setSecondPrompt(null);
+          setConfirmSecond(true);
+          void submit(handle.trim() ? handle : undefined, true);
+        }}
       />
     </>
   );

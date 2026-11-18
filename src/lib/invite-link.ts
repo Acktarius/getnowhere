@@ -12,6 +12,26 @@ export const ONE_PERSON_LINK_WARNING =
 export const REPLY_TIMING_NOTICE =
   "You can create a room with them now. It only works once they open the reply link you are sending, so give them a few minutes.";
 
+export function alreadySavedMessage(alias: string): string {
+  return `${alias} is already in your contacts.`;
+}
+
+export function rememberedAliasMessage(knownAs: string, alias: string): string {
+  return `Saved ${knownAs} as another name for ${alias}.`;
+}
+
+export function secondContactMessage(
+  existingAlias: string,
+  linkName: string,
+): string {
+  const same =
+    existingAlias.trim().toLowerCase() === linkName.trim().toLowerCase();
+  const lead = same
+    ? `You already have ${existingAlias} at this address, with a different payment ID.`
+    : `This link calls them ${linkName}. You already have ${existingAlias} at this address, with a different payment ID.`;
+  return `${lead} Add a second contact?`;
+}
+
 export type InviteLinkKind = "request" | "reply";
 
 export type InviteLinkFrame = {
@@ -36,7 +56,8 @@ export type InvitePasteError =
   | "cancelled"
   | "no-match"
   | "lost"
-  | "handle";
+  | "handle"
+  | "pid-in-use";
 
 export const INVITE_PASTE_MESSAGE: Record<InvitePasteError, string> = {
   malformed: "This is not an invite link.",
@@ -47,6 +68,7 @@ export const INVITE_PASTE_MESSAGE: Record<InvitePasteError, string> = {
   "no-match": "No unused invite matches this reply.",
   lost: "This link was already used. Only the first reply counts.",
   handle: "Enter the name they should use for you.",
+  "pid-in-use": "Payment ID already in use.",
 };
 
 const TOKEN_RE = /^[0-9a-f]{32}$/;
@@ -167,7 +189,65 @@ export type InvitePasteOutcome =
       >;
     }
   | { type: "noop"; contactId: string }
+  | { type: "already"; alias: string }
+  | {
+      type: "remember-alias";
+      contactId: string;
+      alias: string;
+      alsoKnownAs: string;
+    }
+  | { type: "confirm-second"; alias: string; linkName: string }
   | { type: "error"; code: InvitePasteError };
+
+function sameLabel(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+function contactHasPaymentId(contact: Contact, paymentId: string): boolean {
+  const needle = paymentId.trim().toLowerCase();
+  return (
+    contact.paymentIdFrom.trim().toLowerCase() === needle ||
+    (contact.paymentIdTo ?? "").trim().toLowerCase() === needle
+  );
+}
+
+/** Match a pasted address and payment ID against contacts. No writes. */
+function identityOutcome(
+  frame: InviteLinkFrame,
+  contacts: Contact[],
+  ignoreIds: string[],
+  confirmSecond: boolean | undefined,
+): InvitePasteOutcome | null {
+  const ignore = new Set(ignoreIds);
+  const others = contacts.filter((c) => !ignore.has(c.id));
+  const owner = others.find((c) => contactHasPaymentId(c, frame.p));
+  if (owner) {
+    if (owner.ccxAddress.trim() !== frame.a) {
+      return { type: "error", code: "pid-in-use" };
+    }
+    const known =
+      sameLabel(owner.alias, frame.n) ||
+      (owner.alsoKnownAs ? sameLabel(owner.alsoKnownAs, frame.n) : false);
+    if (known) return { type: "already", alias: owner.alias };
+    return {
+      type: "remember-alias",
+      contactId: owner.id,
+      alias: owner.alias,
+      alsoKnownAs: frame.n,
+    };
+  }
+  const byAddress = others.find(
+    (c) => c.ccxAddress.trim() !== "" && c.ccxAddress.trim() === frame.a,
+  );
+  if (byAddress && !confirmSecond) {
+    return {
+      type: "confirm-second",
+      alias: byAddress.alias,
+      linkName: frame.n,
+    };
+  }
+  return null;
+}
 
 /** Decide what a pasted link does. Does not write contacts. */
 export function interpretInvitePaste(input: {
@@ -176,6 +256,8 @@ export function interpretInvitePaste(input: {
   contacts: Contact[];
   replyHandle?: string;
   replyPaymentIdFrom?: string;
+  /** User confirmed a second contact at an address they already have. */
+  confirmSecond?: boolean;
 }): InvitePasteOutcome {
   const parsed = parseInviteLink(input.raw);
   if (!parsed.ok) return { type: "error", code: parsed.code };
@@ -200,6 +282,13 @@ export function interpretInvitePaste(input: {
         ? { type: "noop", contactId: issuer.id }
         : { type: "error", code: "lost" };
     }
+    const replyIdentity = identityOutcome(
+      frame,
+      input.contacts,
+      [issuer.id],
+      input.confirmSecond,
+    );
+    if (replyIdentity) return replyIdentity;
     return {
       type: "finalize",
       contactId: issuer.id,
@@ -228,6 +317,14 @@ export function interpretInvitePaste(input: {
       }),
     };
   }
+
+  const requestIdentity = identityOutcome(
+    frame,
+    input.contacts,
+    [],
+    input.confirmSecond,
+  );
+  if (requestIdentity) return requestIdentity;
 
   const handle = input.replyHandle ? cleanHandle(input.replyHandle) : null;
   if (!handle) return { type: "need-handle", frame };

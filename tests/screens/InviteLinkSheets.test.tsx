@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ONE_PERSON_LINK_WARNING,
   REPLY_TIMING_NOTICE,
+  secondContactMessage,
 } from "@/lib/invite-link";
 import {
   CreateInviteLinkSheet,
@@ -16,6 +17,7 @@ import {
   PasteInviteLinkSheet,
 } from "@/screens/contacts/InviteLinkSheets";
 import { useContactsStore } from "@/state/contactsStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { Contact } from "@/types/models";
 
 vi.mock("@/lib/clipboard/sensitiveClipboard", () => ({
@@ -45,9 +47,11 @@ describe("CreateInviteLinkSheet", () => {
 describe("PasteInviteLinkSheet", () => {
   afterEach(() => {
     cleanup();
+    useSettingsStore.setState({ showTips: true });
   });
 
   it("warns the responder only after Done, then closes on Got it", async () => {
+    useSettingsStore.setState({ showTips: true });
     const onClose = vi.fn();
     const pasteInviteLink = vi.fn(async () => ({
       type: "show-existing" as const,
@@ -71,6 +75,65 @@ describe("PasteInviteLinkSheet", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Got it" }));
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("closes on Done when tips are off", async () => {
+    useSettingsStore.setState({ showTips: false });
+    const onClose = vi.fn();
+    useContactsStore.setState({
+      pasteInviteLink: vi.fn(async () => ({
+        type: "show-existing" as const,
+        contactId: "c1",
+        replyLink: "{}",
+      })),
+    });
+
+    render(<PasteInviteLinkSheet open myAddress="ccx7bob" onClose={onClose} />);
+    fireEvent.change(screen.getByPlaceholderText(/paste the link/i), {
+      target: { value: "{}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open link" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Done" }));
+
+    expect(screen.queryByText(REPLY_TIMING_NOTICE)).toBeNull();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it("asks before adding a second contact at the same address", async () => {
+    const pasteInviteLink = vi
+      .fn()
+      .mockResolvedValueOnce({
+        type: "confirm-second" as const,
+        alias: "Alice",
+        linkName: "Ada",
+      })
+      .mockResolvedValueOnce({
+        type: "need-handle" as const,
+        frame: { n: "Ada", a: "ccx7ada", p: "abcdef123456" },
+      });
+    useContactsStore.setState({ pasteInviteLink });
+
+    render(
+      <PasteInviteLinkSheet open myAddress="ccx7bob" onClose={() => {}} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/paste the link/i), {
+      target: { value: "{}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open link" }));
+
+    expect(
+      await screen.findByText(secondContactMessage("Alice", "Ada")),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add second contact" }));
+
+    await waitFor(() =>
+      expect(pasteInviteLink).toHaveBeenLastCalledWith(
+        expect.objectContaining({ confirmSecond: true }),
+      ),
+    );
+    expect(
+      await screen.findByText(/name they should use for you/i),
+    ).toBeTruthy();
   });
 });
 

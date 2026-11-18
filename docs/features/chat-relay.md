@@ -25,6 +25,15 @@ Mempool-TTL L1′ never writes to `chatRooms`; at expiry erase from both rooms
 and do not restore on unlock. Wallet history drops the matching pending 0-conf
 row at the same expiry (do not keep it for the 24h mempool lifetime).
 
+**Hydrate ordering:** `openStoredWallet` / `unlock` hydrate contacts, room
+sessions and transcripts *before* marking the wallet initialized, so a room
+route never mounts on an empty thread. Hydrate merges the `chatRooms` snapshot
+into memory by message id (memory wins), emits each touched room's transcript to
+subscribers, and releases the transcript flush hold. While the hold is set
+(`holdChatRoomFlush`), `saveChatRoomsToWallet` no-ops so an early flush cannot
+overwrite the saved snapshot. Create / import also hydrate (file import restores
+saved transcripts).
+
 ## Composer
 
 - Prefer `live` when `lifecycleStatus === "connected"`.

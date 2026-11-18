@@ -433,6 +433,11 @@ export function ContactDetailScreen() {
           </div>
           <div className="stack stack--gap-1">
             <h2 style={{ fontSize: 20 }}>{contact.alias}</h2>
+            {contact.alsoKnownAs ? (
+              <div className="muted" style={{ fontSize: 13 }}>
+                Also known as {contact.alsoKnownAs}
+              </div>
+            ) : null}
             <div className="mono faint" style={{ fontSize: 12 }}>
               <NonSelectableText>
                 {shortAddress(contact.ccxAddress, 14, 14)}

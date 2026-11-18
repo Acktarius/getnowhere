@@ -51,6 +51,7 @@ export type StoredAddressEntry = RawAddressEntry & {
   linkRole?: Contact["linkRole"];
   linkState?: Contact["linkState"];
   linkHandle?: string;
+  alsoKnownAs?: string;
   createdAt?: string;
   updatedAt?: string;
   lastInteractionAt?: string;
@@ -96,6 +97,7 @@ export function contactToAddressEntry(contact: Contact): StoredAddressEntry {
     linkRole: contact.linkRole,
     linkState: contact.linkState,
     linkHandle: contact.linkHandle,
+    alsoKnownAs: contact.alsoKnownAs?.trim() || undefined,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt,
     lastInteractionAt: contact.lastInteractionAt,
@@ -163,6 +165,10 @@ export function addressEntryToContact(entry: StoredAddressEntry): Contact {
         : undefined,
     linkHandle:
       typeof entry.linkHandle === "string" ? entry.linkHandle : undefined,
+    alsoKnownAs:
+      typeof entry.alsoKnownAs === "string" && entry.alsoKnownAs.trim()
+        ? entry.alsoKnownAs.trim()
+        : undefined,
     createdAt: entry.createdAt ?? now,
     updatedAt: entry.updatedAt ?? now,
     lastInteractionAt: entry.lastInteractionAt,
@@ -476,6 +482,7 @@ export function contactsExportPayload(contacts: Contact[]): unknown[] {
     linkRole: c.linkRole ?? null,
     linkState: c.linkState ?? null,
     linkHandle: c.linkHandle ?? null,
+    alsoKnownAs: c.alsoKnownAs ?? null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   }));

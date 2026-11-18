@@ -64,6 +64,7 @@ export function ContactsScreen() {
       .filter((c) =>
         q
           ? c.alias.toLowerCase().includes(q) ||
+            (c.alsoKnownAs?.toLowerCase().includes(q) ?? false) ||
             c.ccxAddress.toLowerCase().includes(q)
           : true,
       )

@@ -8,7 +8,12 @@ import {
   setInternalWalletNodeUrl,
 } from "@/services/conceal/ConcealWalletService";
 import { wipeWalletScopedLocalData } from "@/services/contacts/contactsPersistence";
-import { clearRecentLiveSends } from "@/services/p2p/HolepunchChatTransport";
+import {
+  clearRecentLiveSends,
+  holdChatRoomFlush,
+  hydrateChatRoomsFromWallet,
+  releaseChatRoomFlush,
+} from "@/services/p2p/HolepunchChatTransport";
 import {
   hydrateRoomSessions,
   lockRoomSessionMemory,
@@ -117,6 +122,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       await hydrateRoomSessions();
+      hydrateChatRoomsFromWallet();
       return { seedPhrase: res.seedPhrase };
     } catch (e) {
       set({ initializing: false, error: (e as Error).message });
@@ -148,6 +154,7 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
       resetContactsAndChatRam();
       await useContactsStore.getState().hydrate();
       await hydrateRoomSessions();
+      hydrateChatRoomsFromWallet();
       void get().resync();
       if (input.method === "file") {
         void useContactsStore.getState().refreshInvites();
@@ -164,9 +171,14 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
 
   async openStoredWallet(password) {
     set({ initializing: true, error: null });
+    holdChatRoomFlush();
     try {
       await walletService.unlockWallet(password);
       const addr = await walletService.getAddress();
+      // Hydrate before `initialized` so the room route never mounts on an empty transcript.
+      await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
+      hydrateChatRoomsFromWallet();
       set({
         initialized: true,
         locked: false,
@@ -177,19 +189,14 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
         syncProgress: 0.05,
         initializing: false,
       });
-      await useContactsStore.getState().hydrate();
-      await hydrateRoomSessions();
-      const { hydrateChatRoomsFromWallet } = await import(
-        "@/services/p2p/HolepunchChatTransport"
-      );
-      hydrateChatRoomsFromWallet();
-      // Enter app immediately; live sync + resync catch tip in background.
+      // Live sync + resync catch tip in the background.
       void get().resync();
       void useContactsStore.getState().refreshInvites();
       void import("@/lib/mobile/walletSessionBridge").then((m) => {
         m.keepNativeWalletSession(password);
       });
     } catch (e) {
+      releaseChatRoomFlush();
       set({ initializing: false, error: (e as Error).message });
       throw e;
     }
@@ -205,14 +212,17 @@ export const useWalletStore = create<WalletStore>((set, get) => ({
     });
   },
   async unlock() {
-    await walletService.unlockWallet("");
+    holdChatRoomFlush();
+    try {
+      await walletService.unlockWallet("");
+      await useContactsStore.getState().hydrate();
+      await hydrateRoomSessions();
+      hydrateChatRoomsFromWallet();
+    } catch (e) {
+      releaseChatRoomFlush();
+      throw e;
+    }
     set({ locked: false });
-    await useContactsStore.getState().hydrate();
-    await hydrateRoomSessions();
-    const { hydrateChatRoomsFromWallet } = await import(
-      "@/services/p2p/HolepunchChatTransport"
-    );
-    hydrateChatRoomsFromWallet();
     void useContactsStore.getState().refreshInvites();
   },
 

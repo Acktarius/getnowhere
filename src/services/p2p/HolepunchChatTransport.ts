@@ -1837,9 +1837,20 @@ export function pruneExpiredTtlRoomMessages(nowUnixSec: number): void {
   scheduleTtlPruneTimer();
 }
 
+let chatRoomFlushHeld = false;
+
+/** Block transcript flush while an opened wallet's snapshot is still hydrating. */
+export function holdChatRoomFlush(): void {
+  chatRoomFlushHeld = true;
+}
+
+export function releaseChatRoomFlush(): void {
+  chatRoomFlushHeld = false;
+}
+
 /** Fold in-memory room messages into `rt.raw` (no encrypt/write). */
 export function stageChatRoomsInWallet(): void {
-  if (!localMessageRetentionOn()) return;
+  if (chatRoomFlushHeld || !localMessageRetentionOn()) return;
   const rt = getRuntime();
   if (!rt) return;
   const bag: Record<string, ChatMessage[]> = {};
@@ -1851,6 +1862,7 @@ export function stageChatRoomsInWallet(): void {
 
 /** Save in-memory room messages into the encrypted wallet blob. */
 export async function saveChatRoomsToWallet(): Promise<void> {
+  if (chatRoomFlushHeld) return;
   stageChatRoomsInWallet();
   if (!localMessageRetentionOn()) return;
   const rt = getRuntime();
@@ -1860,32 +1872,51 @@ export async function saveChatRoomsToWallet(): Promise<void> {
 
 /**
  * Load chatRooms (skip live bodies when retention off) then merge L1′ relays.
+ * Merges by message id, notifies room subscribers, and releases the flush hold.
+ * @see docs/features/chat-relay.md
  * @see openspec/changes/archive/2026-09-22-p2p-message-retention/specs/chat-room-persistence/spec.md
  */
 export function hydrateChatRoomsFromWallet(): void {
-  const rt = getRuntime();
-  if (!rt) return;
-  const roomsMap = readChatRooms(rt.raw);
-  const restoreBodies = localMessageRetentionOn();
-  for (const [roomId, entry] of Object.entries(roomsMap)) {
-    if (entry.revoked === true) {
-      rememberRevokedRoom(roomId);
-      messagesByRoom.delete(roomId);
-      continue;
-    }
-    if (isRoomRevoked(roomId)) continue;
-    if (!restoreBodies) continue;
-    const existing = messagesByRoom.get(roomId) ?? [];
-    if (existing.length > 0) continue;
-    messagesByRoom.set(
-      roomId,
-      entry.messages.filter(
+  try {
+    const rt = getRuntime();
+    if (!rt) return;
+    const touched = new Set<string>();
+    const roomsMap = readChatRooms(rt.raw);
+    const restoreBodies = localMessageRetentionOn();
+    for (const [roomId, entry] of Object.entries(roomsMap)) {
+      if (entry.revoked === true) {
+        rememberRevokedRoom(roomId);
+        messagesByRoom.delete(roomId);
+        continue;
+      }
+      if (isRoomRevoked(roomId)) continue;
+      if (!restoreBodies) continue;
+      const restored = entry.messages.filter(
         (m) => !(typeof m.ttlExpiresAt === "number" && m.ttlExpiresAt > 0),
-      ),
-    );
+      );
+      if (restored.length === 0) continue;
+      mergeSnapshotMessages(roomId, restored);
+      touched.add(roomId);
+    }
+    mergeL1RelayTranscripts(rt.raw, touched);
+    pruneExpiredTtlRoomMessages(nowUnix());
+    for (const roomId of touched) emitTranscript(roomId);
+  } finally {
+    releaseChatRoomFlush();
   }
-  mergeL1RelayTranscripts(rt.raw);
-  pruneExpiredTtlRoomMessages(nowUnix());
+}
+
+/** Add snapshot rows missing from memory; in-memory rows win on id. */
+function mergeSnapshotMessages(roomId: string, restored: ChatMessage[]): void {
+  const existing = messagesByRoom.get(roomId) ?? [];
+  if (existing.length === 0) {
+    messagesByRoom.set(roomId, restored);
+    return;
+  }
+  const known = new Set(existing.map((m) => m.id));
+  const merged = [...restored.filter((m) => !known.has(m.id)), ...existing];
+  merged.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  messagesByRoom.set(roomId, merged);
 }
 
 function isRoomBlockedForL1Hydrate(raw: RawWalletV1, roomId: string): boolean {
@@ -1894,7 +1925,7 @@ function isRoomBlockedForL1Hydrate(raw: RawWalletV1, roomId: string): boolean {
 }
 
 /** Merge parsed L1′ relay rows; existing live id wins. */
-function mergeL1RelayTranscripts(raw: RawWalletV1): void {
+function mergeL1RelayTranscripts(raw: RawWalletV1, touched: Set<string>): void {
   const rows: Array<{ record: SdkMessageRecord; direction: "out" | "in" }> = [
     ...readSentRecords(raw).map((record) => ({
       record,
@@ -1931,6 +1962,7 @@ function mergeL1RelayTranscripts(raw: RawWalletV1): void {
           : {}),
       },
     ]);
+    touched.add(roomId);
   }
 }
 
@@ -2010,6 +2042,7 @@ export function getTopicRefForRoom(roomId: string): string | undefined {
 }
 
 export function __resetHolepunchTransport(): void {
+  chatRoomFlushHeld = false;
   clearLiveTranscriptFlushTimer();
   clearTtlPruneTimer();
   for (const u of backendUnsubs) u();

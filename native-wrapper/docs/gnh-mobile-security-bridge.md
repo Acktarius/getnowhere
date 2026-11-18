@@ -25,8 +25,11 @@ WebView loads bundled Vite UI; native Expo shell routes `postMessage` JSON.
   commands and biometric enroll except unlock/lifecycle/securePrefs reads needed
   for unlock.
 - **Native stale-response drop:** RN drops security responses whose
-  `lockGeneration` no longer matches the current native generation before
-  injecting `_resolveSecurity(...)` into WebView JS.
+`lockGeneration` no longer matches the current native generation before
+injecting `_resolveSecurity(...)` into WebView JS. A lock rejection
+(`error: "locked"` or `reason: "locked"`) is delivered even when stale: it
+carries no data, and dropping it leaves the WebView waiting out its request
+timeout, because the WebView only learns the new generation on foreground.
 
 ## Message envelope
 

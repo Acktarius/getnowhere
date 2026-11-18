@@ -53,6 +53,8 @@ export type RoomLifecycleStatus =
 export type Contact = {
   id: string;
   alias: string;
+  /** Name they asked to be called, when it differs from `alias`. */
+  alsoKnownAs?: string;
   ccxAddress: string;
   // Payment ID you assign to this contact. On receive, you use it to identify
   // them (who the tx comes FROM). Share it; they store it as their paymentIdTo.

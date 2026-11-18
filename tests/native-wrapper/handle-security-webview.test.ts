@@ -283,6 +283,21 @@ describe("shouldInjectSecurityResponse", () => {
     expect(shouldInjectSecurityResponse({ lockGeneration: 3 }, 3)).toBe(true);
   });
 
+  it("delivers a stale lock rejection so the caller fails fast", () => {
+    expect(
+      shouldInjectSecurityResponse({ lockGeneration: 2, error: "locked" }, 3),
+    ).toBe(true);
+    expect(
+      shouldInjectSecurityResponse({ lockGeneration: 2, reason: "locked" }, 3),
+    ).toBe(true);
+  });
+
+  it("still drops a stale response that carries data", () => {
+    expect(
+      shouldInjectSecurityResponse({ lockGeneration: 2, value: "secret" }, 3),
+    ).toBe(false);
+  });
+
   it("allows legacy responses without lockGeneration", () => {
     expect(shouldInjectSecurityResponse({}, 3)).toBe(true);
   });

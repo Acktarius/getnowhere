@@ -220,5 +220,7 @@ export function shouldInjectSecurityResponse(
 ): boolean {
   const generation = response.lockGeneration;
   if (typeof generation !== "number") return true;
+  // Lock rejections carry no data. @see native-wrapper/docs/gnh-mobile-security-bridge.md
+  if (response.error === "locked" || response.reason === "locked") return true;
   return generation === currentGeneration;
 }

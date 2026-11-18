@@ -114,11 +114,36 @@ Reply frame uses `"k": "reply"`. `n` is the name the issuer should use, `a` and
 `paymentIdTo`). The token is echoed.
 
 Paste outcomes: a request saves an eligible contact (both payment IDs are known)
-and a reply link. When the responder taps Done on the reply screen, a warning
-dialog says a room only works once the issuer has opened that reply, so allow a
-few minutes. The issuer's contact stays
+and a reply link. When the responder taps Done on the reply screen, and Tips
+are on in Settings → Appearance, a warning dialog says a room only works once
+the issuer has opened that reply, so allow a few minutes. With Tips off, Done
+closes the sheet. The issuer's contact stays
 Pending until it opens the reply. A matching unused invite becomes eligible. A later different reply for that token is refused. The same
-reply pasted twice is a no-op. Other failures: malformed, unknown version, your
+reply pasted twice is a no-op.
+
+Before a new contact is written, the paste is checked against people already
+saved. Chain scan attributes an incoming transaction to one contact by
+`paymentIdFrom`. Two contacts must not share one. The link's `p` is that
+payment ID from the sender (stored here as `paymentIdTo`). The display name
+is only a label.
+
+- The payment ID is already on a contact, and the address is that contact's:
+  keep that contact. Same name: stop, already saved. Different name: remember
+  it as `alsoKnownAs`. The local alias stays. No second contact, and no second
+  copy of the payment ID.
+- The payment ID is already on a contact with a different address: stop.
+  "Payment ID already in use." Pasting must not leave two contacts on the same
+  `paymentIdFrom`, or a later scan could not tell who sent the transaction.
+- Same address, different payment ID: ask before adding a second contact.
+  Confirming mints a new `paymentIdFrom` for that contact. It does not reuse
+  the existing one. Cancelling writes nothing.
+- The same display name on another address, with its own payment ID: create
+  the contact. The name is not used to recognize a transaction.
+
+The issuer's reply uses the same checks before filling the unused invite.
+The one-person payment warning is always shown. It is not a tip.
+
+Other failures: malformed, unknown version, your
 own address, cancelled, or no matching invite.
 
 ### Chat readiness

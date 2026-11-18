@@ -65,6 +65,17 @@ describe("contact categoryTags persistence", () => {
     expect(payload[0]?.categoryTags).toEqual(["colleague", "friend"]);
   });
 
+  it("round-trips alsoKnownAs through wallet addressBook and export", () => {
+    const named = { ...baseContact, alsoKnownAs: "Ada" };
+    const entry = contactToAddressEntry(named);
+    expect(entry.alsoKnownAs).toBe("Ada");
+    expect(addressEntryToContact(entry).alsoKnownAs).toBe("Ada");
+    const payload = contactsExportPayload([named]) as Array<{
+      alsoKnownAs: string | null;
+    }>;
+    expect(payload[0]?.alsoKnownAs).toBe("Ada");
+  });
+
   it("round-trips topicEpoch through wallet addressBook and export", () => {
     const tagged = { ...baseContact, topicEpoch: 3 };
     const entry = contactToAddressEntry(tagged);
