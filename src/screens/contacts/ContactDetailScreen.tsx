@@ -41,6 +41,7 @@ import {
   INVITE_EXPIRY_PRESETS,
   ROOM_TTL_PRESETS,
 } from "@/lib/roomTtlPresets";
+import { InviteLinkContactNote } from "@/screens/contacts/InviteLinkSheets";
 import {
   getContactInviteActionCount,
   getInviteQueue,
@@ -465,6 +466,8 @@ export function ContactDetailScreen() {
             </div>
           )}
         </div>
+
+        <InviteLinkContactNote contact={contact} myAddress={myAddress} />
 
         <ContactCategoryTagCard contact={contact} />
 

@@ -33,5 +33,8 @@ describe("isContactEligibleForInvite", () => {
     expect(
       isContactEligibleForInvite(contact({ relationshipStatus: "archived" })),
     ).toBe(false);
+    expect(isContactEligibleForInvite(contact({ linkState: "awaiting" }))).toBe(
+      false,
+    );
   });
 });

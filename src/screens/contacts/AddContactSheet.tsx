@@ -12,6 +12,7 @@ import { QrCameraScanner } from "@/components/qr/QrCameraScanner";
 import { WalletQrCode } from "@/components/qr/WalletQrCode";
 import { SecureInput } from "@/components/SecureInput";
 import { Sheet } from "@/components/Sheet";
+import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
 import { encodePairQrPayload, parsePairQrPayload } from "@/lib/pair-qr";
 import { walletService } from "@/services";
 import { useContactsStore } from "@/state/contactsStore";
@@ -111,6 +112,15 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
       setAddressWarning(
         ok ? null : "This does not look like a valid CCX address.",
       );
+    }
+  }
+
+  async function pasteInto(apply: (value: string) => void) {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (text) apply(text);
+    } catch {
+      setError("Couldn't read the clipboard. Long-press the field to paste.");
     }
   }
 
@@ -286,6 +296,9 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                 placeholder="e.g. Cipher"
                 autoFocus
               />
+              <span className="field__hint">
+                Type their name to show pairing.
+              </span>
             </div>
 
             {showPairActions && (
@@ -385,46 +398,54 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
             </div>
 
             <div className="field">
-              <span className="field__label">paymentIdFrom</span>
-              <div
-                className="row-flex"
-                style={{ gap: 8, alignItems: "flex-start" }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <SecureInput
-                    value={paymentIdFrom}
-                    onChange={setPaymentIdFrom}
-                    mono
-                    placeholder="64-char hex"
-                    revealable
-                    endAdornment={
-                      <PaymentIdQrScanButton
-                        style={scanBtnInline}
-                        disabled={busy}
-                        onScan={setPaymentIdFrom}
-                      />
-                    }
+              <span className="field__label">ID you share</span>
+              <SecureInput
+                value={paymentIdFrom}
+                onChange={setPaymentIdFrom}
+                mono
+                placeholder="64-char hex"
+                revealable
+                endAdornment={
+                  <PaymentIdQrScanButton
+                    style={scanBtnInline}
+                    disabled={busy}
+                    onScan={setPaymentIdFrom}
                   />
-                </div>
+                }
+              />
+              <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
                 <button
                   type="button"
-                  className="btn btn--sm btn--secondary no-shrink"
-                  style={{ marginTop: 0 }}
+                  className="btn btn--sm btn--secondary"
                   onClick={() =>
                     setPaymentIdFrom(walletService.generatePaymentId())
                   }
                 >
-                  <ArrowLeftRight size={13} /> Gen
+                  <ArrowLeftRight size={13} /> New random
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void copySensitive(paymentIdFrom)}
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void pasteInto(setPaymentIdFrom)}
+                >
+                  Paste
                 </button>
               </div>
               <span className="field__hint">
-                Share this ID in your pair QR; your contact stores it as
-                paymentIdTo.
+                You made this ID. They save it so you can recognize what they
+                send.
               </span>
             </div>
 
             <div className="field">
-              <span className="field__label">paymentIdTo</span>
+              <span className="field__label">ID they gave you</span>
               <SecureInput
                 value={paymentIdTo}
                 onChange={setPaymentIdTo}
@@ -439,8 +460,24 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
                   />
                 }
               />
+              <div className="row-flex" style={{ gap: 8, marginTop: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void copySensitive(paymentIdTo)}
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  className="btn btn--sm btn--secondary"
+                  onClick={() => void pasteInto(setPaymentIdTo)}
+                >
+                  Paste
+                </button>
+              </div>
               <span className="field__hint">
-                Provided by your contact so they can identify you when you send.
+                You attach it when you send to them, so they can recognize you.
               </span>
             </div>
 
@@ -567,7 +604,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
               />
             </div>
             <div className="field">
-              <span className="field__label">paymentIdTo (from their QR)</span>
+              <span className="field__label">ID they gave you</span>
               <input
                 className="input input--mono"
                 value={theirPidTo}
@@ -575,7 +612,7 @@ export function AddContactSheet({ open, onClose, onCreated }: Props) {
               />
             </div>
             <div className="field">
-              <span className="field__label">Your paymentIdFrom</span>
+              <span className="field__label">ID you share</span>
               <SecureInput
                 value={paymentIdFrom}
                 onChange={setPaymentIdFrom}

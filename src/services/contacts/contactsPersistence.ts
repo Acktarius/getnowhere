@@ -47,6 +47,10 @@ export type StoredAddressEntry = RawAddressEntry & {
   chatStatus?: Contact["chatStatus"];
   roomId?: string;
   topicEpoch?: number;
+  linkToken?: string;
+  linkRole?: Contact["linkRole"];
+  linkState?: Contact["linkState"];
+  linkHandle?: string;
   createdAt?: string;
   updatedAt?: string;
   lastInteractionAt?: string;
@@ -88,6 +92,10 @@ export function contactToAddressEntry(contact: Contact): StoredAddressEntry {
     chatStatus: contact.chatStatus,
     roomId: contact.roomId,
     topicEpoch: contact.topicEpoch,
+    linkToken: contact.linkToken,
+    linkRole: contact.linkRole,
+    linkState: contact.linkState,
+    linkHandle: contact.linkHandle,
     createdAt: contact.createdAt,
     updatedAt: contact.updatedAt,
     lastInteractionAt: contact.lastInteractionAt,
@@ -140,6 +148,21 @@ export function addressEntryToContact(entry: StoredAddressEntry): Contact {
       typeof entry.topicEpoch === "number" && entry.topicEpoch >= 0
         ? entry.topicEpoch
         : undefined,
+    linkToken:
+      typeof entry.linkToken === "string" ? entry.linkToken : undefined,
+    linkRole:
+      entry.linkRole === "issuer" || entry.linkRole === "redeemer"
+        ? entry.linkRole
+        : undefined,
+    linkState:
+      entry.linkState === "unused" ||
+      entry.linkState === "awaiting" ||
+      entry.linkState === "used" ||
+      entry.linkState === "cancelled"
+        ? entry.linkState
+        : undefined,
+    linkHandle:
+      typeof entry.linkHandle === "string" ? entry.linkHandle : undefined,
     createdAt: entry.createdAt ?? now,
     updatedAt: entry.updatedAt ?? now,
     lastInteractionAt: entry.lastInteractionAt,
@@ -449,6 +472,10 @@ export function contactsExportPayload(contacts: Contact[]): unknown[] {
     chatStatus: c.chatStatus,
     roomId: c.roomId ?? null,
     topicEpoch: c.topicEpoch ?? 0,
+    linkToken: c.linkToken ?? null,
+    linkRole: c.linkRole ?? null,
+    linkState: c.linkState ?? null,
+    linkHandle: c.linkHandle ?? null,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
   }));

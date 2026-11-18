@@ -10,6 +10,10 @@ import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
 import type { ContactCategoryTag } from "@/lib/contactCategoryTags";
 import { contactMatchesCategoryTagFilter } from "@/lib/contactCategoryTags";
 import { AddContactSheet } from "@/screens/contacts/AddContactSheet";
+import {
+  CreateInviteLinkSheet,
+  PasteInviteLinkSheet,
+} from "@/screens/contacts/InviteLinkSheets";
 import { useContactsStore } from "@/state/contactsStore";
 import { useWalletStore } from "@/state/walletStore";
 import type { RelationshipStatus } from "@/types/models";
@@ -31,6 +35,9 @@ export function ContactsScreen() {
   const [filter, setFilter] = useState<"all" | RelationshipStatus>("all");
   const [tagFilter, setTagFilter] = useState<ContactCategoryTag[]>([]);
   const [adding, setAdding] = useState(false);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [pastingLink, setPastingLink] = useState(false);
+  const myAddress = useWalletStore((s) => s.address);
   const searchRef = useRef<HTMLInputElement>(null);
   const initialized = useWalletStore((s) => s.initialized);
 
@@ -78,6 +85,22 @@ export function ContactsScreen() {
       <div className="screen-scroll">
         <div className="section" style={{ paddingTop: 6 }}>
           <div className="stack stack--gap-2">
+            <div className="row-flex" style={{ gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn--sm btn--primary grow"
+                onClick={() => setCreatingLink(true)}
+              >
+                Create invite link
+              </button>
+              <button
+                type="button"
+                className="btn btn--sm btn--secondary grow"
+                onClick={() => setPastingLink(true)}
+              >
+                Paste invite link
+              </button>
+            </div>
             <div style={{ position: "relative" }}>
               <Search
                 size={16}
@@ -165,6 +188,16 @@ export function ContactsScreen() {
           setAdding(false);
           navigate(`/contacts/${id}`);
         }}
+      />
+      <CreateInviteLinkSheet
+        open={creatingLink}
+        myAddress={myAddress}
+        onClose={() => setCreatingLink(false)}
+      />
+      <PasteInviteLinkSheet
+        open={pastingLink}
+        myAddress={myAddress}
+        onClose={() => setPastingLink(false)}
       />
       <BottomNav {...navBadges} />
     </div>

@@ -70,6 +70,17 @@ export type Contact = {
   roomId?: string;
   /** Hyperswarm discovery generation for this relationship (HKDF_EPOCH_V1). */
   topicEpoch?: number;
+  /** One-time invite token. Absent on contacts added by hand or pair QR. */
+  linkToken?: string;
+  /** Who created the invite link this contact belongs to. */
+  linkRole?: "issuer" | "redeemer";
+  /**
+   * unused: issuer is waiting. awaiting: redeemer sent a reply.
+   * used: issuer accepted the first reply. cancelled: issuer withdrew it.
+   */
+  linkState?: "unused" | "awaiting" | "used" | "cancelled";
+  /** Name this side published in the invite link. */
+  linkHandle?: string;
   createdAt: string;
   updatedAt: string;
   lastInteractionAt?: string;

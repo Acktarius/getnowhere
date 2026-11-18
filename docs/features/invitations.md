@@ -93,6 +93,32 @@ exchange, the contact is **eligible** for chat signaling.
 **Single PID rule:** the QR must encode the same `paymentIdFrom` as the manual
 field and the saved contact — never a separately generated ID for QR only.
 
+### Invite link (not in person)
+
+A separate Contacts action, not the Add contact form. One link carries one
+`paymentIdFrom` and a 128-bit token. **Send it to one person.** A second person
+would be indistinguishable on receive. The first reply opened on the issuer's
+wallet wins. There is no server, so a backup, another device, or a reset can
+accept a reply again. The copied text is the whole secret. It is not placed in
+a web query string. Opening the app from an email link needs a URL scheme and
+is a follow-up. Desktop and phone both paste the same text.
+
+Request frame:
+
+```json
+{ "v": 1, "t": "gnh-invite", "k": "request", "n": "<name they will see>", "a": "<ccx>", "p": "<paymentIdFrom>", "id": "<token>" }
+```
+
+Reply frame uses `"k": "reply"`. `n` is the name the issuer should use, `a` and
+`p` are the responder's address and `paymentIdFrom` (the issuer stores `p` as
+`paymentIdTo`). The token is echoed.
+
+Paste outcomes: a request saves a Pending contact and a reply link, and does
+not become eligible until the issuer opens that reply. A matching unused invite
+becomes eligible. A later different reply for that token is refused. The same
+reply pasted twice is a no-op. Other failures: malformed, unknown version, your
+own address, cancelled, or no matching invite.
+
 ### Chat readiness
 
 Chat readiness is a derived state, not a manual toggle.

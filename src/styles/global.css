@@ -242,7 +242,8 @@ button {
 .screen-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: env(safe-area-inset-top) 0 0;
+  /* TopBar already pads for the status-bar inset. A second inset was a blank band. */
+  padding: 0;
 }
 
 @media (min-width: 768px) {

@@ -1,4 +1,11 @@
 import { create } from "zustand";
+import {
+  encodeInviteLink,
+  type InvitePasteOutcome,
+  interpretInvitePaste,
+  linkBlocksEligibility,
+  newInviteToken,
+} from "@/lib/invite-link";
 import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import {
   chatTransport,
@@ -93,6 +100,18 @@ type ContactsStore = {
     paymentIdTo?: string;
     notes?: string;
   }) => Promise<Contact>;
+  /** One pending contact, one payment ID, one token. The link is for one person. */
+  createInviteLink: (input: {
+    handle: string;
+    myAddress: string;
+  }) => Promise<{ contact: Contact; link: string }>;
+  /** Paste a request or a reply. Single-use is local to this wallet. */
+  pasteInviteLink: (input: {
+    raw: string;
+    myAddress: string;
+    replyHandle?: string;
+  }) => Promise<InvitePasteOutcome>;
+  cancelInviteLink: (id: string) => void;
   updateContact: (id: string, patch: Partial<Contact>) => void;
   savePaymentIdTo: (id: string, paymentIdTo: string) => Promise<void>;
   removeContact: (id: string) => void;
@@ -128,12 +147,13 @@ type ContactsStore = {
 export function isContactEligibleForInvite(
   contact: Pick<
     Contact,
-    "paymentIdFrom" | "paymentIdTo" | "relationshipStatus"
+    "paymentIdFrom" | "paymentIdTo" | "relationshipStatus" | "linkState"
   >,
 ): boolean {
   if (
     contact.relationshipStatus === "blocked" ||
-    contact.relationshipStatus === "archived"
+    contact.relationshipStatus === "archived" ||
+    linkBlocksEligibility(contact.linkState)
   ) {
     return false;
   }
@@ -156,6 +176,7 @@ function recomputeStatus(c: Contact): Contact {
   const canBeEligible =
     hasFrom &&
     hasTo &&
+    !linkBlocksEligibility(c.linkState) &&
     c.relationshipStatus !== "blocked" &&
     c.relationshipStatus !== "archived";
   const nextRel: Contact["relationshipStatus"] =
@@ -731,6 +752,113 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     set((s) => ({ contacts: [contact, ...s.contacts] }));
     schedulePersistContacts(get);
     return contact;
+  },
+
+  async createInviteLink({ handle, myAddress }) {
+    const linkHandle = handle.trim();
+    if (!linkHandle) throw new Error("Enter the name they will see.");
+    const token = newInviteToken();
+    const paymentIdFrom = generatePaymentId();
+    const link = encodeInviteLink({
+      kind: "request",
+      handle: linkHandle,
+      address: myAddress,
+      paymentIdFrom,
+      token,
+    });
+    const now = new Date().toISOString();
+    const base: Contact = {
+      id: uid("c"),
+      alias: "Unused invite",
+      ccxAddress: "",
+      paymentIdFrom,
+      relationshipStatus: "pending",
+      inviteStatus: "none",
+      chatStatus: "unavailable",
+      linkToken: token,
+      linkRole: "issuer",
+      linkState: "unused",
+      linkHandle,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const contact = recomputeStatus(base);
+    await relationshipService.createRelationshipRequest({
+      contactId: contact.id,
+      ccxAddress: contact.ccxAddress,
+      paymentIdFrom: contact.paymentIdFrom,
+    });
+    set((s) => ({ contacts: [contact, ...s.contacts] }));
+    schedulePersistContacts(get);
+    return { contact, link };
+  },
+
+  async pasteInviteLink({ raw, myAddress, replyHandle }) {
+    const outcome = interpretInvitePaste({
+      raw,
+      myAddress,
+      contacts: get().contacts,
+      replyHandle,
+      replyPaymentIdFrom: replyHandle ? generatePaymentId() : undefined,
+    });
+    if (outcome.type === "create-redeemer") {
+      const now = new Date().toISOString();
+      const base: Contact = {
+        id: uid("c"),
+        ...outcome.draft,
+        relationshipStatus: "pending",
+        inviteStatus: "none",
+        chatStatus: "unavailable",
+        createdAt: now,
+        updatedAt: now,
+      };
+      const contact = recomputeStatus(base);
+      await relationshipService.createRelationshipRequest({
+        contactId: contact.id,
+        ccxAddress: contact.ccxAddress,
+        paymentIdFrom: contact.paymentIdFrom,
+      });
+      await relationshipService.completeRelationship({
+        contactId: contact.id,
+        paymentIdTo: contact.paymentIdTo ?? "",
+      });
+      set((s) => ({ contacts: [contact, ...s.contacts] }));
+      schedulePersistContacts(get);
+      return { ...outcome, contactId: contact.id };
+    }
+    if (outcome.type === "finalize") {
+      const now = new Date().toISOString();
+      await relationshipService.completeRelationship({
+        contactId: outcome.contactId,
+        paymentIdTo: outcome.patch.paymentIdTo ?? "",
+      });
+      set((s) => ({
+        contacts: s.contacts.map((c) =>
+          c.id === outcome.contactId
+            ? recomputeStatus({
+                ...c,
+                ...outcome.patch,
+                lastInteractionAt: now,
+              })
+            : c,
+        ),
+      }));
+      schedulePersistContacts(get);
+    }
+    return outcome;
+  },
+
+  cancelInviteLink(id) {
+    const current = get().contacts.find((c) => c.id === id);
+    if (current?.linkRole !== "issuer" || current.linkState !== "unused") {
+      return;
+    }
+    set((s) => ({
+      contacts: s.contacts.map((c) =>
+        c.id === id ? recomputeStatus({ ...c, linkState: "cancelled" }) : c,
+      ),
+    }));
+    schedulePersistContacts(get);
   },
 
   updateContact(id, patch) {
