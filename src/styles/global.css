@@ -1127,6 +1127,17 @@ button {
     max-width: 760px;
   }
 }
+.sheet--anchored {
+  top: var(--sheet-top);
+  bottom: auto;
+  max-height: calc(100dvh - var(--sheet-top) - var(--space-3));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  animation: scale-in var(--dur) var(--ease);
+}
+.sheet--anchored .sheet__grip {
+  display: none;
+}
 .sheet__grip {
   width: 36px;
   height: 4px;

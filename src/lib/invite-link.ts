@@ -9,6 +9,9 @@ import type { Contact } from "@/types/models";
 export const ONE_PERSON_LINK_WARNING =
   "Send this link to one person only. A second person would share this payment ID, and you could not tell their payments apart. The first reply you open is the one that counts.";
 
+export const REPLY_TIMING_NOTICE =
+  "You can create a room with them now. It only works once they open the reply link you are sending, so give them a few minutes.";
+
 export type InviteLinkKind = "request" | "reply";
 
 export type InviteLinkFrame = {
@@ -57,7 +60,7 @@ export function newInviteToken(): string {
 export function linkBlocksEligibility(
   state: Contact["linkState"] | undefined,
 ): boolean {
-  return state === "unused" || state === "awaiting" || state === "cancelled";
+  return state === "unused" || state === "cancelled";
 }
 
 function cleanHandle(name: string): string | null {

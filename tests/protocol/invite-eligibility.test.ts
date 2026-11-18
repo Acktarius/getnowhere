@@ -33,8 +33,17 @@ describe("isContactEligibleForInvite", () => {
     expect(
       isContactEligibleForInvite(contact({ relationshipStatus: "archived" })),
     ).toBe(false);
-    expect(isContactEligibleForInvite(contact({ linkState: "awaiting" }))).toBe(
+    expect(isContactEligibleForInvite(contact({ linkState: "unused" }))).toBe(
       false,
+    );
+    expect(
+      isContactEligibleForInvite(contact({ linkState: "cancelled" })),
+    ).toBe(false);
+  });
+
+  it("lets a redeemer awaiting the issuer's reply create a room", () => {
+    expect(isContactEligibleForInvite(contact({ linkState: "awaiting" }))).toBe(
+      true,
     );
   });
 });

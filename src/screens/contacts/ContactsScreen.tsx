@@ -37,8 +37,16 @@ export function ContactsScreen() {
   const [adding, setAdding] = useState(false);
   const [creatingLink, setCreatingLink] = useState(false);
   const [pastingLink, setPastingLink] = useState(false);
+  const [sheetTop, setSheetTop] = useState<number | undefined>();
+  const linkActionsRef = useRef<HTMLDivElement>(null);
   const myAddress = useWalletStore((s) => s.address);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  function openLinkSheet(open: (value: boolean) => void) {
+    const rect = linkActionsRef.current?.getBoundingClientRect();
+    setSheetTop(rect ? rect.bottom + 8 : undefined);
+    open(true);
+  }
   const initialized = useWalletStore((s) => s.initialized);
 
   useEffect(() => {
@@ -85,18 +93,22 @@ export function ContactsScreen() {
       <div className="screen-scroll">
         <div className="section" style={{ paddingTop: 6 }}>
           <div className="stack stack--gap-2">
-            <div className="row-flex" style={{ gap: 8 }}>
+            <div
+              ref={linkActionsRef}
+              className="row-flex"
+              style={{ gap: 8 }}
+            >
               <button
                 type="button"
                 className="btn btn--sm btn--primary grow"
-                onClick={() => setCreatingLink(true)}
+                onClick={() => openLinkSheet(setCreatingLink)}
               >
                 Create invite link
               </button>
               <button
                 type="button"
                 className="btn btn--sm btn--secondary grow"
-                onClick={() => setPastingLink(true)}
+                onClick={() => openLinkSheet(setPastingLink)}
               >
                 Paste invite link
               </button>
@@ -192,11 +204,13 @@ export function ContactsScreen() {
       <CreateInviteLinkSheet
         open={creatingLink}
         myAddress={myAddress}
+        anchorTop={sheetTop}
         onClose={() => setCreatingLink(false)}
       />
       <PasteInviteLinkSheet
         open={pastingLink}
         myAddress={myAddress}
+        anchorTop={sheetTop}
         onClose={() => setPastingLink(false)}
       />
       <BottomNav {...navBadges} />

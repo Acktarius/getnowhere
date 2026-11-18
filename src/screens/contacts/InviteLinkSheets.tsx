@@ -6,6 +6,7 @@ import {
   INVITE_PASTE_MESSAGE,
   type InvitePasteOutcome,
   ONE_PERSON_LINK_WARNING,
+  REPLY_TIMING_NOTICE,
 } from "@/lib/invite-link";
 import { useContactsStore } from "@/state/contactsStore";
 import type { Contact } from "@/types/models";
@@ -18,10 +19,12 @@ function shortPid(value: string): string {
 export function CreateInviteLinkSheet({
   open,
   myAddress,
+  anchorTop,
   onClose,
 }: {
   open: boolean;
   myAddress: string;
+  anchorTop?: number;
   onClose: () => void;
 }) {
   const createInviteLink = useContactsStore((s) => s.createInviteLink);
@@ -53,7 +56,12 @@ export function CreateInviteLinkSheet({
   }
 
   return (
-    <Sheet open={open} title="Create invite link" onClose={close}>
+    <Sheet
+      open={open}
+      title="Create invite link"
+      anchorTop={anchorTop}
+      onClose={close}
+    >
       <div className="stack stack--gap-3">
         <div
           className="card card--pad-md"
@@ -115,10 +123,12 @@ export function CreateInviteLinkSheet({
 export function PasteInviteLinkSheet({
   open,
   myAddress,
+  anchorTop,
   onClose,
 }: {
   open: boolean;
   myAddress: string;
+  anchorTop?: number;
   onClose: () => void;
 }) {
   const pasteInviteLink = useContactsStore((s) => s.pasteInviteLink);
@@ -200,13 +210,20 @@ export function PasteInviteLinkSheet({
   }
 
   return (
-    <Sheet open={open} title="Paste invite link" onClose={close}>
+    <Sheet
+      open={open}
+      title="Paste invite link"
+      anchorTop={anchorTop}
+      onClose={close}
+    >
       <div className="stack stack--gap-3">
         {replyLink ? (
           <>
             <p className="muted" style={{ fontSize: 13.5 }}>
-              Reply link copied. Send it back to that one person. You stay
-              pending until they open it.
+              Reply link copied. Send it back to that one person.
+            </p>
+            <p className="muted" style={{ fontSize: 13.5 }}>
+              {REPLY_TIMING_NOTICE}
             </p>
             <button
               type="button"
@@ -303,7 +320,7 @@ export function InviteLinkContactNote({
     return (
       <div className="card card--pad-md">
         <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
-          Waiting until they open your reply. Chat stays locked until then.
+          {REPLY_TIMING_NOTICE}
         </p>
       </div>
     );

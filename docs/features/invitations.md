@@ -113,9 +113,10 @@ Reply frame uses `"k": "reply"`. `n` is the name the issuer should use, `a` and
 `p` are the responder's address and `paymentIdFrom` (the issuer stores `p` as
 `paymentIdTo`). The token is echoed.
 
-Paste outcomes: a request saves a Pending contact and a reply link, and does
-not become eligible until the issuer opens that reply. A matching unused invite
-becomes eligible. A later different reply for that token is refused. The same
+Paste outcomes: a request saves an eligible contact (both payment IDs are known)
+and a reply link, and tells the responder that a room only works once the issuer
+has opened that reply, so allow a few minutes. The issuer's contact stays
+Pending until it opens the reply. A matching unused invite becomes eligible. A later different reply for that token is refused. The same
 reply pasted twice is a no-op. Other failures: malformed, unknown version, your
 own address, cancelled, or no matching invite.
 

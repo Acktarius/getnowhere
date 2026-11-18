@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 type SheetProps = {
   open: boolean;
@@ -7,6 +7,8 @@ type SheetProps = {
   /** Rendered immediately under the title row (before sheet body). */
   belowTitle?: ReactNode;
   onClose: () => void;
+  /** Viewport y in px; pins the sheet top there instead of the bottom edge (keeps inputs above the mobile keyboard). */
+  anchorTop?: number;
   children: ReactNode;
 };
 
@@ -15,13 +17,24 @@ export function Sheet({
   title,
   belowTitle,
   onClose,
+  anchorTop,
   children,
 }: SheetProps) {
   if (!open) return null;
+  const anchored = anchorTop !== undefined;
   return (
     <>
       <div className="scrim" onClick={onClose} />
-      <div className="sheet" role="dialog" aria-modal="true">
+      <div
+        className={anchored ? "sheet sheet--anchored" : "sheet"}
+        style={
+          anchored
+            ? ({ "--sheet-top": `${anchorTop}px` } as CSSProperties)
+            : undefined
+        }
+        role="dialog"
+        aria-modal="true"
+      >
         <button
           className="icon-btn sheet__close"
           onClick={onClose}
