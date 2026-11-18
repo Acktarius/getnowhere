@@ -124,6 +124,48 @@ describe("buildMobileBridgeInjection", () => {
     }
   });
 
+  it("rejects non-interactive security calls when native never replies", async () => {
+    vi.useFakeTimers();
+    try {
+      const script = buildMobileBridgeInjection("token");
+      Object.defineProperty(window, "ReactNativeWebView", {
+        value: { postMessage: vi.fn() },
+        configurable: true,
+      });
+      new Function(script)();
+      const bridge = window.gnhMobile as GnhMobileBridge;
+      const calls = [
+        bridge.securePrefs?.get("k"),
+        bridge.securePrefs?.remove("k"),
+        bridge.biometric?.removeCredential("cred"),
+        bridge.biometric?.isAvailable("data"),
+      ].map((p) => expect(p).rejects.toThrow("bridge-timeout"));
+      await vi.advanceTimersByTimeAsync(10_000);
+      await Promise.all(calls);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not time out interactive biometric prompts", async () => {
+    vi.useFakeTimers();
+    try {
+      const script = buildMobileBridgeInjection("token");
+      Object.defineProperty(window, "ReactNativeWebView", {
+        value: { postMessage: vi.fn() },
+        configurable: true,
+      });
+      new Function(script)();
+      const bridge = window.gnhMobile as GnhMobileBridge;
+      const onSettled = vi.fn();
+      void bridge.biometric?.unlockAppAccess().then(onSettled, onSettled);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(onSettled).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("exposes onPokeToken / _dispatchPokeToken and dispatches correctly", () => {
     const script = buildMobileBridgeInjection("token");
     Object.defineProperty(window, "ReactNativeWebView", {

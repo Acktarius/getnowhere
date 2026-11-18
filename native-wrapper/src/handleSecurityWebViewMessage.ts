@@ -122,14 +122,20 @@ export function handleSecurityWebViewMessage(
 
   if (msg.channel === "gnh-biometric") {
     void (async () => {
-      const result = await invokeBiometricCommand({
-        action: msg.action,
-        purpose: msg.purpose,
-        walletId: msg.walletId,
-        password: msg.password,
-        credentialId: msg.credentialId,
-        passcode: msg.passcode,
-      });
+      let result: Record<string, unknown>;
+      try {
+        result = await invokeBiometricCommand({
+          action: msg.action,
+          purpose: msg.purpose,
+          walletId: msg.walletId,
+          password: msg.password,
+          credentialId: msg.credentialId,
+          passcode: msg.passcode,
+        });
+      } catch {
+        resolve(buildResponse(msg, { error: "failed" }));
+        return;
+      }
       if (
         msg.action === "unlockAppAccess" &&
         result?.ok === true &&

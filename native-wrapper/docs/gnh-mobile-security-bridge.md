@@ -164,6 +164,20 @@ Android writes `setPrimaryClip` + `EXTRA_IS_SENSITIVE` and clears with
 
 @see docs/security/clipboard.md
 
+## Request timeouts
+
+The injected `postSecurity` helper rejects when native never replies:
+
+| Calls | Timeout | Error |
+|-------|---------|-------|
+| `gnh-wallet-file` (all) | 15 s | `wallet-file-timeout` |
+| `securePrefs.*`, `biometric.isAvailable`, `biometric.removeCredential` | 10 s | `bridge-timeout` |
+| Interactive biometric prompts (`enroll*`, `unlock*`) | none | — |
+
+A native biometric handler that throws replies `{ error: "failed" }`. Responses
+dropped for a stale `lockGeneration` are logged as
+`[gnh-security] dropped stale response` (channel, action, both generations).
+
 ## JS types
 
 Shared TS definitions: `src/lib/mobile/gnhMobileBridgeTypes.ts`.

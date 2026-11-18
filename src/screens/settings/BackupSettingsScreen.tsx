@@ -20,7 +20,9 @@ export function BackupSettingsScreen() {
   const [exportQrOpen, setExportQrOpen] = useState(false);
   const [exportQrUri, setExportQrUri] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [downloadStep, setDownloadStep] = useState<
+    "encrypting" | "saving" | null
+  >(null);
 
   function requirePassword(): boolean {
     setError(null);
@@ -75,10 +77,11 @@ export function BackupSettingsScreen() {
   async function downloadBackup() {
     if (!requirePassword()) return;
     setBusy(true);
-    setDownloadBusy(true);
+    setDownloadStep("encrypting");
     try {
       const { filename, json } =
         await seedBackupService.downloadWalletBackup(password);
+      setDownloadStep("saving");
       const result = await downloadJson(filename, json);
       setMsg(
         result === "saved"
@@ -88,7 +91,7 @@ export function BackupSettingsScreen() {
     } catch (e) {
       setError((e as Error).message || "Could not download wallet backup.");
     } finally {
-      setDownloadBusy(false);
+      setDownloadStep(null);
       setBusy(false);
     }
   }
@@ -176,9 +179,10 @@ export function BackupSettingsScreen() {
             onClick={downloadBackup}
             disabled={busy}
           >
-            {downloadBusy ? (
+            {downloadStep ? (
               <>
-                <Loader2 size={15} className="spin" /> Encrypting…
+                <Loader2 size={15} className="spin" />{" "}
+                {downloadStep === "encrypting" ? "Encrypting…" : "Saving…"}
               </>
             ) : (
               <>

@@ -2,6 +2,7 @@
  * Wallet / app-data wipe helpers (disconnect → key remove → clear RAM → welcome reload).
  * @see docs/architecture/web-vs-wrapper.md
  */
+import { bestEffort } from "@/lib/async/withTimeout";
 import { clearAllMobileBiometricEnrollments } from "@/lib/auth/biometric-lifecycle";
 import { disconnect } from "@/services/conceal/sync/runtime";
 import type { MobileNativeStorageAdapter } from "@/services/storage/adapters/mobileNativeStorageAdapter";
@@ -106,7 +107,17 @@ async function revokeOwnPokeHandle(): Promise<void> {
   const { deletePokeHandle } = await import(
     "@/services/poke/pokeGatewayClient"
   );
-  await deletePokeHandle().catch(() => undefined);
+  await deletePokeHandle();
+}
+
+/**
+ * Time-boxed so a lost native/network reply cannot hang the wipe. Leftover
+ * biometric enrollments are reconciled on next launch (wallet absent).
+ */
+const BEST_EFFORT_STEP_MS = 3000;
+
+function bestEffortWipeStep(step: () => Promise<unknown>, label: string) {
+  return bestEffort(Promise.resolve().then(step), BEST_EFFORT_STEP_MS, label);
 }
 
 /**
@@ -116,8 +127,11 @@ async function revokeOwnPokeHandle(): Promise<void> {
 export async function deleteWalletData(): Promise<void> {
   await disconnect();
   asMobileNative()?.sealWalletWrites();
-  await revokeOwnPokeHandle();
-  await clearAllMobileBiometricEnrollments();
+  await bestEffortWipeStep(revokeOwnPokeHandle, "poke revoke");
+  await bestEffortWipeStep(
+    clearAllMobileBiometricEnrollments,
+    "biometric clear",
+  );
   const settings = useSettingsStore.getState();
   settings.setAppAccessBiometric(false);
   settings.setDataUnlockBiometric(false);
@@ -137,8 +151,11 @@ export async function deleteWalletData(): Promise<void> {
 export async function resetAppData(): Promise<void> {
   await disconnect();
   asMobileNative()?.sealWalletWrites();
-  await revokeOwnPokeHandle();
-  await clearAllMobileBiometricEnrollments();
+  await bestEffortWipeStep(revokeOwnPokeHandle, "poke revoke");
+  await bestEffortWipeStep(
+    clearAllMobileBiometricEnrollments,
+    "biometric clear",
+  );
   const mobile = asMobileNative();
   if (mobile) {
     await mobile.resetAdapterOwned();

@@ -542,6 +542,12 @@ export default function App() {
           (response) => {
             const currentGeneration = nativeLockRef.current.generation;
             if (!shouldInjectSecurityResponse(response, currentGeneration)) {
+              console.warn("[gnh-security] dropped stale response", {
+                channel: response.channel,
+                action: response.action,
+                responseGeneration: response.lockGeneration,
+                currentGeneration,
+              });
               return;
             }
             webViewRef.current?.injectJavaScript(

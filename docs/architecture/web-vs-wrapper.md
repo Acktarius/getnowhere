@@ -55,6 +55,12 @@ in-memory wallet/contacts/chat session state, sets `location.hash` to
 `RequireWallet` serving tabs. Confirms use shared `ConfirmModal`
 (not `window.confirm`).
 
+The poke-handle revoke and biometric-enrollment clear are best-effort and
+time-boxed (3 s each), so a lost native or network reply cannot leave the
+confirm dialog stuck. Leftover enrollments are reconciled on next launch. Native
+storage removal is not swallowed: a bridge timeout surfaces as an error toast
+and the user can retry.
+
 | Action | Clears | Keeps |
 |---|---|---|
 | **Delete wallet** | Wallet-tied keys (`wallet`, contacts, invites, rooms, …) | App prefs (`gnh.settings`, theme, etc.) |

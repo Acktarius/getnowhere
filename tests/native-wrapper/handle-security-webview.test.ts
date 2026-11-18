@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { walletFileWrite } from "../../native-wrapper/src/gnhSecurityNative";
+import {
+  invokeBiometricCommand,
+  walletFileWrite,
+} from "../../native-wrapper/src/gnhSecurityNative";
 import {
   handleSecurityWebViewMessage,
   shouldInjectSecurityResponse,
@@ -44,6 +47,29 @@ describe("handleSecurityWebViewMessage", () => {
       requestId: "req-1",
       lockGeneration: 2,
       available: true,
+    });
+  });
+
+  it("replies with an error when the native biometric call throws", async () => {
+    vi.mocked(invokeBiometricCommand).mockRejectedValueOnce(new Error("boom"));
+    let resolved: Record<string, unknown> | null = null;
+    handleSecurityWebViewMessage(
+      JSON.stringify({
+        channel: "gnh-biometric",
+        direction: "command",
+        requestId: "req-throw",
+        action: "removeCredential",
+        credentialId: "cred-1",
+      }),
+      (r) => {
+        resolved = r;
+      },
+    );
+    await vi.waitFor(() => expect(resolved).not.toBeNull());
+    expect(resolved).toMatchObject({
+      requestId: "req-throw",
+      direction: "response",
+      error: "failed",
     });
   });
 

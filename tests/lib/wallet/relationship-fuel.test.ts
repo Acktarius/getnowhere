@@ -18,24 +18,24 @@ describe("needsRelationshipFuel", () => {
 
 describe("roomCreationGate", () => {
   it("blocks while syncing, whatever the balance", () => {
-    expect(roomCreationGate({ syncStatus: "syncing", balanceAvailable: 5 })).toEqual(
-      { ok: false, reason: "syncing" },
-    );
+    expect(
+      roomCreationGate({ syncStatus: "syncing", balanceAvailable: 5 }),
+    ).toEqual({ ok: false, reason: "syncing" });
   });
 
   it("blocks when the wallet is not synced and not syncing", () => {
-    expect(roomCreationGate({ syncStatus: "error", balanceAvailable: 5 })).toEqual(
-      { ok: false, reason: "unsynced" },
-    );
-    expect(roomCreationGate({ syncStatus: "idle", balanceAvailable: 5 })).toEqual(
-      { ok: false, reason: "unsynced" },
-    );
+    expect(
+      roomCreationGate({ syncStatus: "error", balanceAvailable: 5 }),
+    ).toEqual({ ok: false, reason: "unsynced" });
+    expect(
+      roomCreationGate({ syncStatus: "idle", balanceAvailable: 5 }),
+    ).toEqual({ ok: false, reason: "unsynced" });
   });
 
   it("blocks a synced wallet with no usable funds", () => {
-    expect(roomCreationGate({ syncStatus: "synced", balanceAvailable: 0 })).toEqual(
-      { ok: false, reason: "insufficient" },
-    );
+    expect(
+      roomCreationGate({ syncStatus: "synced", balanceAvailable: 0 }),
+    ).toEqual({ ok: false, reason: "insufficient" });
     expect(
       roomCreationGate({
         syncStatus: "synced",

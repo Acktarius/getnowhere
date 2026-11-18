@@ -5,6 +5,7 @@ export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
   var lifecycleHandlers = [];
   var lockGeneration = ${initialLockGeneration};
   var WALLET_FILE_TIMEOUT_MS = 15000;
+  var NATIVE_CALL_TIMEOUT_MS = 10000;
   function nextRequestId() {
     return 'req-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
   }
@@ -30,7 +31,7 @@ export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
       };
       if (timeoutMs) {
         timer = setTimeout(function() {
-          settle(false, new Error('wallet-file-timeout'));
+          settle(false, new Error(channel === 'gnh-wallet-file' ? 'wallet-file-timeout' : 'bridge-timeout'));
         }, timeoutMs);
       }
       var msg = Object.assign({ channel: channel, direction: 'command', requestId: requestId, lockGeneration: lockGeneration }, body);
@@ -49,7 +50,7 @@ export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
   };
   window.gnhMobile.biometric = {
     isAvailable: function(purpose) {
-      return postSecurity('gnh-biometric', { action: 'isAvailable', purpose: purpose || 'data' });
+      return postSecurity('gnh-biometric', { action: 'isAvailable', purpose: purpose || 'data' }, NATIVE_CALL_TIMEOUT_MS);
     },
     enrollDataUnlock: function(walletId, password) {
       return postSecurity('gnh-biometric', { action: 'enrollDataUnlock', walletId: walletId, password: password });
@@ -64,13 +65,13 @@ export function securityBridgeInjectionJs(initialLockGeneration = 0): string {
       return postSecurity('gnh-biometric', { action: 'unlockAppAccess' });
     },
     removeCredential: function(credentialId) {
-      return postSecurity('gnh-biometric', { action: 'removeCredential', credentialId: credentialId });
+      return postSecurity('gnh-biometric', { action: 'removeCredential', credentialId: credentialId }, NATIVE_CALL_TIMEOUT_MS);
     }
   };
   window.gnhMobile.securePrefs = {
-    get: function(key) { return postSecurity('gnh-secure-prefs', { action: 'get', key: key }); },
-    set: function(key, value) { return postSecurity('gnh-secure-prefs', { action: 'set', key: key, value: value }); },
-    remove: function(key) { return postSecurity('gnh-secure-prefs', { action: 'remove', key: key }); }
+    get: function(key) { return postSecurity('gnh-secure-prefs', { action: 'get', key: key }, NATIVE_CALL_TIMEOUT_MS); },
+    set: function(key, value) { return postSecurity('gnh-secure-prefs', { action: 'set', key: key, value: value }, NATIVE_CALL_TIMEOUT_MS); },
+    remove: function(key) { return postSecurity('gnh-secure-prefs', { action: 'remove', key: key }, NATIVE_CALL_TIMEOUT_MS); }
   };
   window.gnhMobile.walletFile = {
     exists: function() { return postSecurity('gnh-wallet-file', { action: 'exists' }, WALLET_FILE_TIMEOUT_MS); },

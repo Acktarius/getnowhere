@@ -6,6 +6,7 @@
 import { getStorage } from "@/services/storage/StorageAdapter";
 
 const STORAGE_KEY = "gnh.ownPokeHandle";
+const DELETE_TIMEOUT_MS = 5000;
 
 function gatewayUrl(): string {
   return import.meta.env.VITE_POKE_GATEWAY_URL ?? "";
@@ -99,6 +100,7 @@ export async function deletePokeHandle(): Promise<void> {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pokeHandle: handle }),
+      signal: AbortSignal.timeout(DELETE_TIMEOUT_MS),
     });
   } finally {
     clearOwnPokeHandle();

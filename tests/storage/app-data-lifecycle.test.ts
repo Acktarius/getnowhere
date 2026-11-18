@@ -234,6 +234,59 @@ describe("app-data lifecycle", () => {
     await resetAppData();
     expect(deletePokeHandle).toHaveBeenCalledTimes(1);
   });
+
+  describe("when best-effort native/network steps never reply", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(deletePokeHandle).mockReturnValue(new Promise(() => {}));
+      vi.mocked(clearAllMobileBiometricEnrollments).mockReturnValue(
+        new Promise(() => {}),
+      );
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.mocked(clearAllMobileBiometricEnrollments).mockReset();
+      vi.mocked(clearAllMobileBiometricEnrollments).mockResolvedValue(
+        undefined,
+      );
+    });
+
+    it("resetAppData still wipes and reloads", async () => {
+      const pending = resetAppData();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      for (const key of WALLET_TIED_KEYS) {
+        expect(adapter.getItem(key)).toBeNull();
+      }
+      for (const key of APP_PREF_ADAPTER_KEYS) {
+        expect(adapter.getItem(key)).toBeNull();
+      }
+      expect(locationStub.hash).toBe("#/welcome");
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("deleteWalletData still wipes and reloads", async () => {
+      const pending = deleteWalletData();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      for (const key of WALLET_TIED_KEYS) {
+        expect(adapter.getItem(key)).toBeNull();
+      }
+      expect(locationStub.hash).toBe("#/welcome");
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("resetAppData still completes when the biometric clear rejects", async () => {
+    vi.mocked(clearAllMobileBiometricEnrollments).mockRejectedValueOnce(
+      new Error("bridge-timeout"),
+    );
+    await expect(resetAppData()).resolves.toBeUndefined();
+    expect(reloadSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 function createPrefsMock(

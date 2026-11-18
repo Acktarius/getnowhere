@@ -197,6 +197,35 @@ describe("BackupSettingsScreen password-gated secrets", () => {
     ).toBeEnabled();
   });
 
+  it("switches to a Saving… label while the file save is pending", async () => {
+    let finishSave!: (value: "saved") => void;
+    mockedDownloadJson.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderBackup();
+
+    await user.type(passwordInput(), "correct-password");
+    await user.click(
+      screen.getByRole("button", { name: /Download wallet \.json/i }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: /Saving…/i }),
+    ).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: /Encrypting…/i }),
+    ).not.toBeInTheDocument();
+
+    finishSave("saved");
+    expect(
+      await screen.findByText(/Saved wallet\.json to Files/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows mobile save message when native file save is used", async () => {
     mockedDownloadJson.mockResolvedValue("saved");
     const user = userEvent.setup();
