@@ -108,7 +108,7 @@ export function SeedBackupPanel({ seedPhrase, onConfirm }: Props) {
 
       <button
         className="btn btn--block btn--primary"
-        disabled={!checked || !revealed}
+        disabled={!checked}
         onClick={onConfirm}
       >
         Confirm backup

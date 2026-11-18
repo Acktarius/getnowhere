@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SeedBackupPanel } from "@/components/SeedBackupPanel";
 
 const SEED_PHRASE = "abandon ability able about above absent";
@@ -35,5 +35,32 @@ describe("SeedBackupPanel", () => {
     expect(
       screen.queryByRole("button", { name: /^copy$/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("enables Confirm backup on the checkbox only, regardless of reveal", () => {
+    const onConfirm = vi.fn();
+    render(<SeedBackupPanel seedPhrase={SEED_PHRASE} onConfirm={onConfirm} />);
+
+    const confirm = screen.getByRole("button", { name: /confirm backup/i });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(confirm).toBeEnabled();
+
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Confirm backup disabled when the seed is revealed but unchecked", () => {
+    render(
+      <SeedBackupPanel seedPhrase={SEED_PHRASE} onConfirm={() => undefined} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /reveal seed phrase/i }),
+    );
+    expect(
+      screen.getByRole("button", { name: /confirm backup/i }),
+    ).toBeDisabled();
   });
 });
