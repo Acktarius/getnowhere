@@ -8,6 +8,10 @@ import {
 } from "@/lib/invite-link";
 import { unsubscribeRoom as ntfyUnsubscribeRoom } from "@/lib/mobile/ntfyWakeBridge";
 import {
+  INSUFFICIENT_FUNDS_MESSAGE,
+  roomCreationGate,
+} from "@/lib/wallet/relationship-fuel";
+import {
   chatTransport,
   p2pEncryption,
   relationshipService,
@@ -1236,6 +1240,16 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
     }
     if (!contact.paymentIdTo) {
       throw new Error("Missing paymentIdTo.");
+    }
+
+    const { useWalletStore } = await import("@/state/walletStore");
+    const gate = roomCreationGate(useWalletStore.getState());
+    if (!gate.ok) {
+      throw new Error(
+        gate.reason === "insufficient"
+          ? INSUFFICIENT_FUNDS_MESSAGE
+          : "Wallet is not synced yet. Wait for sync to finish.",
+      );
     }
 
     const roomTopic = options?.roomTopic ?? "general";

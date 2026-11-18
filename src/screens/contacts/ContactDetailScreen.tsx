@@ -41,6 +41,7 @@ import {
   INVITE_EXPIRY_PRESETS,
   ROOM_TTL_PRESETS,
 } from "@/lib/roomTtlPresets";
+import { roomCreationGate } from "@/lib/wallet/relationship-fuel";
 import { InviteLinkContactNote } from "@/screens/contacts/InviteLinkSheets";
 import {
   getContactInviteActionCount,
@@ -71,7 +72,10 @@ export function ContactDetailScreen() {
   const navigate = useNavigate();
   const contact = useContactsStore((s) => s.getById(id));
   const myAddress = useWalletStore((s) => s.address);
-  const walletSynced = useWalletStore((s) => s.syncStatus) === "synced";
+  const syncStatus = useWalletStore((s) => s.syncStatus);
+  const balanceAvailable = useWalletStore((s) => s.balanceAvailable);
+  const walletSynced = syncStatus === "synced";
+  const roomGate = roomCreationGate({ syncStatus, balanceAvailable });
   const getById = useContactsStore((s) => s.getById);
   const savePaymentIdTo = useContactsStore((s) => s.savePaymentIdTo);
   const updateContact = useContactsStore((s) => s.updateContact);
@@ -288,7 +292,7 @@ export function ContactDetailScreen() {
   }
 
   async function handleInvite() {
-    if (!contact) return;
+    if (!contact || !roomGate.ok) return;
     if (hasOpenRoomForTopic(listCatalogRooms(), contact.id, roomTopic)) {
       setConfirmSameTopic(true);
       return;
@@ -395,7 +399,11 @@ export function ContactDetailScreen() {
       <TopBar
         title={contact.alias}
         leading={<BackLink to="/contacts" />}
-        center={walletSynced ? undefined : <ContactSyncChip />}
+        center={
+          eligible || !walletSynced ? (
+            <ContactSyncChip gate={roomGate} />
+          ) : undefined
+        }
         trailing={
           <button
             className="topbar__icon-btn"
@@ -543,8 +551,7 @@ export function ContactDetailScreen() {
               ) : canInvite || canNewTopicRoom ? (
                 <button
                   className="btn btn--block btn--primary"
-                  disabled={!walletSynced}
-                  title={walletSynced ? undefined : "Wallet is still syncing"}
+                  disabled={!roomGate.ok}
                   onClick={() => setCreateSheet(true)}
                 >
                   <MessageSquarePlus size={16} /> Create room
@@ -574,7 +581,7 @@ export function ContactDetailScreen() {
                   {canResend && (
                     <button
                       className="btn btn--sm btn--primary"
-                      disabled={sendingInvite}
+                      disabled={sendingInvite || !roomGate.ok}
                       onClick={handleResendInvite}
                     >
                       <MessageSquarePlus size={14} /> Resend invite
@@ -781,7 +788,7 @@ export function ContactDetailScreen() {
           {error && <div className="field__error">{error}</div>}
           <button
             className="btn btn--block btn--primary"
-            disabled={sendingInvite}
+            disabled={sendingInvite || !roomGate.ok}
             onClick={handleInvite}
           >
             {sendingInvite ? (

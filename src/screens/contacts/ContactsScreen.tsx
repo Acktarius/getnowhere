@@ -93,11 +93,7 @@ export function ContactsScreen() {
       <div className="screen-scroll">
         <div className="section" style={{ paddingTop: 6 }}>
           <div className="stack stack--gap-2">
-            <div
-              ref={linkActionsRef}
-              className="row-flex"
-              style={{ gap: 8 }}
-            >
+            <div ref={linkActionsRef} className="row-flex" style={{ gap: 8 }}>
               <button
                 type="button"
                 className="btn btn--sm btn--primary grow"

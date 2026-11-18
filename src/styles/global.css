@@ -1135,15 +1135,15 @@ button {
   border-radius: var(--radius-xl);
   animation: scale-in var(--dur) var(--ease);
 }
-.sheet--anchored .sheet__grip {
-  display: none;
-}
 .sheet__grip {
   width: 36px;
   height: 4px;
   border-radius: 2px;
   background: var(--border-strong);
   margin: 0 auto var(--space-3);
+}
+.sheet--anchored .sheet__grip {
+  display: none;
 }
 .sheet__title {
   font-size: 18px;

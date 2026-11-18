@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { Sheet } from "@/components/Sheet";
 import { copySensitive } from "@/lib/clipboard/sensitiveClipboard";
 import {
@@ -140,10 +141,12 @@ export function PasteInviteLinkSheet({
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [warningOpen, setWarningOpen] = useState(false);
 
   function close() {
     setRaw("");
     setHandle("");
+    setWarningOpen(false);
     setAskingHandle(false);
     setPreview(null);
     setReplyLink(null);
@@ -210,100 +213,110 @@ export function PasteInviteLinkSheet({
   }
 
   return (
-    <Sheet
-      open={open}
-      title="Paste invite link"
-      anchorTop={anchorTop}
-      onClose={close}
-    >
-      <div className="stack stack--gap-3">
-        {replyLink ? (
-          <>
-            <p className="muted" style={{ fontSize: 13.5 }}>
-              Reply link copied. Send it back to that one person.
-            </p>
-            <p className="muted" style={{ fontSize: 13.5 }}>
-              {REPLY_TIMING_NOTICE}
-            </p>
-            <button
-              type="button"
-              className="btn btn--block btn--primary"
-              onClick={() => void copySensitive(replyLink)}
-            >
-              Copy reply link
-            </button>
-            <button
-              type="button"
-              className="btn btn--block btn--secondary"
-              onClick={close}
-            >
-              Done
-            </button>
-          </>
-        ) : done ? (
-          <>
-            <p style={{ fontSize: 14 }}>{done}</p>
-            <button
-              type="button"
-              className="btn btn--block btn--primary"
-              onClick={close}
-            >
-              Done
-            </button>
-          </>
-        ) : askingHandle ? (
-          <>
-            <pre
-              className="mono"
-              style={{ fontSize: 12.5, whiteSpace: "pre-wrap", margin: 0 }}
-            >
-              {preview}
-            </pre>
-            <div className="field">
-              <span className="field__label">Name they should use for you</span>
-              <input
-                className="input"
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="e.g. Ada"
-                autoFocus
-              />
-            </div>
-            {error && <div className="field__error">{error}</div>}
-            <button
-              type="button"
-              className="btn btn--block btn--primary"
-              disabled={busy || handle.trim().length === 0}
-              onClick={() => void submit(handle)}
-            >
-              {busy ? "Saving…" : "Create reply link"}
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="field">
-              <span className="field__label">Invite link</span>
-              <textarea
-                className="textarea"
-                value={raw}
-                onChange={(e) => setRaw(e.target.value)}
-                placeholder="Paste the link from email or chat"
-                autoFocus
-              />
-            </div>
-            {error && <div className="field__error">{error}</div>}
-            <button
-              type="button"
-              className="btn btn--block btn--primary"
-              disabled={busy || raw.trim().length === 0}
-              onClick={() => void submit()}
-            >
-              {busy ? "Checking…" : "Open link"}
-            </button>
-          </>
-        )}
-      </div>
-    </Sheet>
+    <>
+      <Sheet
+        open={open}
+        title="Paste invite link"
+        anchorTop={anchorTop}
+        onClose={close}
+      >
+        <div className="stack stack--gap-3">
+          {replyLink ? (
+            <>
+              <p className="muted" style={{ fontSize: 13.5 }}>
+                Reply link copied. Send it back to that one person.
+              </p>
+              <button
+                type="button"
+                className="btn btn--block btn--primary"
+                onClick={() => void copySensitive(replyLink)}
+              >
+                Copy reply link
+              </button>
+              <button
+                type="button"
+                className="btn btn--block btn--secondary"
+                onClick={() => setWarningOpen(true)}
+              >
+                Done
+              </button>
+            </>
+          ) : done ? (
+            <>
+              <p style={{ fontSize: 14 }}>{done}</p>
+              <button
+                type="button"
+                className="btn btn--block btn--primary"
+                onClick={close}
+              >
+                Done
+              </button>
+            </>
+          ) : askingHandle ? (
+            <>
+              <pre
+                className="mono"
+                style={{ fontSize: 12.5, whiteSpace: "pre-wrap", margin: 0 }}
+              >
+                {preview}
+              </pre>
+              <div className="field">
+                <span className="field__label">
+                  Name they should use for you
+                </span>
+                <input
+                  className="input"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="e.g. Ada"
+                  autoFocus
+                />
+              </div>
+              {error && <div className="field__error">{error}</div>}
+              <button
+                type="button"
+                className="btn btn--block btn--primary"
+                disabled={busy || handle.trim().length === 0}
+                onClick={() => void submit(handle)}
+              >
+                {busy ? "Saving…" : "Create reply link"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <span className="field__label">Invite link</span>
+                <textarea
+                  className="textarea"
+                  value={raw}
+                  onChange={(e) => setRaw(e.target.value)}
+                  placeholder="Paste the link from email or chat"
+                  autoFocus
+                />
+              </div>
+              {error && <div className="field__error">{error}</div>}
+              <button
+                type="button"
+                className="btn btn--block btn--primary"
+                disabled={busy || raw.trim().length === 0}
+                onClick={() => void submit()}
+              >
+                {busy ? "Checking…" : "Open link"}
+              </button>
+            </>
+          )}
+        </div>
+      </Sheet>
+      <ConfirmModal
+        open={open && warningOpen}
+        onClose={() => setWarningOpen(false)}
+        title="Give them a few minutes"
+        body={REPLY_TIMING_NOTICE}
+        confirmLabel="Got it"
+        cancelLabel="Back"
+        onConfirm={close}
+      />
+    </>
   );
 }
 
@@ -316,15 +329,6 @@ export function InviteLinkContactNote({
   myAddress: string;
 }) {
   const cancelInviteLink = useContactsStore((s) => s.cancelInviteLink);
-  if (contact.linkState === "awaiting") {
-    return (
-      <div className="card card--pad-md">
-        <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
-          {REPLY_TIMING_NOTICE}
-        </p>
-      </div>
-    );
-  }
   if (contact.linkRole !== "issuer" || contact.linkState !== "unused") {
     return null;
   }

@@ -47,7 +47,8 @@ describe("PasteInviteLinkSheet", () => {
     cleanup();
   });
 
-  it("tells the responder a room only works after the issuer opens the reply", async () => {
+  it("warns the responder only after Done, then closes on Got it", async () => {
+    const onClose = vi.fn();
     const pasteInviteLink = vi.fn(async () => ({
       type: "show-existing" as const,
       contactId: "c1",
@@ -55,15 +56,21 @@ describe("PasteInviteLinkSheet", () => {
     }));
     useContactsStore.setState({ pasteInviteLink });
 
-    render(<PasteInviteLinkSheet open myAddress="ccx7bob" onClose={() => {}} />);
+    render(<PasteInviteLinkSheet open myAddress="ccx7bob" onClose={onClose} />);
     fireEvent.change(screen.getByPlaceholderText(/paste the link/i), {
       target: { value: "{}" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Open link" }));
 
-    await waitFor(() =>
-      expect(screen.getByText(REPLY_TIMING_NOTICE)).toBeTruthy(),
-    );
+    const done = await screen.findByRole("button", { name: "Done" });
+    expect(screen.queryByText(REPLY_TIMING_NOTICE)).toBeNull();
+
+    fireEvent.click(done);
+    expect(screen.getByText(REPLY_TIMING_NOTICE)).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });
 
@@ -72,13 +79,15 @@ describe("InviteLinkContactNote", () => {
     cleanup();
   });
 
-  it("shows the reply timing notice on a redeemer contact", () => {
+  it("adds nothing to a redeemer contact page", () => {
     const contact = {
       id: "c1",
       linkRole: "redeemer",
       linkState: "awaiting",
     } as Contact;
-    render(<InviteLinkContactNote contact={contact} myAddress="ccx7bob" />);
-    expect(screen.getByText(REPLY_TIMING_NOTICE)).toBeTruthy();
+    const { container } = render(
+      <InviteLinkContactNote contact={contact} myAddress="ccx7bob" />,
+    );
+    expect(container.textContent).toBe("");
   });
 });
