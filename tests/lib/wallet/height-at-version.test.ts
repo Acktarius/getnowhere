@@ -29,7 +29,8 @@ describe("parseHeightAtVersion", () => {
 describe("heightAtVersion", () => {
   it("matches heightAtVersion in the repo version file", () => {
     const text = readFileSync(versionPath, "utf8");
-    expect(heightAtVersion()).toBe(2_199_000);
-    expect(heightAtVersion()).toBe(parseHeightAtVersion(text));
+    const parsed = parseHeightAtVersion(text);
+    expect(parsed).toBeGreaterThan(0);
+    expect(heightAtVersion()).toBe(parsed);
   });
 });
