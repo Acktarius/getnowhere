@@ -1,4 +1,4 @@
-import { ChevronLeft, MoreHorizontal } from "lucide-react";
+import { ChevronLeft, MoreHorizontal, RefreshCw, Wallet } from "lucide-react";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { RoomTopicIcon, roomTopicLabel } from "@/components/RoomTopicIcon";
 import type { RoomTopicId } from "@/services/protocol/roomTopics";
@@ -11,6 +11,7 @@ type Props = {
   peerStatus: "offline" | "connecting" | "online";
   roomTopic?: RoomTopicId;
   onShowDiagnostics?: () => void;
+  walletSyncing?: boolean;
 };
 
 export function ChatRoomHeader({
@@ -18,6 +19,7 @@ export function ChatRoomHeader({
   peerStatus,
   roomTopic,
   onShowDiagnostics,
+  walletSyncing,
 }: Props) {
   return (
     <header className="topbar topbar--bordered">
@@ -46,6 +48,18 @@ export function ChatRoomHeader({
           <PeerStatusIndicator status={peerStatus} />
         </div>
       </div>
+      {walletSyncing && (
+        <span
+          className="topbar__icon-btn"
+          role="status"
+          aria-label="Wallet syncing"
+          title="Wallet syncing — new messages will appear shortly"
+          style={{ display: "inline-flex", alignItems: "center", gap: 2 }}
+        >
+          <Wallet size={16} />
+          <RefreshCw size={11} className="spin" />
+        </span>
+      )}
       {onShowDiagnostics && (
         <button
           className="topbar__icon-btn"

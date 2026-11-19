@@ -10,7 +10,6 @@ import { type BubbleReaction, MessageBubble } from "@/components/MessageBubble";
 import { MobileInstantLink } from "@/components/MobileInstantLink";
 import { NonSelectableText } from "@/components/NonSelectableText";
 import { Sheet } from "@/components/Sheet";
-import { RoomLifecyclePill } from "@/components/StatusBadges";
 import {
   dismissIosKeyboard,
   useIosKeyboardInset,
@@ -55,6 +54,10 @@ import {
   composerPreferredChannelWithGrace,
 } from "@/services/protocol/composerGate";
 import {
+  type RoomBannerTone,
+  roomBannerModel,
+} from "@/services/protocol/roomBanner";
+import {
   isRelayEligibleStatus,
   isRoomExpired,
   nowUnix,
@@ -73,6 +76,12 @@ import { formatUnixDateTime, shortRoomId, shortTopicRef } from "@/utils/format";
 import { truncateReplyPreview } from "@/utils/replyPreviewTruncate";
 
 const EMPTY_MESSAGES: ChatMessage[] = [];
+
+const BANNER_DOT_COLOR: Record<RoomBannerTone, string> = {
+  connecting: "var(--secondary)",
+  offline: "var(--text-faint)",
+  error: "var(--danger)",
+};
 
 /** Handshake probe lines. A saved-session rejoin never scans registers. */
 export function registerScanDiag(
@@ -269,7 +278,6 @@ export function ChatRoomScreen() {
   const sendReaction = useChatStore((s) => s.sendReaction);
   const editMessage = useChatStore((s) => s.editMessage);
   const deleteMessage = useChatStore((s) => s.deleteMessage);
-  const retryConnect = useChatStore((s) => s.retryConnect);
   const setMessages = useChatStore((s) => s.setMessages);
   const room = useChatStore((s) => s.rooms.find((r) => r.id === roomId));
   const messages = useChatStore(
@@ -730,15 +738,6 @@ export function ChatRoomScreen() {
     composerRef.current?.focus({ preventScroll: mobileHost });
   }
 
-  async function handleRetry() {
-    setRetrying(true);
-    try {
-      await retryConnect(roomId);
-    } finally {
-      setRetrying(false);
-    }
-  }
-
   async function handleRevokeConfirm() {
     if (revoking) return;
     setRevoking(true);
@@ -805,6 +804,12 @@ export function ChatRoomScreen() {
   }
 
   const online = displayRoom.peerStatus === "online";
+  const banner = roomBannerModel({
+    lifecycleStatus: displayRoom.lifecycleStatus,
+    lastConnectError: displayRoom.lastConnectError,
+    alias: displayContact.alias,
+    openingRoom,
+  });
 
   // Pin only when iOS pans the visual viewport; Android overlays keep offsetTop 0.
   // Native keyboard height (no pan) lifts the composer instead of pinning.
@@ -845,64 +850,49 @@ export function ChatRoomScreen() {
         peerStatus={displayRoom.peerStatus}
         roomTopic={displayRoom.roomTopic}
         onShowDiagnostics={() => setDiagOpen(true)}
+        walletSyncing={walletSyncStatus === "syncing"}
       />
-      <div
-        style={{
-          padding: "8px 14px",
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        <RoomLifecyclePill status={displayRoom.lifecycleStatus} />
-        {!composeAllowed && (
-          <span className="muted" style={{ fontSize: 12 }}>
-            {disabledReason}
-          </span>
-        )}
-        {viaChain && (
+      {!banner.hidden && (
+        <div
+          style={{
+            height: 24,
+            minHeight: 24,
+            padding: "0 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "nowrap",
+            overflow: "hidden",
+            flexShrink: 0,
+            borderBottom: "1px solid var(--border)",
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              flexShrink: 0,
+              background: BANNER_DOT_COLOR[banner.tone],
+            }}
+          />
           <span
             className="muted"
-            style={{ fontSize: 12 }}
-            title="Delivered via blockchain relay. Live Holepunch starts when they open the app."
+            title={banner.text}
+            style={{
+              fontSize: 12,
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
-            Delivered — waiting for {displayContact.alias} to open the app
+            {banner.text}
           </span>
-        )}
-        {!holepunchLive && walletSyncStatus === "syncing" && (
-          <span
-            className="muted"
-            style={{ fontSize: 12 }}
-            title="Blockchain is syncing. New relay messages will appear when sync catches up."
-          >
-            Syncing — new messages will appear shortly
-          </span>
-        )}
-        {displayRoom.lifecycleStatus === "connect_failed" &&
-          displayRoom.lastConnectError && (
-            <span
-              className="muted"
-              style={{
-                fontSize: 11,
-                fontFamily: "var(--font-mono, monospace)",
-              }}
-              title={disabledReason ?? undefined}
-            >
-              [{displayRoom.lastConnectError}]
-            </span>
-          )}
-        {displayRoom.lifecycleStatus === "connect_failed" && (
-          <button
-            className="btn btn--sm btn--secondary"
-            disabled={retrying}
-            onClick={handleRetry}
-          >
-            <RefreshCw size={13} /> Retry
-          </button>
-        )}
-      </div>
+        </div>
+      )}
       <div
         style={{
           flex: 1,
