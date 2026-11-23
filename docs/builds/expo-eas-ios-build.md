@@ -176,8 +176,10 @@ unchanged).
 
 Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
 `expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
-in scope. iOS profiles pin `"image": "sdk-55"` and `"node": "22.14.0"` (the
-sdk-55 Mac image otherwise defaults to Node 20.19.4).
+in scope. iOS profiles pin `"image": "macos-tahoe-26.6-xcode-27.0"` and
+`"node": "22.14.0"` (the old `sdk-55` alias pointed at Xcode 26.2, whose iOS 26.2
+SDK App Store Connect flags from April 2027; do not use `latest`, which moves).
+Verify the image on the first `adhoc-ios` build before any `preview-ios` build.
 
 `cd native-wrapper && npm install` prints many **`npm warn ERESOLVE`** /
 `peer @babel/core` lines. Those come from React Native’s Jest Babel plugins

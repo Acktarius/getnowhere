@@ -28,6 +28,7 @@ No L3. UI never joins Hyperswarm.
 9. `security/p2pchatprotocol.md`
 10. `builds/expo-eas-android-build.md` — Android APK (primary mobile runbook)
 10b. `builds/expo-eas-ios-build.md`
+10b2. `builds/expo-sdk-58-upgrade-plan.md` — draft plan: Expo SDK 55 → 58 (Xcode 27 / iOS 27 SDK)
 10c. `builds/github-pages-and-desktop.md` — public Fumadocs Pages + Linux Electron with embedded UI
 10d. `builds/ppa-source.md` — Ubuntu 22.04/24.04/26.04 PPA source upload
 11. `features/lite-wallet.md`

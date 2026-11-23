@@ -22,14 +22,14 @@
       "distribution": "store",
       "node": "22.14.0",
       "ios": {
-        "image": "sdk-55"
+        "image": "macos-tahoe-26.6-xcode-27.0"
       }
     },
     "adhoc-ios": {
       "distribution": "internal",
       "node": "22.14.0",
       "ios": {
-        "image": "sdk-55",
+        "image": "macos-tahoe-26.6-xcode-27.0",
         "simulator": false
       }
     },
@@ -41,7 +41,7 @@
       "node": "22.14.0",
       "ios": {
         "simulator": false,
-        "image": "sdk-55"
+        "image": "macos-tahoe-26.6-xcode-27.0"
       }
     }
   },
