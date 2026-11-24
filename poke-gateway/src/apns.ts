@@ -8,8 +8,11 @@ import type { PushEnv } from "./db.js";
 const JWT_TTL_MS = 50 * 60 * 1000;
 const EXPIRATION_SEC = 3600;
 const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_REPLY_CHARS = 1024;
 
-export type PushResult = { ok: true } | { ok: false; unregistered: boolean };
+export type PushResult =
+  | { ok: true }
+  | { ok: false; unregistered: boolean; status?: number; reason?: string };
 
 export class PushConfigError extends Error {
   constructor(service: "apns" | "fcm") {
@@ -34,16 +37,35 @@ function hostFor(env: PushEnv): string {
     : "api.push.apple.com";
 }
 
-function signJwt(): string {
+function readKey(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    throw new PushConfigError("apns");
+  }
+}
+
+/** APNs provider token: ES256, `kid` header, `iss` + `iat` claims (APNs rejects a token without `iat`). */
+export function signJwt(): string {
   const teamId = requireEnv("APNS_TEAM_ID");
   const keyId = requireEnv("APNS_KEY_ID");
-  const key = readFileSync(requireEnv("APNS_KEY_PATH"), "utf8");
-  const iat = Math.floor(Date.now() / 1000);
-  return jwt.sign({ iss: teamId, iat }, key, {
-    algorithm: "ES256",
-    header: { alg: "ES256", kid: keyId },
-    noTimestamp: true,
-  });
+  const key = readKey(requireEnv("APNS_KEY_PATH"));
+  try {
+    return jwt.sign({ iss: teamId }, key, { algorithm: "ES256", keyid: keyId });
+  } catch {
+    throw new PushConfigError("apns");
+  }
+}
+
+/** Maps an APNs reply to a result; keeps Apple's status and `reason` for logs. */
+export function apnsResult(status: number, body: string): PushResult {
+  if (status === 200) return { ok: true };
+  let reason: string | undefined;
+  try {
+    const parsed = JSON.parse(body) as { reason?: unknown };
+    if (typeof parsed.reason === "string") reason = parsed.reason;
+  } catch {}
+  return { ok: false, unregistered: status === 410, status, reason };
 }
 
 function getJwt(): string {
@@ -59,9 +81,10 @@ function http2Post(
   path: string,
   headers: OutgoingHttpHeaders,
   body: string,
-): Promise<number> {
+): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     let settled = false;
+    let responseBody = "";
     const client = connect(`https://${host}`);
 
     const finish = (err: Error | undefined, status: number) => {
@@ -69,7 +92,7 @@ function http2Post(
       settled = true;
       client.close();
       if (err) reject(err);
-      else resolve(status);
+      else resolve({ status, body: responseBody });
     };
 
     client.on("error", (err) => finish(err, 0));
@@ -91,7 +114,10 @@ function http2Post(
     req.on("response", (hs) => {
       status = Number(hs[":status"] ?? 0);
     });
-    req.resume();
+    req.setEncoding("utf8");
+    req.on("data", (chunk: string) => {
+      if (responseBody.length < MAX_REPLY_CHARS) responseBody += chunk;
+    });
     req.on("error", (err) => finish(err, 0));
     req.on("end", () => finish(undefined, status));
     req.end(body);
@@ -104,7 +130,7 @@ export async function sendApns(
 ): Promise<PushResult> {
   const topic = requireEnv("APNS_BUNDLE_ID");
   const expiration = Math.floor(Date.now() / 1000) + EXPIRATION_SEC;
-  const status = await http2Post(
+  const { status, body } = await http2Post(
     hostFor(env),
     `/3/device/${encodeURIComponent(token)}`,
     {
@@ -124,7 +150,5 @@ export async function sendApns(
     }),
   );
 
-  if (status === 200) return { ok: true };
-  if (status === 410) return { ok: false, unregistered: true };
-  return { ok: false, unregistered: false };
+  return apnsResult(status, body);
 }

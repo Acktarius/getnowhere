@@ -210,10 +210,10 @@ gateway signs APNs HTTP/2 requests with your AuthKey. **Do not commit the key.**
 ### 2. Create the AuthKey
 
 1. [Keys](https://developer.apple.com/account/resources/authkeys/list) → **+**
-2. Name: `GetNowHere APNs`
-3. Enable Apple Push Notifications service (APNs)
-4. Environment: **Production** (TestFlight / App Store; gateway has one key path today)
-5. Restriction: topic **`im.getnowhere.app`** when offered
+2. Name: `GetNowHere APNs` (letters, digits and spaces only; `-` is rejected)
+3. Enable Apple Push Notifications service (APNs) → **Configure**
+4. Environment: **Sandbox & Production** (one key serves dev builds and TestFlight / App Store)
+5. Key Restriction: **Team Scoped (All Topics)**
 6. Register → note **Key ID** and **Team ID** (Membership) → download `.p8` once
 
 ### 3. Place on the VPS
@@ -232,9 +232,14 @@ chmod 700 /opt/poke-gateway/secrets
 scp AuthKey_XXXXXXXXXX.p8 user@YOUR_VPS:/opt/poke-gateway/secrets/AuthKey.p8
 ```
 
+The container runs as the non-root `poke` user, so the key must be readable by
+that UID (otherwise `/poke` answers `push_unavailable`):
+
 ```bash
-# On VPS
-chmod 600 /opt/poke-gateway/secrets/AuthKey.p8
+# On VPS (container running)
+cd /opt/poke-gateway
+PUID=$(sudo docker compose exec -T poke-gateway id -u)
+sudo chown "$PUID" secrets/AuthKey.p8 && sudo chmod 400 secrets/AuthKey.p8
 ```
 
 In `/opt/poke-gateway/.env`:
@@ -247,8 +252,11 @@ APNS_BUNDLE_ID=im.getnowhere.app
 ```
 
 ```bash
-cd /opt/poke-gateway && docker compose up -d
+cd /opt/poke-gateway && sudo docker compose up -d --force-recreate poke-gateway
 ```
+
+When Apple refuses a push, the gateway logs `apnsStatus` and `apnsReason`
+(for example `InvalidProviderToken`) on the `push_failed` line; never the device token.
 
 `poke-gateway/secrets/` is gitignored. Never upload this key to EAS.
 

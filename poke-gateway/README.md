@@ -29,8 +29,8 @@ F-Droid wake fails if poke-gateway is missing: the app never publishes to ntfy i
 - A hostname + TLS reverse proxy (same pattern as ntfy: listen on `127.0.0.1` only)
 - Optional for F-Droid-only: skip APNs keys. Required for iOS wake: Apple `.p8` key (`APNS_*`)
 
-**APNs operator checklist** (create App ID → Production AuthKey → VPS
-`secrets/AuthKey.p8` → `APNS_*`): see
+**APNs operator checklist** (create App ID → AuthKey with Sandbox & Production,
+Team Scoped → VPS `secrets/AuthKey.p8` readable by the container's `poke` UID → `APNS_*`): see
 [`docs/builds/expo-eas-ios-build.md`](../docs/builds/expo-eas-ios-build.md)
 § APNs AuthKey. The `.p8` never goes to EAS.
 
@@ -280,6 +280,56 @@ Re-run Step 6 after every update to confirm anonymous read is still working.
 - `cache-duration: "10m"` limits how much history a leaked `pokeId` can replay.
 - `NTFY_PUBLISH_TOKEN` must stay in poke-gateway `.env` on the VPS only — never
   in the app or in this repo.
+
+## Abuse limits and CORS
+
+The app UI runs in a `file://` WebView, so browser CORS applies to every call.
+The gateway answers `OPTIONS` with `204` and sends
+`Access-Control-Allow-Origin: *` on every response. Without this, iOS shows
+"Wake registration failed" and pokes from the app never leave the WebView.
+CORS does **not** stop scripts (`curl`, `wget`, Python): every route must stay
+safe for any caller. See `docs/features/peer-wake-notification.md` §8.
+
+Built-in limits: `/poke` per handle and global; `/register` per client IP and
+global (`429` + `Retry-After`). The client IP is the hop nginx appends to
+`X-Forwarded-For`, so nginx must stay the only way in (port bound to
+`127.0.0.1`).
+
+Recommended nginx hardening. In the `http` block (e.g.
+`/etc/nginx/conf.d/gnh-limits.conf`):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=gnh_poke:10m rate=5r/s;
+```
+
+In the `poke.getnowhere.im` server block:
+
+```nginx
+client_max_body_size 8k;
+
+location / {
+    limit_except GET POST DELETE OPTIONS { deny all; }
+    limit_req zone=gnh_poke burst=20 nodelay;
+    limit_req_status 429;
+    proxy_pass http://127.0.0.1:3456;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+`X-Forwarded-For $remote_addr` overwrites anything the client sent. Check and
+reload with `sudo nginx -t && sudo systemctl reload nginx`.
+
+Check the CORS preflight from outside:
+
+```bash
+curl -sS -i -X OPTIONS https://poke.getnowhere.im/register \
+  -H "Origin: null" -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: content-type" | grep -iE "^HTTP|^access-control-allow-origin"
+# expect: HTTP/2 204  and  access-control-allow-origin: *
+```
 
 ## Keep both containers up after Docker upgrades
 

@@ -37,7 +37,44 @@ export function consumeGlobalPokeSlot(now = Date.now()): boolean {
   return true;
 }
 
-/** Drop expired per-handle entries so the map cannot grow without bound. */
+/** Per-IP register bucket; generous because carrier NAT puts many phones on one IP. */
+export const REGISTER_IP_BURST = 20;
+export const REGISTER_IP_REFILL_MS = 60_000;
+export const REGISTER_GLOBAL_BURST = 60;
+const REGISTER_GLOBAL_REFILL_MS = 1_000;
+
+type Bucket = { tokens: number; updatedAt: number };
+
+const registerByIp = new Map<string, Bucket>();
+let registerGlobal: Bucket = { tokens: REGISTER_GLOBAL_BURST, updatedAt: 0 };
+
+function refill(bucket: Bucket, burst: number, refillMs: number, now: number) {
+  if (bucket.updatedAt === 0) bucket.updatedAt = now;
+  const elapsed = Math.max(0, now - bucket.updatedAt);
+  bucket.tokens = Math.min(burst, bucket.tokens + elapsed / refillMs);
+  bucket.updatedAt = now;
+}
+
+/**
+ * Register limit: global cap first, then per client IP. The IP stays in memory
+ * only and is never logged. @returns false when the caller must get 429.
+ */
+export function consumeRegisterSlot(ip: string, now = Date.now()): boolean {
+  refill(registerGlobal, REGISTER_GLOBAL_BURST, REGISTER_GLOBAL_REFILL_MS, now);
+  if (registerGlobal.tokens < 1) return false;
+  const bucket = registerByIp.get(ip) ?? {
+    tokens: REGISTER_IP_BURST,
+    updatedAt: now,
+  };
+  refill(bucket, REGISTER_IP_BURST, REGISTER_IP_REFILL_MS, now);
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  registerGlobal.tokens -= 1;
+  registerByIp.set(ip, bucket);
+  return true;
+}
+
+/** Drop expired per-handle and refilled per-IP entries so the maps stay bounded. */
 export function pruneRateLimits(now = Date.now()): number {
   let removed = 0;
   for (const [handle, ts] of lastPokeAt) {
@@ -46,7 +83,20 @@ export function pruneRateLimits(now = Date.now()): number {
       removed += 1;
     }
   }
+  for (const [ip, bucket] of registerByIp) {
+    refill(bucket, REGISTER_IP_BURST, REGISTER_IP_REFILL_MS, now);
+    if (bucket.tokens >= REGISTER_IP_BURST) {
+      registerByIp.delete(ip);
+      removed += 1;
+    }
+  }
   return removed;
+}
+
+/** Test reset. Not used in production. */
+export function _resetRegisterRateLimitsForTests(): void {
+  registerByIp.clear();
+  registerGlobal = { tokens: REGISTER_GLOBAL_BURST, updatedAt: 0 };
 }
 
 /** Test reset. Not used in production. */

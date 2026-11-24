@@ -2,8 +2,8 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache python3 make g++
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev

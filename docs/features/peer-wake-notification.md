@@ -334,9 +334,23 @@ relay (plus an immediate poke when first dropping from L2 after `lastPokedAt` wa
 **Gateway rate limit:** 1 poke per 5 minutes per pokeHandle, plus a process-wide cap
 (burst 10, then 1 per second). The wide cap is checked first and returns `429`
 with `Retry-After: 1` before ntfy or APNs. It stops a caller from rotating fresh
-handles to publish once per id. The gateway does not trust `X-Forwarded-For`;
-client IP limiting belongs at the reverse proxy. The ntfy publish aborts after
-5 seconds.
+handles to publish once per id. The ntfy publish aborts after 5 seconds.
+
+**Register limit:** `POST /register` is capped globally (burst 60, then 1 per
+second) and per client IP (burst 20, then 1 per minute; generous for carrier
+NAT) → `429` + `Retry-After: 60`. The client IP is the single hop nginx appends
+to `X-Forwarded-For` (`trustOneProxy`); client-sent values are ignored. IPs stay
+in memory only and are never logged. Blanket per-IP limits stay at nginx
+(`limit_req`, see `poke-gateway/README.md`).
+
+**CORS is not access control:** the app UI runs in a `file://` WebView, so the
+gateway answers preflights and sends `Access-Control-Allow-Origin: *`. Scripts
+ignore CORS; every endpoint is designed to be safe for any caller. User-Agent
+filtering or a key compiled into the app would not stop a script either.
+
+**Known gap (next app build):** anyone holding a pokeHandle can today rotate its
+token or delete it. Planned fix: `/register` returns an owner key (stored hashed);
+rotation and delete require it. Peers only ever see the handle.
 
 **Bearer capability:** a pokeHandle is a bearer token. Any party who holds it can poke that
 device. Alice holds Bob's handle by design (she accepted his invite). She cannot share it

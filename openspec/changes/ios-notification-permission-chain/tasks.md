@@ -30,6 +30,12 @@
 - [x] 5.2 Product-loop e2e: `e2e/notification-permission.spec.ts` on the Vite preview harness with a stubbed `window.ReactNativeWebView` / `window.gnhMobile` answering `gnh-notifications` commands — denied → toggle off + guidance message; authorized → toggle on; message gone after navigating away. Verify `forge e2e run` is green.
 - [x] 5.3 Run `npm run lint`, `npm run format:fix`, `npm run check`, `npm run types`, `npm test`, and `cd native-wrapper && npx tsc --noEmit`; all pass.
 
+## 7. Gateway reachability and register limits (found on the 6.1 device run)
+
+- [x] 7.1 `poke-gateway`: CORS for the WebView (`file://`, origin `null`) — `OPTIONS` any path → `204`; every response carries `Access-Control-Allow-Origin: *`, `Allow-Methods: GET, POST, DELETE, OPTIONS`, `Allow-Headers: content-type`. Verify with `poke-gateway/test/cors.test.ts` (Fastify inject).
+- [x] 7.2 `poke-gateway`: rate-limit `POST /register` per client IP (`trustProxy: trustOneProxy` — only the `X-Forwarded-For` hop nginx appends) and globally; over limit → `429` + `Retry-After`. IPs live only in memory, never logged. Verify with `poke-gateway/test/register-limits.test.ts` (bucket cases and a `/register` 429 route test).
+- [x] 7.3 Docs + operator: `poke-gateway/README.md` (CORS rationale, register limits, nginx `limit_req` / `client_max_body_size` / method allowlist snippet), `peer-wake-notification.md` §8 abuse limits; add live preflight step to `e2e.json`. Owner-key proof for handle rotation/delete is deferred to the next app build (recorded as a finding).
+
 ## 6. Device gate (operator)
 
 - [ ] 6.1 Operator runs `npm run mobile:sync-ui` and one `adhoc-ios` EAS build; installs on two registered iPhones. Verify: tapping Notifications shows the system prompt and the app appears under Settings → Apps → Get NowHere → Notifications.

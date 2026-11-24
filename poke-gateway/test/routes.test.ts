@@ -243,6 +243,47 @@ describe("/poke route", () => {
     expect(res.statusCode).toBe(202);
   });
 
+  it("logs Apple's status and reason, never the device token, when APNs refuses", async () => {
+    const lines: string[] = [];
+    const logged = Fastify({
+      logger: {
+        level: "info",
+        stream: { write: (l: string) => lines.push(l) },
+      },
+    });
+    registerRoutes(logged);
+    vi.mocked(getHandle).mockReturnValue({
+      pokeHandle: VALID_TO,
+      token: "apns-device-token-secret",
+      env: "production",
+      platform: "apns",
+      updatedAt: 0,
+    });
+    vi.mocked(sendApns).mockResolvedValue({
+      ok: false,
+      unregistered: false,
+      status: 403,
+      reason: "InvalidProviderToken",
+    });
+
+    const res = await logged.inject({
+      method: "POST",
+      url: "/poke",
+      payload: { to: VALID_TO },
+    });
+    await logged.close();
+
+    expect(res.statusCode).toBe(502);
+    const failure = lines
+      .map((l) => JSON.parse(l) as Record<string, unknown>)
+      .find((entry) => entry.result === "push_failed");
+    expect(failure).toMatchObject({
+      apnsStatus: 403,
+      apnsReason: "InvalidProviderToken",
+    });
+    expect(lines.join("")).not.toContain("apns-device-token-secret");
+  });
+
   // ── Lazy TTL expiry (SEC-2026-028) ──────────────────────────────────────────
 
   it("returns 202 without calling APNs when the handle is expired, and lazily deletes it", async () => {

@@ -13,6 +13,11 @@
       "expect": "poke=202[\\s\\S]*\"message\":\"wake\""
     },
     {
+      "name": "live-gateway-cors-preflight",
+      "cmd": "curl -sS -m 10 -i -X OPTIONS https://poke.getnowhere.im/register -H 'Origin: null' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type'",
+      "expect": "HTTP/[0-9.]+ 204[\\s\\S]*access-control-allow-origin: \\*"
+    },
+    {
       "name": "shell-replies-and-ordering",
       "cmd": "npx vitest run tests/native-wrapper/handle-notifications-webview.test.ts tests/native-wrapper/inject-mobile-bridge.test.ts --reporter=verbose",
       "expect": "Test Files\\s+2 passed"

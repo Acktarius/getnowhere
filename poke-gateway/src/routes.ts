@@ -12,7 +12,11 @@ import {
   type PushEnv,
   updateHandleToken,
 } from "./db.js";
-import { consumeGlobalPokeSlot, consumePokeSlot } from "./rateLimit.js";
+import {
+  consumeGlobalPokeSlot,
+  consumePokeSlot,
+  consumeRegisterSlot,
+} from "./rateLimit.js";
 
 const HANDLE_RE = /^[A-Za-z0-9_-]{14}$/;
 /** Bound a slow ntfy upstream so a poke cannot sit on the event loop. */
@@ -65,7 +69,28 @@ const unregisterSchema = {
   },
 } as const;
 
+/**
+ * The app UI runs in a `file://` WebView, so browser CORS applies. CORS is not access
+ * control — every route must stay safe for any caller. @see poke-gateway/README.md
+ */
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
+  "access-control-allow-headers": "content-type",
+  "access-control-max-age": "600",
+} as const;
+
+/** Fastify `trustProxy`: trust only nginx, so req.ip is the hop it appended, never a client-sent value. */
+export function trustOneProxy(_address: string, hop: number): boolean {
+  return hop < 1;
+}
+
 export function registerRoutes(app: FastifyInstance): void {
+  app.addHook("onRequest", async (_req, reply) => {
+    reply.headers(CORS_HEADERS);
+  });
+  app.options("*", async (_req, reply) => reply.code(204).send());
+
   app.setErrorHandler((error: unknown, _req, reply) => {
     const status =
       error && typeof error === "object" && "statusCode" in error
@@ -84,6 +109,13 @@ export function registerRoutes(app: FastifyInstance): void {
     "/register",
     { schema: registerSchema },
     async (req, reply) => {
+      if (!consumeRegisterSlot(req.ip)) {
+        app.log.info({ event: "register", result: "rate_limited" });
+        return reply
+          .code(429)
+          .header("Retry-After", "60")
+          .send({ error: "rate_limited" });
+      }
       const { token, platform, env, pokeHandle: existing } = req.body;
       // Token rotation: if client supplies its existing handle, upsert the token.
       if (existing && HANDLE_RE.test(existing)) {
@@ -168,7 +200,12 @@ export function registerRoutes(app: FastifyInstance): void {
           app.log.info({ event: "poke", result: "unregistered" });
           return reply.code(202).send();
         }
-        app.log.error({ event: "poke", result: "push_failed" });
+        app.log.error({
+          event: "poke",
+          result: "push_failed",
+          apnsStatus: result.status,
+          apnsReason: result.reason,
+        });
         return reply.code(502).send({ error: "push_failed" });
       } catch (err) {
         if (err instanceof PushConfigError) {

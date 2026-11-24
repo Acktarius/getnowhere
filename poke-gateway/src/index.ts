@@ -3,7 +3,7 @@
 import Fastify from "fastify";
 import { closeDb, openDb } from "./db.js";
 import { pruneRateLimits } from "./rateLimit.js";
-import { registerRoutes } from "./routes.js";
+import { registerRoutes, trustOneProxy } from "./routes.js";
 
 const port = Number(process.env.PORT ?? 3456);
 const dbPath = process.env.DB_PATH ?? "./poke.db";
@@ -11,6 +11,7 @@ const dbPath = process.env.DB_PATH ?? "./poke.db";
 openDb(dbPath);
 
 const app = Fastify({
+  trustProxy: trustOneProxy,
   disableRequestLogging: true,
   logger: {
     level: "info",
