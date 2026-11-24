@@ -1,5 +1,5 @@
 # Mobile release versioning (npm run mobile:android:release)
-version=0.5.7
-buildversionIos=20
-buildVersionAndroid=38
-heightAtVersion=2202976
+version=0.5.8
+buildversionIos=21
+buildVersionAndroid=39
+heightAtVersion=2206553

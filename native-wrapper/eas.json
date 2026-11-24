@@ -20,6 +20,7 @@
     },
     "preview-ios": {
       "distribution": "store",
+      "autoIncrement": true,
       "node": "22.14.0",
       "ios": {
         "image": "macos-tahoe-26.6-xcode-27.0"
@@ -35,6 +36,7 @@
     },
 
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },
