@@ -11,8 +11,8 @@ import {
   Shield,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { NodeSelector } from "@/components/NodeSelector";
@@ -20,9 +20,10 @@ import { PrivacySettingItem } from "@/components/PrivacySettingItem";
 import { ThemeSelector } from "@/components/ThemeSelector";
 import { TopBar } from "@/components/TopBar";
 import { useNavNotificationBadges } from "@/hooks/useNavNotificationBadges";
+import { activeTabFromPath, isTabDetailPath } from "@/layouts/mainTabPaths";
 import { clearClipboard } from "@/lib/clipboard/sensitiveClipboard";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
-import { bridgeRequestNotificationPermissions } from "@/lib/mobile/nativeNotificationsBridge";
+import { getNotificationPermissionStatus } from "@/lib/mobile/nativeNotificationsBridge";
 import { refreshAutoNode } from "@/lib/network/auto-node";
 import { setPreferredNode } from "@/lib/network/node-preference";
 import {
@@ -42,7 +43,15 @@ import {
   updateWalletSyncSettings,
 } from "@/services/conceal/ConcealWalletService";
 import { getRuntime } from "@/services/conceal/sync";
+import {
+  NOTIFICATION_TOGGLE_PRIVACY_KEY,
+  type NotificationToggle,
+  runToggleOn,
+  type ToggleFlowDeps,
+  type ToggleOnResult,
+} from "@/services/notifications/notificationToggleFlow";
 import { onNotificationPrivacyChanged } from "@/services/notifications/publishBackgroundNotification";
+import { reconcileNotificationToggles } from "@/services/notifications/reconcileNotificationToggles";
 import { applyPushWakeEnabled } from "@/services/poke/applyPushWakeSetting";
 import {
   deleteWalletData,
@@ -86,6 +95,40 @@ export function SettingsScreen() {
   const [restartConfirmHeight, setRestartConfirmHeight] = useState<
     number | null
   >(null);
+  const [togglePending, setTogglePending] = useState<
+    Partial<Record<NotificationToggle, boolean>>
+  >({});
+  const [toggleMessages, setToggleMessages] = useState<
+    Partial<Record<NotificationToggle, string>>
+  >({});
+  const notificationAbortRef = useRef<AbortController | null>(null);
+  const { pathname } = useLocation();
+  const onSettingsPage =
+    activeTabFromPath(pathname) === "settings" && !isTabDetailPath(pathname);
+
+  /** The tab shell keeps this screen mounted, so "leaving Settings" is a route change. */
+  useEffect(() => {
+    if (!onSettingsPage) return;
+    const controller = new AbortController();
+    notificationAbortRef.current = controller;
+    if (isMobileHost()) {
+      void getNotificationPermissionStatus({ signal: controller.signal }).then(
+        (reply) => {
+          if (controller.signal.aborted) return;
+          const { privacy, setPrivacy } = useSettingsStore.getState();
+          const patch = reconcileNotificationToggles(privacy, reply);
+          if (Object.keys(patch).length === 0) return;
+          setPrivacy(patch);
+          onNotificationPrivacyChanged();
+        },
+      );
+    }
+    return () => {
+      controller.abort();
+      setToggleMessages({});
+      setTogglePending({});
+    };
+  }, [onSettingsPage]);
 
   useEffect(() => {
     void refreshAutoNode();
@@ -226,20 +269,56 @@ export function SettingsScreen() {
     }
   }
 
-  /** User-gesture flow: persist setting, sync native, request OS permission. */
-  function applyNotificationsEnabled(on: boolean) {
-    s.setPrivacy({ notificationsEnabled: on });
-    onNotificationPrivacyChanged();
-    if (on && isMobileHost()) {
-      bridgeRequestNotificationPermissions({ badge: true, alert: false });
+  function setToggleMessage(toggle: NotificationToggle, message?: string) {
+    setToggleMessages((m) => ({ ...m, [toggle]: message }));
+  }
+
+  function applyToggleResult(
+    toggle: NotificationToggle,
+    result: ToggleOnResult,
+  ) {
+    if (result.on) {
+      s.setPrivacy({ [NOTIFICATION_TOGGLE_PRIVACY_KEY[toggle]]: true });
+      onNotificationPrivacyChanged();
+      setToggleMessage(toggle, undefined);
+    } else if (result.message) {
+      setToggleMessage(toggle, result.message);
     }
   }
 
-  function applyNotificationBanners(on: boolean) {
-    s.setPrivacy({ notificationBannersEnabled: on });
-    onNotificationPrivacyChanged();
-    if (on && isMobileHost()) {
-      bridgeRequestNotificationPermissions({ badge: true, alert: true });
+  /** User-gesture flow: off persists at once; on waits for the OS answer (and Wake registration). */
+  async function applyNotificationToggle(
+    toggle: NotificationToggle,
+    on: boolean,
+  ) {
+    setToggleMessage(toggle, undefined);
+    if (!on) {
+      if (toggle === "notifications") setToggleMessages({});
+      if (toggle === "wake") {
+        void applyPushWakeEnabled(false);
+      } else {
+        s.setPrivacy({ [NOTIFICATION_TOGGLE_PRIVACY_KEY[toggle]]: false });
+        onNotificationPrivacyChanged();
+      }
+      return;
+    }
+    const signal = notificationAbortRef.current?.signal;
+    if (!signal || signal.aborted) return;
+    const options: ToggleFlowDeps = {
+      signal,
+      onLateResult: (late) => {
+        if (!signal.aborted) applyToggleResult(toggle, late);
+      },
+    };
+    setTogglePending((p) => ({ ...p, [toggle]: true }));
+    try {
+      const result =
+        toggle === "wake"
+          ? await applyPushWakeEnabled(true, options)
+          : await runToggleOn(toggle, options);
+      if (!signal.aborted) applyToggleResult(toggle, result);
+    } finally {
+      if (!signal.aborted) setTogglePending((p) => ({ ...p, [toggle]: false }));
     }
   }
 
@@ -336,8 +415,18 @@ export function SettingsScreen() {
               <PrivacySettingItem
                 title="Notifications"
                 description="Badge the icon when invites or chain messages arrive."
-                on={s.privacy.notificationsEnabled}
-                onToggle={(v) => applyNotificationsEnabled(v)}
+                on={
+                  !togglePending.notifications && s.privacy.notificationsEnabled
+                }
+                disabled={
+                  togglePending.notifications ||
+                  togglePending.wake ||
+                  togglePending.banner
+                }
+                message={toggleMessages.notifications}
+                onToggle={(v) =>
+                  void applyNotificationToggle("notifications", v)
+                }
               />
               <hr className="divider divider--flush" />
               <PrivacySettingItem
@@ -347,10 +436,16 @@ export function SettingsScreen() {
                     ? "Generic APNs/ntfy ping when a room invite is accepted or a room gets a new message. No names or preview."
                     : "Turn on Notifications first."
                 }
-                on={s.privacy.notificationsEnabled && s.privacy.pushWakeEnabled}
+                on={
+                  !togglePending.wake &&
+                  s.privacy.notificationsEnabled &&
+                  s.privacy.pushWakeEnabled
+                }
+                disabled={togglePending.wake}
+                message={toggleMessages.wake}
                 onToggle={
                   s.privacy.notificationsEnabled
-                    ? (v) => applyPushWakeEnabled(v)
+                    ? (v) => void applyNotificationToggle("wake", v)
                     : undefined
                 }
                 trailing={
@@ -370,12 +465,15 @@ export function SettingsScreen() {
                     : "Turn on Notifications first."
                 }
                 on={
+                  !togglePending.banner &&
                   s.privacy.notificationsEnabled &&
                   s.privacy.notificationBannersEnabled
                 }
+                disabled={togglePending.banner}
+                message={toggleMessages.banner}
                 onToggle={
                   s.privacy.notificationsEnabled
-                    ? (v) => applyNotificationBanners(v)
+                    ? (v) => void applyNotificationToggle("banner", v)
                     : undefined
                 }
                 trailing={

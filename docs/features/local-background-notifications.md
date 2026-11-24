@@ -79,13 +79,52 @@ Persisted switches:
 | On | off | increment | no |
 | On | on | increment | yes, subject to OS permission + background state |
 
-Permission requests happen only from the Settings toggle gesture:
+Permission requests happen only from the Settings toggle gesture. The request
+is a request/reply over `gnh-notifications` (decision record:
+`docs/decisions/004-notification-permission-request-reply.md`):
 
-- Android 13+: `POST_NOTIFICATIONS` runtime request (declared in `app.json`).
+- The UI sends `requestPermissions { requestId, badge, alert, wantToken }` or
+  `getPermissionStatus { requestId }`; the shell answers through
+  `window.gnhMobile._resolveNotifications` with `{ requestId, status,
+  alertEnabled, apnsToken? }`. `status` is one of `authorized`, `provisional`,
+  `denied`, `notDetermined`, `unavailable` (module missing or a native call
+  failed).
+- The reply comes only after the user answered the system prompt. A 10-minute
+  safety timer resolves `unavailable` with `timedOut`; the toggle then stays
+  off with no message.
+- Android 13+: `PermissionsAndroid.request(POST_NOTIFICATIONS)` first (declared
+  in `app.json`), Kotlin `requestPermissions` (channel) only after `granted`.
   Background tasks never prompt; posting without grant is a safe no-op.
-- iOS: `.badge` requested when Notifications turns on; `.alert`+`.sound` only
-  when banners turn on. After `denied`, the app never re-prompts (route users
-  to OS settings). Banner delivery requires `authorized`/`provisional`.
+- iOS: `.badge` requested when Notifications turns on; `.alert`+`.sound` when
+  Wake contact or banners turn on. After `denied`, the app never re-prompts
+  (route users to OS settings).
+
+Which outcome turns a toggle on:
+
+| Toggle | Turns on when |
+|---|---|
+| Notifications | `authorized` or `provisional` |
+| Wake contact, Notification banner | `authorized` and `alertEnabled` |
+
+While a request is pending the switch is disabled and shown off (Notifications
+is also locked while Wake or Banner is pending). When the toggle does not turn
+on, one message shows directly under it, no dialog:
+
+| Outcome | Message |
+|---|---|
+| denied, or alerts needed but off | "Notifications need to be turned on in Settings → Apps → Get NowHere → Notifications." |
+| unavailable | "Notifications are not available in this build." |
+| Wake gateway registration failed (iOS) | "Wake registration failed. Check your connection and try again." |
+
+Messages live in Settings component state: they clear when the user leaves
+Settings, when that toggle later turns on, and when Notifications turns off.
+
+**Settings open (reconciliation):** on the mobile host Settings reads
+`getPermissionStatus` each time the `/settings` route becomes active (the tab
+shell keeps the screen mounted, so leaving Settings is a route change, not an
+unmount). A toggle stored on whose permission is no longer
+granted is switched off silently; a toggle stored off stays off; `unavailable`
+changes nothing. Settings never prompts without a tap.
 
 ## Badge semantics and deduplication
 
@@ -151,7 +190,10 @@ Permission requests happen only from the Settings toggle gesture:
   opens the launcher activity; the app resolves the event locally after
   unlock.
 - iOS: `userInfo` carries only the opaque eventId; the delegate forwards it as
-  a `gnhNotificationTap` RN event.
+  a `gnhNotificationTap` RN event. `App.tsx` subscribes to that event at mount
+  (`installNotificationTapListener`), which installs the delegate so
+  foreground notifications are badge-only from the first one. The tap payload
+  is not routed yet.
 
 ## What this feature does not do
 

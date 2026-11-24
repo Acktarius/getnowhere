@@ -281,6 +281,53 @@ Re-run Step 6 after every update to confirm anonymous read is still working.
 - `NTFY_PUBLISH_TOKEN` must stay in poke-gateway `.env` on the VPS only — never
   in the app or in this repo.
 
+## Keep both containers up after Docker upgrades
+
+A `containerd` / Docker package upgrade can force-stop `dockerd`. If the
+daemon's restart manager is cancelled during that shutdown, `unless-stopped`
+containers stay **Exited** after Docker comes back. nginx then answers `502`
+for both `ntfy.getnowhere.im` and `poke.getnowhere.im`, and every wake fails
+silently.
+
+### Check health
+
+```bash
+curl -sS -w " %{http_code}\n" https://ntfy.getnowhere.im/v1/health
+# expect: {"healthy":true} 200
+curl -sS -w " %{http_code}\n" https://poke.getnowhere.im/health
+# expect: {"ok":true} 200
+sudo docker ps -a --format '{{.Names}}  {{.Status}}'
+```
+
+If either container shows `Exited`, start it with `sudo docker start <name>`.
+
+### Start guard (systemd)
+
+Bring both stacks up every time `docker.service` (re)starts:
+
+```bash
+sudo mkdir -p /etc/systemd/system/docker.service.d
+sudo tee /etc/systemd/system/docker.service.d/gnh-start.conf <<'EOF'
+[Service]
+ExecStartPost=/bin/sh -c 'sleep 5; docker compose -f /opt/ntfy-compose.yml up -d; cd /opt/poke-gateway && docker compose up -d'
+EOF
+sudo systemctl daemon-reload
+```
+
+### Hold Docker packages out of unattended upgrades
+
+Upgrade Docker by hand, then run the health checks above:
+
+```bash
+sudo tee /etc/apt/apt.conf.d/51gnh-docker-blacklist <<'EOF'
+Unattended-Upgrade::Package-Blacklist {
+    "containerd.io";
+    "docker-ce";
+    "docker-ce-cli";
+};
+EOF
+```
+
 ## Local run (no Docker)
 
 ```bash

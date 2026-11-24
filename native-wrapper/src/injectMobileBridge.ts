@@ -77,10 +77,24 @@ export function buildMobileBridgeInjection(
         try { pokeHandlers[i](platform, token); } catch (e) {}
       }
     },
+    _onNotificationsReply: function(handler) {
+      notificationHandlers.push(handler);
+      return function() {
+        var i = notificationHandlers.indexOf(handler);
+        if (i >= 0) notificationHandlers.splice(i, 1);
+      };
+    },
+    _resolveNotifications: function(reply) {
+      var snapshot = notificationHandlers.slice();
+      for (var i = 0; i < snapshot.length; i++) {
+        try { snapshot[i](reply); } catch (e) {}
+      }
+    },
     _sessionRestoreReady: ${restoreReady},
     _pendingWalletRestore: ${restoreJson}
   };
   var pokeHandlers = [];
+  var notificationHandlers = [];
   ${securityJs}
 })();true;`;
 }
@@ -98,4 +112,9 @@ export function buildPokeTokenDispatchScript(
   const p = JSON.stringify(platform);
   const t = JSON.stringify(token);
   return `(function(){try{window.gnhMobile&&window.gnhMobile._dispatchPokeToken(${p},${t});}catch(e){}})();true;`;
+}
+
+/** Deliver a notification permission reply into the WebView (`_resolveNotifications`). */
+export function buildNotificationsResolveScript(reply: object): string {
+  return `(function(){try{window.gnhMobile&&window.gnhMobile._resolveNotifications(${JSON.stringify(reply)});}catch(e){}})();true;`;
 }

@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildMobileBridgeInjection,
+  buildNotificationsResolveScript,
   buildPokeTokenDispatchScript,
 } from "../../native-wrapper/src/injectMobileBridge";
 
@@ -227,5 +228,62 @@ describe("buildMobileBridgeInjection", () => {
     new Function(dispatchScript)();
     expect(handler).toHaveBeenCalledOnce();
     expect(handler).toHaveBeenCalledWith("apns", "device-token-xyz");
+  });
+
+  it("fans _resolveNotifications replies out to _onNotificationsReply handlers", () => {
+    new Function(buildMobileBridgeInjection("token"))();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    const first = vi.fn();
+    const second = vi.fn();
+    const unsubFirst = bridge._onNotificationsReply!(first);
+    bridge._onNotificationsReply!(second);
+
+    const reply = {
+      requestId: "n-1",
+      status: "authorized",
+      alertEnabled: true,
+    };
+    bridge._resolveNotifications!(reply);
+    expect(first).toHaveBeenCalledWith(reply);
+    expect(second).toHaveBeenCalledWith(reply);
+
+    unsubFirst();
+    const next = { requestId: "n-2", status: "denied", alertEnabled: false };
+    bridge._resolveNotifications!(next);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenLastCalledWith(next);
+  });
+
+  it("keeps delivering to other handlers when one throws", () => {
+    new Function(buildMobileBridgeInjection("token"))();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    const healthy = vi.fn();
+    bridge._onNotificationsReply!(() => {
+      throw new Error("boom");
+    });
+    bridge._onNotificationsReply!(healthy);
+    const reply = { requestId: "n-3", status: "denied", alertEnabled: false };
+    bridge._resolveNotifications!(reply);
+    expect(healthy).toHaveBeenCalledWith(reply);
+  });
+
+  it("buildNotificationsResolveScript produces JS that calls _resolveNotifications", () => {
+    new Function(buildMobileBridgeInjection("token"))();
+    const bridge = window.gnhMobile as GnhMobileBridge;
+    const handler = vi.fn();
+    bridge._onNotificationsReply!(handler);
+
+    const reply = {
+      requestId: "n-4",
+      status: "provisional",
+      alertEnabled: true,
+      apnsToken: "tok-</script>-'quote'",
+    };
+    const script = buildNotificationsResolveScript(reply);
+    expect(script).toContain("_resolveNotifications");
+
+    new Function(script)();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith(reply);
   });
 });

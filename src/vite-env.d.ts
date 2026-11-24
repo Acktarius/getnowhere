@@ -131,6 +131,12 @@ interface GnhMobileBridge {
   onPokeToken?(handler: (platform: "apns", token: string) => void): () => void;
   /** @internal Injected by native shell via buildPokeTokenDispatchScript. */
   _dispatchPokeToken?(platform: "apns", token: string): void;
+  /** Subscribe to raw notification permission replies; returns unsubscribe. */
+  _onNotificationsReply?(
+    handler: (reply: Record<string, unknown>) => void,
+  ): () => void;
+  /** @internal Injected by native shell via buildNotificationsResolveScript. */
+  _resolveNotifications?(reply: Record<string, unknown>): void;
   /** Set by RN after WKWebView remount; consumed once at boot. */
   _sessionRestoreReady?: boolean;
   _pendingWalletRestore?: string | null;

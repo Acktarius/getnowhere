@@ -1,0 +1,99 @@
+<!-- forge-brief-specs-hash:cf09eca330a967fc -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brief — iOS notification permission chain</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; line-height: 1.55; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #ddd; padding-bottom: .2rem; }
+  code { background: #f3f3f3; padding: 0 .25rem; border-radius: 3px; }
+  table { border-collapse: collapse; width: 100%; } td, th { border: 1px solid #ddd; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  .msg { font-style: italic; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</head>
+<body>
+<h1>iOS notification permission chain</h1>
+
+<h2>TL;DR</h2>
+<p>On iPhone the app never asks for notification permission, so it never gets a push token, never registers for wake, and nobody can wake it. Every step fails silently. After this change, turning on a notification setting really asks iOS, waits for your answer, and either turns the switch on (and registers for wake) or leaves it off with a one-line explanation right under it.</p>
+
+<h2>What you'll get</h2>
+<ul>
+  <li>Tapping <b>Notifications</b>, <b>Wake contact</b> or <b>Notification banner</b> shows the iOS (or Android) permission prompt when needed.</li>
+  <li>A switch only shows <b>on</b> when the feature actually works: permission granted, alerts allowed, and (for Wake contact on iPhone) the wake server accepted the registration.</li>
+  <li>When it can't turn on, the switch stays off and a message appears directly under it — no dialog. It disappears when you leave Settings:
+    <ul>
+      <li class="msg">Notifications need to be turned on in Settings → Apps → Get NowHere → Notifications.</li>
+      <li class="msg">Notifications are not available in this build.</li>
+      <li class="msg">Wake registration failed. Check your connection and try again.</li>
+    </ul>
+  </li>
+  <li>Opening Settings shows the real state: a switch saved as on without the matching phone permission shows off, so the next tap asks again.</li>
+  <li>The app's own notification handler runs from launch (foreground notifications show as a badge only).</li>
+  <li>The end-to-end check also hits the live wake servers: both health endpoints, plus a poke to a random handle that must arrive through ntfy as <code>wake</code>. A silent server outage now fails the check.</li>
+</ul>
+
+<h2>How it works</h2>
+<p>Today the app sends "please ask for permission" into the native layer and never hears back. The change turns that into a question with an answer: the native shell asks the phone, waits for the user's choice, fetches the push token only if allowed, and replies to the app screen. Settings then decides whether the switch may turn on.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant U as User
+  participant S as Settings screen
+  participant N as Native shell
+  participant OS as iOS
+  participant G as Wake server
+  U->>S: tap Wake contact
+  S->>N: ask permission (alerts + token)
+  N->>OS: request authorization
+  OS-->>U: system prompt
+  U-->>OS: Allow / Don't Allow
+  OS-->>N: answer
+  alt allowed
+    N->>OS: get push token
+    N-->>S: authorized + token
+    S->>G: register token
+    G-->>S: wake handle (or error)
+    S-->>U: switch on (or off + message)
+  else denied / unavailable
+    N-->>S: denied or unavailable
+    S-->>U: switch off + message under it
+  end
+</pre>
+
+<h2>What changes for you</h2>
+<ul>
+  <li>No new screens. The three existing switches behave honestly and explain failures.</li>
+  <li>If you already had a switch "on" from an older build, it will show off the first time you open Settings — tap it once to get the prompt.</li>
+  <li>The wake server README gains an operator note about the 2026-11-18 outage (a Docker upgrade left ntfy and the gateway stopped for five days) and the guard against it.</li>
+  <li>You run one paid <code>adhoc-ios</code> build and a two-person wake test on it.</li>
+</ul>
+
+<h2>Risks and open questions</h2>
+<ul>
+  <li>The exact iOS root cause is still unconfirmed. This change makes it visible: "not available in this build" means the native part is not loading; a working prompt means the old silent flow was the bug.</li>
+  <li>If the ad-hoc build installs but two users on it still get no wake notification, we switch to the fallback (let the Expo notifications library own iOS permissions).</li>
+  <li>If iOS ever reports "provisional" permission, the badge switch accepts it, but Wake contact and banners require full permission with alerts on.</li>
+</ul>
+
+<h2>Out of scope</h2>
+<ul>
+  <li>Tapping a notification does not yet open the matching room.</li>
+  <li>No changes to the chat protocol, encryption, invite format, or the wake server's API.</li>
+  <li>No TestFlight or App Store build until the ad-hoc test passes.</li>
+</ul>
+
+<h2>Work overview</h2>
+<table>
+  <tr><th>Group</th><th>Size</th></tr>
+  <tr><td>App ↔ native question/answer channel</td><td>2 tasks</td></tr>
+  <tr><td>Native shell: correct order on iOS, real answer on Android, handler at launch</td><td>4 tasks</td></tr>
+  <tr><td>Settings switches: turn on only when granted, messages, real state on open</td><td>3 tasks</td></tr>
+  <tr><td>Docs, decision record, wake-server operator note</td><td>3 tasks</td></tr>
+  <tr><td>Close two old findings, end-to-end test, full checks</td><td>3 tasks</td></tr>
+  <tr><td>Device gate: one ad-hoc build, two-user wake test (you run it)</td><td>2 tasks</td></tr>
+</table>
+</body>
+</html>

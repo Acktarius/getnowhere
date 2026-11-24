@@ -23,6 +23,23 @@ export type NotificationPrivacySettings = {
   bannersEnabled: boolean;
 };
 
+export type NotificationPermissionStatus =
+  | "authorized"
+  | "provisional"
+  | "denied"
+  | "notDetermined"
+  | "unavailable";
+
+/** Outcome of a permission request/status query delivered via `_resolveNotifications`. */
+export type NotificationPermissionReply = {
+  requestId?: string;
+  status: NotificationPermissionStatus;
+  alertEnabled: boolean;
+  apnsToken?: string;
+  /** Set when no native reply arrived within the safety timeout. */
+  timedOut?: boolean;
+};
+
 export interface NowHereNotificationsModule {
   applyPrivacySettings(settings: NotificationPrivacySettings): Promise<void>;
   publishEvent(

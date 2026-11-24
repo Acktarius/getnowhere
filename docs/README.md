@@ -36,6 +36,7 @@ No L3. UI never joins Hyperswarm.
 13. `features/chat-relay.md` — L1′ fallback when L2 is down (grey bubbles)
 13b. `features/local-background-notifications.md` — mobile local L1/L1′ badges + banners
 13c. `features/peer-wake-notification.md` — APNs/FCM poke gateway to cut L2 meet-up from 15 min to seconds
+13d. `decisions/004-notification-permission-request-reply.md` — permission request/reply and toggle outcomes (Proposed)
 13c. `background-remote-sync.md` — WorkManager / BGAppRefresh → wallet sync
 14. `features/app-access-and-data-unlock.md` — mobile biometrics (app vs data)
 14b. `features/appearance.md` — page theme vs accent (Sky and Pink do not tint the page)

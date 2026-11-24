@@ -1,0 +1,36 @@
+{
+  "change": "ios-notification-permission-chain",
+  "notApplicable": null,
+  "steps": [
+    {
+      "name": "live-wake-servers-healthy",
+      "cmd": "curl -fsS -m 10 https://ntfy.getnowhere.im/v1/health && curl -fsS -m 10 https://poke.getnowhere.im/health",
+      "expect": "\"healthy\":true[\\s\\S]*\"ok\":true"
+    },
+    {
+      "name": "live-poke-delivers-wake-via-ntfy",
+      "cmd": "bash -c 'h=$(head -c 10 /dev/urandom | base64 | tr \"+/\" \"-_\" | tr -d \"=\"); code=$(curl -sS -m 10 -o /dev/null -w \"%{http_code}\" -H \"content-type: application/json\" -d \"{\\\"to\\\":\\\"$h\\\"}\" https://poke.getnowhere.im/poke); echo \"poke=$code\"; [ \"$code\" = 202 ] || exit 1; sleep 2; curl -fsS -m 10 \"https://ntfy.getnowhere.im/gnh-$h/json?poll=1&since=60s\"'",
+      "expect": "poke=202[\\s\\S]*\"message\":\"wake\""
+    },
+    {
+      "name": "shell-replies-and-ordering",
+      "cmd": "npx vitest run tests/native-wrapper/handle-notifications-webview.test.ts tests/native-wrapper/inject-mobile-bridge.test.ts --reporter=verbose",
+      "expect": "Test Files\\s+2 passed"
+    },
+    {
+      "name": "toggle-flow-and-reconciliation",
+      "cmd": "npx vitest run tests/services/notifications/notification-toggle-flow.test.ts tests/screens/SettingsScreen.notification-permission.test.tsx tests/lib/mobile/native-notifications-bridge.test.ts --reporter=verbose",
+      "expect": "Test Files\\s+3 passed"
+    },
+    {
+      "name": "settings-ui-loop-with-stubbed-shell",
+      "cmd": "npx playwright test e2e/notification-permission.spec.ts --reporter=line",
+      "expect": "passed",
+      "timeoutMs": 300000
+    }
+  ],
+  "blockedPaths": [
+    "Real iOS system prompt, APNs token and two-user wake banner: requires a physical iPhone pair on one adhoc-ios build (tasks 6.1–6.2, operator-run).",
+    "Real Android POST_NOTIFICATIONS dialog: requires an Android 13+ device; covered at unit level with the react-native stub."
+  ]
+}

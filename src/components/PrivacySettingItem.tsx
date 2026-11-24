@@ -9,6 +9,8 @@ type Props = {
   onToggle?: (next: boolean) => void;
   /** Keep the switch visible but not clickable (enrollment in progress). */
   disabled?: boolean;
+  /** Status line shown under the description (e.g. why the toggle stayed off). */
+  message?: string;
   trailing?: ReactNode;
   icon?: LucideIcon;
 };
@@ -24,6 +26,7 @@ export function PrivacySettingItem({
   on,
   onToggle,
   disabled = false,
+  message,
   trailing,
   icon: Icon,
 }: Props) {
@@ -42,6 +45,11 @@ export function PrivacySettingItem({
           </span>
         ) : null}
         {value ? <div style={{ marginTop: 4 }}>{value}</div> : null}
+        {message ? (
+          <span className="field__hint" role="status">
+            {message}
+          </span>
+        ) : null}
       </div>
       {onToggle ? (
         <button

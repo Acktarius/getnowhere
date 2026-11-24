@@ -1,12 +1,15 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const applyPushWakeEnabled = vi.fn();
+const applyPushWakeEnabled = vi.fn(async (on: boolean, _options?: unknown) =>
+  on ? { on: true as const } : { on: false as const },
+);
 
 vi.mock("@/services/poke/applyPushWakeSetting", () => ({
-  applyPushWakeEnabled: (on: boolean) => applyPushWakeEnabled(on),
+  applyPushWakeEnabled: (on: boolean, options?: unknown) =>
+    applyPushWakeEnabled(on, options),
 }));
 
 vi.mock("@/services/storage/appDataLifecycle", () => ({
@@ -25,10 +28,18 @@ vi.mock("@/services/notifications/publishBackgroundNotification", () => ({
 
 vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
   isMobileHost: () => true,
+  isMobileAndroid: () => false,
 }));
 
 vi.mock("@/lib/mobile/nativeNotificationsBridge", () => ({
-  bridgeRequestNotificationPermissions: vi.fn(),
+  requestNotificationPermission: vi.fn(async () => ({
+    status: "unavailable",
+    alertEnabled: false,
+  })),
+  getNotificationPermissionStatus: vi.fn(async () => ({
+    status: "unavailable",
+    alertEnabled: false,
+  })),
 }));
 vi.mock("@/lib/network/auto-node", () => ({
   refreshAutoNode: vi.fn(async () => undefined),
@@ -80,7 +91,7 @@ import { useSettingsStore } from "@/state/settingsStore";
 
 function renderSettings() {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={["/settings"]}>
       <SettingsScreen />
     </MemoryRouter>,
   );
@@ -148,6 +159,29 @@ describe("SettingsScreen push wake toggle", () => {
       name: /^wake contact$/i,
     });
     await user.click(toggle);
-    expect(applyPushWakeEnabled).toHaveBeenCalledWith(true);
+    expect(applyPushWakeEnabled).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        onLateResult: expect.any(Function),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("switch", { name: /^wake contact$/i })
+          .getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+  });
+
+  it("turning Wake off goes through the opt-out path", async () => {
+    useSettingsStore
+      .getState()
+      .setPrivacy({ notificationsEnabled: true, pushWakeEnabled: true });
+    const user = userEvent.setup();
+    renderSettings();
+    await user.click(screen.getByRole("switch", { name: /^wake contact$/i }));
+    expect(applyPushWakeEnabled).toHaveBeenCalledWith(false, undefined);
   });
 });

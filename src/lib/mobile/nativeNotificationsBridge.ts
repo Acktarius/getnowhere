@@ -3,6 +3,8 @@ import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
 import { localNotificationId } from "@/services/notifications/localNotificationId";
 import type {
   NativeNotificationInput,
+  NotificationPermissionReply,
+  NotificationPermissionStatus,
   NotificationPrivacySettings,
 } from "@/services/notifications/nativeNotificationTypes";
 import {
@@ -36,6 +38,12 @@ type NotificationsCommand =
       action: "requestPermissions";
       badge: boolean;
       alert: boolean;
+      requestId?: string;
+      wantToken?: boolean;
+    }
+  | {
+      action: "getPermissionStatus";
+      requestId: string;
     };
 
 function postNotificationsCommand(command: NotificationsCommand): void {
@@ -80,13 +88,109 @@ export function bridgeClearNativeBadge(): void {
   postNotificationsCommand({ action: "clearBadge" });
 }
 
-export function bridgeRequestNotificationPermissions(options: {
-  badge: boolean;
-  alert: boolean;
-}): void {
-  postNotificationsCommand({
-    action: "requestPermissions",
-    badge: options.badge,
-    alert: options.alert,
+/** Safety timer for a pending permission reply; the system prompt may stay open for minutes. */
+export const NOTIFICATION_REPLY_TIMEOUT_MS = 10 * 60 * 1000;
+
+const PERMISSION_STATUSES: readonly NotificationPermissionStatus[] = [
+  "authorized",
+  "provisional",
+  "denied",
+  "notDetermined",
+  "unavailable",
+];
+
+const UNAVAILABLE: NotificationPermissionReply = {
+  status: "unavailable",
+  alertEnabled: false,
+};
+
+export type NotificationReplyOptions = {
+  /** Fires once if the matching reply arrives after the timeout already resolved. */
+  onLateReply?: (reply: NotificationPermissionReply) => void;
+  /** Abort to drop the listener (e.g. on unmount); a still-pending call resolves `unavailable`. */
+  signal?: AbortSignal;
+};
+
+function toPermissionReply(
+  raw: Record<string, unknown>,
+): NotificationPermissionReply {
+  const status = PERMISSION_STATUSES.find((s) => s === raw.status);
+  const reply: NotificationPermissionReply = {
+    status: status ?? "unavailable",
+    alertEnabled: raw.alertEnabled === true,
+  };
+  if (typeof raw.requestId === "string") reply.requestId = raw.requestId;
+  if (typeof raw.apnsToken === "string") reply.apnsToken = raw.apnsToken;
+  return reply;
+}
+
+function awaitNotificationReply(
+  command:
+    | {
+        action: "requestPermissions";
+        badge: boolean;
+        alert: boolean;
+        wantToken: boolean;
+      }
+    | { action: "getPermissionStatus" },
+  { onLateReply, signal }: NotificationReplyOptions,
+): Promise<NotificationPermissionReply> {
+  const subscribe = window.gnhMobile?._onNotificationsReply;
+  const canPost = typeof window.ReactNativeWebView?.postMessage === "function";
+  if (!isMobileHost() || !subscribe || !canPost || signal?.aborted) {
+    return Promise.resolve({ ...UNAVAILABLE });
+  }
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (reply: NotificationPermissionReply): void => {
+      settled = true;
+      clearTimeout(timer);
+      resolve(reply);
+    };
+    const detach = (): void => {
+      clearTimeout(timer);
+      unsubscribe();
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = (): void => {
+      detach();
+      if (!settled) finish({ ...UNAVAILABLE });
+    };
+    const unsubscribe = subscribe((raw) => {
+      if (raw?.requestId !== requestId) return;
+      detach();
+      const reply = toPermissionReply(raw);
+      if (settled) onLateReply?.(reply);
+      else finish(reply);
+    });
+    const timer = setTimeout(() => {
+      if (!onLateReply) detach();
+      finish({ ...UNAVAILABLE, timedOut: true });
+    }, NOTIFICATION_REPLY_TIMEOUT_MS);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    postNotificationsCommand({ ...command, requestId });
   });
+}
+
+/**
+ * Ask the OS for notification permission and wait for the user's answer.
+ * Resolves `unavailable` off-mobile, or `unavailable` + `timedOut` after
+ * {@link NOTIFICATION_REPLY_TIMEOUT_MS}; a reply after that goes to `onLateReply`.
+ */
+export function requestNotificationPermission(
+  request: { badge: boolean; alert: boolean; wantToken: boolean },
+  options: NotificationReplyOptions = {},
+): Promise<NotificationPermissionReply> {
+  return awaitNotificationReply(
+    { action: "requestPermissions", ...request },
+    options,
+  );
+}
+
+/** Read the current OS notification permission without prompting. Same timeout/late rules. */
+export function getNotificationPermissionStatus(
+  options: NotificationReplyOptions = {},
+): Promise<NotificationPermissionReply> {
+  return awaitNotificationReply({ action: "getPermissionStatus" }, options);
 }

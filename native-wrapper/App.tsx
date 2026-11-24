@@ -53,8 +53,10 @@ import {
 import {
   buildBridgeEventDispatchScript,
   buildMobileBridgeInjection,
+  buildNotificationsResolveScript,
   buildPokeTokenDispatchScript,
 } from "./src/injectMobileBridge";
+import { installNotificationTapListener } from "./src/installNotificationTapListener";
 import {
   iosKeyboardInsetScript,
   iosKeyboardOverlapPx,
@@ -394,6 +396,8 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => installNotificationTapListener(), []);
+
   useEffect(() => {
     if (!isGnhBackgroundSyncNativeAvailable()) return;
     return registerBackgroundSyncWebViewInjector((script) => {
@@ -489,7 +493,13 @@ export default function App() {
       if (handleNtfyWakeWebViewMessage(raw)) {
         return;
       }
-      if (handleNotificationsWebViewMessage(raw)) {
+      if (
+        handleNotificationsWebViewMessage(raw, (reply) => {
+          webViewRef.current?.injectJavaScript(
+            buildNotificationsResolveScript(reply),
+          );
+        })
+      ) {
         return;
       }
       if (
@@ -505,6 +515,7 @@ export default function App() {
       if (recoverWorklet) {
         if (
           !nativeLockRef.current.locked &&
+          bridgeToken != null &&
           tokensEqual(recoverWorklet.token, bridgeToken)
         ) {
           void bridgeRef.current?.recover().then(() => {

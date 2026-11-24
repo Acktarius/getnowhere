@@ -1,0 +1,42 @@
+{
+  "change": "ios-notification-permission-chain",
+  "notApplicable": null,
+  "rows": [
+    {
+      "capability": "Permission request reports its outcome (request/reply)",
+      "library": "src/lib/mobile/nativeNotificationsBridge.ts; native-wrapper/src/handleNotificationsWebViewMessage.ts; native-wrapper/src/gnhNotificationsNative.ts",
+      "runtimeOwner": "native-wrapper/App.tsx onWebViewMessage → notifications handler → injected window.gnhMobile._resolveNotifications",
+      "writes": "gnh-notifications reply { requestId, status, alertEnabled, apnsToken? } into the WebView",
+      "reads": "UNUserNotificationCenter status/alertSetting (iOS); POST_NOTIFICATIONS result + areNotificationsEnabled (Android)",
+      "uiConsumer": "Settings notification toggles",
+      "evidence": "tests/native-wrapper/handle-notifications-webview.test.ts; tests/lib/mobile/native-notifications-bridge.test.ts; tests/native-wrapper/inject-mobile-bridge.test.ts"
+    },
+    {
+      "capability": "Toggles turn on only when granted; inline failure message; Wake registers before on",
+      "library": "src/services/notifications/notificationToggleFlow.ts; src/services/poke/applyPushWakeSetting.ts; src/services/poke/pokeGatewayClient.ts",
+      "runtimeOwner": "src/screens/settings/SettingsScreen.tsx toggle handlers",
+      "writes": "settingsStore privacy.notificationsEnabled / pushWakeEnabled / notificationBannersEnabled; gnh.ownPokeHandle via POST /register",
+      "reads": "permission reply; gateway /register response",
+      "uiConsumer": "Settings → Notifications section (toggle state + message under toggle)",
+      "evidence": "tests/services/notifications/notification-toggle-flow.test.ts; tests/screens/SettingsScreen.notification-permission.test.tsx; e2e/notification-permission.spec.ts"
+    },
+    {
+      "capability": "Settings shows the real permission state (mount reconciliation)",
+      "library": "src/services/notifications/notificationToggleFlow.ts (grantedFor)",
+      "runtimeOwner": "SettingsScreen mount effect (mobile host only)",
+      "writes": "settingsStore privacy toggles → false when not granted",
+      "reads": "getPermissionStatus reply",
+      "uiConsumer": "Settings toggles on open",
+      "evidence": "tests/screens/SettingsScreen.notification-permission.test.tsx (reconciliation cases)"
+    },
+    {
+      "capability": "Notification handler active from launch",
+      "library": "native-wrapper/ios-native/GnhNotifications/GnhNotificationCenterDelegate.swift",
+      "runtimeOwner": "native-wrapper/App.tsx mount → NativeEventEmitter gnhNotificationTap subscription → startObserving",
+      "writes": "UNUserNotificationCenter.delegate",
+      "reads": "N/A",
+      "uiConsumer": "iOS foreground presentation (badge only)",
+      "evidence": "installNotificationTapListener helper test; device check in task 6.1"
+    }
+  ]
+}

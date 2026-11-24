@@ -2,10 +2,17 @@
 import {
   nativeApplyPrivacySettings,
   nativeClearBadge,
+  nativeGetNotificationPermissionStatus,
   nativePublishEvent,
-  nativeRequestPermissions,
+  nativeRequestNotificationPermission,
   nativeSetBadgeCount,
 } from "./gnhNotificationsNative";
+import type { NotificationPermissionResult } from "./resolveNotificationPermission";
+
+/** Permission reply for `_resolveNotifications`; `requestId` echoes the command. */
+export type NotificationsReply = NotificationPermissionResult & {
+  requestId: string;
+};
 
 type NotificationsMessage = {
   channel?: string;
@@ -20,6 +27,8 @@ type NotificationsMessage = {
   count?: number;
   badge?: boolean;
   alert?: boolean;
+  requestId?: string;
+  wantToken?: boolean;
 };
 
 export function parseNotificationsMessage(
@@ -47,8 +56,33 @@ function readSettings(msg: NotificationsMessage): {
   return { notificationsEnabled, bannersEnabled };
 }
 
-/** Returns true when the message was a notifications command (handled). */
-export function handleNotificationsWebViewMessage(raw: string): boolean {
+/** Commands without a `requestId` (legacy fire-and-forget) get no reply. */
+function replyWhenSettled(
+  requestId: unknown,
+  pending: Promise<NotificationPermissionResult>,
+  reply: (payload: NotificationsReply) => void,
+): void {
+  void pending
+    .catch(
+      (): NotificationPermissionResult => ({
+        status: "unavailable",
+        alertEnabled: false,
+      }),
+    )
+    .then((result) => {
+      if (typeof requestId !== "string" || requestId.length === 0) return;
+      reply({ requestId, ...result });
+    });
+}
+
+/**
+ * Returns true when the message was a notifications command (handled).
+ * `reply` receives one payload per permission command that carries a `requestId`.
+ */
+export function handleNotificationsWebViewMessage(
+  raw: string,
+  reply: (payload: NotificationsReply) => void,
+): boolean {
   const msg = parseNotificationsMessage(raw);
   if (!msg) return false;
   switch (msg.action) {
@@ -85,7 +119,24 @@ export function handleNotificationsWebViewMessage(raw: string): boolean {
       void nativeClearBadge();
       return true;
     case "requestPermissions":
-      void nativeRequestPermissions(msg.badge === true, msg.alert === true);
+      replyWhenSettled(
+        msg.requestId,
+        nativeRequestNotificationPermission({
+          badge: msg.badge === true,
+          alert: msg.alert === true,
+          wantToken: msg.wantToken === true,
+        }),
+        reply,
+      );
+      return true;
+    case "getPermissionStatus":
+      if (typeof msg.requestId === "string") {
+        replyWhenSettled(
+          msg.requestId,
+          nativeGetNotificationPermissionStatus(),
+          reply,
+        );
+      }
       return true;
     default:
       return true;

@@ -280,8 +280,8 @@ The gateway's trust surface is intentionally narrower than what the blockchain a
 pokeHandles are **room-scoped**, not account-scoped. Their lifecycle follows the room:
 
 ```
-1. Bob grants notification permission (once, at install)
-2. App registers token at gateway → receives pokeHandle
+1. Bob turns Wake contact on in Settings and allows the system prompt
+2. App registers the token at the gateway → receives pokeHandle
 3. Bob accepts Alice's invite → chat.register carries pokeHandle
 4. Alice stores Bob's pokeHandle for this room
 5. Room expires (roomTtl) or is revoked → room destroyed → handle no longer used
@@ -410,7 +410,13 @@ Toggles adjacent to the Notifications master switch (`SettingsScreen.tsx`):
 
 - **Wake contact** (`privacy.pushWakeEnabled`) — generic APNs/ntfy ping on
   invite accepted and new message. No names or preview. Default **off**.
-  Enable requests OS permission + token refresh. Off → `deletePokeHandle()`, no pokes.
+  Turning it on runs, in order: OS permission (wait for the user's answer) →
+  iOS only: APNs device token (fetched by the shell only after a granted
+  answer) → `POST /register` at the gateway → poke handle saved → toggle on.
+  Android: permission granted → `subscribeAll()`, no gateway. Any failed step
+  keeps the toggle off with a message under it — see
+  `local-background-notifications.md` (Settings and permissions).
+  Off → `deletePokeHandle()`, no pokes.
 - **Notification banner** — local lock-screen alert only for
   “You received a room invite.” not L1′ previews.
 
@@ -538,9 +544,10 @@ Also verify `buildPokeTokenDispatchScript` output calls `_dispatchPokeToken` whe
 | `pokeGatewayClient` fetch wrapper | Thin pass-through; errors are network failures; gateway has its own tests |
 | `partnerPokeHandle` catalog persistence | Serialize/deserialize path identical to existing fields; covered by `tests/p2p/room-catalog.test.ts` patterns |
 | `pushWakeEnabled` settings default | `tests/state/settings-store-push-wake.test.ts` — default, persist, delete on opt-out |
-| Settings UI toggle | `tests/screens/SettingsScreen.push-wake.test.tsx` — renders on mobile, calls `applyPushWakeEnabled` |
-| `applyPushWakeEnabled` | `tests/services/poke/apply-push-wake-setting.test.ts` — permission + token refresh on enable |
-| Poke native bridge | `tests/native-wrapper/handle-poke-webview-message.test.ts` — `refreshToken` command |
+| Settings UI toggle | `tests/screens/SettingsScreen.push-wake.test.tsx`, `tests/screens/SettingsScreen.notification-permission.test.tsx` — pending, messages, reconciliation |
+| `applyPushWakeEnabled` | `tests/services/poke/apply-push-wake-setting.test.ts` — on only after grant + registration; opt-out unchanged |
+| Permission ordering (shell) | `tests/native-wrapper/resolve-notification-permission*.test.ts` — no token before the answer |
+| Poke native bridge | `tests/native-wrapper/handle-poke-webview-message.test.ts` — `refreshToken` command (no web sender since the request/reply change) |
 | `pushTokenBridge` / `usePushTokenBridge` | React hook wrapping `window.gnhMobile.onPokeToken`; covered by the bridge injection test above |
 
 ---

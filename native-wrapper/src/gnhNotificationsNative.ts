@@ -1,5 +1,12 @@
 /** RN NativeModules wrapper for GnhNotifications (Android + iOS after prebuild). */
-import { NativeModules, Platform } from "react-native";
+import { NativeModules, PermissionsAndroid, Platform } from "react-native";
+import {
+  type NotificationPermissionDeps,
+  type NotificationPermissionRequest,
+  type NotificationPermissionResult,
+  readNotificationPermissionStatus,
+  resolveNotificationPermission,
+} from "./resolveNotificationPermission";
 
 type GnhNotificationsNative = {
   applyPrivacySettings(settingsJson: string): Promise<boolean>;
@@ -50,10 +57,35 @@ export async function nativeClearBadge(): Promise<void> {
   await native.clearBadge().catch(() => {});
 }
 
-export async function nativeRequestPermissions(
-  badge: boolean,
-  alert: boolean,
-): Promise<void> {
-  if (!native) return;
-  await native.requestPermissions(badge, alert).catch(() => {});
+async function getDevicePushToken(): Promise<string> {
+  // Lazy-load so a missing package doesn't crash the whole shell.
+  const Notifications = await import("expo-notifications");
+  const result = await Notifications.getDevicePushTokenAsync();
+  return String(result.data);
+}
+
+function permissionDeps(): NotificationPermissionDeps {
+  return {
+    platformOS: Platform.OS,
+    native,
+    androidApiLevel:
+      typeof Platform.Version === "number" ? Platform.Version : 0,
+    requestAndroidPostNotifications: () =>
+      PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      ),
+    getDevicePushToken,
+  };
+}
+
+/** Prompt for notification permission; resolves with the user's answer (never throws). */
+export function nativeRequestNotificationPermission(
+  request: NotificationPermissionRequest,
+): Promise<NotificationPermissionResult> {
+  return resolveNotificationPermission(permissionDeps(), request);
+}
+
+/** Current notification permission state without prompting (never throws). */
+export function nativeGetNotificationPermissionStatus(): Promise<NotificationPermissionResult> {
+  return readNotificationPermissionStatus(permissionDeps());
 }
