@@ -23,14 +23,14 @@
       "autoIncrement": true,
       "node": "22.14.0",
       "ios": {
-        "image": "macos-tahoe-26.6-xcode-27.0"
+        "image": "macos-tahoe-26.5-xcode-26.6"
       }
     },
     "adhoc-ios": {
       "distribution": "internal",
       "node": "22.14.0",
       "ios": {
-        "image": "macos-tahoe-26.6-xcode-27.0",
+        "image": "macos-tahoe-26.5-xcode-26.6",
         "simulator": false
       }
     },
@@ -43,7 +43,7 @@
       "node": "22.14.0",
       "ios": {
         "simulator": false,
-        "image": "macos-tahoe-26.6-xcode-27.0"
+        "image": "macos-tahoe-26.5-xcode-26.6"
       }
     }
   },

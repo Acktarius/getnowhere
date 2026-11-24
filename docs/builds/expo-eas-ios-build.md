@@ -176,10 +176,31 @@ unchanged).
 
 Keep Expo modules on the SDK 55 line (`npx expo install --check`). An old
 `expo-notifications@0.32.x` build fails Xcode with `EXSharedApplication` not
-in scope. iOS profiles pin `"image": "macos-tahoe-26.6-xcode-27.0"` and
-`"node": "22.14.0"` (the old `sdk-55` alias pointed at Xcode 26.2, whose iOS 26.2
-SDK App Store Connect flags from April 2027; do not use `latest`, which moves).
+in scope. iOS profiles pin `"image": "macos-tahoe-26.5-xcode-26.6"` and
+`"node": "22.14.0"` (interim; see below). Do not use `latest`, which moves.
 Verify the image on the first `adhoc-ios` build before any `preview-ios` build.
+
+### Interim EAS image (Xcode 26.6, decided 2026-11-24)
+
+**Decision:** stay on Expo SDK 55 and build iOS with
+`macos-tahoe-26.5-xcode-26.6` until notification / peer-wake logic is finished
+and the SDK 58 migration is ready. Do **not** use
+`macos-tahoe-26.6-xcode-27.0` for shipping profiles while on SDK 55.
+
+**Why (incident):** an ad-hoc build made with Xcode 27 launched on a pre–iOS 27
+phone (notifications worked). After the device updated to **iOS 27.2.1**, both
+that ad-hoc binary and a same-night TestFlight preview crashed at launch
+(~1s). Crash report: `EXC_BREAKPOINT` in
+`___UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption_block_invoke`.
+SDK 55 CNG has no `UIApplicationSceneManifest`; the iOS 27 SDK requires the
+UIKit scene lifecycle. Distribution path was not the cause.
+
+**Why interim, not SDK 58 today:** the next ~5–6 weeks need on-device iteration
+for notifications and related bridge behavior. SDK 58 (scenes by default) is
+the proper return to Xcode 27; track that in
+[`expo-sdk-58-upgrade-plan.md`](expo-sdk-58-upgrade-plan.md). Xcode 26.x
+uploads remain accepted until the App Store Connect ITMS-90725 cutoff
+(treat **1 April 2027** as hard stop).
 
 `cd native-wrapper && npm install` prints many **`npm warn ERESOLVE`** /
 `peer @babel/core` lines. Those come from React Native’s Jest Babel plugins

@@ -17,16 +17,23 @@ See also: [`expo-eas-ios-build.md`](expo-eas-ios-build.md),
 - Deadline math: roughly 4.5 months from this draft. See "Schedule": SDK 58 in
   production by end of January 2027, Bare Kit 3 by mid March 2027.
 
-## Interim risk (decide now)
+## Interim image (decided 2026-11-24)
 
-`native-wrapper/eas.json` iOS profiles were switched to
-`macos-tahoe-26.6-xcode-27.0` while the app is still on SDK 55 (no scene
-lifecycle). That build may **not launch on iOS 27 devices**.
+**Decision:** `native-wrapper/eas.json` iOS profiles (`adhoc-ios`, `preview-ios`,
+`production`) use `macos-tahoe-26.5-xcode-26.6` while remaining on Expo SDK 55.
+Do **not** ship `macos-tahoe-26.6-xcode-27.0` + SDK 55.
 
-- Do **not** promote an Xcode 27 + SDK 55 build to production or TestFlight
-  external testers until proven on an iOS 27 device.
-- Safer interim for any shipping build before SDK 58: use
-  `macos-tahoe-26.5-xcode-26.6` (Xcode 26.x is still accepted until April 2027).
+**Incident that closed the decision:** Xcode 27 + SDK 55 ad-hoc worked until the
+test phone updated to iOS 27.2.1; then ad-hoc and TestFlight preview both died at
+launch with UIKit
+`___UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` (`EXC_BREAKPOINT`).
+No scene lifecycle in SDK 55 CNG. Details:
+[`expo-eas-ios-build.md`](expo-eas-ios-build.md) (Interim EAS image).
+
+**Why hold SDK 58 briefly:** finish notification / peer-wake logic with stable
+on-device builds over the next ~5–6 weeks, and prepare the SDK 58 migration in
+parallel. Return to Xcode 27 only with SDK 58 (scenes by default). Xcode 26.x
+remains App Store–acceptable until the ITMS-90725 cutoff (~1 April 2027).
 
 ## Current baseline
 
@@ -90,7 +97,7 @@ published yet: treat **1 April 2027** as the hard stop. Two changes, in order:
 
 | When | Change | Work | Exit gate |
 |------|--------|------|-----------|
-| Late Nov 2026 | Prep | Interim iOS image decision ("Interim risk"); branch; run SDK 56 checkpoint | `expo-doctor` clean, tests green |
+| Late Nov 2026 | Prep | Interim image **done** (`xcode-26.6`); notification iteration on-device; branch; run SDK 56 checkpoint when ready | Device launches on iOS 27.2.1 with interim image; `expo-doctor` clean when checkpoint starts |
 | Early Dec 2026 | A | SDK 57 then SDK 58 checkpoints; items 1, 5, 9, 12, 14 (plugin rewrite, `File.write` await, build properties, CI platform 37, typing) | Prebuild patch verified; local Android release builds |
 | Mid Dec 2026 | A | Android validation (R8 release, devices at API 29 and 36); items 3, 6, 7, 8, 10, 11 | Android APK passes on device |
 | Early Jan 2027 | A | `adhoc-ios` on SDK 58 + Bare Kit 0.13.3; test on iOS 27 and 16.4 devices (item 2 background paths) | Ad-hoc build passes. If 0.13.3 fails here, **B moves first** and A slips |
@@ -105,7 +112,7 @@ Rules while following the schedule:
 
 - One paid iOS build at a time, in the gate order (see
   `.cursor/rules/ios-eas-build-cost.mdc`).
-- Do not ship anything built with Xcode 27 on SDK 55 (see "Interim risk").
+- Do not ship anything built with Xcode 27 on SDK 55 (see "Interim image").
 - If A slips past mid Feb 2027, drop B's TestFlight step in favor of shipping A
   alone, and move B to after April (A alone already meets ITMS-90725).
 
@@ -219,7 +226,7 @@ only as long as it builds and runs. Do not bump it to 0.14-0.16 as a halfway ste
 
 Each SDK step is its own commit. If SDK 58 blocks, revert to the last passing
 step. For shipping iOS builds before April 2027, the Xcode 26.6 image on SDK 55
-remains valid (see "Interim risk").
+remains valid (see "Interim image").
 
 ## Open questions
 
