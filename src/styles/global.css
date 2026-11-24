@@ -357,11 +357,13 @@ button {
 .wallet-qr--wide {
   display: flex;
   width: 85cqi;
+  max-width: 100%;
   margin-inline: auto;
 }
 @supports not (width: 1cqi) {
   .wallet-qr--wide {
     width: 85vw;
+    max-width: 100%;
   }
 }
 
