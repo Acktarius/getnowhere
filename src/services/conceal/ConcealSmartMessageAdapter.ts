@@ -6,6 +6,7 @@
 
 import { messages } from "conceal-wallet-sdk";
 import { generatePokeId } from "@/lib/crypto/pokeId";
+import { subscribeOwnRoomIfWake } from "@/lib/mobile/ntfyWakeBridge";
 import {
   readReceivedRecords,
   readSentRecords,
@@ -20,8 +21,8 @@ import { sendSmartMessage } from "@/services/conceal/sync/spend";
 import { storePartnerPokeHandle } from "@/services/p2p/HolepunchChatTransport";
 import { getRelationshipTopicEpoch } from "@/services/p2p/relationshipTopicEpochStore";
 import {
-  patchCatalogRoom,
   peekCatalogRoom,
+  rememberOwnPokeId,
 } from "@/services/p2p/roomCatalogStore";
 import { syncAndMirrorRelationshipTopicEpoch } from "@/services/p2p/topicEpochContactSync";
 import { getOwnPokeHandle, sendPoke } from "@/services/poke/pokeGatewayClient";
@@ -366,7 +367,8 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       const roomId = parsed.payload.handshake.roomId;
       const existing = peekCatalogRoom(roomId)?.ownPokeId;
       ownPokeHandle = existing ?? generatePokeId();
-      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+      rememberOwnPokeId(roomId, ownPokeHandle, contactId);
+      subscribeOwnRoomIfWake(roomId, ownPokeHandle);
     }
     const smartBody = encodeCreateSmartBody(
       parsed.payload.handshake,
@@ -538,7 +540,8 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
       const roomId = inv.roomId;
       const existing = peekCatalogRoom(roomId)?.ownPokeId;
       ownPokeHandle = existing ?? generatePokeId();
-      patchCatalogRoom(roomId, { ownPokeId: ownPokeHandle });
+      rememberOwnPokeId(roomId, ownPokeHandle, inv.contactId);
+      subscribeOwnRoomIfWake(roomId, ownPokeHandle);
     }
     const payload = register
       ? await SmartMessageProtocolAdapter.composeRegister({

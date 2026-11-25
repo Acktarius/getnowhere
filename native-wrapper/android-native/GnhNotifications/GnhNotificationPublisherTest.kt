@@ -117,6 +117,38 @@ class GnhNotificationPublisherTest {
     }
 
     @Test
+    fun `generic wake posts Get NowHere New message`() {
+        assertEquals(PublishOutcome.POSTED, publisher.publishGenericWake())
+        val manager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val posted = shadowOf(manager).allNotifications
+        assertEquals(1, posted.size)
+        assertEquals(
+            GnhNotificationPublisher.WAKE_TITLE,
+            posted[0].extras.getString(android.app.Notification.EXTRA_TITLE),
+        )
+        assertEquals(
+            GnhNotificationPublisher.WAKE_BODY,
+            posted[0].extras.getString(android.app.Notification.EXTRA_TEXT),
+        )
+        assertEquals(PublishOutcome.POSTED, publisher.publishGenericWake())
+        assertEquals(1, shadowOf(manager).allNotifications.size)
+    }
+
+    @Test
+    fun `generic wake does not post without permission`() {
+        shadowOf(context.applicationContext as android.app.Application)
+            .denyPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        shadowOf(
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager,
+        ).setNotificationsEnabled(false)
+        assertEquals(PublishOutcome.NO_PERMISSION, publisher.publishGenericWake())
+        val manager =
+            context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        assertEquals(0, shadowOf(manager).allNotifications.size)
+    }
+
+    @Test
     fun `stable notification ids differ across events`() {
         val a = ledger.notificationIdFor("evt-a")
         val b = ledger.notificationIdFor("evt-b")

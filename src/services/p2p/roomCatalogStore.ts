@@ -124,6 +124,25 @@ export function upsertCatalogRoom(room: CatalogRoom | ChatRoom): CatalogRoom {
   return next;
 }
 
+/** Keep our room wake handle. Creates a catalog row when the room is not stored yet. */
+export function rememberOwnPokeId(
+  roomId: string,
+  ownPokeId: string,
+  contactId = "",
+): void {
+  if (!ownPokeId) return;
+  if (patchCatalogRoom(roomId, { ownPokeId })) return;
+  upsertCatalogRoom({
+    id: roomId,
+    contactId,
+    bootstrapSource: "conceal-smart-message",
+    roomKeyRef: `key:${roomId}`,
+    lifecycleStatus: "pending",
+    createdAt: new Date().toISOString(),
+    ownPokeId,
+  });
+}
+
 export function patchCatalogRoom(
   roomId: string,
   patch: Partial<CatalogRoom>,

@@ -6,12 +6,14 @@
  */
 import { useEffect } from "react";
 import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import { resumeAndroidWakeSubscriptions } from "@/lib/mobile/ntfyWakeBridge";
 import { initPushTokenBridge } from "@/lib/mobile/pushTokenBridge";
 
 /** Mount once at app root when running in mobile shell. */
 export function usePushTokenBridge(): void {
   useEffect(() => {
     if (!isMobileHost()) return;
+    resumeAndroidWakeSubscriptions();
     return initPushTokenBridge();
   }, []);
 }

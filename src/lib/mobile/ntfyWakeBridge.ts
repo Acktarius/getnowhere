@@ -3,9 +3,13 @@
  * Sends postMessage commands to the React Native shell, which calls GnhNtfyWakeModule.
  */
 
-import { isMobileHost } from "@/lib/mobile/gnhMobileBridgeTypes";
+import {
+  isMobileAndroid,
+  isMobileHost,
+} from "@/lib/mobile/gnhMobileBridgeTypes";
 import { NTFY_BASE_URL } from "@/lib/mobile/ntfyConfig";
 import { listCatalogRooms } from "@/services/p2p/roomCatalogStore";
+import { useSettingsStore } from "@/state/settingsStore";
 
 function sendNtfyCommand(cmd: Record<string, string | undefined>): void {
   if (!isMobileHost()) return;
@@ -39,4 +43,25 @@ export function subscribeAll(): void {
       subscribeRoom(room.id, `${NTFY_BASE_URL}/gnh-${room.ownPokeId}`);
     }
   }
+}
+
+function androidWakeOn(): boolean {
+  return (
+    isMobileAndroid() && useSettingsStore.getState().privacy.pushWakeEnabled
+  );
+}
+
+/** Open stored room listeners. Android only, and only while Wake is on. @see docs/features/peer-wake-notification.md */
+export function resumeAndroidWakeSubscriptions(): void {
+  if (!androidWakeOn()) return;
+  subscribeAll();
+}
+
+/** Listen on one room handle. Android only, and only while Wake is on. @see docs/features/peer-wake-notification.md */
+export function subscribeOwnRoomIfWake(
+  roomId: string,
+  ownPokeId: string,
+): void {
+  if (!ownPokeId || !androidWakeOn()) return;
+  subscribeRoom(roomId, `${NTFY_BASE_URL}/gnh-${ownPokeId}`);
 }

@@ -1,9 +1,13 @@
 package im.getnowhere.app.ntfywake
 
+import android.app.NotificationManager
+import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import im.getnowhere.app.backgroundsync.RemoteNodeBackgroundSyncScheduler
+import im.getnowhere.app.notifications.GnhNotificationPublisher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -24,6 +28,10 @@ class GnhNtfyWakeModule(reactContext: ReactApplicationContext) :
 
     override fun getName(): String = NAME
 
+    init {
+        ActivityVisibilityTracker.install(reactContext)
+    }
+
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.SECONDS)
         .build()
@@ -33,6 +41,14 @@ class GnhNtfyWakeModule(reactContext: ReactApplicationContext) :
     private val wakeHandler = NtfyWakeHandler(onWake = {
         val ctx = reactApplicationContext.applicationContext
         RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync(ctx)
+        val backgrounded = ActivityVisibilityTracker.isBackgrounded()
+        val outcome =
+            if (backgrounded) {
+                GnhNotificationPublisher(ctx).publishGenericWake().name
+            } else {
+                "visible"
+            }
+        Log.i(NAME, wakeLog(ctx, backgrounded, outcome))
     })
 
     @ReactMethod
@@ -54,7 +70,7 @@ class GnhNtfyWakeModule(reactContext: ReactApplicationContext) :
 
     private fun connectSse(roomId: String, topic: String, token: String, delayMs: Long) {
         if (delayMs > 0) Thread.sleep(delayMs)
-        val reqBuilder = Request.Builder().url("$topic/json")
+        val reqBuilder = Request.Builder().url("$topic/sse")
         if (token.isNotBlank()) reqBuilder.header("Authorization", "Bearer $token")
         val request = reqBuilder.build()
         val listener = object : EventSourceListener() {
@@ -79,5 +95,21 @@ class GnhNtfyWakeModule(reactContext: ReactApplicationContext) :
         }
         val es = EventSources.createFactory(client).newEventSource(request, listener)
         connections[roomId] = es
+    }
+
+    private fun wakeLog(
+        ctx: android.content.Context,
+        backgrounded: Boolean,
+        outcome: String,
+    ): String {
+        val enabled = NotificationManagerCompat.from(ctx).areNotificationsEnabled()
+        val manager = ctx.getSystemService(NotificationManager::class.java)
+        val importance =
+            manager
+                ?.getNotificationChannel(GnhNotificationPublisher.CHANNEL_ID)
+                ?.importance
+                ?.toString()
+                ?: "missing"
+        return "wake backgrounded=$backgrounded notificationsEnabled=$enabled channelImportance=$importance outcome=$outcome"
     }
 }

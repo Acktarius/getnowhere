@@ -50,7 +50,7 @@ validation, replay/dedup checks, and persistence. Never from raw tx data.
 |-------|----------------|
 | L1 invitation received | Title `Get NowHere`, body `You received a room invite` |
 | L1 invitation accepted | None — same generic peer-wake as L1′ |
-| L1′ known-room message | None — generic peer-wake; in-app unread MAY update |
+| L1′ known-room message | Generic `Get NowHere` / `New message` when the app is not visible (iOS push payload; Android after `Activity.onStop`). No system banner while the activity is started. |
 
 - Never in title/body/userInfo/extras: contact alias, message preview, wallet
   addresses, room IDs, Holepunch keys, tx hashes, raw payloads, decrypt errors.

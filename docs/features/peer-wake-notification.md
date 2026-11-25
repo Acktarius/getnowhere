@@ -45,7 +45,7 @@ App install + notification permission granted (iOS)  OR  F-Droid build starts nt
   → stored locally as ownPokeId, included in the next invite handshake
 
 F-Droid: ownPokeId generated locally (no gateway registration needed);
-          subscribes to https://ntfy.getnowhere.im/gnh-<ownPokeId>/json via SSE (OkHttp)
+          subscribes to https://ntfy.getnowhere.im/gnh-<ownPokeId>/sse via OkHttp
 ```
 
 Gateway routing on `POST /poke { to }` (no extra fields — deployed schema rejects them):
@@ -179,6 +179,13 @@ must pass Face ID / passcode when he later opens the app. It must not suppress p
 By the time Bob reads the banner and taps (human latency: several seconds to a minute),
 the L1′ tx has propagated through the Conceal network.
 
+On Android the ntfy payload is a JSON envelope whose `message` is `wake`. The phone
+subscribes with OkHttp to `/sse`. A wake schedules sync. It posts `Get NowHere` /
+`New message` only after `Activity.onStop` (Home key or a finished swipe-up).
+`onStart` clears that. React Native AppState is not the cue. Logcat tag
+`GnhNtfyWake` records `backgrounded`, notification permission, channel importance,
+and whether `notify` ran.
+
 ### Blockchain sync caveat on wake
 
 When Bob taps the banner and the app opens, his wallet sync may not have caught up yet. The app
@@ -201,7 +208,7 @@ When Bob taps the banner and the app opens, his wallet sync may not have caught 
 
 Both iOS and F-Droid use the same `pokeHandle` wire format (`ph` field in L1). The gateway
 routes to APNs if a registered token is found; otherwise falls back to ntfy POST on
-`gnh-<pokeHandle>`. F-Droid subscribes to `https://ntfy.getnowhere.im/gnh-<ownPokeId>/json`
+`gnh-<pokeHandle>`. F-Droid subscribes to `https://ntfy.getnowhere.im/gnh-<ownPokeId>/sse`
 via OkHttp SSE; `GnhNtfyWakeModule` receives the `wake` message and calls
 `RemoteNodeBackgroundSyncScheduler.scheduleSoonRemoteNodeSync`.
 
@@ -218,11 +225,13 @@ is achieved via **ntfy SSE**.
 #### How it works
 
 The F-Droid build generates `ownPokeId` locally (10 bytes, base64url, 14 chars) and includes
-it in the L1 `ph` field exactly like iOS — no gateway registration needed. The device
+it in the L1 `ph` field exactly like iOS — no gateway registration needed. The listener is
+in the app process, so it is opened again on each app start while Wake contact stays on,
+and when a room handle is created. The device
 subscribes to:
 
 ```
-https://ntfy.getnowhere.im/gnh-<ownPokeId>/json   (OkHttp SSE, persistent, no Authorization header)
+https://ntfy.getnowhere.im/gnh-<ownPokeId>/sse   (OkHttp SSE, persistent, no Authorization header)
 ```
 
 When Alice pokes Bob's gateway handle and no APNs token is found (DB miss), the gateway
@@ -295,7 +304,8 @@ The new `chat.register` carries a new pokeHandle. No stale-handle problem.
 pokeHandle. The app calls `registerForRemoteNotifications()` on every launch and posts the
 current token to the gateway. The gateway upserts: same pokeHandle, new underlying token.
 Alice's stored pokeHandle keeps working transparently. F-Droid builds keep the same locally
-generated `ownPokeId` for the room lifetime — no token rotation needed.
+generated `ownPokeId` for the room lifetime — no token rotation needed. The ntfy listener
+is opened again on each app start while Wake contact stays on.
 
 **Invalid token cleanup:** APNs `410 Unregistered` → gateway deletes the handle entry.
 Future pokes for that handle fall through to the ntfy path or are silent no-ops.
@@ -405,7 +415,8 @@ Minimal HTTP service (single Node process or serverless):
 
 - iOS: `registerForRemoteNotifications()` result → `POST /gateway/register`; refresh on token
   change; call `DELETE /gateway/register` when push wake disabled
-- Android (F-Droid): generates `ownPokeId` locally; subscribes to ntfy SSE on room accept;
+- Android (F-Droid): generates `ownPokeId` locally; subscribes to ntfy SSE when Wake is
+  turned on, again on each app start while it stays on, and when a room handle is created.
   `GnhNtfyWakeModule` handles wake events; no gateway registration
 - Store `ownPokeId` / `pokeHandle` in local settings alongside existing `privacy.*` keys
 
@@ -427,7 +438,9 @@ Toggles adjacent to the Notifications master switch (`SettingsScreen.tsx`):
   Turning it on runs, in order: OS permission (wait for the user's answer) →
   iOS only: APNs device token (fetched by the shell only after a granted
   answer) → `POST /register` at the gateway → poke handle saved → toggle on.
-  Android: permission granted → `subscribeAll()`, no gateway. Any failed step
+  Android: permission granted → `subscribeAll()`, no gateway. The same subscribe runs
+  again on each app start while Wake stays on, and when a room handle is created.
+  Any failed step
   keeps the toggle off with a message under it — see
   `local-background-notifications.md` (Settings and permissions).
   Off → `deletePokeHandle()`, no pokes.

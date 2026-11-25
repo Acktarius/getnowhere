@@ -6,9 +6,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listCatalogRooms = vi.fn();
+const flags = vi.hoisted(() => ({ android: false, wake: false }));
 
 vi.mock("@/lib/mobile/gnhMobileBridgeTypes", () => ({
   isMobileHost: () => true,
+  isMobileAndroid: () => flags.android,
+}));
+
+vi.mock("@/state/settingsStore", () => ({
+  useSettingsStore: {
+    getState: () => ({ privacy: { pushWakeEnabled: flags.wake } }),
+  },
 }));
 
 vi.mock("@/services/p2p/roomCatalogStore", () => ({
@@ -27,6 +35,8 @@ describe("ntfyWakeBridge", () => {
   beforeEach(() => {
     postMessage.mockClear();
     listCatalogRooms.mockReset();
+    flags.android = false;
+    flags.wake = false;
     (window as unknown as { ReactNativeWebView: unknown }).ReactNativeWebView =
       {
         postMessage,
@@ -65,5 +75,59 @@ describe("ntfyWakeBridge", () => {
       expect(cmd.token).toBeUndefined();
       expect(JSON.stringify(cmd)).not.toMatch(/Bearer|tk_/);
     }
+  });
+
+  it("resumeAndroidWakeSubscriptions opens stored handles only on Android with Wake on", async () => {
+    listCatalogRooms.mockReturnValue([
+      { id: "room-1", ownPokeId: "AAAAAAAAAAAAAA" },
+    ]);
+    const { resumeAndroidWakeSubscriptions } = await import(
+      "@/lib/mobile/ntfyWakeBridge"
+    );
+
+    resumeAndroidWakeSubscriptions();
+    expect(sentCommands()).toHaveLength(0);
+
+    flags.android = true;
+    resumeAndroidWakeSubscriptions();
+    expect(sentCommands()).toHaveLength(0);
+
+    flags.wake = true;
+    resumeAndroidWakeSubscriptions();
+    expect(sentCommands()).toEqual([
+      {
+        channel: "gnh-ntfy-wake",
+        direction: "command",
+        action: "subscribe",
+        roomId: "room-1",
+        topic: "https://ntfy.getnowhere.im/gnh-AAAAAAAAAAAAAA",
+      },
+    ]);
+  });
+
+  it("subscribeOwnRoomIfWake opens that room only on Android with Wake on", async () => {
+    const { subscribeOwnRoomIfWake } = await import(
+      "@/lib/mobile/ntfyWakeBridge"
+    );
+
+    subscribeOwnRoomIfWake("room-9", "CCCCCCCCCCCCCC");
+    flags.android = true;
+    subscribeOwnRoomIfWake("room-9", "CCCCCCCCCCCCCC");
+    expect(sentCommands()).toHaveLength(0);
+
+    flags.wake = true;
+    subscribeOwnRoomIfWake("room-9", "");
+    expect(sentCommands()).toHaveLength(0);
+
+    subscribeOwnRoomIfWake("room-9", "CCCCCCCCCCCCCC");
+    expect(sentCommands()).toEqual([
+      {
+        channel: "gnh-ntfy-wake",
+        direction: "command",
+        action: "subscribe",
+        roomId: "room-9",
+        topic: "https://ntfy.getnowhere.im/gnh-CCCCCCCCCCCCCC",
+      },
+    ]);
   });
 });

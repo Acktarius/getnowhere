@@ -65,6 +65,51 @@ class GnhNtfyWakeModuleTest {
     }
 
     @Test
+    fun `onStop marks backgrounded and onStart clears it`() {
+        val visibility = ActivityVisibility()
+        assertEquals(true, visibility.isBackgrounded())
+        visibility.onStarted()
+        assertEquals(false, visibility.isBackgrounded())
+        visibility.onStopped()
+        assertEquals(true, visibility.isBackgrounded())
+    }
+
+    @Test
+    fun `one remaining started activity stays visible`() {
+        val visibility = ActivityVisibility()
+        visibility.onStarted()
+        visibility.onStarted()
+        visibility.onStopped()
+        assertEquals(false, visibility.isBackgrounded())
+    }
+
+    @Test
+    fun `ntfy json envelope triggers onWake`() {
+        val (h, calls) = handler()
+        h.handle(
+            null,
+            """{"id":"m1","event":"message","topic":"gnh-x","message":"wake"}""",
+        )
+        assertEquals(1, calls.size)
+    }
+
+    @Test
+    fun `ntfy keepalive is ignored`() {
+        val (h, calls) = handler()
+        h.handle(null, """{"id":"k1","event":"keepalive"}""")
+        h.handle(null, """{"id":"o1","event":"open"}""")
+        assertEquals(0, calls.size)
+    }
+
+    @Test
+    fun `distinct ntfy json ids each trigger onWake`() {
+        val (h, calls) = handler()
+        h.handle(null, """{"id":"m1","event":"message","message":"wake"}""")
+        h.handle(null, """{"id":"m2","event":"message","message":"wake"}""")
+        assertEquals(2, calls.size)
+    }
+
+    @Test
     fun `dedup evicts oldest when full`() {
         val (h, calls) = handler()
         // Fill up dedup window (maxDedupIds=50 by default, use small custom handler)

@@ -61,6 +61,12 @@ vi.mock("@/state/settingsStore", () => ({
 }));
 
 const sendPokeSpy = vi.fn().mockResolvedValue(undefined);
+const subscribeOwnRoomIfWake = vi.fn();
+
+vi.mock("@/lib/mobile/ntfyWakeBridge", () => ({
+  subscribeOwnRoomIfWake: (...args: unknown[]) =>
+    subscribeOwnRoomIfWake(...args),
+}));
 
 vi.mock("@/services/poke/pokeGatewayClient", () => ({
   sendPoke: (...args: unknown[]) => sendPokeSpy(...args),
@@ -193,6 +199,7 @@ beforeEach(() => {
   sendSmartMessage.mockResolvedValue({ hash: "tx-register-ok" });
   sendPokeSpy.mockReset();
   sendPokeSpy.mockResolvedValue(undefined);
+  subscribeOwnRoomIfWake.mockReset();
   pushWakeEnabled = false;
   raw = {
     deposits: [],
@@ -218,6 +225,9 @@ describe("acceptInvite wake poke", () => {
     expect(sendPokeSpy).toHaveBeenCalledOnce();
     expect(sendPokeSpy).toHaveBeenCalledWith(INITIATOR_HANDLE);
     expect(sendPokeSpy.mock.calls[0]).toHaveLength(1);
+    const ownId = peekCatalogRoom(roomId)?.ownPokeId;
+    expect(ownId).toBeTruthy();
+    expect(subscribeOwnRoomIfWake).toHaveBeenCalledWith(roomId, ownId);
   });
 
   it("skips poke when wake is off and still returns roomId", async () => {

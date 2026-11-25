@@ -84,6 +84,29 @@ class GnhNotificationPublisher(
         }
     }
 
+    /** Generic peer-wake banner. No message content. @see docs/features/peer-wake-notification.md */
+    fun publishGenericWake(): PublishOutcome {
+        if (!hasPostPermission()) return PublishOutcome.NO_PERMISSION
+        ensureChannel()
+        val notification =
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(context.applicationInfo.icon)
+                .setContentTitle(WAKE_TITLE)
+                .setContentText(WAKE_BODY)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(WAKE_BODY))
+                .setAutoCancel(true)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setContentIntent(launchIntent(WAKE_EVENT_ID))
+                .build()
+        return try {
+            NotificationManagerCompat.from(context).notify(WAKE_NOTIFICATION_ID, notification)
+            PublishOutcome.POSTED
+        } catch (_: SecurityException) {
+            PublishOutcome.NO_PERMISSION
+        }
+    }
+
     fun cancelAll() {
         NotificationManagerCompat.from(context).cancelAll()
     }
@@ -111,6 +134,10 @@ class GnhNotificationPublisher(
         const val CHANNEL_ID = "nowhere_messages"
         const val CHANNEL_NAME = "Messages"
         const val EXTRA_EVENT_ID = "gnhNotificationEventId"
+        const val WAKE_TITLE = "Get NowHere"
+        const val WAKE_BODY = "New message"
+        const val WAKE_EVENT_ID = "gnh.wake"
+        const val WAKE_NOTIFICATION_ID = 0x676e6801
     }
 }
 
