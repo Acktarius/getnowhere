@@ -54,6 +54,7 @@ native-wrapper/ios/
 .continue/
 .repo-kit/
 .forge/
+openspec/changes/archive/
 .kilo/
 .cursor/
 
