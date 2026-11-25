@@ -33,6 +33,7 @@ import {
   type SdkRuntime,
   syncRuntime,
 } from "@/services/conceal/sync/runtime";
+import { isLagNearTip } from "@/services/conceal/walletSyncTip";
 
 type BuiltTransaction = txns.BuiltTransaction;
 type DecoySet = txns.DecoySet;
@@ -199,26 +200,24 @@ export function selectSpendInputs(
   return txns.selectInputs(outputs, targetAmount, DUST_THRESHOLD);
 }
 
-/** Best-effort tip sync before selecting inputs (bounded; never blocks forever). */
+/**
+ * Skip sync only when `runtime` is known near tip; behind, unknown or hung height ⇒ bounded
+ * tip sync before selecting inputs.
+ */
 async function syncBeforeSpend(runtime: SdkRuntime): Promise<void> {
   const SPEND_SYNC_BUDGET_MS = 12_000;
   try {
-    let networkHeight: number | null = null;
-    try {
-      networkHeight = await Promise.race([
-        runtime.daemon.getHeight(),
-        new Promise<null>((resolve) => {
-          setTimeout(() => resolve(null), 2500);
-        }),
-      ]);
-    } catch {
-      networkHeight = null;
-    }
+    const networkHeight = await withTimeout(
+      runtime.daemon.getHeight(),
+      2_500,
+      "Height",
+    ).catch(() => null);
     const lag =
-      typeof networkHeight === "number"
-        ? Math.max(0, networkHeight - (runtime.state.scannedHeight ?? 0))
-        : 0;
-    const budgetMs = lag > 200 ? 8_000 : SPEND_SYNC_BUDGET_MS;
+      networkHeight === null
+        ? null
+        : Math.max(0, networkHeight - (runtime.state.scannedHeight ?? 0));
+    if (lag !== null && isLagNearTip(lag)) return;
+    const budgetMs = (lag ?? 0) > 200 ? 8_000 : SPEND_SYNC_BUDGET_MS;
     const outcome = await Promise.race([
       syncRuntime(runtime).then(() => "ok" as const),
       new Promise<"timeout">((resolve) => {
@@ -459,6 +458,8 @@ export async function sendSmartMessage(input: {
   paymentId?: string;
   /** Absolute Unix expiry; omit/0 = mined (no mempool TTL). */
   ttlUnixSeconds?: number;
+  /** Caller owns the wallet save: records stay in `runtime.raw` only (no persist, no sync kick). */
+  deferPersist?: boolean;
 }): Promise<{ hash: string }> {
   let runtime: SdkRuntime;
   try {
@@ -482,6 +483,7 @@ async function sendSmartMessageInner(
     body: string;
     paymentId?: string;
     ttlUnixSeconds?: number;
+    deferPersist?: boolean;
   },
 ): Promise<{ hash: string }> {
   await syncBeforeSpend(runtime);
@@ -605,6 +607,7 @@ async function sendSmartMessageInner(
     ...readSentRecords(runtime.raw),
     record,
   ]);
+  if (input.deferPersist) return { hash: built.hash };
   await persistRuntime(runtime);
   void syncRuntime(runtime).catch(() => {});
   return { hash: built.hash };

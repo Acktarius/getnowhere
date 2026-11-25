@@ -44,6 +44,17 @@ the relationship is not eligible or an invite is still outstanding.
 0-conf received copies are kept for a **2h grace** after leaving the mempool so the
 mempool→block gap cannot erase chat creates before Accept appears.
 
+**Sync pass:** each pass reads the height first. It then re-scans the last **3** real blocks
+below the scanned height (never below the creation height), so a tx a node indexed late (#98)
+and reorgs up to 3 blocks deep are still folded. Near the tip, a pass scans the mempool once,
+after the fold. Far behind (deep catch-up), it also scans the mempool before catching up, so
+0-conf invites still appear.
+
+**Before a send:** every spend (`sendCcx`, `sendSmartMessage`) does one height request. If the
+wallet is at most 2 blocks behind, it sends without waiting for any sync pass. If it is behind,
+or the height is unknown or slow, it runs a bounded sync first (which may itself save the
+wallet). Own unconfirmed spends are excluded through their pending key images.
+
 ## Import
 
 Supported methods (same as next-wallet):

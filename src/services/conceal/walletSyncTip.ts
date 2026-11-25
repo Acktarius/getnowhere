@@ -2,7 +2,7 @@
  * Wallet sync lag vs chain tip — gates room enablement during rescan.
  * @see docs/security/p2pchatprotocol.md
  */
-import { getRuntime } from "@/services/conceal/sync/runtime";
+import { getRuntime, type SdkRuntime } from "@/services/conceal/sync/runtime";
 
 /** Extra block slack for scannedHeight count-vs-index overshoot. @see sync/runtime RESCAN_LAG_BLOCKS */
 const HEIGHT_INDEX_SLACK = 1;
@@ -13,9 +13,10 @@ export type WalletSyncLag = {
   lagBlocks: number;
 };
 
-/** Scanned tip vs daemon height; null when wallet is locked. */
-export async function getWalletSyncLag(): Promise<WalletSyncLag | null> {
-  const rt = getRuntime();
+/** Scanned tip vs daemon height for `rt` (default: active wallet); null when locked. */
+export async function getWalletSyncLag(
+  rt: SdkRuntime | null = getRuntime(),
+): Promise<WalletSyncLag | null> {
   if (!rt) return null;
   const scannedHeight = rt.state.scannedHeight ?? 0;
   try {
@@ -30,9 +31,17 @@ export async function getWalletSyncLag(): Promise<WalletSyncLag | null> {
   }
 }
 
-/** True when sync is within `toleranceBlocks` of chain tip (+ index slack). */
-export async function isWalletNearTip(toleranceBlocks = 1): Promise<boolean> {
-  const lag = await getWalletSyncLag();
+/** True when `lagBlocks` is within `toleranceBlocks` of chain tip (+ index slack). */
+export function isLagNearTip(lagBlocks: number, toleranceBlocks = 1): boolean {
+  return lagBlocks <= toleranceBlocks + HEIGHT_INDEX_SLACK;
+}
+
+/** True when `rt` (default: active wallet) is within `toleranceBlocks` of chain tip. */
+export async function isWalletNearTip(
+  toleranceBlocks = 1,
+  rt: SdkRuntime | null = getRuntime(),
+): Promise<boolean> {
+  const lag = await getWalletSyncLag(rt);
   if (!lag) return false;
-  return lag.lagBlocks <= toleranceBlocks + HEIGHT_INDEX_SLACK;
+  return isLagNearTip(lag.lagBlocks, toleranceBlocks);
 }

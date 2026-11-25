@@ -350,9 +350,13 @@ export async function upsertPendingInitiatorKey(
   await persistRuntime(rt);
 }
 
+/** `persistWallet: false` updates `rt.raw` but skips the wallet save; the caller saves once. */
+export type WalletWriteOptions = { persistWallet?: boolean };
+
 /** Remove one pending ephemeral from the encrypted wallet blob. */
 export async function removePendingInitiatorKey(
   inviteId: string,
+  options?: WalletWriteOptions,
 ): Promise<void> {
   const rt = getRuntime();
   if (!rt) return;
@@ -360,6 +364,7 @@ export async function removePendingInitiatorKey(
     (r) => r.inviteId !== inviteId,
   );
   rt.raw = withPendingInviteEphemerals(rt.raw, next);
+  if (options?.persistWallet === false) return;
   await persistRuntime(rt);
 }
 
@@ -401,23 +406,29 @@ export async function migrateLegacyPendingInitiatorKeys(): Promise<void> {
   storage.removeItem(PENDING_INITIATOR_KEYS_KEY);
 }
 
-/** Write contacts into the open wallet blob and persist encrypted storage. */
+/** Write contacts into the open wallet blob and persist it unless `persistWallet: false`. */
 export async function saveContactsToWalletBlob(
   contacts: Contact[],
+  options?: WalletWriteOptions,
 ): Promise<void> {
   const rt = getRuntime();
   if (!rt) return;
   rt.raw = withAddressBook(rt.raw, contacts.map(contactToAddressEntry));
+  if (options?.persistWallet === false) return;
   await persistRuntime(rt);
 }
 
 /**
  * Persist contacts to local storage and (when unlocked) the wallet addressBook.
+ * `persistWallet: false` stages the address book in `rt.raw` without saving.
  */
-export async function persistContacts(contacts: Contact[]): Promise<void> {
+export async function persistContacts(
+  contacts: Contact[],
+  options?: WalletWriteOptions,
+): Promise<void> {
   saveContactsToLocal(contacts);
   try {
-    await saveContactsToWalletBlob(contacts);
+    await saveContactsToWalletBlob(contacts, options);
   } catch {
     // Local copy is enough until the next successful wallet persist.
   }

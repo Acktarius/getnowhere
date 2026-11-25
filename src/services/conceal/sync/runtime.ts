@@ -175,7 +175,7 @@ const SDK_STATE_FIELD = "sdkWalletState";
  * a manual full rescan (#98). Folding is idempotent, so re-scanning recent blocks every sync
  * is safe and also covers small chain reorgs.
  */
-const RESCAN_LAG_BLOCKS = 10;
+const RESCAN_LAG_BLOCKS = 3;
 
 /**
  * Blocks fetched per sync batch. Larger batches cut the per-batch round-trip COUNT — the dominant
@@ -1108,9 +1108,6 @@ async function buildSyncSources(
 async function syncOnce(rt: SdkRuntime): Promise<number> {
   // Await WASM crypto init before scanTransactionOutputsAndDeposits / ring math.
   await ensureSdkReady();
-  // Publish 0-conf messages BEFORE tip catch-up so L1 invites are not stuck
-  // behind a multi-minute deep sync (next-wallet stays near tip via live poll).
-  await pollMempoolRuntime(rt);
   const height = await rt.daemon.getHeight();
   // The "Sync speed" profile (DOOM skill levels) drives the deep-sync knobs — batch size, worker-pool
   // size, and multi-source node count — off the `options.readSpeed` number (an unknown/legacy value
@@ -1140,6 +1137,9 @@ async function syncOnce(rt: SdkRuntime): Promise<number> {
   // (already-synced wallet) stays on the original LIGHT path (sparse fetch + in-thread scan, no
   // miner-tx payload, no worker round-trip). The overhead only pays off on a long catch-up.
   const farBehind = height - scanned > FAR_BEHIND_THRESHOLD;
+  // Publish 0-conf messages BEFORE a deep catch-up so L1 invites are not stuck behind a
+  // multi-minute sync. Near the tip the post-fold poll below is the only one.
+  if (farBehind) await pollMempoolRuntime(rt);
   // `useHeavyPath` is `farBehind` unless the parallel speed path is force-disabled via the
   // `ccx-disable-parallel-sync` flag (a kill-switch to A/B the speed options against the light path).
   const useHeavyPath = farBehind && !parallelSyncDisabled();

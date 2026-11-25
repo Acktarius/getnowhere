@@ -190,7 +190,7 @@ Alice                                         Bob
 5b. ◄──────── {contact,r,…} register
 6. Alice scans received register (refreshInvites / open contact or room),
    restores stashed initiator ephemeral, derives session + contract
-6b. Bob already derived on Accept
+6b. Bob derives once his register broadcast succeeds (below)
 7. inviteStatus = accepted (signaling terminal)
 8. room: accepted → connecting → Holepunch join(topicRef)
 9. peer established → room connected
@@ -203,6 +203,33 @@ Alice must observe Bob’s on-chain `register` on her wallet (not only Bob’s
 Accept UI). The sender’s `paymentIdFrom` must be the contact that invite was
 created for. A register from anyone else is ignored, including its wake handle.
 Initiator ephemeral keys are stashed locally until that handoff.
+
+### Bob's Accept order (app layer)
+
+The wire format does not change. Bob's device runs Accept in this order:
+
+1. **Before the room opens.** Tip check, then the reply key. Bob reuses the responder stash for
+   this invite if one exists. Otherwise he generates a keypair and register and stashes them,
+   which is wallet save #1.
+2. **Room opens.** The room shows as `pending` with the composer gated, and the register
+   broadcast runs in the background. At most one broadcast is in flight per invite
+   (`acceptingInviteIds`), and the contact screen shows "Accepting…".
+3. **Broadcast succeeds.** The invite is saved `accepted` (local storage plus mobile prefs flush).
+   Bob derives the session and stages several writes in the wallet blob: the session (wallet
+   mode), the contact accepted, and the stash removal. One combined write (save #2) then
+   persists them along with the sent tx. The room then goes `accepted → connecting`.
+4. **Broadcast fails.** An error toast shows. The invite stays `received`, the stash is kept and
+   the room stays `pending`. Accept again sends the same register.
+
+A responder stash derives a session on reconnect only when its invite is saved `accepted`, and
+never while that invite's broadcast is in flight.
+
+| Stops after | On restart | Result |
+|---|---|---|
+| Save #1, before broadcast | invite `received`, stash | Accept again reuses the stash |
+| Broadcast, before invite write | invite `received`, stash | Accept again rebroadcasts the same register (inert duplicate) |
+| Invite write, before save #2 | invite `accepted`, stash | Stash reconnect derives the session |
+| Save #2 | session saved, no stash | Saved-session resume |
 
 ---
 

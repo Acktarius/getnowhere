@@ -449,7 +449,8 @@ Rules:
   plaintext `privateKeyHex` to `gnh.pendingInitiatorKeys` (legacy KV is
   migrated once then deleted). Wipe on successful handoff, decline/abandon,
   invite-expiry retirement, leave room / L1 revoke / local destroy, and wallet
-  wipe. In-memory map may hold refs while unlocked.
+  wipe. In-memory map may hold refs while unlocked. Bob's responder stash must be durable
+  before his register is broadcast; a retry reuses it (`p2pchatprotocol.md` §6).
 - **Room transcripts:** L2 is sealed frames, not a shared Hypercore log. Persist
   what this device already saw in the encrypted wallet blob (`chatRooms`) when
   Settings **P2P message retention** is on: background write ~1s after live

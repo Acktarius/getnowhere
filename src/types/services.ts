@@ -198,6 +198,8 @@ export type SmartMessageService = {
       receiverEphemeralPublicKey: string;
       replayId: string;
     },
+    /** `deferPersist`: caller owns the wallet save after the broadcast. */
+    options?: { deferPersist?: boolean },
   ): Promise<{ roomId: string }>;
   declineInvite(inviteId: string): Promise<void>;
   /**

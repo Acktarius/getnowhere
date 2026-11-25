@@ -242,6 +242,7 @@ async function broadcastSmartBody(input: {
   smartBody: string;
   delivery?: { recipientAddress: string; paymentId: string };
   ttlUnixSeconds?: number;
+  deferPersist?: boolean;
 }): Promise<{ hash: string }> {
   const delivery = requireDelivery(input.contactId, input.delivery);
   return sendSmartMessage({
@@ -249,6 +250,7 @@ async function broadcastSmartBody(input: {
     body: input.smartBody,
     paymentId: delivery.paymentIdTo,
     ttlUnixSeconds: input.ttlUnixSeconds ?? 0,
+    ...(input.deferPersist ? { deferPersist: true } : {}),
   });
 }
 
@@ -513,7 +515,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     return this.fetchIncomingMessages();
   },
 
-  async acceptInvite(inviteId, register) {
+  async acceptInvite(inviteId, register, options) {
     let inv =
       invitesById.get(inviteId) ??
       [...invitesById.values()].find(
@@ -557,6 +559,7 @@ export const ConcealSmartMessageAdapter: SmartMessageService = {
     await broadcastSmartBody({
       contactId: inv.contactId,
       smartBody: encodeRegisterSmartBody(payload),
+      deferPersist: options?.deferPersist,
     });
     inv.status = "accepted";
     const initiatorHandle =

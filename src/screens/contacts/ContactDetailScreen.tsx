@@ -87,6 +87,7 @@ export function ContactDetailScreen() {
   const declineInvite = useContactsStore((s) => s.declineInvite);
   const refreshInvites = useContactsStore((s) => s.refreshInvites);
   const invites = useContactsStore((s) => s.invites);
+  const acceptingInviteIds = useContactsStore((s) => s.acceptingInviteIds);
   const contactRoomId = useContactsStore((s) => s.getById(id)?.roomId);
   const rooms = useChatStore((s) => s.rooms);
   const roomRelayBadge = useNotificationStore((s) => s.roomRelayBadge);
@@ -217,6 +218,11 @@ export function ContactDetailScreen() {
       (contact.inviteStatus === "received" ||
         contact.roomId !== incomingInvite.roomId),
   );
+  const accepting =
+    inviteAction === "accept" ||
+    Boolean(
+      incomingInvite && acceptingInviteIds.includes(incomingInvite.inviteId),
+    );
 
   useEffect(() => {
     if (!contact) {
@@ -490,8 +496,8 @@ export function ContactDetailScreen() {
               {showAccept && incomingInvite ? (
                 <div className="card card--pad-md stack stack--gap-2">
                   <div className="muted" style={{ fontSize: 13.5 }}>
-                    {inviteAction === "accept"
-                      ? "Sending accept on-chain, then opening the room. Holepunch connect continues in the room."
+                    {accepting
+                      ? "Sending accept on-chain. The room is open; live chat starts once the accept lands and peers connect."
                       : inviteAction === "decline"
                         ? "Sending decline on-chain and revoking the pending room."
                         : acceptAwaitingSync
@@ -520,10 +526,12 @@ export function ContactDetailScreen() {
                   <div className="row-flex" style={{ gap: 8 }}>
                     <button
                       className="btn btn--primary grow"
-                      disabled={inviteAction !== null || acceptAwaitingSync}
+                      disabled={
+                        inviteAction !== null || accepting || acceptAwaitingSync
+                      }
                       onClick={handleAccept}
                     >
-                      {inviteAction === "accept" ? (
+                      {accepting ? (
                         <>
                           <Loader2 size={16} className="spin" /> Accepting…
                         </>
@@ -533,7 +541,7 @@ export function ContactDetailScreen() {
                     </button>
                     <button
                       className="btn btn--secondary grow"
-                      disabled={inviteAction !== null}
+                      disabled={inviteAction !== null || accepting}
                       onClick={handleDecline}
                     >
                       {inviteAction === "decline" ? (

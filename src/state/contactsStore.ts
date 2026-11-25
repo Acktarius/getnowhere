@@ -25,6 +25,7 @@ import {
   getHandshakeForInvite,
   rememberHandshake,
 } from "@/services/conceal/ConcealSmartMessageAdapter";
+import { getRuntime, persistRuntime } from "@/services/conceal/sync/runtime";
 import { isWalletNearTip } from "@/services/conceal/walletSyncTip";
 import {
   hydrateContacts,
@@ -60,6 +61,7 @@ import {
   pruneRoomsForMissingContacts,
 } from "@/services/p2p/roomChainRestore";
 import {
+  flushMobilePrefs,
   hydrateRoomSessions,
   loadRoomSession,
 } from "@/services/p2p/roomSessionStore";
@@ -76,9 +78,11 @@ import {
   nowUnix,
   shouldAwaitChainSyncForInvite,
 } from "@/services/protocol/roomLifecycle";
-import type { Contact, SmartMessageInvite } from "@/types/models";
+import { getInstalledMobileStorageAdapter } from "@/services/storage/installMobileNativeStorage";
+import type { ChatRoom, Contact, SmartMessageInvite } from "@/types/models";
 import type {
   ChatInviteHandshake,
+  ChatRegisterPayload,
   HolepunchBootstrapContract,
 } from "@/types/protocol";
 import { resolveTopicSuite } from "@/types/protocol";
@@ -93,6 +97,8 @@ type CreateChatOptions = {
 type ContactsStore = {
   contacts: Contact[];
   invites: SmartMessageInvite[];
+  /** Invite ids whose register broadcast is in flight (single-flight accept). */
+  acceptingInviteIds: string[];
   loading: boolean;
   hydrated: boolean;
   /** Load contacts from local storage + wallet addressBook. */
@@ -625,7 +631,10 @@ export async function probeInitiatorHandoff(
     }
 
     if (!detail) {
-      if (role === "responder") {
+      if (role === "responder" && receivedForRoom) {
+        needsAccept = true;
+        detail = "Accept did not finish — tap Accept again.";
+      } else if (role === "responder") {
         detail = handoffCompleted
           ? "Connecting…"
           : "You already accepted — reconnecting to peer. If this stays offline, peer must open the same room.";
@@ -652,6 +661,10 @@ export async function probeInitiatorHandoff(
     }
   } catch (e) {
     detail = (e as Error).message || "Wallet sync failed.";
+  }
+  if (isAcceptInFlightForRoom(roomId)) {
+    detail = "Sending accept…";
+    needsAccept = false;
   }
 
   return {
@@ -701,9 +714,286 @@ function mergeInviteLists(
   return [...byInviteId.values()];
 }
 
+type StoreSet = (
+  partial:
+    | Partial<ContactsStore>
+    | ((s: ContactsStore) => Partial<ContactsStore>),
+) => void;
+
+type ResponderStash = PendingKey & { register: ChatRegisterPayload };
+
+/** Bob's stashed reply key + register for an invite (memory, else wallet record). */
+async function findResponderStash(
+  inviteId: string,
+): Promise<ResponderStash | undefined> {
+  const live = pendingPrivateKeys.get(inviteId);
+  if (
+    live?.peerRole === "responder" &&
+    live.register &&
+    exportKeyHex(live.privateKeyRef)
+  ) {
+    return { ...live, register: live.register };
+  }
+  const rec = loadPendingInitiatorKeys().find(
+    (r) => r.inviteId === inviteId && r.peerRole === "responder" && r.register,
+  );
+  if (!rec?.register) return undefined;
+  const { privateKeyRef } = await p2pEncryption.restoreEphemeralPrivateKey(
+    rec.privateKeyHex,
+  );
+  const stash: ResponderStash = {
+    privateKeyRef,
+    peerRole: "responder",
+    handshake: rec.handshake,
+    contactId: rec.contactId,
+    register: rec.register,
+  };
+  pendingPrivateKeys.set(inviteId, stash);
+  return stash;
+}
+
+/** Reuse the stashed reply key (no save), else mint one and stash it (wallet save #1). */
+async function ensureResponderStash(
+  invite: SmartMessageInvite,
+  handshake: ChatInviteHandshake,
+): Promise<ResponderStash> {
+  const existing = await findResponderStash(invite.inviteId);
+  if (existing) return existing;
+  const keypair = await p2pEncryption.generateEphemeralKeypair();
+  const register = await smartMessageProtocol.composeRegister({
+    inviteId: invite.inviteId,
+    receiverEphemeralPublicKey: keypair.publicKeyHex,
+    replayId: invite.replayId,
+  });
+  const stash: ResponderStash = {
+    privateKeyRef: keypair.privateKeyRef,
+    peerRole: "responder",
+    handshake: {
+      ...handshake,
+      receiverEphemeralPublicKey: keypair.publicKeyHex,
+    },
+    contactId: invite.contactId,
+    register,
+  };
+  try {
+    await upsertPendingInitiatorKey({
+      inviteId: register.inviteId,
+      contactId: invite.contactId,
+      roomId: invite.roomId,
+      privateKeyHex: keypair.privateKeyHex,
+      handshake: stash.handshake,
+      peerRole: "responder",
+      register,
+    });
+  } catch (e) {
+    // Never broadcast a reply key that is not durable; the retry mints a fresh one.
+    await removePendingInitiatorKey(register.inviteId, {
+      persistWallet: false,
+    }).catch(() => {});
+    throw e;
+  }
+  pendingPrivateKeys.set(register.inviteId, stash);
+  return stash;
+}
+
+function releaseAcceptClaim(set: StoreSet, inviteId: string): void {
+  set((s) => ({
+    acceptingInviteIds: s.acceptingInviteIds.filter((id) => id !== inviteId),
+  }));
+}
+
+function isAcceptInFlightForRoom(roomId: string): boolean {
+  const { invites, acceptingInviteIds } = useContactsStore.getState();
+  return invites.some(
+    (i) => i.roomId === roomId && acceptingInviteIds.includes(i.inviteId),
+  );
+}
+
+async function flushInstalledMobilePrefs(): Promise<void> {
+  const mobile = getInstalledMobileStorageAdapter();
+  if (mobile) await flushMobilePrefs(mobile);
+}
+
+type AcceptContext = {
+  /** Id the caller passed to `acceptInvite` (store invite id). */
+  storeInviteId: string;
+  invite: SmartMessageInvite;
+  stash: ResponderStash;
+  localEpochBefore: number;
+  wireEpoch: number;
+};
+
+/**
+ * Register broadcast, then accepted state and one combined wallet save (always, once sent), then connect.
+ * Broadcast failure keeps invite `received`, stash and `pending` room for a retry.
+ */
+async function finishAcceptInBackground(
+  get: () => ContactsStore,
+  set: StoreSet,
+  ctx: AcceptContext,
+): Promise<void> {
+  const { toastError } = await import("@/state/toastStore");
+  try {
+    const { register } = ctx.stash;
+    try {
+      await smartMessageService.acceptInvite(
+        ctx.storeInviteId,
+        {
+          inviteId: register.inviteId,
+          receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
+          replayId: register.replayId,
+        },
+        { deferPersist: true },
+      );
+    } catch (e) {
+      toastError((e as Error).message || "Accept failed.");
+      return;
+    }
+    let committed: Awaited<ReturnType<typeof commitAcceptedInvite>> | null =
+      null;
+    try {
+      if (!isRoomRevoked(ctx.invite.roomId)) {
+        committed = await commitAcceptedInvite(get, set, ctx);
+      }
+    } finally {
+      // The broadcast landed: the sent record and staged keys must reach disk.
+      const rt = getRuntime();
+      if (rt) await persistRuntime(rt);
+    }
+    if (committed) {
+      await startResponderConnect(get, set, committed.room, committed.contract);
+    }
+  } catch (e) {
+    toastError((e as Error).message || "Accept failed.");
+  } finally {
+    releaseAcceptClaim(set, ctx.invite.inviteId);
+  }
+}
+
+/** Accepted invite/contact/session/stash writes; wallet-backed ones are staged for one save. */
+async function commitAcceptedInvite(
+  get: () => ContactsStore,
+  set: StoreSet,
+  { storeInviteId, invite, stash, localEpochBefore, wireEpoch }: AcceptContext,
+): Promise<{ room: ChatRoom; contract: HolepunchBootstrapContract }> {
+  set((s) => ({
+    invites: s.invites.map((i) =>
+      i.id === storeInviteId || i.inviteId === invite.inviteId
+        ? { ...i, status: "accepted" as const }
+        : i,
+    ),
+  }));
+  schedulePersistInvites(get);
+  await flushInstalledMobilePrefs();
+
+  const { handshake } = stash;
+  const session = await sessionBootstrap.deriveSession({
+    invite: handshake,
+    acceptance: stash.register,
+    peerRole: "responder",
+    localPrivateKeyRef: stash.privateKeyRef,
+  });
+  if (
+    localEpochBefore > wireEpoch &&
+    handshake.relationshipId &&
+    resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+  ) {
+    const { toastInfo } = await import("@/state/toastStore");
+    toastInfo(
+      `Discovery generation aligned to invite (${wireEpoch}; was ${localEpochBefore}).`,
+    );
+  }
+  const contract = await sessionBootstrap.buildHolepunchContract({
+    session,
+    invite: handshake,
+    peerRole: "responder",
+  });
+  const sessionSaved = await persistSessionBeforeSeal(
+    invite.contactId,
+    contract,
+    { persistWallet: false },
+  );
+  const room = await chatTransport.createRoom({
+    contactId: invite.contactId,
+    bootstrap: {
+      roomId: invite.roomId,
+      roomKeyRef: session.sessionId,
+      bootstrapSource: "conceal-smart-message",
+      lifecycleStatus: "accepted",
+      inviteId: invite.inviteId,
+      inviteExpiry: invite.inviteExpiry,
+      roomTtl: invite.roomTtl,
+      roomTopic: invite.roomTopic ?? handshake.roomTopic,
+    },
+  });
+  set((s) => ({
+    contacts: s.contacts.map((c) =>
+      c.id === invite.contactId
+        ? recomputeStatus({
+            ...c,
+            inviteStatus: "accepted",
+            roomId: invite.roomId,
+            chatStatus: "connecting",
+            lastInteractionAt: new Date().toISOString(),
+          })
+        : c,
+    ),
+  }));
+  await persistContacts(get().contacts, { persistWallet: false });
+  if (sessionSaved) {
+    pendingPrivateKeys.delete(stash.register.inviteId);
+    await removePendingInitiatorKey(stash.register.inviteId, {
+      persistWallet: false,
+    });
+  }
+  return { room, contract };
+}
+
+/** Holepunch connect can take seconds; ChatRoomScreen retries if peers are not live yet. */
+async function startResponderConnect(
+  get: () => ContactsStore,
+  set: StoreSet,
+  room: ChatRoom,
+  contract: HolepunchBootstrapContract,
+): Promise<void> {
+  const roomId = room.id;
+  const { useChatStore } = await import("@/state/chatStore");
+  useChatStore.setState((s) => ({
+    rooms: [
+      ...s.rooms.filter((r) => r.id !== roomId),
+      { ...room, lifecycleStatus: "connecting", peerStatus: "connecting" },
+    ],
+  }));
+  void (async () => {
+    try {
+      const connected = await chatTransport.connect(contract);
+      useChatStore.setState((s) => ({
+        rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
+      }));
+      set((s) => ({
+        contacts: s.contacts.map((c) =>
+          c.roomId === roomId
+            ? recomputeStatus({
+                ...c,
+                chatStatus:
+                  connected.lifecycleStatus === "connected"
+                    ? "active"
+                    : "connecting",
+              })
+            : c,
+        ),
+      }));
+      schedulePersistContacts(get);
+    } catch {
+      // ChatRoomScreen retry / refreshInvites will continue connect.
+    }
+  })();
+}
+
 export const useContactsStore = create<ContactsStore>((set, get) => ({
   contacts: [],
   invites: [],
+  acceptingInviteIds: [],
   loading: false,
   hydrated: false,
 
@@ -1428,143 +1718,48 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
         : 0;
     const wireEpoch = handshake.topicEpoch ?? 0;
 
-    const keypair = await p2pEncryption.generateEphemeralKeypair();
-    const register = await smartMessageProtocol.composeRegister({
-      inviteId: inv.inviteId,
-      receiverEphemeralPublicKey: keypair.publicKeyHex,
-      replayId: inv.replayId,
-    });
-    // Stash Bob responder key so refresh can reconnect before session persist.
-    pendingPrivateKeys.set(register.inviteId, {
-      privateKeyRef: keypair.privateKeyRef,
-      peerRole: "responder",
-      handshake: {
-        ...handshake,
-        receiverEphemeralPublicKey: keypair.publicKeyHex,
-      },
-      contactId: inv.contactId,
-      register,
-    });
-    await upsertPendingInitiatorKey({
-      inviteId: register.inviteId,
-      contactId: inv.contactId,
-      roomId: inv.roomId,
-      privateKeyHex: keypair.privateKeyHex,
-      handshake: {
-        ...handshake,
-        receiverEphemeralPublicKey: keypair.publicKeyHex,
-      },
-      peerRole: "responder",
-      register,
-    });
-
-    // L1 register must broadcast so Alice can hand off — this is the real wait.
-    await smartMessageService.acceptInvite(inviteId, {
-      inviteId: register.inviteId,
-      receiverEphemeralPublicKey: register.receiverEphemeralPublicKey,
-      replayId: register.replayId,
-    });
-
-    const session = await sessionBootstrap.deriveSession({
-      invite: handshake,
-      acceptance: register,
-      peerRole: "responder",
-      localPrivateKeyRef: keypair.privateKeyRef,
-    });
+    const invite = inv;
     if (
-      localEpochBefore > wireEpoch &&
-      handshake.relationshipId &&
-      resolveTopicSuite(handshake) === "HKDF_EPOCH_V1"
+      invite.status === "accepted" ||
+      get().acceptingInviteIds.includes(invite.inviteId)
     ) {
-      const { toastInfo } = await import("@/state/toastStore");
-      toastInfo(
-        `Discovery generation aligned to invite (${wireEpoch}; was ${localEpochBefore}).`,
-      );
+      return { roomId: invite.roomId };
     }
-    const contract = await sessionBootstrap.buildHolepunchContract({
-      session,
-      invite: {
-        ...handshake,
-        receiverEphemeralPublicKey: keypair.publicKeyHex,
-      },
-      peerRole: "responder",
-    });
-
-    const room = await chatTransport.createRoom({
-      contactId: inv.contactId,
-      bootstrap: {
-        roomId: inv.roomId,
-        roomKeyRef: session.sessionId,
-        bootstrapSource: "conceal-smart-message",
-        lifecycleStatus: "accepted",
-        inviteId: inv.inviteId,
-        inviteExpiry: inv.inviteExpiry,
-        roomTtl: inv.roomTtl,
-        roomTopic: inv.roomTopic ?? handshake.roomTopic,
-      },
-    });
-
-    const { useChatStore } = await import("@/state/chatStore");
-    useChatStore.setState((s) => ({
-      rooms: [
-        ...s.rooms.filter((r) => r.id !== inv!.roomId),
-        { ...room, lifecycleStatus: "connecting", peerStatus: "connecting" },
-      ],
-    }));
-
+    // Claim before any await so a double tap cannot start a second broadcast.
     set((s) => ({
-      contacts: s.contacts.map((c) =>
-        c.id === inv!.contactId
-          ? recomputeStatus({
-              ...c,
-              inviteStatus: "accepted",
-              roomId: inv!.roomId,
-              chatStatus: "connecting",
-              lastInteractionAt: new Date().toISOString(),
-            })
-          : c,
-      ),
-      invites: s.invites.map((i) =>
-        i.id === inviteId || i.inviteId === inv!.inviteId
-          ? { ...i, status: "accepted" as const }
-          : i,
-      ),
+      acceptingInviteIds: [...s.acceptingInviteIds, invite.inviteId],
     }));
-    schedulePersistContacts(get);
-    schedulePersistInvites(get);
-
-    // Holepunch connect can take seconds — do not block redirect. Chat room
-    // screen already reconnects if peers are not live yet.
-    const roomId = inv.roomId;
-    if (await persistSessionBeforeSeal(inv.contactId, contract)) {
-      await discardHandoffStash(register.inviteId);
+    try {
+      const stash = await ensureResponderStash(invite, handshake);
+      const room = await chatTransport.createRoom({
+        contactId: invite.contactId,
+        bootstrap: {
+          roomId: invite.roomId,
+          roomKeyRef: `key:${invite.roomId}`,
+          bootstrapSource: "conceal-smart-message",
+          lifecycleStatus: "pending",
+          inviteId: invite.inviteId,
+          inviteExpiry: invite.inviteExpiry,
+          roomTtl: invite.roomTtl,
+          roomTopic: invite.roomTopic ?? handshake.roomTopic,
+        },
+      });
+      const { useChatStore } = await import("@/state/chatStore");
+      useChatStore.setState((s) => ({
+        rooms: [...s.rooms.filter((r) => r.id !== invite.roomId), room],
+      }));
+      void finishAcceptInBackground(get, set, {
+        storeInviteId: inviteId,
+        invite,
+        stash,
+        localEpochBefore,
+        wireEpoch,
+      });
+    } catch (e) {
+      releaseAcceptClaim(set, invite.inviteId);
+      throw e;
     }
-    void (async () => {
-      try {
-        const connected = await chatTransport.connect(contract);
-        useChatStore.setState((s) => ({
-          rooms: [...s.rooms.filter((r) => r.id !== roomId), connected],
-        }));
-        set((s) => ({
-          contacts: s.contacts.map((c) =>
-            c.roomId === roomId
-              ? recomputeStatus({
-                  ...c,
-                  chatStatus:
-                    connected.lifecycleStatus === "connected"
-                      ? "active"
-                      : "connecting",
-                })
-              : c,
-          ),
-        }));
-        schedulePersistContacts(get);
-      } catch {
-        // ChatRoomScreen retry / refreshInvites will continue connect.
-      }
-    })();
-
-    return { roomId };
+    return { roomId: invite.roomId };
   },
 
   async declineInvite(inviteId) {
@@ -1727,6 +1922,7 @@ export const useContactsStore = create<ContactsStore>((set, get) => ({
 export async function completeResponderReconnect(
   roomId: string,
 ): Promise<boolean> {
+  if (isAcceptInFlightForRoom(roomId)) return false;
   await hydrateRoomSessions();
   await restorePendingInitiatorKeys();
   const live = await chatTransport.getRoom(roomId);
@@ -1792,6 +1988,13 @@ export async function completeResponderReconnect(
   if (!pending?.register) return false;
   const register = pending.register;
   if (!register) return false;
+  // A stash is only trusted once the register broadcast landed (invite saved accepted).
+  const { invites } = useContactsStore.getState();
+  const stashInviteId = pending.handshake.inviteId;
+  const stashInvite =
+    invites.find((i) => i.inviteId === stashInviteId) ??
+    invites.find((i) => i.roomId === roomId);
+  if (stashInvite?.status !== "accepted") return false;
 
   if (!exportKeyHex(pending.privateKeyRef)) {
     const rec = loadPendingInitiatorKeys().find(

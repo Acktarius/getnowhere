@@ -31,6 +31,9 @@ export type PersistedRoomSession = {
 
 type HostMode = "storage" | "os" | "wallet";
 
+/** `persistWallet: false` updates `rt.raw` but skips the wallet save; the caller saves once. */
+export type RoomSessionSaveOptions = { persistWallet?: boolean };
+
 type RawWithRoomSessions = RawWalletV1 & {
   roomSessions?: unknown;
 };
@@ -132,6 +135,7 @@ function readAll(): Record<string, PersistedRoomSession> {
 
 async function persistHost(
   all: Record<string, PersistedRoomSession>,
+  options?: RoomSessionSaveOptions,
 ): Promise<void> {
   if (hostMode === "os") {
     const bridge = electronBridge();
@@ -139,12 +143,12 @@ async function persistHost(
     const reply = await bridge.saveRoomSessions(JSON.stringify(all));
     if (reply.mode === "wallet") {
       hostMode = "wallet";
-      await persistWallet(all);
+      await persistWallet(all, options);
     }
     return;
   }
   if (hostMode === "wallet") {
-    await persistWallet(all);
+    await persistWallet(all, options);
     return;
   }
   writeStorage(all);
@@ -153,7 +157,8 @@ async function persistHost(
   if (mobile) await flushMobilePrefs(mobile);
 }
 
-async function flushMobilePrefs(
+/** Await the mobile secure-prefs flush; throws on timeout or a recorded flush error. */
+export async function flushMobilePrefs(
   adapter: MobileNativeStorageAdapter,
 ): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -174,10 +179,12 @@ async function flushMobilePrefs(
 
 async function persistWallet(
   all: Record<string, PersistedRoomSession>,
+  options?: RoomSessionSaveOptions,
 ): Promise<void> {
   const rt = getRuntime();
   if (!rt) throw new Error("Wallet is locked.");
   rt.raw = { ...rt.raw, roomSessions: all } as RawWalletV1;
+  if (options?.persistWallet === false) return;
   await persistRuntime(rt);
 }
 
@@ -278,13 +285,17 @@ export function listRoomSessionIds(): string[] {
   return Object.keys(readAll());
 }
 
-/** Counters only move forward. A later save cannot rewind a seal. @see docs/security/encryption.md */
+/**
+ * Counters only move forward. A later save cannot rewind a seal.
+ * `persistWallet: false` stages wallet mode in `rt.raw` without saving. @see docs/security/encryption.md
+ */
 export async function saveRoomSession(
   session: PersistedRoomSession,
+  options?: RoomSessionSaveOptions,
 ): Promise<void> {
   const next = applyMonotonic(readAll(), session);
   if (hostMode !== "storage") cache = next;
-  await persistHost(next);
+  await persistHost(next, options);
 }
 
 export async function updateRoomSessionCounters(

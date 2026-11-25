@@ -63,6 +63,7 @@ import {
 import {
   hydrateRoomSessions,
   loadRoomSession,
+  type RoomSessionSaveOptions,
   removeRoomSession,
   saveRoomSession,
   updateRoomSessionCounters,
@@ -656,27 +657,31 @@ export async function ingestChatRelay(
 
 /**
  * Write keys and counters before the first proof so a failed connect can resume.
- * No-op once a row exists. @see docs/security/encryption.md
+ * No-op once a row exists. `options` is forwarded to `saveRoomSession`. @see docs/security/encryption.md
  */
 export async function persistSessionBeforeSeal(
   contactId: string,
   contract: HolepunchBootstrapContract,
+  options?: RoomSessionSaveOptions,
 ): Promise<boolean> {
   await hydrateRoomSessions();
   if (loadRoomSession(contract.roomId)) return true;
   const sendKeyHex = exportKeyHex(contract.sendKeyRef);
   const recvKeyHex = exportKeyHex(contract.recvKeyRef);
   if (!sendKeyHex || !recvKeyHex) return false;
-  await saveRoomSession({
-    roomId: contract.roomId,
-    contactId,
-    contract,
-    sendKeyHex,
-    recvKeyHex,
-    sendCounter: contract.sendCounter,
-    recvCounter: contract.recvCounter,
-    savedAt: new Date().toISOString(),
-  });
+  await saveRoomSession(
+    {
+      roomId: contract.roomId,
+      contactId,
+      contract,
+      sendKeyHex,
+      recvKeyHex,
+      sendCounter: contract.sendCounter,
+      recvCounter: contract.recvCounter,
+      savedAt: new Date().toISOString(),
+    },
+    options,
+  );
   return true;
 }
 
