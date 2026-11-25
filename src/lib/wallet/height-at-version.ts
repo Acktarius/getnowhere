@@ -1,22 +1,26 @@
-import versionText from "../../../version?raw";
+import pin from "./height-at-version.json";
 
 /**
- * Chain height recorded for this app version (`heightAtVersion` in the repo-root `version` file).
+ * Chain height recorded for this app version (`heightAtVersion` JSON pin).
  * New-wallet create uses it when the daemon does not return a tip.
+ * @see docs/features/lite-wallet.md
  */
-export function parseHeightAtVersion(text: string): number {
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const match = /^heightAtVersion=(\d+)$/.exec(trimmed);
-    if (!match) continue;
-    const height = Number(match[1]);
-    if (Number.isSafeInteger(height) && height > 0) return height;
-  }
-  return 0;
+
+/** Shape of `height-at-version.json` (pin height only — not the repo `version` file). */
+export type HeightAtVersionPin = {
+  heightAtVersion: number;
+};
+
+/** Read a positive safe integer from a pin object; otherwise 0. */
+export function parseHeightAtVersion(value: unknown): number {
+  if (!value || typeof value !== "object") return 0;
+  const raw = (value as HeightAtVersionPin).heightAtVersion;
+  const height = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isSafeInteger(height) || height <= 0) return 0;
+  return height;
 }
 
 /** `heightAtVersion` shipped with this build. */
 export function heightAtVersion(): number {
-  return parseHeightAtVersion(versionText);
+  return parseHeightAtVersion(pin);
 }
